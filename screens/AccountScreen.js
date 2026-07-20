@@ -1324,7 +1324,8 @@ function extractReturnRefundState(source = {}, override = {}) {
  */
 function resolveReturnLogisticsLabels(row, override = {}) {
   if (!row || typeof row !== "object") return null;
-  const inferredCancel = isPreShipCancelReturn(row, override.saleSibling || override.sale || null);
+  const saleSibling = override.saleSibling || override.sale || null;
+  const inferredCancel = isPreShipCancelReturn(row, saleSibling);
   const state = extractReturnRefundState(row, {
     ...override,
     ...(inferredCancel ? { cancel_unshipped: true } : {}),
@@ -1355,6 +1356,17 @@ function resolveReturnLogisticsLabels(row, override = {}) {
     refundStatus = "stripe_fail";
   }
 
+  // Stale cancel flags after the order was fully shipped/verified: show Returning instead.
+  // Keep Cancelled when the sale still has unshipped units (hybrid cancel-before-ship).
+  if (returnStatus === "cancelled" && saleSibling && !isReturnListRow(saleSibling)) {
+    const unshippedLeft = parseInt(saleSibling.unshipped_item_count ?? saleSibling.unshipped_count ?? saleSibling.open_shipping_count, 10);
+    const fullyShipped =
+      isTruthyShippingFlag(saleSibling.all_items_shipped) || (Number.isFinite(unshippedLeft) && unshippedLeft <= 0 && saleHasLeftSellerEvidence(saleSibling));
+    if (fullyShipped) {
+      returnStatus = isReturnTxn && refundStatus !== "pending" ? "returned" : "returning";
+    }
+  }
+
   const delivered = returnStatus === "cancelled" ? "Cancelled" : returnStatus === "returned" ? "Returned" : "Returning";
   const received = refundStatus === "refunded" ? "Refunded" : refundStatus === "stripe_fail" ? "CC Issue" : refundStatus === "rejected" ? "Rejected" : "Pending";
 
@@ -1363,9 +1375,54 @@ function resolveReturnLogisticsLabels(row, override = {}) {
     received,
     return_status: returnStatus,
     refund_status: refundStatus,
-    display_status: state.display_status || `${delivered} - ${received}`,
-    is_cancel_before_ship: returnStatus === "cancelled" || !!state.is_cancel_before_ship || inferredCancel,
+    display_status: `${delivered} - ${received}`,
+    is_cancel_before_ship: returnStatus === "cancelled",
   };
+}
+
+/** Sale-level evidence that inventory already shipped and/or was buyer-verified. */
+function saleHasLeftSellerEvidence(sale) {
+  if (!sale || typeof sale !== "object" || isReturnListRow(sale)) return false;
+  if (isTruthyShippingFlag(sale.all_items_shipped)) return true;
+  const shippedCount = parseInt(sale.shipped_item_count ?? sale.shipped_count ?? sale.items_shipped, 10);
+  if (Number.isFinite(shippedCount) && shippedCount > 0) return true;
+  const receivedUnits = parseInt(
+    sale.received_units ?? sale.received_units_total ?? sale.received_item_count ?? sale.delivered_item_count ?? sale.ti_received_qty,
+    10,
+  );
+  if (Number.isFinite(receivedUnits) && receivedUnits > 0) return true;
+  const saleFs = String(sale.fulfillment_status || sale.shipping_status || sale.order_fulfillment_status || sale.transaction_fulfillment_status || "")
+    .trim()
+    .toLowerCase();
+  if (
+    SHIPPED_FULFILLMENT_STATUSES.has(saleFs) ||
+    saleFs === "complete" ||
+    saleFs === "partial" ||
+    saleFs === "partially_shipped" ||
+    saleFs === "received" ||
+    saleFs === "paid"
+  ) {
+    return true;
+  }
+  const saleLines = Array.isArray(sale.lines) ? sale.lines : Array.isArray(sale.items) ? sale.items : null;
+  if (saleLines && saleLines.some((line) => lineHasLeftSeller(line))) return true;
+  return false;
+}
+
+/** True when a line has already shipped and/or been buyer-verified (not eligible for pre-ship cancel). */
+function lineHasLeftSeller(line) {
+  if (!line || typeof line !== "object") return false;
+  if (getLineShippedQty(line) > 0) return true;
+  if (getPreviouslyReceivedQty(line) > 0) return true;
+  const status = getLineFulfillmentStatus(line);
+  return (
+    SHIPPED_FULFILLMENT_STATUSES.has(status) ||
+    status === "complete" ||
+    status === "partial" ||
+    status === "partially_shipped" ||
+    status === "received" ||
+    status === "paid"
+  );
 }
 
 /** True when this return/cancel targets inventory that has not shipped yet. */
@@ -1374,6 +1431,11 @@ function isPreShipCancelReturn(row, saleSibling = null) {
   const status = String(row.return_status || row.transaction_return_status || "")
     .trim()
     .toLowerCase();
+  // Explicit physical-return statuses must never be remapped to Cancelled.
+  if (status === "returning" || status === "returned") return false;
+  if (/^returning\s*[-–]/i.test(String(row.display_status || ""))) return false;
+  if (/^returned\s*[-–]/i.test(String(row.display_status || ""))) return false;
+
   if (status === "cancelled" || status === "canceled") return true;
   if (row.is_cancel_before_ship === true || Number(row.is_cancel_before_ship) === 1) return true;
   if (row.cancel_unshipped === true || Number(row.cancel_unshipped) === 1) return true;
@@ -1382,8 +1444,13 @@ function isPreShipCancelReturn(row, saleSibling = null) {
 
   const sale = saleSibling && typeof saleSibling === "object" && !isReturnListRow(saleSibling) ? saleSibling : null;
   if (!sale) return false;
-  const shippedCount = parseInt(sale.shipped_item_count, 10);
+
+  // Do not infer a pre-ship cancel once the sale has clear ship/receive evidence.
+  if (saleHasLeftSellerEvidence(sale)) return false;
+
+  const shippedCount = parseInt(sale.shipped_item_count ?? sale.shipped_count ?? sale.items_shipped, 10);
   const shippableCount = parseInt(sale.shippable_item_count ?? sale.unshipped_item_count, 10);
+  // Only infer pre-ship cancel when we positively know nothing has shipped yet.
   if (Number.isFinite(shippedCount) && shippedCount === 0) {
     if ((Number.isFinite(shippableCount) && shippableCount > 0) || orderNeedsShipping(sale) || !!extractShippingAddress(sale)) {
       return true;
@@ -1411,7 +1478,7 @@ function areScopedReturnItemsUnshipped(orderDetail, returnLines) {
     const saleLine = saleLines.find((line) => String(line?.ti_uid || line?.transaction_item_uid || "").trim() === originalTi);
     if (!saleLine) continue;
     matched += 1;
-    if (getLineShippedQty(saleLine) > 0) return false;
+    if (lineHasLeftSeller(saleLine)) return false;
   }
   return matched > 0;
 }
@@ -2014,8 +2081,9 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
   const dateMs = transactionDateMs(row);
   const trrUidEarly = resolveTrrUid(row);
   const listTransactionUid = String(row.transaction_uid || trrUidEarly || "").trim();
-  // Prefer fulfillment fields from account-screen list rows over hydration overrides.
-  const shippingProgressOverride = listRowHasExplicitShippingProgress(row) ? null : (shippingProgressByKey && (shippingProgressByKey[orderUid] || shippingProgressByKey[listTransactionUid])) || null;
+  // Prefer hydrated progress when present — list "Partial" often still counts cancelled units.
+  const shippingProgressOverride =
+    (shippingProgressByKey && (shippingProgressByKey[orderUid] || shippingProgressByKey[listTransactionUid])) || null;
   const statusOverride = getReturnStatusOverrideForRow(returnStatusesByKey, row, orderUid, listTransactionUid);
   const returnLogistics = resolveReturnLogisticsLabels(row, {
     ...statusOverride,
@@ -3985,7 +4053,17 @@ function getLineShippedQty(line) {
 
 function getLineReturnedQty(line) {
   if (!line || typeof line !== "object") return 0;
-  const explicit = parseInt(line.returned_qty ?? line.returned_quantity ?? line.return_quantity_completed, 10);
+  const explicit = parseInt(
+    line.returned_qty ??
+      line.returned_quantity ??
+      line.return_quantity_completed ??
+      line.cancelled_qty ??
+      line.canceled_qty ??
+      line.cancelled_quantity ??
+      line.canceled_quantity ??
+      line.cancel_qty,
+    10,
+  );
   return Number.isFinite(explicit) && explicit > 0 ? explicit : 0;
 }
 
@@ -4120,6 +4198,8 @@ function canSelectReceiptLineForVerification(line, orderRow) {
  * Shipping progress for an order: none | partial | complete | unknown.
  * Works for transaction summary rows and order-detail `sale` objects with `lines`.
  * Lines with fulfillment_status=not_required are ignored.
+ * Cancelled / returned unshipped units do not keep the order in "partial" —
+ * remaining_to_ship (or returned_qty fallback) is the source of truth.
  */
 function getOrderShippingProgress(sources) {
   const rows = Array.isArray(sources) ? sources.filter(Boolean) : sources ? [sources] : [];
@@ -4154,6 +4234,29 @@ function getOrderShippingProgress(sources) {
     return "not_required";
   }
 
+  // Prefer line-level remaining qty when available — summary "partial" often still counts cancelled units.
+  if (scoreLines.length) {
+    let anyRemaining = false;
+    let anyShipped = false;
+    let anyKnownStatus = false;
+    for (const line of scoreLines) {
+      const status = getLineFulfillmentStatus(line);
+      const shippedQty = getLineShippedQty(line);
+      const remaining = getLineRemainingShipQty(line);
+      if (status || isTruthyShippingFlag(line.shipped) || line.ti_shipped_at || line.shipped_at || shippedQty > 0 || remaining > 0) {
+        anyKnownStatus = true;
+      }
+      if (remaining > 0) anyRemaining = true;
+      if (shippedQty > 0) anyShipped = true;
+    }
+    if (!anyRemaining) {
+      // Nothing left to ship (all shipped and/or cancelled before ship).
+      return "complete";
+    }
+    if (anyShipped) return "partial";
+    return anyKnownStatus || rows.some(orderNeedsShipping) ? "none" : "unknown";
+  }
+
   if (Number.isFinite(unshippedCount)) {
     if (unshippedCount <= 0) return "complete";
     if (Number.isFinite(shippedCountField) && shippedCountField > 0) return "partial";
@@ -4173,33 +4276,11 @@ function getOrderShippingProgress(sources) {
   if (txnStatus === "partial" || txnStatus === "partially_shipped") return "partial";
   if (["not_shipped", "pending_shipment", "awaiting_shipment", "unfulfilled"].includes(txnStatus)) return "none";
 
-  if (!scoreLines.length) {
-    // Nested lines present but all not_required → shipping N/A.
-    if (withItemUid.length > 0 && withItemUid.every((line) => !lineRequiresShipping(line))) {
-      return "not_required";
-    }
-    // Summary-only list row (shipping address, no line statuses) → unknown until hydrated from order detail.
-    return "unknown";
+  // Summary-only list row (shipping address, no line statuses) → unknown until hydrated from order detail.
+  if (withItemUid.length > 0 && withItemUid.every((line) => !lineRequiresShipping(line))) {
+    return "not_required";
   }
-
-  let shippedCount = 0;
-  let anyKnownStatus = false;
-  let anyPartialQty = false;
-  for (const line of scoreLines) {
-    const status = getLineFulfillmentStatus(line);
-    const purchased = getLinePurchasedQty(line);
-    const shippedQty = getLineShippedQty(line);
-    if (status || isTruthyShippingFlag(line.shipped) || line.ti_shipped_at || line.shipped_at || shippedQty > 0) anyKnownStatus = true;
-    if (purchased > 0 && shippedQty > 0 && shippedQty < purchased) anyPartialQty = true;
-    if (isLineFullyShipped(line)) shippedCount += 1;
-  }
-
-  if (shippedCount <= 0) {
-    if (anyPartialQty) return "partial";
-    return anyKnownStatus || rows.some(orderNeedsShipping) ? "none" : "unknown";
-  }
-  if (shippedCount >= scoreLines.length) return "complete";
-  return "partial";
+  return "unknown";
 }
 
 /** True when list payload itself has enough fulfillment signal (no order-detail fetch needed). */
@@ -4230,6 +4311,14 @@ function collectOrderUidsNeedingShippingProgressHydration(sellerLines) {
     const orderUid = resolveListRowOrderUid(row);
     if (!orderUid || orderUid === "—") continue;
     if (!orderNeedsShipping(row)) continue;
+    // Always hydrate "partial" — list/API summaries often still count cancelled units as unshipped.
+    const status = String(row.fulfillment_status || row.shipping_status || row.order_fulfillment_status || row.transaction_fulfillment_status || "")
+      .trim()
+      .toLowerCase();
+    if (status === "partial" || status === "partially_shipped") {
+      uids.add(orderUid);
+      continue;
+    }
     if (listRowHasExplicitShippingProgress(row)) continue;
     uids.add(orderUid);
   }
@@ -4299,7 +4388,7 @@ function isPurchaseFullyReceivedByQty(transaction) {
 }
 
 /** Buyer PURCHASES Delivered column — return logistics only on Return rows; Order rows show shipping. */
-function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}) {
+function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}, shippingProgressByKey = null) {
   if (isReturnListRow(transaction)) {
     const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
     if (returnLogistics) return returnLogistics.delivered;
@@ -4309,7 +4398,11 @@ function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}) {
   if (orderFulfillmentIsNotRequired(transaction)) {
     return Number(transaction.transaction_in_escrow) === 1 ? "—" : "Paid";
   }
-  return getOrderDeliveredStatus([transaction]);
+  const orderUid = resolveListRowOrderUid(transaction);
+  const txnUid = String(transaction.transaction_uid || "").trim();
+  const shippingProgressOverride =
+    (shippingProgressByKey && ((orderUid && orderUid !== "—" && shippingProgressByKey[orderUid]) || (txnUid && shippingProgressByKey[txnUid]))) || null;
+  return getOrderDeliveredStatus([transaction], shippingProgressOverride);
 }
 
 /**
@@ -6046,6 +6139,51 @@ export default function AccountScreen({ navigation, route }) {
 
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setTransactionData(normalizedPurchases);
+
+        // Buyer list rows often keep fulfillment_status=partial after a pre-ship cancel.
+        // Hydrate from order detail so Delivered becomes Shipped once remaining items are shipped.
+        const purchaseShipUids = collectOrderUidsNeedingShippingProgressHydration(normalizedPurchases);
+        if (purchaseShipUids.length) {
+          void (async () => {
+            const hydratedShipping = {};
+            const results = await Promise.allSettled(
+              purchaseShipUids.map(async (orderUid) => {
+                const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
+                const progress = getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean));
+                return { orderUid, orderDetail, progress };
+              }),
+            );
+            if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+            for (const result of results) {
+              if (result.status !== "fulfilled") continue;
+              const { orderUid, orderDetail, progress } = result.value;
+              if (progress !== "complete" && progress !== "partial" && progress !== "none") continue;
+              hydratedShipping[orderUid] = progress;
+              const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
+              if (txnUid) hydratedShipping[txnUid] = progress;
+            }
+            if (!Object.keys(hydratedShipping).length) return;
+            setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
+            setTransactionData((prev) =>
+              (prev || []).map((row) => {
+                if (isReturnListRow(row)) return row;
+                const orderUid = resolveListRowOrderUid(row);
+                const txnUid = String(row.transaction_uid || "").trim();
+                const progress = hydratedShipping[orderUid] || hydratedShipping[txnUid];
+                if (progress === "complete") {
+                  return { ...row, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
+                }
+                if (progress === "partial") {
+                  return { ...row, fulfillment_status: "partial", all_items_shipped: 0 };
+                }
+                if (progress === "none") {
+                  return { ...row, fulfillment_status: "not_shipped", all_items_shipped: 0 };
+                }
+                return row;
+              }),
+            );
+          })();
+        }
 
         if (mapped.bounty) {
           setBountyData(mapped.bounty);
@@ -7883,7 +8021,7 @@ export default function AccountScreen({ navigation, route }) {
                                     returnRequested: true,
                                   }
                                 : getReturnStatusOverrideFromCache(returnStatuses, orderUid, txnUid);
-                              const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction, statusOverride);
+                              const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction, statusOverride, orderShippingProgressByKey);
                               const receivedLabel = getBuyerPurchaseReceivedLabel(transaction, statusOverride);
                               const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
                               const canVerifyReceipt = !isReturnRow && showPendingLink && (receivedLabel === "No" || receivedLabel === "Partial");
@@ -8811,8 +8949,13 @@ export default function AccountScreen({ navigation, route }) {
                           const selectedAreUnshipped = selectedReturnItems.every((id) => {
                             const row = lineById[id];
                             if (!row) return false;
-                            const sourceLine = row.line || (Array.isArray(returnModalOrderLines) ? returnModalOrderLines.find((l) => String(l.ti_uid || "").trim() === row.transactionItemUid) : null);
-                            return getLineShippedQty(sourceLine || row) <= 0;
+                            const sourceLine =
+                              row.line ||
+                              (Array.isArray(returnModalOrderLines)
+                                ? returnModalOrderLines.find((l) => String(l.ti_uid || "").trim() === row.transactionItemUid)
+                                : null);
+                            // Already shipped or buyer-verified units are physical returns, not pre-ship cancels.
+                            return !lineHasLeftSeller(sourceLine || row);
                           });
                           const ok = await handleReturnRequest(receiptTransaction, returnNote, transactionReturnItems, {
                             cancel_unshipped: selectedAreUnshipped,
