@@ -13,7 +13,7 @@ import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
-import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
@@ -270,8 +270,8 @@ export default function SettingsScreen() {
   // Define custom questions for the Account page
   const settingsFeedbackQuestions = ["Settings - Question 1?", "Settings - Question 2?", "Settings - Question 3?"];
 
-  //for declined refunds - only show to admins
-  const ADMIN_EMAILS = ["shrutitest20@gmail.com", "admin@everycircle.com", "pmarathay@gmail.com"];
+  // Admin tools — gated by backend user_role === "ADMIN"
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [showAdminSection, setShowAdminSection] = useState(false);
   const [adminReturns, setAdminReturns] = useState([]);
@@ -321,9 +321,34 @@ export default function SettingsScreen() {
   const [businessReviewLoading, setBusinessReviewLoading] = useState(false);
   const [businessReviewSubmitting, setBusinessReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
 
   console.log("In SettingsScreen");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const userUid = ((await AsyncStorage.getItem("user_uid")) || "").trim();
+        if (!userUid) {
+          if (!cancelled) setIsAdmin(false);
+          return;
+        }
+        const response = await fetch(`${USER_INFO_ENDPOINT}/${encodeURIComponent(userUid)}`);
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (!cancelled) setIsAdmin(false);
+          return;
+        }
+        const row = Array.isArray(result?.result) ? result.result[0] : result?.result ?? result?.data ?? result;
+        if (!cancelled) setIsAdmin(row?.user_role === "ADMIN");
+      } catch (_) {
+        if (!cancelled) setIsAdmin(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // on mount, pull saved values
   useEffect(() => {
@@ -339,10 +364,6 @@ export default function SettingsScreen() {
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
       if (isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
-
-      // Load email quickly from AsyncStorage for admin check
-      const storedEmail = await AsyncStorage.getItem("user_email");
-      if (storedEmail) setUserEmail(storedEmail);
 
       try {
         const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
@@ -1711,8 +1732,7 @@ export default function SettingsScreen() {
           </View>
 
           {/* ADMIN Section — only visible to authorized emails */}
-          {console.log("Admin check email:", personalProfileData?.email, "in list:", ADMIN_EMAILS.includes(personalProfileData?.email))}
-          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+          {isAdmin && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.15)", marginTop: 8 }]}
@@ -1843,7 +1863,7 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+          {isAdmin && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.10)", marginTop: 8 }]}
@@ -1935,7 +1955,7 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+          {isAdmin && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.10)", marginTop: 8 }]}
@@ -2000,7 +2020,7 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+          {isAdmin && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(79, 138, 139, 0.12)", marginTop: 8 }]}
@@ -2065,7 +2085,7 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+          {isAdmin && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(106, 27, 154, 0.10)", marginTop: 8 }]}
@@ -2132,7 +2152,7 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+          {isAdmin && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(156, 69, 247, 0.10)", marginTop: 8 }]}
