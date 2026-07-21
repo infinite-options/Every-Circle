@@ -1,5 +1,6 @@
 import { parsePrice } from "./priceUtils";
 import { expertiseCartTaxFields } from "./cartLineTax";
+import { isBusinessShippingApplicable, isCartItemBuyerPaysShipping } from "./businessServiceShipping";
 
 /** Parse offering cost string into unit value and unit suffix (e.g. "total", "/hr"). */
 export function parseOfferingCostParts(costStr) {
@@ -254,23 +255,10 @@ export function isOfferingShippingApplicable(offering) {
 export function isCartItemShippingApplicable(item) {
   if (!item || typeof item !== "object") return false;
   if (item.itemType === "expertise") return isOfferingShippingApplicable(item);
-  if (
-    item.bs_free_shipping === 1 ||
-    item.bs_free_shipping === "1" ||
-    item.bs_free_shipping === true ||
-    item.bs_buyer_pays_shipping === 1 ||
-    item.bs_buyer_pays_shipping === "1" ||
-    item.bs_buyer_pays_shipping === true
-  ) {
-    return true;
-  }
-  // Legacy free/buyer text only counts when both flag fields are unset (same as ProductCard).
-  const freeExplicitOff = item.bs_free_shipping === 0 || item.bs_free_shipping === "0" || item.bs_free_shipping === false;
-  const buyerExplicitOff =
-    item.bs_buyer_pays_shipping === 0 || item.bs_buyer_pays_shipping === "0" || item.bs_buyer_pays_shipping === false;
-  if (freeExplicitOff && buyerExplicitOff) return false;
-  return item.bs_shipping != null && String(item.bs_shipping).trim() !== "";
+  return isBusinessShippingApplicable(item);
 }
+
+export { isCartItemBuyerPaysShipping };
 
 /** Fields to persist on expertise cart items so cart/checkout can recompute correctly. */
 export function expertiseCartPersistedFields(expertiseData, modalData = {}) {

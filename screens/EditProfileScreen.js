@@ -135,31 +135,6 @@ const EditProfileScreen = ({ route, navigation }) => {
   const moderatedExpertiseRef = useRef(initialExpertiseState.moderated);
   const moderatedOfferingCount = initialExpertiseState.moderated.length;
 
-  const emptyWishEntry = {
-    helpNeeds: "",
-    details: "",
-    amount: "",
-    cost: "",
-    profile_wish_quantity: "",
-    profile_wish_image: "",
-    profile_wish_image_is_public: 1,
-    profile_wish_start: "",
-    profile_wish_end: "",
-    profile_wish_bounty_type: "none",
-    profile_wish_location: "",
-    profile_wish_latitude: null,
-    profile_wish_longitude: null,
-    profile_wish_city: "",
-    profile_wish_state: "",
-    profile_wish_mode: "",
-    isPublic: true,
-    _wishNewImageUri: "",
-    _wishWebImageFile: null,
-    _wishOriginalImage: "",
-    _wishDeleteImageUrl: "",
-    _wishImageError: false,
-  };
-
   const initialWishState = (() => {
     const uid = initialFormProfileUid;
     const mapped = (user?.wishes || []).map((w) => mapProfileWishToFormItem(w, uid));
@@ -169,7 +144,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     const editable = mapped.filter((w) => !isSeekingModeratedBlocked(w));
     return {
       moderated,
-      wishes: editable.length > 0 ? editable : mapped.length === 0 ? [emptyWishEntry] : [],
+      wishes: editable.length > 0 ? editable : [],
     };
   })();
   const moderatedWishesRef = useRef(initialWishState.moderated);

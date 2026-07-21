@@ -17,6 +17,8 @@ const StripeFeesDialog = ({
   /** Shopping cart: per-line tax + optional buyer-paid card fee. */
   merchandiseSubtotal,
   salesTaxTotal,
+  shippingSubtotal,
+  hasActualShipping,
   cardProcessingFee,
   buyerPaysCardFee,
 }) => {
@@ -32,6 +34,7 @@ const StripeFeesDialog = ({
     !hasCartBreakdown && subtotal != null && totalWithFee != null && Number.isFinite(Number(subtotal)) && Number.isFinite(Number(totalWithFee));
 
   const legacyFee = hasLegacyBreakdown ? (Number(totalWithFee) - Number(subtotal)).toFixed(2) : null;
+  const showShipping = hasCartBreakdown && typeof shippingSubtotal === "number" && (shippingSubtotal > 0 || hasActualShipping);
 
   const payeeTrimmed =
     typeof payeeBusinessName === "string" && payeeBusinessName.trim() !== "" ? payeeBusinessName.trim() : null;
@@ -60,6 +63,21 @@ const StripeFeesDialog = ({
                   <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Sales tax:</Text>
                   <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${salesTaxTotal.toFixed(2)}</Text>
                 </View>
+                {showShipping ? (
+                  <>
+                    {shippingSubtotal > 0 || !hasActualShipping ? (
+                      <View style={styles.breakdownRow}>
+                        <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Shipping:</Text>
+                        <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${Number(shippingSubtotal || 0).toFixed(2)}</Text>
+                      </View>
+                    ) : null}
+                    {hasActualShipping ? (
+                      <Text style={[styles.waivedNote, darkMode && styles.darkWaivedNote]}>
+                        Actual shipping is $0.00 at checkout — the seller will contact you directly.
+                      </Text>
+                    ) : null}
+                  </>
+                ) : null}
                 <View style={styles.breakdownRow}>
                   <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Credit card processing (3%):</Text>
                   <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${cardProcessingFee.toFixed(2)}</Text>

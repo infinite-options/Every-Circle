@@ -528,7 +528,12 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
   const row = (label, valueText) => (
     <View key={label} style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 5, paddingHorizontal: 2 }}>
       <Text style={{ fontSize: 12, color: labelColor, flex: 1, paddingRight: 8 }}>{label}</Text>
-      <Text style={{ fontSize: 12, fontWeight: "600", color: valueColor }}>{valueText}</Text>
+      <Text
+        style={{ fontSize: 12, fontWeight: "600", color: valueColor, flexShrink: 0, ...(Platform.OS === "web" ? { whiteSpace: "nowrap" } : {}) }}
+        numberOfLines={1}
+      >
+        {valueText}
+      </Text>
     </View>
   );
 
@@ -977,6 +982,7 @@ function mergePendingReturnEstimates(pendings) {
 
   let subtotal = 0;
   let taxes = 0;
+  let shipping = 0;
   let fees = 0;
   let totalCredit = 0;
   let bounty = 0;
@@ -987,6 +993,7 @@ function mergePendingReturnEstimates(pendings) {
     const est = pending.estimated_refund || {};
     subtotal += Math.abs(parseOrderMoneyField(est.subtotal) || 0);
     taxes += Math.abs(parseOrderMoneyField(est.taxes ?? est.transaction_taxes) || 0);
+    shipping += Math.abs(parseOrderMoneyField(est.shipping_refund ?? est.returned_shipping ?? est.shipping) || 0);
     fees += Math.abs(parseOrderMoneyField(est.fees_allocated ?? est.fees) || 0);
     totalCredit += Math.abs(parseOrderMoneyField(est.total_customer_credit ?? est.total) || 0);
     bounty += Math.abs(parseOrderMoneyField(pending.bounty_to_reclaim) || 0);
@@ -1005,6 +1012,7 @@ function mergePendingReturnEstimates(pendings) {
       ...(list[0].estimated_refund || {}),
       subtotal: subtotal || list[0].estimated_refund?.subtotal,
       taxes: taxes || list[0].estimated_refund?.taxes,
+      shipping_refund: shipping || list[0].estimated_refund?.shipping_refund || list[0].estimated_refund?.shipping,
       fees_allocated: fees || list[0].estimated_refund?.fees_allocated,
       total_customer_credit: totalCredit || list[0].estimated_refund?.total_customer_credit,
       total: totalCredit || list[0].estimated_refund?.total,
@@ -2635,6 +2643,8 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
         const calculatedRemaining = Math.max(0, purchasedQty - unavailableQty);
         const remainingQty = Number.isFinite(explicitRemaining) ? Math.min(explicitRemaining, calculatedRemaining) : calculatedRemaining;
         const eligibility = resolveLineReturnEligibility(line);
+        const shippedOnLine = Math.min(purchasedQty, getLineShippedQty(line));
+        const unshippedOnLine = Math.max(0, purchasedQty - shippedOnLine);
         return {
           itemId: transactionItemUid,
           itemName: line.item_name || "Item",
@@ -2642,7 +2652,8 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
           purchasedQty,
           remainingQty,
           transactionItemUid,
-          shippedQty: getLineShippedQty(line),
+          shippedQty: shippedOnLine,
+          unshippedOnLine,
           returnEligible: eligibility.eligible,
           returnIneligibleReason: eligibility.reason,
           line,
@@ -2659,6 +2670,8 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
     const alreadyReturnedQty = Math.max(localRequestedQty, backendUnavailableQty);
     const remainingQty = Math.max(0, purchasedQty - alreadyReturnedQty);
     const eligibility = resolveLineReturnEligibility(item);
+    const shippedOnLine = Math.min(purchasedQty, getLineShippedQty(item));
+    const unshippedOnLine = Math.max(0, purchasedQty - shippedOnLine);
     return {
       itemId: String(index),
       itemName: item.bs_service_name || "Item",
@@ -2667,6 +2680,8 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
       remainingQty,
       transactionItemUid,
       receiptIndex: index,
+      shippedQty: shippedOnLine,
+      unshippedOnLine,
       returnEligible: eligibility.eligible,
       returnIneligibleReason: eligibility.reason,
       line: item,
@@ -2674,24 +2689,235 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
   });
 }
 
+function getReturnModalLineFulfillmentCaps(row) {
+  const line = row?.line || row;
+  const purchasedQty = Math.max(0, row?.purchasedQty ?? getLinePurchasedQty(line));
+  const remainingQty = Math.max(0, row?.remainingQty ?? 0);
+  const shippedOnLine = Math.min(purchasedQty, row?.shippedQty ?? getLineShippedQty(line));
+  const unshippedOnLine = Math.max(0, row?.unshippedOnLine ?? purchasedQty - shippedOnLine);
+  const hasMixedFulfillment = shippedOnLine > 0 && unshippedOnLine > 0 && remainingQty > 0;
+  return {
+    purchasedQty,
+    remainingQty,
+    shippedOnLine,
+    unshippedOnLine,
+    hasMixedFulfillment,
+    allShipped: shippedOnLine > 0 && unshippedOnLine <= 0,
+    allUnshipped: shippedOnLine <= 0 && unshippedOnLine > 0,
+    maxReturnShippedQty: Math.min(remainingQty, shippedOnLine),
+    maxCancelUnshippedQty: Math.min(remainingQty, unshippedOnLine),
+  };
+}
+
+function normalizeReturnItemSplitQty(split, caps) {
+  const shipped = Math.max(0, parseInt(split?.shipped, 10) || 0);
+  const unshipped = Math.max(0, parseInt(split?.unshipped, 10) || 0);
+  let s = Math.min(shipped, caps.maxReturnShippedQty);
+  let u = Math.min(unshipped, caps.maxCancelUnshippedQty);
+  if (s + u > caps.remainingQty) {
+    u = Math.max(0, Math.min(u, caps.remainingQty - s));
+    s = Math.max(0, Math.min(s, caps.remainingQty - u));
+  }
+  if (s + u < 1 && caps.remainingQty > 0) {
+    if (caps.allUnshipped) u = Math.min(1, caps.maxCancelUnshippedQty);
+    else if (caps.allShipped || caps.hasMixedFulfillment) s = Math.min(1, caps.maxReturnShippedQty);
+    else u = Math.min(1, caps.maxCancelUnshippedQty);
+  }
+  return { shipped: s, unshipped: u };
+}
+
+function initialReturnItemSplitQty(row) {
+  const caps = getReturnModalLineFulfillmentCaps(row);
+  if (caps.hasMixedFulfillment) {
+    return { shipped: 0, unshipped: Math.min(1, caps.maxCancelUnshippedQty) };
+  }
+  if (caps.allUnshipped) {
+    return { shipped: 0, unshipped: Math.min(1, caps.remainingQty) };
+  }
+  return { shipped: Math.min(1, caps.remainingQty), unshipped: 0 };
+}
+
+function isReturnItemSplitValid(row, split) {
+  const caps = getReturnModalLineFulfillmentCaps(row);
+  if (caps.remainingQty <= 0) return false;
+  const { shipped, unshipped } = normalizeReturnItemSplitQty(split, caps);
+  if (shipped + unshipped < 1) return false;
+  if (shipped + unshipped > caps.remainingQty) return false;
+  if (shipped > caps.maxReturnShippedQty || unshipped > caps.maxCancelUnshippedQty) return false;
+  return true;
+}
+
+function buildTransactionReturnItemPayload(row, split) {
+  const caps = getReturnModalLineFulfillmentCaps(row);
+  const { shipped, unshipped } = normalizeReturnItemSplitQty(split, caps);
+  return {
+    transaction_item_uid: row.transactionItemUid,
+    return_quantity: shipped + unshipped,
+    return_shipped_qty: shipped,
+    cancel_unshipped_qty: unshipped,
+    item_name: row.itemName || undefined,
+    bs_service_name: row.itemName || undefined,
+  };
+}
+
+function resolveReturnRequestCancelFlags(transactionReturnItems) {
+  const items = Array.isArray(transactionReturnItems) ? transactionReturnItems : [];
+  const hasCancelUnshipped = items.some((item) => (parseInt(item.cancel_unshipped_qty, 10) || 0) > 0);
+  const hasShippedReturn = items.some((item) => (parseInt(item.return_shipped_qty, 10) || 0) > 0);
+  const cancelOnly = hasCancelUnshipped && !hasShippedReturn && items.every((item) => (parseInt(item.return_shipped_qty, 10) || 0) === 0);
+  return { hasCancelUnshipped, hasShippedReturn, cancelOnly };
+}
+
 function parseOrderMoneyField(value) {
   const n = parseFloat(value);
   return Number.isFinite(n) ? n : 0;
 }
 
+const ORDER_TRANSACTION_SHIPPING_KEYS = ["transaction_shipping", "total_shipping", "shipping_amount", "shipping_cost", "shipping"];
+
+function parseOrderTransactionShipping(source, fallback) {
+  const value = receiptMoneyFromSources(source, fallback, ORDER_TRANSACTION_SHIPPING_KEYS);
+  return value != null ? value : null;
+}
+
+const ORDER_LINE_SHIPPING_TOTAL_KEYS = ["ti_shipping_total", "line_shipping_total", "shipping_total", "ti_total_shipping", "total_line_shipping"];
+const ORDER_LINE_SHIPPING_UNIT_KEYS = ["ti_shipping_unit", "shipping_unit", "ti_shipping_per_unit", "unit_shipping"];
+const ORDER_LINE_SHIPPING_KEYS = [
+  "ti_shipping_amount",
+  "line_shipping",
+  "shipping_amount",
+  "shipping_cost",
+  "shipping",
+  "ti_shipping",
+  "ti_shipping_cost",
+  "item_shipping",
+];
+
+/** Per-line shipping charged on an order detail row (line total, not unit merchandise). */
+function getOrderLineShippingAmount(line, qty = 1) {
+  if (!line || typeof line !== "object") return null;
+  for (const key of ORDER_LINE_SHIPPING_TOTAL_KEYS) {
+    const total = receiptMoneyNullable(line[key]);
+    if (total != null) return total;
+  }
+  const safeQty = Math.max(1, parseInt(qty, 10) || 1);
+  for (const key of ORDER_LINE_SHIPPING_UNIT_KEYS) {
+    const unit = receiptMoneyNullable(line[key]);
+    if (unit != null) return unit * safeQty;
+  }
+  for (const key of ORDER_LINE_SHIPPING_KEYS) {
+    const amount = receiptMoneyNullable(line[key]);
+    if (amount != null) return amount;
+  }
+  return null;
+}
+
+const ORDER_LINE_SHIPPING_REFUNDABLE_KEYS = [
+  "ti_bs_shipping_refundable",
+  "bs_shipping_refundable",
+  "shipping_refundable",
+  "ti_shipping_refundable",
+  "is_shipping_refundable",
+];
+
+function isLineShippingRefundable(line) {
+  if (!line || typeof line !== "object") return false;
+  for (const key of ORDER_LINE_SHIPPING_REFUNDABLE_KEYS) {
+    const v = line[key];
+    if (v === true || v === 1 || v === "1") return true;
+    if (v === false || v === 0 || v === "0") return false;
+  }
+  return false;
+}
+
+/** Return-line qty that never shipped (backend may override with return_unshipped_qty). */
+function getReturnLineUnshippedQty(line, returnQtyOverride) {
+  if (!line || typeof line !== "object") return 0;
+  const returnQty = Math.max(0, parseInt(returnQtyOverride ?? line?.return_quantity ?? line?.ti_bs_qty, 10) || 0);
+  if (returnQty <= 0) return 0;
+  for (const key of ["return_unshipped_qty", "unshipped_return_qty", "cancel_unshipped_qty", "ti_return_unshipped_qty"]) {
+    const explicit = parseInt(line[key], 10);
+    if (Number.isFinite(explicit) && explicit >= 0) return Math.min(returnQty, explicit);
+  }
+  const purchasedQty = Math.max(1, getLinePurchasedQty(line) || 1);
+  const shippedQty = Math.min(purchasedQty, getLineShippedQty(line));
+  const unshippedOnLine = Math.max(0, purchasedQty - shippedQty);
+  return Math.min(returnQty, unshippedOnLine);
+}
+
+/** Flat buyer shipping charged on the line at checkout (not prorated by return qty). */
+function getReturnLineFlatShippingAmount(line) {
+  const purchasedQty = Math.max(1, getLinePurchasedQty(line) || 1);
+  const lineShipping = getOrderLineShippingAmount(line, purchasedQty);
+  if (lineShipping == null || lineShipping <= 0) return 0;
+  return Math.round(lineShipping * 100) / 100;
+}
+
+/**
+ * Refundable shipping for a return line — flat per product line (never prorated by qty).
+ * - Post-delivery returns: honor ti_shipping_refundable when return_shipped_qty / return_quantity > 0.
+ * - Pre-ship cancel: full line shipping when cancel_unshipped_qty > 0, even if not refundable.
+ */
+function getReturnLineRefundableShippingAmount(line, returnQtyOverride) {
+  const returnQty = Math.max(0, parseInt(returnQtyOverride ?? line?.return_quantity ?? line?.ti_bs_qty, 10) || 0);
+  if (returnQty <= 0) return 0;
+
+  const lineShipping = getReturnLineFlatShippingAmount(line);
+  if (lineShipping <= 0) return 0;
+
+  const explicitShippedReturn = parseInt(line?.return_shipped_qty ?? line?.ti_return_shipped_qty, 10);
+  const explicitCancelUnshipped = parseInt(line?.cancel_unshipped_qty ?? line?.ti_cancel_unshipped_qty, 10);
+  const hasExplicitSplit =
+    (Number.isFinite(explicitShippedReturn) && explicitShippedReturn >= 0) || (Number.isFinite(explicitCancelUnshipped) && explicitCancelUnshipped >= 0);
+
+  if (hasExplicitSplit) {
+    const cancelUnshippedQty = Number.isFinite(explicitCancelUnshipped) && explicitCancelUnshipped >= 0 ? explicitCancelUnshipped : 0;
+    if (isLineShippingRefundable(line)) {
+      return returnQty > 0 ? lineShipping : 0;
+    }
+    return cancelUnshippedQty > 0 ? lineShipping : 0;
+  }
+
+  if (isLineShippingRefundable(line)) return lineShipping;
+
+  const unshippedReturnQty = getReturnLineUnshippedQty(line, returnQty);
+  return unshippedReturnQty > 0 ? lineShipping : 0;
+}
+
+function parseReturnRefundShippingFromSource(source, keys = ["shipping_refund", "returned_shipping", "refund_shipping", "transaction_shipping", "total_shipping", "shipping_amount"]) {
+  if (!source || typeof source !== "object") return null;
+  for (const key of keys) {
+    const n = receiptMoneyNullable(source[key]);
+    if (n != null) return Math.abs(n);
+  }
+  return null;
+}
+
+function parseEstimatedRefundShipping(estimated) {
+  return parseReturnRefundShippingFromSource(estimated, ["shipping_refund", "returned_shipping", "refund_shipping"]);
+}
+
+function formatOrderShippingCell(value, signedRows) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return signedRows ? formatSignedOrderMoney(value) : formatOrderMoney(value);
+}
+
 function buildOrderDetailFinancialBreakdown(sale, returns, summary) {
   const saleAmount = parseOrderMoneyField(sale?.transaction_amount);
   const saleTaxes = parseOrderMoneyField(sale?.transaction_taxes);
+  const saleShipping = parseOrderTransactionShipping(sale, summary) ?? 0;
   const saleFees = parseOrderMoneyField(sale?.transaction_fees);
   const saleTotal = parseOrderMoneyField(sale?.transaction_total) || parseOrderMoneyField(summary?.gross_total);
 
   let returnedAmount = 0;
   let returnedTaxes = 0;
+  let returnedShipping = 0;
   let returnedFees = 0;
   let returnedTotal = 0;
   for (const ret of returns || []) {
     returnedAmount += parseOrderMoneyField(ret.transaction_amount);
     returnedTaxes += parseOrderMoneyField(ret.transaction_taxes);
+    returnedShipping += parseOrderTransactionShipping(ret, null) ?? 0;
     returnedFees += parseOrderMoneyField(ret.transaction_fees);
     returnedTotal += parseOrderMoneyField(ret.transaction_total);
   }
@@ -2699,20 +2925,24 @@ function buildOrderDetailFinancialBreakdown(sale, returns, summary) {
   const hasReturns = (returns || []).length > 0;
   const netAmount = saleAmount + returnedAmount;
   const netTaxes = saleTaxes + returnedTaxes;
+  const netShipping = saleShipping + returnedShipping;
   const netFees = saleFees + returnedFees;
   const netTotal = parseOrderMoneyField(summary?.net_total) || saleTotal + returnedTotal;
 
   return {
     saleAmount,
     saleTaxes,
+    saleShipping,
     saleFees,
     saleTotal,
     returnedAmount,
     returnedTaxes,
+    returnedShipping,
     returnedFees,
     returnedTotal: parseOrderMoneyField(summary?.returned_total) || returnedTotal,
     netAmount,
     netTaxes,
+    netShipping,
     netFees,
     netTotal,
     hasReturns,
@@ -2731,7 +2961,13 @@ function mapPendingReturnItemsToLines(pendingItems, saleLines = []) {
     .map((item) => {
       const uid = String(item.transaction_item_uid || item.ti_uid || "").trim();
       const base = byUid[uid] || {};
-      const qty = Math.max(1, parseInt(item.return_quantity ?? item.quantity ?? item.qty, 10) || 1);
+      const shippedReturnQty = Math.max(0, parseInt(item.return_shipped_qty ?? item.shipped_return_qty, 10) || 0);
+      const cancelUnshippedQty = Math.max(0, parseInt(item.cancel_unshipped_qty ?? item.return_unshipped_qty, 10) || 0);
+      const explicitTotal = shippedReturnQty + cancelUnshippedQty;
+      const qty = Math.max(
+        1,
+        parseInt(item.return_quantity ?? item.quantity ?? item.qty, 10) || explicitTotal || 1,
+      );
       const purchasedQty = Math.max(qty, parseInt(base.ti_bs_qty ?? base.purchased_qty ?? item.purchased_qty, 10) || qty);
       const itemName = resolveLineItemDisplayName(item) || resolveLineItemDisplayName(base) || "Item";
       return {
@@ -2744,6 +2980,8 @@ function mapPendingReturnItemsToLines(pendingItems, saleLines = []) {
         ti_bs_cost: item.ti_bs_cost ?? base.ti_bs_cost,
         return_quantity: qty,
         ti_bs_qty: qty,
+        return_shipped_qty: item.return_shipped_qty ?? item.shipped_return_qty,
+        cancel_unshipped_qty: item.cancel_unshipped_qty ?? item.return_unshipped_qty,
         purchased_qty: purchasedQty,
         ti_purchased_qty: purchasedQty,
       };
@@ -2827,6 +3065,7 @@ function buildReturnDetailDisplayItems(orderDetail, bountyRows = [], scope = nul
       choicesExtraCost: parseFloat(line.choices_extra_cost ?? line.ti_choices_extra_cost ?? 0) || 0,
     };
     const bountyAmounts = resolveReturnLineBountyAmounts(line, qty, bountyRows, transactionUid);
+    const refundableShipping = getReturnLineRefundableShippingAmount(line, qty);
 
     return {
       key,
@@ -2836,6 +3075,7 @@ function buildReturnDetailDisplayItems(orderDetail, bountyRows = [], scope = nul
       unitCost,
       baseCost,
       lineTotal,
+      refundableShipping,
       lineBounty: bountyAmounts.lineBounty,
       earnedShare: bountyAmounts.earnedShare,
       bountyPaidReversed: bountyAmounts.bountyPaidReversed,
@@ -2856,6 +3096,14 @@ function buildReturnDetailDisplayItems(orderDetail, bountyRows = [], scope = nul
 function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, returns, pendingReturn } = {}) {
   const asNegative = (n) => (n === 0 ? 0 : -Math.abs(n));
   const itemMerchandise = (items || []).reduce((sum, item) => sum + (Number(item.lineTotal) || 0), 0);
+  const itemShippingRefund = (items || []).reduce((sum, item) => sum + (Number(item.refundableShipping) || 0), 0);
+  const itemShippingFromLines = (items || []).reduce((sum, item) => {
+    if (item.line && typeof item.line === "object") {
+      return sum + getReturnLineRefundableShippingAmount(item.line, item.qty);
+    }
+    return sum;
+  }, 0);
+  const computedShippingRefund = itemShippingRefund > 0 ? itemShippingRefund : itemShippingFromLines;
   // Prefer seller bounty_paid reversed (Orders Bounty column), else pool bounty.
   const itemBounty = (items || []).reduce((sum, item) => sum + (Number(item.bountyPaidReversed) || Number(item.lineBounty) || 0), 0);
 
@@ -2866,14 +3114,19 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   const pendingTaxes = parseOrderMoneyField(estimated?.taxes ?? estimated?.transaction_taxes);
   const pendingFees = parseOrderMoneyField(estimated?.fees_allocated ?? estimated?.fees);
   const pendingBounty = parseOrderMoneyField(pending?.bounty_to_reclaim);
+  const pendingShippingRefund = parseEstimatedRefundShipping(estimated) ?? computedShippingRefund;
   if (pending && (pendingCredit || pendingSubtotal || pendingBounty)) {
-    const amount = asNegative(pendingSubtotal || Math.max(0, pendingCredit - pendingTaxes - pendingFees) || itemMerchandise);
+    const amount = asNegative(pendingSubtotal || Math.max(0, pendingCredit - pendingTaxes - pendingFees - pendingShippingRefund) || itemMerchandise);
     const taxes = asNegative(pendingTaxes);
+    const shipping = asNegative(pendingShippingRefund);
     const bounty = asNegative(pendingBounty || itemBounty);
-    const total = pendingCredit ? asNegative(pendingCredit) : asNegative(Math.abs(amount) + Math.abs(taxes) + Math.abs(pendingFees));
+    const total = pendingCredit
+      ? asNegative(pendingCredit)
+      : asNegative(Math.abs(amount) + Math.abs(taxes) + Math.abs(shipping) + Math.abs(pendingFees));
     return {
       amount,
       taxes,
+      shipping,
       bounty,
       total,
       returnTxnUids: [],
@@ -2884,13 +3137,15 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   if (refundBreakdown && typeof refundBreakdown === "object") {
     const amount = asNegative(parseOrderMoneyField(refundBreakdown.amount ?? refundBreakdown.merchandise ?? refundBreakdown.transaction_amount ?? itemMerchandise) || itemMerchandise);
     const taxes = asNegative(parseOrderMoneyField(refundBreakdown.taxes ?? refundBreakdown.transaction_taxes));
+    const shippingRefund = parseEstimatedRefundShipping(refundBreakdown) ?? parseReturnRefundShippingFromSource(refundBreakdown) ?? computedShippingRefund;
+    const shipping = asNegative(shippingRefund);
     const bounty = asNegative(parseOrderMoneyField(refundBreakdown.bounty ?? refundBreakdown.bounty_paid ?? itemBounty) || itemBounty);
     return {
       amount,
       taxes,
+      shipping,
       bounty,
-      // Card refund = merchandise + tax only (bounty is not part of the charge).
-      total: asNegative(Math.abs(amount) + Math.abs(taxes)),
+      total: asNegative(Math.abs(amount) + Math.abs(taxes) + Math.abs(shipping)),
       returnTxnUids: refundBreakdown.return_transaction_uid ? [String(refundBreakdown.return_transaction_uid)] : [],
       isEstimate: false,
     };
@@ -2900,11 +3155,14 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   if (returnRows.length > 0) {
     let amount = 0;
     let taxes = 0;
+    let shipping = 0;
     let bounty = 0;
     const txnIds = [];
     for (const ret of returnRows) {
       amount += parseOrderMoneyField(ret.transaction_amount);
       taxes += parseOrderMoneyField(ret.transaction_taxes);
+      const retShipping = parseReturnRefundShippingFromSource(ret) ?? parseOrderTransactionShipping(ret, null);
+      if (retShipping != null) shipping += retShipping;
       bounty += parseOrderMoneyField(ret.bounty_paid ?? ret.transaction_bounty ?? ret.total_bounty ?? ret.bounty);
       if (ret.transaction_uid) txnIds.push(String(ret.transaction_uid));
     }
@@ -2913,11 +3171,14 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
     amount = amount > 0 ? -amount : amount;
     taxes = taxes > 0 ? -taxes : taxes;
     bounty = bounty > 0 ? -bounty : bounty;
+    const shippingRefund = shipping > 0 ? shipping : computedShippingRefund;
+    const shippingOut = shippingRefund === 0 ? 0 : shipping < 0 ? shipping : asNegative(shippingRefund);
     return {
       amount,
       taxes,
+      shipping: shippingOut,
       bounty,
-      total: asNegative(Math.abs(amount) + Math.abs(taxes)),
+      total: asNegative(Math.abs(amount) + Math.abs(taxes) + Math.abs(shippingOut)),
       returnTxnUids: txnIds,
       isEstimate: false,
     };
@@ -2935,11 +3196,14 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
     }
   }
 
+  const shippingRefund = computedShippingRefund;
+
   return {
     amount: asNegative(itemMerchandise),
     taxes: asNegative(taxes),
+    shipping: asNegative(shippingRefund),
     bounty: asNegative(itemBounty),
-    total: asNegative(itemMerchandise + taxes),
+    total: asNegative(itemMerchandise + taxes + shippingRefund),
     returnTxnUids: [],
     isEstimate: true,
   };
@@ -2964,6 +3228,7 @@ function OrderDetailFinancialSummary({ sale, returns, summary, darkMode }) {
       {breakdown.hasReturns ? sectionTitle("Original order") : null}
       {row("Merchandise (subtotal)", breakdown.saleAmount)}
       {row("Sales tax", breakdown.saleTaxes)}
+      {row("Shipping", breakdown.saleShipping)}
       {row("Credit card fees", breakdown.saleFees)}
       {breakdown.hasReturns ? row("Order total", breakdown.saleTotal, { emphasize: true }) : null}
 
@@ -2972,11 +3237,13 @@ function OrderDetailFinancialSummary({ sale, returns, summary, darkMode }) {
           {sectionTitle("Returns")}
           {row("Returned merchandise", breakdown.returnedAmount, { signed: true })}
           {row("Returned sales tax", breakdown.returnedTaxes, { signed: true })}
+          {row("Returned shipping", breakdown.returnedShipping, { signed: true })}
           {row("Returned credit card fees", breakdown.returnedFees, { signed: true })}
           {row("Returned total", breakdown.returnedTotal, { signed: true, emphasize: true })}
           {sectionTitle("Net after returns")}
           {row("Net merchandise", breakdown.netAmount, { signed: breakdown.netAmount < 0 })}
           {row("Net sales tax", breakdown.netTaxes, { signed: breakdown.netTaxes < 0 })}
+          {row("Net shipping", breakdown.netShipping, { signed: breakdown.netShipping < 0 })}
           {row("Net credit card fees", breakdown.netFees, { signed: breakdown.netFees < 0 })}
         </>
       ) : null}
@@ -3038,6 +3305,8 @@ function OrderDetailLinesTable({
     const specialInstructions = enrichment?.specialInstructions || String(line.special_instructions ?? line.ti_special_instructions ?? "").trim();
     const unitCost = Math.abs(getReceiptLineUnitPrice(line, enrichment) || parseFloat(line.ti_bs_cost) || 0);
     const lineTotal = unitCost * qty;
+    const rawLineShipping = getOrderLineShippingAmount(line, qty);
+    const lineShipping = rawLineShipping == null ? null : Math.abs(rawLineShipping);
     const bountyAmounts = resolveReturnLineBountyAmounts(line, qty || 1, bountyRows, transactionUid);
     const bountyAmount = isSellerView ? bountyAmounts.bountyPaidReversed || bountyAmounts.lineBounty || 0 : bountyAmounts.lineBounty || bountyAmounts.bountyPaidReversed || 0;
     const shareAmount = Math.abs(bountyAmounts.earnedShare || 0);
@@ -3051,6 +3320,7 @@ function OrderDetailLinesTable({
     const displayQty = signedRows ? -qty : qty;
     const displayUnitCost = signedRows ? -unitCost : unitCost;
     const displayLineTotal = signedRows ? -lineTotal : lineTotal;
+    const displayLineShipping = lineShipping == null ? null : signedRows ? -lineShipping : lineShipping;
     const displayBounty = signedRows ? -Math.abs(bountyAmount) : Math.abs(bountyAmount);
     const displayShare = signedRows ? -shareAmount : shareAmount;
     const fulfillment = includeFulfillment ? formatLineFulfillmentDisplay(line) : null;
@@ -3067,6 +3337,7 @@ function OrderDetailLinesTable({
       bountyPctLabel,
       share: displayShare,
       lineTotal: displayLineTotal,
+      lineShipping: displayLineShipping,
       shippedStatus: fulfillment?.statusLabel || "—",
       tracking: fulfillment?.trackingLabel || "—",
       trackingPairs: fulfillment?.trackingPairs || [],
@@ -3113,6 +3384,9 @@ function OrderDetailLinesTable({
           </Text>
           <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColMoney]} numberOfLines={1}>
             Line Total
+          </Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColShipping]} numberOfLines={1}>
+            Shipping
           </Text>
           <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColBounty]} numberOfLines={1}>
             Bounty
@@ -3166,8 +3440,13 @@ function OrderDetailLinesTable({
               <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
                 {formatCellAmount(row.unitCost)}
               </Text>
-              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>{formatCellAmount(row.lineTotal)}</Text>
-              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBounty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
+              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]} numberOfLines={1}>
+                {formatCellAmount(row.lineTotal)}
+              </Text>
+              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColShipping, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]} numberOfLines={1}>
+                {formatOrderShippingCell(row.lineShipping, signedRows)}
+              </Text>
+              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBounty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]} numberOfLines={1}>
                 {Math.abs(row.bounty) > 0 ? formatCellAmount(row.bounty) : "—"}
               </Text>
               {showBuyerShareColumns ? (
@@ -3270,6 +3549,7 @@ function OrderDetailLinesTable({
             >
               {formatFooterAmount(footerValue)}
             </Text>
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColShipping]} />
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBounty]} />
             {showBuyerShareColumns ? (
               <>
@@ -3857,6 +4137,7 @@ function ReturnDetailsModal({
                 ) : null}
                 {moneyRow("Returned items", reverse.amount)}
                 {moneyRow("Sales tax", reverse.taxes)}
+                {moneyRow("Shipping", reverse.shipping ?? 0)}
                 <View style={[styles.orderDetailSummaryRow, styles.orderDetailSummaryRowTotal]}>
                   <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>{isSellerView ? "Refund total" : "Refund you should expect"}</Text>
                   <Text style={[styles.orderDetailSummaryValue, styles.orderDetailSummaryNet, { color: "#B71C1C" }]}>{formatSignedOrderMoney(reverse.total)}</Text>
@@ -4076,7 +4357,8 @@ function lineRequiresShipping(line) {
 }
 
 function getLinePurchasedQty(line) {
-  return Math.max(0, parseInt(line?.ti_bs_qty, 10) || 0);
+  const qty = parseInt(line?.purchased_qty ?? line?.ti_purchased_qty ?? line?.original_qty ?? line?.ti_bs_qty, 10);
+  return Number.isFinite(qty) && qty >= 0 ? qty : 0;
 }
 
 function getLineShippedQty(line) {
@@ -4372,6 +4654,12 @@ function getOrderShippingProgress(sources) {
     return "complete";
   }
   if (txnStatus === "partial" || txnStatus === "partially_shipped") return "partial";
+  // Summary status can stay not_shipped while individual lines are partially shipped.
+  if (Number.isFinite(shippedCountField) && shippedCountField > 0) {
+    if (Number.isFinite(unshippedCount) && unshippedCount > 0) return "partial";
+    if (Number.isFinite(shippableCount) && shippedCountField < shippableCount) return "partial";
+    return "complete";
+  }
   if (["not_shipped", "pending_shipment", "awaiting_shipment", "unfulfilled"].includes(txnStatus)) return "none";
 
   // Summary-only list row (shipping address, no line statuses) → unknown until hydrated from order detail.
@@ -4506,14 +4794,27 @@ function collectOrderUidsNeedingShippingProgressHydration(sellerLines) {
     const orderUid = resolveListRowOrderUid(row);
     if (!orderUid || orderUid === "—") continue;
     if (!orderNeedsShipping(row)) continue;
-    // Always hydrate "partial" — list/API summaries often still count cancelled units as unshipped.
     const status = String(row.fulfillment_status || row.shipping_status || row.order_fulfillment_status || row.transaction_fulfillment_status || "")
       .trim()
       .toLowerCase();
+    // Always hydrate partial/mixed from order detail — list summaries often lag line-level ship qty.
     if (status === "partial" || status === "partially_shipped") {
       uids.add(orderUid);
       continue;
     }
+    // Order-level not_shipped is often stale once any line has shipped_qty > 0.
+    if (["not_shipped", "pending_shipment", "awaiting_shipment", "unfulfilled", "ready_to_ship"].includes(status)) {
+      uids.add(orderUid);
+      continue;
+    }
+    const shippedCount = parseInt(row.shipped_item_count ?? row.shipped_count ?? row.items_shipped, 10);
+    const unshippedCount = parseInt(row.unshipped_item_count ?? row.unshipped_count ?? row.items_unshipped ?? row.open_shipping_count, 10);
+    if (Number.isFinite(shippedCount) && Number.isFinite(unshippedCount) && shippedCount > 0 && unshippedCount > 0) {
+      uids.add(orderUid);
+      continue;
+    }
+    if (isTruthyShippingFlag(row.all_items_shipped)) continue;
+    if (Number.isFinite(unshippedCount) && unshippedCount <= 0) continue;
     if (listRowHasExplicitShippingProgress(row)) continue;
     uids.add(orderUid);
   }
@@ -5127,6 +5428,71 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
   });
 }
 
+function ReturnModalQtyStepper({ label, value, max, onChange, darkMode, suffix }) {
+  const safeMax = Math.max(0, parseInt(max, 10) || 0);
+  const safeValue = Math.max(0, Math.min(safeMax, parseInt(value, 10) || 0));
+  return (
+    <View style={{ marginBottom: 10 }}>
+      {label ? <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>{label}</Text> : null}
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <TouchableOpacity
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: darkMode ? "#555" : "#ccc",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+          }}
+          onPress={() => onChange(Math.max(0, safeValue - 1))}
+        >
+          <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>−</Text>
+        </TouchableOpacity>
+        <TextInput
+          style={{
+            width: 48,
+            marginHorizontal: 10,
+            borderWidth: 1,
+            borderColor: darkMode ? "#555" : "#ccc",
+            borderRadius: 8,
+            paddingVertical: 6,
+            textAlign: "center",
+            fontSize: 14,
+            color: darkMode ? "#fff" : "#333",
+            backgroundColor: darkMode ? "#3a3a3a" : "#fff",
+          }}
+          value={String(safeValue)}
+          onChangeText={(t) => {
+            const digits = t.replace(/[^0-9]/g, "");
+            const n = digits === "" ? 0 : parseInt(digits, 10);
+            onChange(Math.max(0, Math.min(safeMax, n)));
+          }}
+          keyboardType='number-pad'
+          maxLength={4}
+        />
+        <TouchableOpacity
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: darkMode ? "#555" : "#ccc",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+          }}
+          onPress={() => onChange(Math.min(safeMax, safeValue + 1))}
+        >
+          <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>+</Text>
+        </TouchableOpacity>
+        {suffix ? <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginLeft: 8 }}>{suffix}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
 export default function AccountScreen({ navigation, route }) {
   const { darkMode } = useDarkMode();
   const { width: windowWidth } = useWindowDimensions();
@@ -5326,6 +5692,7 @@ export default function AccountScreen({ navigation, route }) {
   //select item to return
   const [selectedReturnItems, setSelectedReturnItems] = useState([]);
   const [returnItemQuantities, setReturnItemQuantities] = useState({});
+  const [returnItemSplitQty, setReturnItemSplitQty] = useState({});
   const [returnModalReceiptData, setReturnModalReceiptData] = useState([]);
   const [returnModalOrderLines, setReturnModalOrderLines] = useState([]);
   const [returnModalLoading, setReturnModalLoading] = useState(false);
@@ -5503,6 +5870,7 @@ export default function AccountScreen({ navigation, route }) {
       return false;
     }
     const cancelUnshipped = options.cancel_unshipped === true;
+    const cancelOnly = options.cancel_only === true;
     try {
       // One note per return request row (trr_note); do not append prior returns.
       const note = (buyerNote || "").trim();
@@ -5515,7 +5883,8 @@ export default function AccountScreen({ navigation, route }) {
           transaction_return_requested: 1,
           transaction_return_note: note,
           transaction_return_items: transactionReturnItems,
-          ...(cancelUnshipped ? { cancel_unshipped: true, pre_ship_cancel: true } : {}),
+          ...(cancelUnshipped || cancelOnly ? { cancel_unshipped: true } : {}),
+          ...(cancelOnly ? { pre_ship_cancel: true } : {}),
         }),
       });
       if (!response.ok) {
@@ -5528,20 +5897,20 @@ export default function AccountScreen({ navigation, route }) {
         requestResult = null;
       }
       const resultPayload = requestResult?.data && typeof requestResult.data === "object" ? requestResult.data : requestResult || {};
-      const defaultReturnStatus = cancelUnshipped ? "cancelled" : "returning";
-      const defaultDisplay = cancelUnshipped ? "Cancelled - Pending" : "Returning - Pending";
+      const defaultReturnStatus = cancelOnly ? "cancelled" : "returning";
+      const defaultDisplay = cancelOnly ? "Cancelled - Pending" : "Returning - Pending";
       const returningState = extractReturnRefundState(resultPayload, {
         return_status: resultPayload.return_status || defaultReturnStatus,
         refund_status: resultPayload.refund_status || "pending",
         display_status: resultPayload.display_status || defaultDisplay,
         returnRequested: 1,
-        ...(cancelUnshipped ? { cancel_unshipped: true } : {}),
+        ...(cancelOnly ? { cancel_unshipped: true } : {}),
       });
       const statusPayload = {
         return_status: returningState.return_status || defaultReturnStatus,
         refund_status: returningState.refund_status || "pending",
         display_status: returningState.display_status || defaultDisplay,
-        ...(cancelUnshipped || returningState.is_cancel_before_ship ? { is_cancel_before_ship: true, cancel_unshipped: true } : {}),
+        ...(cancelOnly || returningState.is_cancel_before_ship ? { is_cancel_before_ship: true, cancel_unshipped: true } : {}),
       };
       setReturnStatuses((prev) => ({
         ...prev,
@@ -5550,7 +5919,8 @@ export default function AccountScreen({ navigation, route }) {
       await AsyncStorage.setItem(`return_status_${saleUid}`, JSON.stringify(statusPayload));
       const existing = returnRequests[saleUid] || { items: [], notes: [] };
       const itemQuantities = selectedReturnItems.reduce((acc, id) => {
-        acc[id] = returnItemQuantities[id] ?? 1;
+        const split = returnItemSplitQty[id];
+        acc[id] = split ? split.shipped + split.unshipped : returnItemQuantities[id] ?? 1;
         return acc;
       }, {});
       const mergedItems = [...new Set([...(existing.items || []), ...selectedReturnItems])];
@@ -5561,6 +5931,10 @@ export default function AccountScreen({ navigation, route }) {
           {
             items: selectedReturnItems,
             itemQuantities,
+            itemSplitQuantities: selectedReturnItems.reduce((acc, id) => {
+              if (returnItemSplitQty[id]) acc[id] = returnItemSplitQty[id];
+              return acc;
+            }, {}),
             transactionReturnItems,
             note: note || "",
             date: new Date().toISOString(),
@@ -5571,6 +5945,7 @@ export default function AccountScreen({ navigation, route }) {
       await AsyncStorage.setItem(`return_request_${saleUid}`, JSON.stringify(updated));
       setReturnNote("");
       setReturnItemQuantities({});
+      setReturnItemSplitQty({});
       if (selectedAccountRef.current === "personal") {
         await refreshAccountScreenPersonal();
       }
@@ -7076,6 +7451,7 @@ export default function AccountScreen({ navigation, route }) {
     setReturnModalReceiptData([]);
     setSelectedReturnItems([]);
     setReturnItemQuantities({});
+    setReturnItemSplitQty({});
     setShowReceiptModal(false);
     setShowReturnNoteModal(true);
     setReturnModalLoading(true);
@@ -8744,15 +9120,17 @@ export default function AccountScreen({ navigation, route }) {
             ) : receiptData.length > 0 ? (
               <>
                 <ScrollView style={styles.receiptScrollView} contentContainerStyle={styles.receiptScrollViewContent}>
-                  <View style={styles.receiptTableWrap}>
-                    <View style={styles.receiptTableHeader}>
-                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellItem]}>Item</Text>
-                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellQty]}>Qty</Text>
-                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellBounty]}>Bounty</Text>
-                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellShare]}>Your Share</Text>
-                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellCost]}>Unit</Text>
-                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellCost]}>Total</Text>
-                    </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={styles.receiptTableWrap}>
+                      <View style={styles.receiptTableHeader}>
+                        <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellItem]}>Item</Text>
+                        <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellQty]}>Qty</Text>
+                        <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellBounty]}>Bounty</Text>
+                        <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellShare]}>Your Share</Text>
+                        <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellCost]}>Unit</Text>
+                        <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellCost]}>Total</Text>
+                        <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellShipping]}>Shipping</Text>
+                      </View>
 
                     {receiptData.map((item, index) => {
                       const baseCost = parseFloat(item.ti_bs_cost || 0);
@@ -8770,6 +9148,7 @@ export default function AccountScreen({ navigation, route }) {
                           : null;
                       const moneyCellColor = darkMode ? "#ddd" : "#333";
                       const moneyMetaColor = darkMode ? "#aaa" : "#666";
+                      const shippingCell = formatOrderShippingCell(getOrderLineShippingAmount(item, qty), false);
 
                       const enrich = {
                         ...(receiptEnrichedItems[tiUid] || enrichFromReceiptRow(item) || receiptEnrichedItems[item.ti_bs_id] || receiptEnrichedItems[item.bs_uid] || {}),
@@ -8789,14 +9168,30 @@ export default function AccountScreen({ navigation, route }) {
                               </Text>
                               {qtyTypeLabel ? <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#777", fontStyle: "italic", lineHeight: 14 }}>{qtyTypeLabel}</Text> : null}
                             </View>
-                            <Text style={[styles.receiptTableCell, styles.receiptTableCellQty, { color: moneyCellColor }]}>{qty}</Text>
-                            <Text style={[styles.receiptTableCell, styles.receiptTableCellBounty, { color: moneyCellColor }]}>{bountyCell}</Text>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellQty, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
+                              {qty}
+                            </Text>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellBounty, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
+                              {bountyCell}
+                            </Text>
                             <View style={styles.receiptTableCellShare}>
-                              <Text style={[styles.receiptTableCell, { color: moneyCellColor, width: "100%", textAlign: "right", paddingHorizontal: 0 }]}>{shareCell}</Text>
+                              <Text
+                                style={[styles.receiptTableCell, styles.receiptMoneyText, { color: moneyCellColor, width: "100%", textAlign: "right", paddingHorizontal: 0 }]}
+                                numberOfLines={1}
+                              >
+                                {shareCell}
+                              </Text>
                               {sharePct && shareCell !== "—" ? <Text style={{ fontSize: 9, color: moneyMetaColor, textAlign: "right", lineHeight: 12 }}>{sharePct}</Text> : null}
                             </View>
-                            <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { color: moneyCellColor }]}>${baseCost.toFixed(2)}</Text>
-                            <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { fontWeight: "600", color: moneyCellColor }]}>${lineTotal.toFixed(2)}</Text>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
+                              ${baseCost.toFixed(2)}
+                            </Text>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, styles.receiptMoneyText, { fontWeight: "600", color: moneyCellColor }]} numberOfLines={1}>
+                              ${lineTotal.toFixed(2)}
+                            </Text>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellShipping, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
+                              {shippingCell}
+                            </Text>
                           </View>
                         );
                       }
@@ -8824,18 +9219,35 @@ export default function AccountScreen({ navigation, route }) {
                               }}
                             />
                           </View>
-                          <Text style={[styles.receiptTableCell, styles.receiptTableCellQty, { color: moneyCellColor }]}>{qty}</Text>
-                          <Text style={[styles.receiptTableCell, styles.receiptTableCellBounty, { color: moneyCellColor }]}>{bountyCell}</Text>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellQty, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
+                            {qty}
+                          </Text>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellBounty, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
+                            {bountyCell}
+                          </Text>
                           <View style={styles.receiptTableCellShare}>
-                            <Text style={[styles.receiptTableCell, { color: moneyCellColor, width: "100%", textAlign: "right", paddingHorizontal: 0 }]}>{shareCell}</Text>
+                            <Text
+                              style={[styles.receiptTableCell, styles.receiptMoneyText, { color: moneyCellColor, width: "100%", textAlign: "right", paddingHorizontal: 0 }]}
+                              numberOfLines={1}
+                            >
+                              {shareCell}
+                            </Text>
                             {sharePct && shareCell !== "—" ? <Text style={{ fontSize: 9, color: moneyMetaColor, textAlign: "right", lineHeight: 12 }}>{sharePct}</Text> : null}
                           </View>
-                          <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { color: moneyCellColor }]}>${unitPrice.toFixed(2)}</Text>
-                          <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { fontWeight: "600", color: moneyCellColor }]}>${lineTotal.toFixed(2)}</Text>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
+                            ${unitPrice.toFixed(2)}
+                          </Text>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, styles.receiptMoneyText, { fontWeight: "600", color: moneyCellColor }]} numberOfLines={1}>
+                            ${lineTotal.toFixed(2)}
+                          </Text>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellShipping, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
+                            {shippingCell}
+                          </Text>
                         </View>
                       );
                     })}
-                  </View>
+                    </View>
+                  </ScrollView>
                 </ScrollView>
                 <ReceiptTransactionTotalsFooter receiptRows={receiptData} transactionFallback={receiptTransaction} darkMode={darkMode} />
               </>
@@ -8909,6 +9321,7 @@ export default function AccountScreen({ navigation, route }) {
           setReturnNote("");
           setSelectedReturnItems([]);
           setReturnItemQuantities({});
+          setReturnItemSplitQty({});
         }}
       >
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
@@ -8935,8 +9348,19 @@ export default function AccountScreen({ navigation, route }) {
                     const alreadyReturned = remainingQty <= 0;
                     const returnIneligible = !row.returnEligible;
                     const selectionDisabled = alreadyReturned || returnIneligible;
-                    const returnQty = returnItemQuantities[itemId] ?? 1;
-                    const needsQtyPicker = isSelected && purchasedQty > 1 && remainingQty > 1;
+                    const caps = getReturnModalLineFulfillmentCaps(row);
+                    const split = returnItemSplitQty[itemId] || initialReturnItemSplitQty(row);
+                    const needsMixedQtyPicker = isSelected && caps.hasMixedFulfillment;
+                    const needsSimpleQtyPicker =
+                      isSelected && !caps.hasMixedFulfillment && caps.purchasedQty > 1 && caps.remainingQty > 1;
+                    const fulfillmentHint =
+                      caps.hasMixedFulfillment && !alreadyReturned
+                        ? `${caps.shippedOnLine} shipped · ${caps.unshippedOnLine} not shipped`
+                        : caps.allShipped && caps.shippedOnLine > 0
+                          ? `${caps.shippedOnLine} shipped`
+                          : caps.allUnshipped && caps.unshippedOnLine > 0
+                            ? `${caps.unshippedOnLine} not shipped`
+                            : null;
 
                     return (
                       <View
@@ -8961,11 +9385,16 @@ export default function AccountScreen({ navigation, route }) {
                                 delete next[itemId];
                                 return next;
                               });
+                              setReturnItemSplitQty((prev) => {
+                                const next = { ...prev };
+                                delete next[itemId];
+                                return next;
+                              });
                             } else {
                               setSelectedReturnItems((prev) => [...prev, itemId]);
-                              setReturnItemQuantities((prev) => ({
+                              setReturnItemSplitQty((prev) => ({
                                 ...prev,
-                                [itemId]: Math.min(1, remainingQty) || 1,
+                                [itemId]: initialReturnItemSplitQty(row),
                               }));
                             }
                           }}
@@ -8981,82 +9410,62 @@ export default function AccountScreen({ navigation, route }) {
                             <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", marginLeft: 4 }}>{row.returnIneligibleReason || "Not eligible for return"}</Text>
                           ) : purchasedQty > remainingQty ? (
                             <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{remainingQty} left</Text>
+                          ) : fulfillmentHint ? (
+                            <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", marginLeft: 4 }}>{fulfillmentHint}</Text>
                           ) : null}
                         </TouchableOpacity>
 
-                        {needsQtyPicker && (
+                        {needsMixedQtyPicker ? (
                           <View style={{ marginTop: 8, marginLeft: 26 }}>
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>How many are you returning?</Text>
-                            <View style={{ flexDirection: "row", alignItems: "center" }}>
-                              <TouchableOpacity
-                                style={{
-                                  width: 36,
-                                  height: 36,
-                                  borderRadius: 8,
-                                  borderWidth: 1,
-                                  borderColor: darkMode ? "#555" : "#ccc",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
-                                }}
-                                onPress={() =>
-                                  setReturnItemQuantities((prev) => ({
-                                    ...prev,
-                                    [itemId]: Math.max(1, (prev[itemId] ?? 1) - 1),
-                                  }))
-                                }
-                              >
-                                <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>−</Text>
-                              </TouchableOpacity>
-                              <TextInput
-                                style={{
-                                  width: 48,
-                                  marginHorizontal: 10,
-                                  borderWidth: 1,
-                                  borderColor: darkMode ? "#555" : "#ccc",
-                                  borderRadius: 8,
-                                  paddingVertical: 6,
-                                  textAlign: "center",
-                                  fontSize: 14,
-                                  color: darkMode ? "#fff" : "#333",
-                                  backgroundColor: darkMode ? "#3a3a3a" : "#fff",
-                                }}
-                                value={String(returnQty)}
-                                onChangeText={(t) => {
-                                  const digits = t.replace(/[^0-9]/g, "");
-                                  const n = digits === "" ? "" : parseInt(digits, 10);
-                                  setReturnItemQuantities((prev) => ({
-                                    ...prev,
-                                    [itemId]: n === "" ? "" : Math.min(remainingQty, Math.max(1, n)),
-                                  }));
-                                }}
-                                keyboardType='number-pad'
-                                maxLength={4}
-                              />
-                              <TouchableOpacity
-                                style={{
-                                  width: 36,
-                                  height: 36,
-                                  borderRadius: 8,
-                                  borderWidth: 1,
-                                  borderColor: darkMode ? "#555" : "#ccc",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
-                                }}
-                                onPress={() =>
-                                  setReturnItemQuantities((prev) => ({
-                                    ...prev,
-                                    [itemId]: Math.min(remainingQty, (prev[itemId] ?? 1) + 1),
-                                  }))
-                                }
-                              >
-                                <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>+</Text>
-                              </TouchableOpacity>
-                              <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginLeft: 8 }}>of {remainingQty}</Text>
-                            </View>
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>
+                              This item has shipped and unshipped units. How many of each?
+                            </Text>
+                            <ReturnModalQtyStepper
+                              label='Shipped items to return'
+                              value={split.shipped}
+                              max={Math.min(caps.maxReturnShippedQty, Math.max(0, caps.remainingQty - split.unshipped))}
+                              suffix={`up to ${caps.maxReturnShippedQty}`}
+                              darkMode={darkMode}
+                              onChange={(shipped) =>
+                                setReturnItemSplitQty((prev) => ({
+                                  ...prev,
+                                  [itemId]: normalizeReturnItemSplitQty({ ...split, shipped }, caps),
+                                }))
+                              }
+                            />
+                            <ReturnModalQtyStepper
+                              label='Unshipped items to cancel'
+                              value={split.unshipped}
+                              max={Math.min(caps.maxCancelUnshippedQty, Math.max(0, caps.remainingQty - split.shipped))}
+                              suffix={`up to ${caps.maxCancelUnshippedQty}`}
+                              darkMode={darkMode}
+                              onChange={(unshipped) =>
+                                setReturnItemSplitQty((prev) => ({
+                                  ...prev,
+                                  [itemId]: normalizeReturnItemSplitQty({ ...split, unshipped }, caps),
+                                }))
+                              }
+                            />
                           </View>
-                        )}
+                        ) : null}
+
+                        {needsSimpleQtyPicker ? (
+                          <View style={{ marginTop: 8, marginLeft: 26 }}>
+                            <ReturnModalQtyStepper
+                              label={caps.allUnshipped ? "How many unshipped items are you cancelling?" : "How many shipped items are you returning?"}
+                              value={caps.allUnshipped ? split.unshipped : split.shipped}
+                              max={caps.remainingQty}
+                              suffix={`of ${caps.remainingQty}`}
+                              darkMode={darkMode}
+                              onChange={(qty) =>
+                                setReturnItemSplitQty((prev) => ({
+                                  ...prev,
+                                  [itemId]: caps.allUnshipped ? { shipped: 0, unshipped: qty } : { shipped: qty, unshipped: 0 },
+                                }))
+                              }
+                            />
+                          </View>
+                        ) : null}
                       </View>
                     );
                   })}
@@ -9098,13 +9507,8 @@ export default function AccountScreen({ navigation, route }) {
                   const hasInvalidQty = selectedReturnItems.some((id) => {
                     const row = lineById[id];
                     if (!row || !row.returnEligible || row.remainingQty <= 0) return true;
-                    const remainingQty = row.remainingQty;
-                    const raw = returnItemQuantities[id];
-                    const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
-                    if (row.purchasedQty > 1 && remainingQty > 1) {
-                      return !Number.isFinite(n) || n < 1 || n > remainingQty;
-                    }
-                    return false;
+                    const split = returnItemSplitQty[id] || initialReturnItemSplitQty(row);
+                    return !isReturnItemSplitValid(row, split);
                   });
                   const canSubmitReturn = selectedReturnItems.length > 0 && !hasInvalidQty && !returnModalLoading;
 
@@ -9117,6 +9521,7 @@ export default function AccountScreen({ navigation, route }) {
                           setReturnNote("");
                           setSelectedReturnItems([]);
                           setReturnItemQuantities({});
+                          setReturnItemSplitQty({});
                           setReturnModalOrderLines([]);
                         }}
                       >
@@ -9133,44 +9538,32 @@ export default function AccountScreen({ navigation, route }) {
                               Alert.alert("Item not eligible", row?.returnIneligibleReason || "This item cannot be returned.");
                               return;
                             }
-                            const transaction_item_uid = row.transactionItemUid;
-                            if (!transaction_item_uid) {
+                            if (!row.transactionItemUid) {
                               Alert.alert("Error", "Order line is missing ti_uid. Cannot submit return.");
                               return;
                             }
-                            const remainingQty = row.remainingQty;
-                            const raw = returnItemQuantities[id];
-                            const return_quantity = row.purchasedQty > 1 && remainingQty > 1 ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 1) : Math.min(1, remainingQty) || 1;
-                            transactionReturnItems.push({
-                              transaction_item_uid,
-                              return_quantity,
-                              item_name: row.itemName || undefined,
-                              bs_service_name: row.itemName || undefined,
-                            });
+                            const split = returnItemSplitQty[id] || initialReturnItemSplitQty(row);
+                            if (!isReturnItemSplitValid(row, split)) {
+                              Alert.alert("Invalid quantities", "Please enter valid shipped-return and unshipped-cancel quantities.");
+                              return;
+                            }
+                            transactionReturnItems.push(buildTransactionReturnItemPayload(row, split));
                           }
                           if (transactionReturnItems.length === 0) {
                             Alert.alert("Error", "Could not build return items.");
                             return;
                           }
-                          const selectedAreUnshipped = selectedReturnItems.every((id) => {
-                            const row = lineById[id];
-                            if (!row) return false;
-                            const sourceLine =
-                              row.line ||
-                              (Array.isArray(returnModalOrderLines)
-                                ? returnModalOrderLines.find((l) => String(l.ti_uid || "").trim() === row.transactionItemUid)
-                                : null);
-                            // Already shipped or buyer-verified units are physical returns, not pre-ship cancels.
-                            return !lineHasLeftSeller(sourceLine || row);
-                          });
+                          const { cancelOnly } = resolveReturnRequestCancelFlags(transactionReturnItems);
                           const ok = await handleReturnRequest(receiptTransaction, returnNote, transactionReturnItems, {
-                            cancel_unshipped: selectedAreUnshipped,
+                            cancel_unshipped: cancelOnly,
+                            cancel_only: cancelOnly,
                           });
                           if (!ok) return;
                           setShowReturnNoteModal(false);
                           setReturnNote("");
                           setSelectedReturnItems([]);
                           setReturnItemQuantities({});
+                          setReturnItemSplitQty({});
                           setReturnModalOrderLines([]);
                         }}
                       >
@@ -10325,10 +10718,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   businessOrderDetailTableWithBounty: {
-    minWidth: 700,
+    minWidth: 780,
   },
   businessOrderDetailTableWithBuyerShare: {
-    minWidth: 900,
+    minWidth: 980,
   },
   businessOrderDetailHeaderRow: {
     flexDirection: "row",
@@ -10430,8 +10823,12 @@ const styles = StyleSheet.create({
     width: 90,
     textAlign: "right",
   },
+  businessOrderDetailColShipping: {
+    width: 86,
+    textAlign: "right",
+  },
   businessOrderDetailTableWithFulfillment: {
-    minWidth: 1100,
+    minWidth: 1180,
   },
   businessOrderDetailColShipped: {
     width: 112,
@@ -10975,7 +11372,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   receiptTableWrap: {
-    width: "100%",
+    minWidth: 620,
   },
   receiptTableHeader: {
     flexDirection: "row",
@@ -11000,21 +11397,36 @@ const styles = StyleSheet.create({
   },
   receiptHeaderCellQty: {
     width: 28,
+    minWidth: 28,
+    flexShrink: 0,
     textAlign: "center",
   },
   receiptHeaderCellBounty: {
-    width: 52,
+    width: 54,
+    minWidth: 54,
+    flexShrink: 0,
     textAlign: "right",
     fontSize: 10,
   },
   receiptHeaderCellShare: {
-    width: 56,
+    width: 58,
+    minWidth: 58,
+    flexShrink: 0,
     textAlign: "right",
     fontSize: 10,
   },
   receiptHeaderCellCost: {
-    width: 50,
+    width: 64,
+    minWidth: 64,
+    flexShrink: 0,
     textAlign: "right",
+  },
+  receiptHeaderCellShipping: {
+    width: 64,
+    minWidth: 64,
+    flexShrink: 0,
+    textAlign: "right",
+    fontSize: 10,
   },
   receiptTableRow: {
     flexDirection: "row",
@@ -11038,20 +11450,37 @@ const styles = StyleSheet.create({
   },
   receiptTableCellQty: {
     width: 28,
+    minWidth: 28,
+    flexShrink: 0,
     textAlign: "center",
   },
   receiptTableCellBounty: {
-    width: 52,
+    width: 54,
+    minWidth: 54,
+    flexShrink: 0,
     textAlign: "right",
   },
   receiptTableCellShare: {
-    width: 56,
+    width: 58,
+    minWidth: 58,
+    flexShrink: 0,
     paddingHorizontal: 4,
     alignItems: "flex-end",
   },
   receiptTableCellCost: {
-    width: 50,
+    width: 64,
+    minWidth: 64,
+    flexShrink: 0,
     textAlign: "right",
+  },
+  receiptTableCellShipping: {
+    width: 64,
+    minWidth: 64,
+    flexShrink: 0,
+    textAlign: "right",
+  },
+  receiptMoneyText: {
+    ...(Platform.OS === "web" ? { whiteSpace: "nowrap" } : {}),
   },
   receiptCloseButton: {
     backgroundColor: "#F5F5F5",

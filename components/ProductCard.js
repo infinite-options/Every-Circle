@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from "react
 import { parsePrice, formatCostValue } from "../utils/priceUtils";
 import { parseTagList } from "../utils/tagListUtils";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
+import { formatBsShippingDisplay, isBuyerPaysShippingValue } from "../utils/businessServiceShipping";
+import { normServiceShippingRefundable } from "../utils/buildBusinessServiceForApi";
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
 
@@ -67,20 +69,14 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showTags = show
     return null;
   }, [service.bs_condition_type, service.bs_condition_detail, service.bs_used_condition, service.bs_condition]);
 
-  const shippingLine = useMemo(() => {
-    const free = service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true;
-    const buyer = service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true;
-    if (free) return "Shipping: Free shipping";
-    if (buyer) return "Shipping: Buyer pays shipping";
-    const freeOff = service.bs_free_shipping === 0 || service.bs_free_shipping === "0" || service.bs_free_shipping === false;
-    const buyerOff = service.bs_buyer_pays_shipping === 0 || service.bs_buyer_pays_shipping === "0" || service.bs_buyer_pays_shipping === false;
-    if (freeOff && buyerOff) return null;
-    const legacy = service.bs_shipping;
-    if (legacy != null && String(legacy).trim() !== "") {
-      return `Shipping: ${String(legacy).trim()}`;
-    }
-    return null;
-  }, [service.bs_free_shipping, service.bs_buyer_pays_shipping, service.bs_shipping]);
+  const shippingLine = useMemo(() => formatBsShippingDisplay(service), [
+    service.bs_shipping,
+    service.bs_shipping_amount,
+    service.bs_free_shipping,
+    service.bs_buyer_pays_shipping,
+    service.bs_shipping_cost_type,
+    service.bs_fixed_shipping_amount,
+  ]);
 
   /** When bs_is_taxable is on, show bs_tax_rate as a percent (e.g. "4.00" → "Tax rate: 4.00%"). */
   const skuLine = useMemo(() => {
@@ -106,10 +102,26 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showTags = show
       service.is_returnable === "1" ||
       service.is_returnable === true;
     if (!returnable) return "Returnable: No";
-    const days = String(service.bs_return_window_days ?? "").trim();
+    const days = String(service.bs_return_window_days ?? service.return_window_days ?? "").trim();
     const daysLabel = days && days !== "0" ? days : "5";
+    if (isBuyerPaysShippingValue(service)) {
+      const includingShipping = normServiceShippingRefundable(service) === 1;
+      return includingShipping
+        ? `Returnable: Yes including Shipping (${daysLabel} days)`
+        : `Returnable: Yes excluding Shipping after delivery (${daysLabel} days)`;
+    }
     return `Returnable: Yes (${daysLabel} days)`;
-  }, [service.bs_is_returnable, service.is_returnable, service.bs_return_window_days]);
+  }, [
+    service.bs_is_returnable,
+    service.is_returnable,
+    service.bs_return_window_days,
+    service.return_window_days,
+    service.bs_shipping_refundable,
+    service.bs_shipping,
+    service.bs_buyer_pays_shipping,
+    service.bs_shipping_cost_type,
+    service.bs_free_shipping,
+  ]);
 
   const metaTextStyle = darkMode ? styles.metaTextDark : styles.metaText;
   const tagChipTextStyle = darkMode ? styles.tagChipTextDark : styles.tagChipText;

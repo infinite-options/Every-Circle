@@ -440,32 +440,9 @@ export default function ReviewDetailScreen({ route, navigation }) {
     }
   };
 
-  const handleRemoveItem = async (index) => {
-    try {
-      const newCartItems = cartItems.filter((_, i) => i !== index);
-      setCartItems(newCartItems);
-
-      // Update AsyncStorage
-      const savedCart = await AsyncStorage.getItem(`cart_${business_uid}`);
-      const savedData = savedCart ? JSON.parse(savedCart) : {};
-      await AsyncStorage.setItem(
-        `cart_${business_uid}`,
-        JSON.stringify({
-          items: newCartItems,
-          bounty_recipient: newCartItems.length === 0 ? null : savedData.bounty_recipient || null,
-        }),
-      );
-      if (newCartItems.length === 0) setSelectedBountyRecipient(null);
-    } catch (error) {
-      console.error("Error removing item from cart:", error);
-      Alert.alert("Error", "Failed to remove item from cart");
-    }
-  };
-
   const handleViewCart = () => {
     navigation.navigate("ShoppingCart", {
       cartItems,
-      onRemoveItem: handleRemoveItem,
       businessName: business.business_name,
       business_uid: business_uid,
       recommender_profile_id: reviewer_profile_id,
