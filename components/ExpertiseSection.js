@@ -670,10 +670,15 @@ const ExpertiseSection = ({
               showRemove={!!getExpertiseDisplayUri(item)}
             />
             <View style={styles.miniCardFields}>
-              <TextInput style={styles.input} placeholder='Expertise Name' value={item.name} onChangeText={(text) => handleInputChange(index, "name", text)} />
               <TextInput
-                style={styles.descriptionInput}
-                placeholder='Description'
+                style={[styles.input, !String(item.name || "").trim() && styles.requiredInput]}
+                placeholder='Expertise Name *'
+                value={item.name}
+                onChangeText={(text) => handleInputChange(index, "name", text)}
+              />
+              <TextInput
+                style={[styles.descriptionInput, !String(item.description || "").trim() && styles.requiredInput]}
+                placeholder='Description *'
                 value={item.description}
                 onChangeText={(text) => handleInputChange(index, "description", text)}
                 multiline={true}
@@ -866,7 +871,7 @@ const ExpertiseSection = ({
                   style={[
                     styles.taxRateInput,
                     styles.taxRateInputCompact,
-                    (!item.profile_expertise_tax_rate || !isValidTaxRate(item.profile_expertise_tax_rate)) && { borderColor: "#c00", borderWidth: 1 },
+                    (!item.profile_expertise_tax_rate || !isValidTaxRate(item.profile_expertise_tax_rate)) && styles.requiredInput,
                   ]}
                   value={String(item.profile_expertise_tax_rate ?? "")}
                   onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
@@ -1370,6 +1375,9 @@ const styles = StyleSheet.create({
   modeCheckboxTextSelected: {
     color: "#007AFF",
     fontWeight: "600",
+  },
+  requiredInput: {
+    borderColor: "#f44336",
   },
   requiredDropdown: {
     borderColor: "#f44336",

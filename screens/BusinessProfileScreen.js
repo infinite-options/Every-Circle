@@ -2262,7 +2262,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
                         minHeight: 80,
                         textAlignVertical: "top",
                         backgroundColor: "#fafafa",
-                        width: "100%",
+                        width: "95%",
+                        marginLeft: 'auto',
+                        marginRight: 'auto',
                       }}
                       value={specialInstructions}
                       onChangeText={(t) => {

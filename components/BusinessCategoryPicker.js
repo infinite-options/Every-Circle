@@ -13,12 +13,12 @@ import {
 
 const CATEGORY_SEARCH_MIN_LENGTH = 2;
 
-function SearchableCategoryDropdown({ label, data, value, onChange, disabled, placeholder, darkMode, zIndex }) {
+function SearchableCategoryDropdown({ label, data, value, onChange, disabled, placeholder, darkMode, zIndex, highlightRequired }) {
   return (
     <>
       {label ? <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>{label}</Text> : null}
       <Dropdown
-        style={[styles.input, darkMode && styles.darkInput, disabled && styles.inputDisabled]}
+        style={[styles.input, darkMode && styles.darkInput, disabled && styles.inputDisabled, highlightRequired && styles.requiredInput]}
         data={data}
         labelField='label'
         valueField='value'
@@ -116,7 +116,7 @@ export default function BusinessCategoryPicker({ categoryIds = [], onCategoryIds
 
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Category *</Text>
+      <Text style={[styles.label, darkMode && styles.darkLabel]}>Category</Text>
       <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>Search by name (e.g. plumbing, hair salon) or browse below.</Text>
 
       <View style={styles.searchWrap}>
@@ -186,6 +186,7 @@ export default function BusinessCategoryPicker({ categoryIds = [], onCategoryIds
             placeholder='Select Main Category'
             darkMode={darkMode}
             zIndex={3000}
+            highlightRequired={!selectedMain}
           />
           <SearchableCategoryDropdown
             label='Sub Category (Optional)'
@@ -263,6 +264,9 @@ const styles = StyleSheet.create({
   },
   inputDisabled: {
     opacity: 0.6,
+  },
+  requiredInput: {
+    borderColor: "#f44336",
   },
   darkInput: {
     backgroundColor: "#404040",

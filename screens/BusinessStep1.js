@@ -116,7 +116,7 @@ export default function BusinessStep1({ formData, setFormData, onPendingTagsChan
 
             <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Role *</Text>
             <Dropdown
-              style={[styles.input, darkMode && styles.darkInput]}
+              style={[styles.input, darkMode && styles.darkInput, !formData.businessRole && styles.requiredInput]}
               data={businessRoles}
               labelField='label'
               valueField='value'
@@ -249,6 +249,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ddd",
     fontSize: 16,
+  },
+  requiredInput: {
+    borderColor: "#f44336",
   },
   businessNameDisplay: {
     backgroundColor: "#f5f5f5",

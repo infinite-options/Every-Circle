@@ -3,18 +3,18 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
-const BusinessFooter = ({ activeStep, onBack, onContinue, onSubmit, totalSteps = 5, submitDisabled = false }) => {
+const BusinessFooter = ({ activeStep, onBack, onContinue, onSubmit, totalSteps = 5, submitDisabled = false, isSubmitting = false }) => {
   const { darkMode } = useDarkMode();
   const isFirstStep = activeStep === 0;
   const isLastStep = activeStep === totalSteps - 1;
-  const isSubmitBlocked = isLastStep && submitDisabled;
+  const isSubmitBlocked = isLastStep && (submitDisabled || isSubmitting);
 
   return (
     <SafeAreaView edges={["bottom"]} style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
       <View style={[styles.footerContainer, darkMode && styles.darkFooterContainer]}>
         <View style={styles.buttonRow}>
           {!isFirstStep && (
-            <TouchableOpacity style={[styles.backButton, darkMode && styles.darkBackButton]} onPress={onBack}>
+            <TouchableOpacity style={[styles.backButton, darkMode && styles.darkBackButton]} onPress={onBack} disabled={isSubmitting}>
               <Text style={[styles.buttonText, darkMode && styles.darkButtonText]}>Back</Text>
             </TouchableOpacity>
           )}
@@ -30,7 +30,9 @@ const BusinessFooter = ({ activeStep, onBack, onContinue, onSubmit, totalSteps =
               disabled={isSubmitBlocked}
               accessibilityState={{ disabled: isSubmitBlocked }}
             >
-              <Text style={[styles.buttonText, darkMode && styles.darkButtonText, isSubmitBlocked && styles.buttonTextDisabled]}>Submit</Text>
+              <Text style={[styles.buttonText, darkMode && styles.darkButtonText, isSubmitBlocked && styles.buttonTextDisabled]}>
+                {isSubmitting ? "Submitting..." : "Submit"}
+              </Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={[styles.continueButton, darkMode && styles.darkContinueButton]} onPress={onContinue}>
