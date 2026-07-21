@@ -1,6 +1,7 @@
 import { parsePrice } from "./priceUtils";
 import { isTruthyTaxableFlag, isValidTaxRate } from "./taxValidation";
 import { parseTagList, serializeTagList } from "./tagListUtils";
+import { buildBsShippingApiFields, isBuyerPaysShippingValue } from "./businessServiceShipping";
 
 export const DEFAULT_RETURN_WINDOW_DAYS = "5";
 
@@ -20,6 +21,17 @@ export function normServiceReturnWindowDays(service) {
   const d = String(service.bs_return_window_days ?? "").trim();
   if (!d || d === "0" || !/^\d+$/.test(d) || parseInt(d, 10) < 1) return parseInt(DEFAULT_RETURN_WINDOW_DAYS, 10);
   return parseInt(d, 10);
+}
+
+/** 1 when returnable, buyer pays shipping, and seller refunds shipping on post-delivery returns. Pre-ship cancels always refund shipping separately. */
+export function normServiceShippingRefundable(service) {
+  if (!normServiceReturnable(service)) return 0;
+  if (!isBuyerPaysShippingValue(service)) return 0;
+  return service?.bs_shipping_refundable === 1 ||
+    service?.bs_shipping_refundable === "1" ||
+    service?.bs_shipping_refundable === true
+    ? 1
+    : 0;
 }
 
 export function normServiceTags(service) {
@@ -84,6 +96,7 @@ export function buildBusinessServiceForApi(service, idx = 0) {
     bs_is_returnable: returnable,
     is_returnable: returnable,
     return_window_days: String(returnWindowDays),
+    bs_shipping_refundable: normServiceShippingRefundable(service),
     bs_display_order: typeof service.bs_display_order === "undefined" ? idx + 1 : service.bs_display_order,
     bs_tags: normServiceTags(service),
     bs_duration_minutes: service.bs_duration_minutes || "",
@@ -95,8 +108,7 @@ export function buildBusinessServiceForApi(service, idx = 0) {
     bs_available_quantity: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? String(service.bs_available_quantity || "").trim() : "",
     bs_condition_type: condType,
     bs_condition_detail: condType === "used" ? (service.bs_condition_detail || "").trim() : "",
-    bs_free_shipping: norm01(service.bs_free_shipping),
-    bs_buyer_pays_shipping: norm01(service.bs_buyer_pays_shipping),
+    ...buildBsShippingApiFields(service),
     bs_service_image_is_public: norm01(service.bs_service_image_is_public),
     bs_choice_groups: service.bs_choice_groups || [],
     bs_special_instructions_enabled: service.bs_special_instructions_enabled || 0,

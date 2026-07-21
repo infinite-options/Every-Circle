@@ -937,27 +937,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
     }
   };
 
-  const handleRemoveItem = async (index) => {
-    try {
-      const newCartItems = cartItems.filter((_, i) => i !== index);
-      setCartItems(newCartItems);
-      const savedCart = await AsyncStorage.getItem(`cart_${business_uid}`);
-      const savedData = savedCart ? JSON.parse(savedCart) : {};
-      await AsyncStorage.setItem(
-        `cart_${business_uid}`,
-        JSON.stringify({
-          items: newCartItems,
-          bounty_recipient: newCartItems.length === 0 ? null : savedData.bounty_recipient || null,
-        }),
-      );
-      if (newCartItems.length === 0) setSelectedBountyRecipient(null);
-      await refreshCartFromStorage();
-    } catch (error) {
-      console.error("Error removing item from cart:", error);
-      Alert.alert("Error", "Failed to remove item from cart");
-    }
-  };
-
   const handleSubmitReply = async (rating_uid) => {
     if (!replyText.trim()) return;
     setSubmittingReply(true);
@@ -1007,7 +986,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       navigation.navigate("ShoppingCart", {
         cartItems: allItems,
-        onRemoveItem: handleRemoveItem,
         businessName: "My Cart",
         business_uid: business_uid,
         recommender_profile_id: currentUserProfileId,
@@ -1018,7 +996,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
       console.error("Error loading all cart items:", error);
       navigation.navigate("ShoppingCart", {
         cartItems,
-        onRemoveItem: handleRemoveItem,
         businessName: business.business_name,
         business_uid: business_uid,
         recommender_profile_id: currentUserProfileId,

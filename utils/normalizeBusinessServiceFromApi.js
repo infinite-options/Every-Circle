@@ -4,8 +4,10 @@
  * - bs_image_url → bs_image_key (when key empty)
  * - bs_quantity → bs_available_quantity / bs_qty_unlimited
  * - bs_condition → bs_condition_type / bs_condition_detail
- * - bs_shipping → bs_free_shipping / bs_buyer_pays_shipping when flags are absent
+ * - bs_shipping / bs_shipping_amount (canonical) + legacy free/buyer flags
  */
+
+import { applyBsShippingFromApi, isBuyerPaysShippingValue } from "./businessServiceShipping";
 
 /** Canonical values for backend JSON: "buyer" | "seller" | "". */
 export function normalizeBsCcFeePayer(raw) {
@@ -98,18 +100,7 @@ export function normalizeBusinessServiceFromApi(service) {
     }
   }
 
-  let bs_free_shipping = service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true ? 1 : 0;
-  let bs_buyer_pays_shipping =
-    service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true ? 1 : 0;
-
-  if (bs_free_shipping === 0 && bs_buyer_pays_shipping === 0 && service.bs_shipping != null && String(service.bs_shipping).trim() !== "") {
-    const sh = String(service.bs_shipping).trim().toLowerCase();
-    if (sh === "free" || sh === "1" || sh === "yes" || sh.includes("free")) {
-      bs_free_shipping = 1;
-    } else if (sh.includes("buyer") || sh.includes("buyer pays") || sh === "buyer_pays") {
-      bs_buyer_pays_shipping = 1;
-    }
-  }
+  const shippingFields = applyBsShippingFromApi(service);
 
   const next = {
     ...service,
@@ -117,8 +108,7 @@ export function normalizeBusinessServiceFromApi(service) {
     bs_tags: service.bs_tags || "",
     bs_image_key: imgKey,
     bs_condition_detail,
-    bs_free_shipping,
-    bs_buyer_pays_shipping,
+    ...shippingFields,
     bs_is_returnable:
       service.bs_is_returnable === 1 ||
       service.bs_is_returnable === "1" ||
@@ -140,6 +130,21 @@ export function normalizeBusinessServiceFromApi(service) {
       const d = String(service.bs_return_window_days ?? service.return_window_days ?? "").trim();
       if (!d || d === "0" || !/^\d+$/.test(d) || parseInt(d, 10) < 1) return "5";
       return d;
+    })(),
+    bs_shipping_refundable: (() => {
+      const returnable =
+        service.bs_is_returnable === 1 ||
+        service.bs_is_returnable === "1" ||
+        service.bs_is_returnable === true ||
+        service.is_returnable === 1 ||
+        service.is_returnable === "1" ||
+        service.is_returnable === true;
+      if (!returnable || !isBuyerPaysShippingValue(service)) return 0;
+      return service.bs_shipping_refundable === 1 ||
+        service.bs_shipping_refundable === "1" ||
+        service.bs_shipping_refundable === true
+        ? 1
+        : 0;
     })(),
     // CC fee payer is business-level only; strip legacy per-product values for UI.
     bs_cc_fee_payer: "",

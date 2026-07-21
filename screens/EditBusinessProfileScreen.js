@@ -41,7 +41,16 @@ import { parsePrice, formatCostValue } from "../utils/priceUtils";
 import { offeringBountyExceedsCost } from "../components/ExpertiseSection";
 import { isTruthyTaxableFlag, isValidTaxRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagListUtils";
-import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceTags, productImageFileFieldName, productImageUploadKey } from "../utils/buildBusinessServiceForApi";
+import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceShippingRefundable, normServiceTags, productImageFileFieldName, productImageUploadKey } from "../utils/buildBusinessServiceForApi";
+import {
+  BS_SHIPPING_BUYER_ACTUAL,
+  BS_SHIPPING_BUYER_FIXED,
+  BS_SHIPPING_FREE,
+  buildBsShippingApiFields,
+  isBuyerPaysShippingValue,
+  parseBsShipping,
+  parseBsShippingAmount,
+} from "../utils/businessServiceShipping";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getAddressSuggestions, getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
 import { buildBusinessModerationItem, isBusinessOwnerRestricted } from "../utils/businessModeration";
@@ -1515,6 +1524,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         f.bs_free_shipping === "1" ||
         f.bs_buyer_pays_shipping === 1 ||
         f.bs_buyer_pays_shipping === "1" ||
+        parseBsShipping(f) != null ||
         f.bs_is_returnable === 1 ||
         f.bs_is_returnable === "1" ||
         String(f.bs_refund_policy || "").trim() !== "" ||
@@ -1548,6 +1558,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         }
         return;
       }
+      if (!affirmBuyerPaysShippingOrHighlight()) return;
     }
 
     setIsLoading(true);
@@ -2755,6 +2766,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_refund_policy: "",
     bs_return_window_days: "0",
     bs_is_returnable: 0,
+    bs_shipping_refundable: 0,
     bs_display_order: 1,
     bs_tags: "",
     bs_duration_minutes: "",
@@ -2768,8 +2780,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_available_quantity: "",
     bs_condition_type: "na",
     bs_condition_detail: "",
-    bs_free_shipping: 0,
-    bs_buyer_pays_shipping: 0,
+    bs_shipping: null,
+    bs_shipping_amount: null,
     bs_service_image_is_public: 1,
     bs_choice_groups: [],
     bs_special_instructions_enabled: 0,
@@ -2789,7 +2801,20 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setIsChanged(true);
   };
 
-  const isShippingNotApplicable = (form) => !(form.bs_free_shipping === 1 || form.bs_free_shipping === "1") && !(form.bs_buyer_pays_shipping === 1 || form.bs_buyer_pays_shipping === "1");
+  const isShippingNotApplicable = (form) => parseBsShipping(form) == null;
+  const isBuyerPaysShipping = (form) => isBuyerPaysShippingValue(form?.bs_shipping ?? form);
+  const isFreeShipping = (form) => parseBsShipping(form) === BS_SHIPPING_FREE;
+  const isActualShipping = (form) => parseBsShipping(form) === BS_SHIPPING_BUYER_ACTUAL;
+  const isFixedShipping = (form) => parseBsShipping(form) === BS_SHIPPING_BUYER_FIXED;
+  const shippingAmountDisplayValue = (form) => {
+    if (!isFixedShipping(form)) return "";
+    const raw = form?.bs_shipping_amount;
+    if (raw == null) return "";
+    // Keep the typed string as-is so intermediate values like "5." / "0." work while editing.
+    if (typeof raw === "string") return raw;
+    if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+    return String(raw);
+  };
 
   const handleServiceCostAmountChange = (value) => {
     const parsed = parseServiceCost(serviceForm.bs_cost || "");
@@ -2895,8 +2920,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const condLow = condForm == null ? "" : String(condForm).trim().toLowerCase();
     const conditionTypeForList = condLow === "used" ? "used" : condLow === "new" ? "new" : "";
     const conditionDetailForList = condLow === "used" ? String(formSource.bs_condition_detail || "").trim() : "";
-    const freeShippingForList = formSource.bs_free_shipping === 1 || formSource.bs_free_shipping === "1" || formSource.bs_free_shipping === true ? 1 : 0;
-    const buyerPaysShippingForList = formSource.bs_buyer_pays_shipping === 1 || formSource.bs_buyer_pays_shipping === "1" || formSource.bs_buyer_pays_shipping === true ? 1 : 0;
+    const shippingApi = buildBsShippingApiFields(formSource);
 
     return {
       ...formSource,
@@ -2909,13 +2933,19 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_condition_detail: conditionDetailForList,
       bs_condition: "",
       bs_used_condition: "",
-      bs_free_shipping: freeShippingForList,
-      bs_buyer_pays_shipping: buyerPaysShippingForList,
-      bs_shipping: freeShippingForList || buyerPaysShippingForList ? "" : "",
+      bs_shipping: shippingApi.bs_shipping,
+      bs_shipping_amount: shippingApi.bs_shipping_amount,
+      bs_free_shipping: shippingApi.bs_shipping === BS_SHIPPING_FREE ? 1 : 0,
+      bs_buyer_pays_shipping:
+        shippingApi.bs_shipping === BS_SHIPPING_BUYER_ACTUAL || shippingApi.bs_shipping === BS_SHIPPING_BUYER_FIXED ? 1 : 0,
+      bs_shipping_cost_type:
+        shippingApi.bs_shipping === BS_SHIPPING_BUYER_FIXED ? "fixed" : shippingApi.bs_shipping === BS_SHIPPING_BUYER_ACTUAL ? "actual" : "",
+      bs_fixed_shipping_amount: shippingApi.bs_shipping_amount == null ? "" : String(shippingApi.bs_shipping_amount),
       bs_is_taxable: formTaxable ? 1 : 0,
       bs_tax_rate: formTaxable && isValidTaxRate(formSource.bs_tax_rate) ? String(formSource.bs_tax_rate).trim() : "0",
       bs_is_returnable: normServiceReturnable(formSource),
       bs_return_window_days: returnWindowDaysForForm(formSource),
+      bs_shipping_refundable: normServiceShippingRefundable(formSource),
       bs_tags: normServiceTags(formSource),
       bs_image_key: nextBsImageKey,
       bs_uid: existingService?.bs_uid || "",
@@ -2955,6 +2985,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     if (!affirmServiceQuantityOrHighlight()) return;
     if (!affirmServiceTaxRateOrHighlight()) return;
     if (!affirmServiceCostUnitOrHighlight()) return;
+    if (!affirmBuyerPaysShippingOrHighlight()) return;
 
     const row = buildServiceRowForList();
     if (!row) return;
@@ -3006,8 +3037,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         return "per_item";
       })(),
       bs_bounty: service.bs_bounty == null || String(service.bs_bounty).trim() === "" || parsePrice(service.bs_bounty) === 0 ? "" : String(service.bs_bounty),
-      bs_free_shipping: service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true ? 1 : 0,
-      bs_buyer_pays_shipping: service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true ? 1 : 0,
+      bs_shipping: (() => {
+        const shipping = parseBsShipping(service);
+        return shipping === "Buyer" ? BS_SHIPPING_BUYER_ACTUAL : shipping;
+      })(),
+      bs_shipping_amount: (() => {
+        const shipping = parseBsShipping(service);
+        if (shipping !== BS_SHIPPING_BUYER_FIXED) return null;
+        const raw = service.bs_shipping_amount ?? service.bs_fixed_shipping_amount;
+        if (raw === 0 || raw === "0" || raw === "0.00") return 0;
+        return parseBsShippingAmount(raw);
+      })(),
       bs_choice_groups: service.bs_choice_groups || [],
       bs_special_instructions_enabled: service.bs_special_instructions_enabled || 0,
       bs_special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
@@ -3029,6 +3069,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       })(),
       bs_is_returnable: normServiceReturnable(service),
       bs_return_window_days: returnWindowDaysForForm(service),
+      bs_shipping_refundable: normServiceShippingRefundable(service),
     });
     const remoteDisplay = resolveServiceImageDisplayUri(service.bs_image_key);
     const pendingUri = service._svcNewImageUri && String(service._svcNewImageUri).trim() !== "" ? String(service._svcNewImageUri).trim() : "";
@@ -3353,6 +3394,34 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     return false;
   };
 
+  const affirmBuyerPaysShippingOrHighlight = () => {
+    const shipping = parseBsShipping(serviceForm);
+    if (!isBuyerPaysShippingValue(shipping) && shipping !== "Buyer") return true;
+    if (shipping === "Buyer" || !shipping) {
+      const msg = 'When "Buyer pays" is selected, enter a Fixed Shipping Amount or choose Actual Shipping Cost.';
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.alert(msg);
+      } else {
+        Alert.alert("Validation", msg);
+      }
+      return false;
+    }
+    if (shipping === BS_SHIPPING_BUYER_FIXED) {
+      const amount = parseBsShippingAmount(serviceForm.bs_shipping_amount);
+      const zeroOk = serviceForm.bs_shipping_amount === 0 || serviceForm.bs_shipping_amount === "0" || serviceForm.bs_shipping_amount === "0.00";
+      if (amount == null && !zeroOk) {
+        const msg = "Enter a fixed shipping amount (including $0 if free to the buyer under Buyer Fixed).";
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          window.alert(msg);
+        } else {
+          Alert.alert("Validation", msg);
+        }
+        return false;
+      }
+    }
+    return true;
+  };
+
   // Handle keyboard show/hide to scroll to focused input
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener("keyboardDidShow", (e) => {
@@ -3373,8 +3442,18 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const quantityAddBlocked = !isUnlimitedFlag && (!qFlag || !/^\d+$/.test(qFlag) || parseInt(qFlag, 10) < 1);
     const costStrFlag = String(serviceForm.bs_cost || "").trim();
     const costUnitAddBlocked = costStrFlag !== "" && parsePrice(costStrFlag) > 0 && !serviceCostHasUnit(costStrFlag);
+    const buyerPaysSelected = isBuyerPaysShipping(serviceForm);
+    const shippingValue = parseBsShipping(serviceForm);
+    const fixedAmount = parseBsShippingAmount(serviceForm.bs_shipping_amount);
+    const fixedAmountZero =
+      serviceForm.bs_shipping_amount === 0 || serviceForm.bs_shipping_amount === "0" || serviceForm.bs_shipping_amount === "0.00";
+    const buyerPaysShippingBlocked =
+      buyerPaysSelected &&
+      (shippingValue === "Buyer" ||
+        !shippingValue ||
+        (shippingValue === BS_SHIPPING_BUYER_FIXED && fixedAmount == null && !fixedAmountZero));
     const parsedServiceCost = parseServiceCost(serviceForm.bs_cost || "");
-    const addServiceBlocked = taxAddBlocked || quantityAddBlocked || costUnitAddBlocked;
+    const addServiceBlocked = taxAddBlocked || quantityAddBlocked || costUnitAddBlocked || buyerPaysShippingBlocked;
     const bountyExceedsCost = offeringBountyExceedsCost({
       profile_expertise_bounty_type: serviceForm.bs_bounty_type,
       bounty: serviceForm.bs_bounty,
@@ -3773,12 +3852,157 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         </View>
 
         <View style={styles.serviceFormCompactRow}>
+          <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Shipping</Text>
+          <View style={styles.serviceFormRowBody}>
+            <TouchableOpacity
+              style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, styles.bountyTypeBtnLong, isShippingNotApplicable(serviceForm) && styles.bountyTypeBtnActive]}
+              onPress={() => {
+                setServiceForm((prev) => ({
+                  ...prev,
+                  bs_shipping: null,
+                  bs_shipping_amount: null,
+                  bs_shipping_refundable: 0,
+                }));
+                setIsChanged(true);
+              }}
+            >
+              <Text style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, styles.bountyTypeBtnTextLong, isShippingNotApplicable(serviceForm) && styles.bountyTypeBtnTextActive]}>
+                Not Applicable
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, isFreeShipping(serviceForm) && styles.bountyTypeBtnActive]}
+              onPress={() => {
+                setServiceForm((prev) => ({
+                  ...prev,
+                  bs_shipping: BS_SHIPPING_FREE,
+                  bs_shipping_amount: null,
+                  bs_shipping_refundable: 0,
+                }));
+                setIsChanged(true);
+              }}
+            >
+              <Text style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, isFreeShipping(serviceForm) && styles.bountyTypeBtnTextActive]}>Free</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, styles.bountyTypeBtnLong, isBuyerPaysShipping(serviceForm) && styles.bountyTypeBtnActive]}
+              onPress={() => {
+                setServiceForm((prev) => {
+                  const current = parseBsShipping(prev);
+                  if (current === BS_SHIPPING_BUYER_ACTUAL || current === BS_SHIPPING_BUYER_FIXED) {
+                    return { ...prev, bs_shipping: current };
+                  }
+                  return {
+                    ...prev,
+                    bs_shipping: "Buyer",
+                    bs_shipping_amount: null,
+                  };
+                });
+                setIsChanged(true);
+              }}
+            >
+              <Text
+                style={[
+                  styles.bountyTypeBtnText,
+                  styles.bountyTypeBtnTextCompact,
+                  styles.bountyTypeBtnTextLong,
+                  isBuyerPaysShipping(serviceForm) && styles.bountyTypeBtnTextActive,
+                ]}
+              >
+                Buyer pays
+              </Text>
+            </TouchableOpacity>
+
+            {isBuyerPaysShipping(serviceForm) ? (
+              <>
+                <View style={[styles.fixedShippingAmountRow, isFixedShipping(serviceForm) && styles.fixedShippingAmountRowActive]}>
+                  <Text style={[styles.fixedShippingAmountPrefix, darkMode && { color: "#ccc" }]}>$</Text>
+                  <TextInput
+                    style={[
+                      styles.fixedShippingAmountInput,
+                      darkMode && styles.darkInput,
+                      isFixedShipping(serviceForm) && styles.fixedShippingAmountInputActive,
+                    ]}
+                    value={shippingAmountDisplayValue(serviceForm)}
+                    onFocus={() => {
+                      setServiceForm((prev) => ({
+                        ...prev,
+                        bs_shipping: BS_SHIPPING_BUYER_FIXED,
+                        bs_shipping_amount: prev.bs_shipping === BS_SHIPPING_BUYER_FIXED ? prev.bs_shipping_amount : null,
+                      }));
+                      setIsChanged(true);
+                    }}
+                    onChangeText={(text) => {
+                      const cleaned = String(text).replace(/[^0-9.]/g, "");
+                      const parts = cleaned.split(".");
+                      const normalized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join("")}` : cleaned;
+                      setServiceForm((prev) => ({
+                        ...prev,
+                        bs_shipping: BS_SHIPPING_BUYER_FIXED,
+                        bs_shipping_amount: normalized === "" ? null : normalized,
+                      }));
+                      setIsChanged(true);
+                    }}
+                    onBlur={() => {
+                      if (!isFixedShipping(serviceForm)) return;
+                      const raw = String(serviceForm.bs_shipping_amount ?? "").trim();
+                      if (!raw || raw === ".") {
+                        handleServiceChange("bs_shipping_amount", null);
+                        return;
+                      }
+                      const amount = parseBsShippingAmount(raw);
+                      if (amount == null && !(raw === "0" || raw === "0." || raw === "0.0" || raw === "0.00")) return;
+                      const nextAmount = amount == null ? 0 : amount;
+                      // Normalize only after editing finishes (e.g. "5." → 5, "5.50" → 5.5).
+                      if (nextAmount !== serviceForm.bs_shipping_amount) {
+                        handleServiceChange("bs_shipping_amount", nextAmount);
+                      }
+                    }}
+                    placeholder='Fixed Shipping Amount'
+                    keyboardType='decimal-pad'
+                    placeholderTextColor={darkMode ? "#888" : "#999"}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.bountyTypeBtn,
+                    styles.bountyTypeBtnCompact,
+                    styles.actualShippingCostBtn,
+                    isActualShipping(serviceForm) && styles.bountyTypeBtnActive,
+                  ]}
+                  onPress={() => {
+                    setServiceForm((prev) => ({
+                      ...prev,
+                      bs_shipping: BS_SHIPPING_BUYER_ACTUAL,
+                      bs_shipping_amount: null,
+                    }));
+                    setIsChanged(true);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.bountyTypeBtnText,
+                      styles.bountyTypeBtnTextCompact,
+                      styles.actualShippingCostBtnText,
+                      isActualShipping(serviceForm) && styles.bountyTypeBtnTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Actual Shipping Cost
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={styles.serviceFormCompactRow}>
           <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Returnable</Text>
           <View style={styles.serviceFormRowBody}>
             <TouchableOpacity
               style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, !(serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1") && styles.bountyTypeBtnActive]}
               onPress={() => {
-                setServiceForm((prev) => ({ ...prev, bs_is_returnable: 0, bs_return_window_days: "0" }));
+                setServiceForm((prev) => ({ ...prev, bs_is_returnable: 0, bs_return_window_days: "0", bs_shipping_refundable: 0 }));
                 setIsChanged(true);
               }}
             >
@@ -3820,6 +4044,24 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                   placeholderTextColor={darkMode ? "#888" : "#999"}
                 />
                 <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>days</Text>
+                {isBuyerPaysShipping(serviceForm) ? (
+                  <TouchableOpacity
+                    style={[styles.serviceCheckboxRowInline, { marginLeft: 8 }]}
+                    onPress={() => {
+                      const checked = serviceForm.bs_shipping_refundable === 1 || serviceForm.bs_shipping_refundable === "1";
+                      handleServiceChange("bs_shipping_refundable", checked ? 0 : 1);
+                    }}
+                  >
+                    <Ionicons
+                      name={serviceForm.bs_shipping_refundable === 1 || serviceForm.bs_shipping_refundable === "1" ? "checkbox" : "square-outline"}
+                      size={20}
+                      color={serviceForm.bs_shipping_refundable === 1 || serviceForm.bs_shipping_refundable === "1" ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
+                    />
+                    <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>
+                      Refund shipping
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </>
             ) : null}
           </View>
@@ -3874,57 +4116,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 placeholderTextColor={darkMode ? "#888" : "#999"}
               />
             ) : null}
-          </View>
-        </View>
-
-        <View style={styles.serviceFormCompactRow}>
-          <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Shipping</Text>
-          <View style={styles.serviceFormRowBody}>
-            <TouchableOpacity
-              style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, styles.bountyTypeBtnLong, isShippingNotApplicable(serviceForm) && styles.bountyTypeBtnActive]}
-              onPress={() => {
-                setServiceForm((prev) => ({ ...prev, bs_free_shipping: 0, bs_buyer_pays_shipping: 0 }));
-                setIsChanged(true);
-              }}
-            >
-              <Text style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, styles.bountyTypeBtnTextLong, isShippingNotApplicable(serviceForm) && styles.bountyTypeBtnTextActive]}>
-                Not Applicable
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, (serviceForm.bs_free_shipping === 1 || serviceForm.bs_free_shipping === "1") && styles.bountyTypeBtnActive]}
-              onPress={() => {
-                setServiceForm((prev) => ({ ...prev, bs_free_shipping: 1, bs_buyer_pays_shipping: 0 }));
-                setIsChanged(true);
-              }}
-            >
-              <Text style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, (serviceForm.bs_free_shipping === 1 || serviceForm.bs_free_shipping === "1") && styles.bountyTypeBtnTextActive]}>
-                Free
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.bountyTypeBtn,
-                styles.bountyTypeBtnCompact,
-                styles.bountyTypeBtnLong,
-                (serviceForm.bs_buyer_pays_shipping === 1 || serviceForm.bs_buyer_pays_shipping === "1") && styles.bountyTypeBtnActive,
-              ]}
-              onPress={() => {
-                setServiceForm((prev) => ({ ...prev, bs_buyer_pays_shipping: 1, bs_free_shipping: 0 }));
-                setIsChanged(true);
-              }}
-            >
-              <Text
-                style={[
-                  styles.bountyTypeBtnText,
-                  styles.bountyTypeBtnTextCompact,
-                  styles.bountyTypeBtnTextLong,
-                  (serviceForm.bs_buyer_pays_shipping === 1 || serviceForm.bs_buyer_pays_shipping === "1") && styles.bountyTypeBtnTextActive,
-                ]}
-              >
-                Buyer pays
-              </Text>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -4552,6 +4743,40 @@ const styles = StyleSheet.create({
     gap: 8,
     minHeight: 40,
   },
+  fixedShippingAmountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    backgroundColor: "#fff",
+    minHeight: 34,
+  },
+  fixedShippingAmountRowActive: {
+    borderColor: "#9C45F7",
+    backgroundColor: "#F6EDFF",
+  },
+  fixedShippingAmountPrefix: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#555",
+  },
+  fixedShippingAmountInput: {
+    borderWidth: 0,
+    paddingHorizontal: 2,
+    paddingVertical: 4,
+    minWidth: 140,
+    maxWidth: 180,
+    fontSize: 13,
+    color: "#111",
+    backgroundColor: "transparent",
+  },
+  fixedShippingAmountInputActive: {
+    color: "#5B1FA8",
+  },
   serviceFormSpecialInstructionsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -4642,6 +4867,17 @@ const styles = StyleSheet.create({
   bountyTypeBtnTextLong: {
     fontSize: 10,
     lineHeight: 13,
+    textAlign: "center",
+  },
+  actualShippingCostBtn: {
+    flexShrink: 0,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actualShippingCostBtnText: {
+    fontSize: 11,
+    lineHeight: 14,
     textAlign: "center",
   },
   serviceCurrencyDropdownCompact: {

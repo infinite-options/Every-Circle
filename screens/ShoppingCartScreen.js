@@ -58,7 +58,9 @@ import {
   parseOfferingBountyAmount,
   isCartItemReturnable,
   isCartItemShippingApplicable,
+  isCartItemBuyerPaysShipping,
 } from "../utils/offeringCartUtils";
+import { getCartItemBuyerShippingCharge, sumBuyerShippingCharges } from "../utils/businessServiceShipping";
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
 
@@ -229,7 +231,7 @@ function groupBuyerPaysCardFee(items) {
 }
 
 /**
- * One entry per seller: merchandise, sales tax, optional 3% card fee (buyer only), Stripe total.
+ * One entry per seller: merchandise, sales tax, buyer shipping, optional 3% card fee, Stripe total.
  */
 function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
   if (!Array.isArray(cartItems)) return [];
@@ -250,10 +252,13 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
     }
     merchandiseSubtotal = roundMoney(merchandiseSubtotal);
     salesTaxTotal = roundMoney(salesTaxTotal);
+    const shippingInfo = sumBuyerShippingCharges(items);
+    const shippingSubtotal = roundMoney(shippingInfo.shippingSubtotal);
     const subtotalAfterTax = roundMoney(merchandiseSubtotal + salesTaxTotal);
+    const subtotalWithShipping = roundMoney(subtotalAfterTax + shippingSubtotal);
     const buyerPaysCardFee = groupBuyerPaysCardFee(items);
-    const processingFee = buyerPaysCardFee ? roundMoney(subtotalAfterTax * 0.03) : 0;
-    const total = roundMoney(subtotalAfterTax + processingFee);
+    const processingFee = buyerPaysCardFee ? roundMoney(subtotalWithShipping * 0.03) : 0;
+    const total = roundMoney(subtotalWithShipping + processingFee);
     const first = items[0];
     const displayName =
       (typeof resolveBusinessName === "function" && resolveBusinessName(first)) ||
@@ -265,7 +270,12 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
       items,
       merchandiseSubtotal,
       salesTaxTotal,
+      shippingSubtotal,
+      hasFixedShipping: shippingInfo.hasFixedShipping,
+      hasActualShipping: shippingInfo.hasActualShipping,
+      hasBuyerPaysShipping: items.some((it) => isCartItemBuyerPaysShipping(it)),
       subtotalAfterTax,
+      subtotalWithShipping,
       buyerPaysCardFee,
       processingFee,
       total,
@@ -275,7 +285,7 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
 }
 
 const ShoppingCartScreenContent = ({ route, navigation }) => {
-  const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id, returnTo, searchState } = route.params || {};
+  const { cartItems: initialCartItems, businessName, business_uid, recommender_profile_id, returnTo, searchState } = route.params || {};
   const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
 
   const handleReturnPress = () => {
@@ -303,8 +313,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     navigation.navigate("Search");
   };
 
-  const returnButtonLabel =
-    returnTo === "BusinessProfile" ? "Return to Business" : returnTo === "Search" ? "Return to Search" : "Go Back";
+  const returnButtonLabel = returnTo === "BusinessProfile" ? "Return to Business" : returnTo === "Search" ? "Return to Search" : "Go Back";
 
   const resolveItemBusinessName = (item) => {
     if (item.itemType === "expertise") {
@@ -370,8 +379,15 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   }, [webCheckoutSession]);
 
   useEffect(() => {
-    if (!cartItems.some((it) => isCartItemShippingApplicable(it)) && shippingEnabled) {
+    const hasShippingItems = cartItems.some((it) => isCartItemShippingApplicable(it));
+    const hasBuyerPays = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
+    if (!hasShippingItems && shippingEnabled) {
       setShippingEnabled(false);
+      return;
+    }
+    // Buyer-pays shipping requires a shipping address — force Shipping on.
+    if (hasBuyerPays && !shippingEnabled) {
+      setShippingEnabled(true);
     }
   }, [cartItems, shippingEnabled]);
 
@@ -547,9 +563,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     setRefundError(false);
 
     const shippingNeeded = cartItems.some((it) => isCartItemShippingApplicable(it));
+    const buyerPaysShippingRequired = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
+    const shippingMustBeOn = shippingNeeded && (shippingEnabled || buyerPaysShippingRequired);
     if (
-      shippingNeeded &&
-      shippingEnabled &&
+      shippingMustBeOn &&
       !isShippingAddressComplete({
         enabled: true,
         firstName: shippingFirstName,
@@ -560,7 +577,15 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         zip: shippingZip,
       })
     ) {
-      Alert.alert("Shipping address required", "Please complete all required shipping fields before checkout.");
+      if (buyerPaysShippingRequired && !shippingEnabled) {
+        setShippingEnabled(true);
+      }
+      Alert.alert(
+        "Shipping address required",
+        buyerPaysShippingRequired
+          ? "One or more items require buyer-paid shipping. Please complete First Name, Last Name, Street Address, City, State, and Zip before checkout."
+          : "Please complete all required shipping fields before checkout.",
+      );
       return;
     }
 
@@ -752,8 +777,11 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         const storedCartData = await AsyncStorage.getItem(`cart_${itemBusinessUid}`);
         let cartData = storedCartData ? JSON.parse(storedCartData) : { items: [] };
         cartData.items = cartData.items.filter((item) => item.bs_uid !== itemToRemove.bs_uid);
-        await AsyncStorage.setItem(`cart_${itemBusinessUid}`, JSON.stringify(cartData));
-        if (onRemoveItem) onRemoveItem(index);
+        if (cartData.items.length === 0) {
+          await AsyncStorage.removeItem(`cart_${itemBusinessUid}`);
+        } else {
+          await AsyncStorage.setItem(`cart_${itemBusinessUid}`, JSON.stringify(cartData));
+        }
       }
 
       setCartItems((prevItems) => prevItems.filter((_, i) => i !== index));
@@ -770,10 +798,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const currentQuantity = item.quantity || 1;
       const newQuantity = Math.max(1, currentQuantity + change);
 
-      const availableStock =
-        item.itemType === "expertise" || item.bs_quantity != null
-          ? getCartLineStockMax(item)
-          : null;
+      const availableStock = item.itemType === "expertise" || item.bs_quantity != null ? getCartLineStockMax(item) : null;
       if (change > 0 && availableStock != null) {
         const maxQty = parseInt(availableStock, 10);
         if (!isNaN(maxQty) && newQuantity > maxQty) {
@@ -967,8 +992,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const processingFee = group.processingFee;
       const chargedTotal = group.total;
 
-      const defaultRecommender =
-        recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : buyerProfileId;
+      const defaultRecommender = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : buyerProfileId;
 
       const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
@@ -1002,8 +1026,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       // total_taxes / total_fees break out the tax and fee portions of the charge.
       const salesTaxRounded = parseFloat(Number(salesTaxTotal).toFixed(2));
       const merchandiseRounded = parseFloat(Number(merchandiseSubtotal).toFixed(2));
+      const shippingRounded = parseFloat(Number(group.shippingSubtotal || 0).toFixed(2));
+      const buyerPaysShippingRequired = group.items.some((it) => isCartItemBuyerPaysShipping(it));
       const shippingAddress = buildShippingAddressPayload({
-        enabled: shippingEnabled && cartItems.some((it) => isCartItemShippingApplicable(it)),
+        enabled: (shippingEnabled || buyerPaysShippingRequired) && cartItems.some((it) => isCartItemShippingApplicable(it)),
         firstName: shippingFirstName,
         lastName: shippingLastName,
         streetLine1: shippingStreetLine1,
@@ -1019,12 +1045,17 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         total_amount_paid: parseFloat(Number(chargedTotal).toFixed(2)),
         total_costs: merchandiseRounded,
         total_taxes: salesTaxRounded,
+        total_shipping: shippingRounded,
         total_fees: parseFloat(Number(processingFee).toFixed(2)),
         transaction_in_escrow: transactionInEscrow,
         items,
       };
       if (shippingAddress) {
         transactionData.shipping_address = shippingAddress;
+      }
+      if (group.hasActualShipping) {
+        transactionData.shipping_actual_pending = 1;
+        transactionData.shipping_note = "Seller will contact the buyer directly for actual shipping cost.";
       }
 
       console.log("[ShoppingCart] Transaction POST — each field before endpoint:");
@@ -1035,6 +1066,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         total_amount_paid: transactionData.total_amount_paid,
         total_costs: transactionData.total_costs,
         total_taxes: transactionData.total_taxes,
+        total_shipping: transactionData.total_shipping,
         total_fees: transactionData.total_fees,
         transaction_in_escrow: transactionData.transaction_in_escrow,
         items_count: Array.isArray(transactionData.items) ? transactionData.items.length : 0,
@@ -1125,14 +1157,16 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
   const cartRequiresReturnAcknowledgement = cartItems.some((it) => isCartItemReturnable(it));
   const cartHasShippingApplicableItems = cartItems.some((it) => isCartItemShippingApplicable(it));
+  const cartRequiresBuyerPaysShipping = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
   const feeDialogFirstGroup = sellerGroupsPreview[0];
   const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index] ? webCheckoutSession.groups[webCheckoutSession.index].total : 0;
   const webCheckoutPayeeDisplayName =
     (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
     null;
+  const shippingEffectiveEnabled = cartHasShippingApplicableItems && (shippingEnabled || cartRequiresBuyerPaysShipping);
   const shippingAddressComplete = isShippingAddressComplete({
-    enabled: cartHasShippingApplicableItems && shippingEnabled,
+    enabled: shippingEffectiveEnabled,
     firstName: shippingFirstName,
     lastName: shippingLastName,
     streetLine1: shippingStreetLine1,
@@ -1140,7 +1174,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     state: shippingState,
     zip: shippingZip,
   });
-  const checkoutBlockedByShipping = cartHasShippingApplicableItems && shippingEnabled && !shippingAddressComplete;
+  const checkoutBlockedByShipping = shippingEffectiveEnabled && !shippingAddressComplete;
   const checkoutDisabled = loading || checkoutBlockedByShipping;
 
   const content = (
@@ -1235,6 +1269,27 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                               : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost_with_extras || item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
                           </Text>
                         </View>
+                        {(() => {
+                          const shipCharge = getCartItemBuyerShippingCharge(item);
+                          if (!shipCharge) return null;
+                          if (shipCharge.type === "fixed") {
+                            return (
+                              <View style={styles.totalRow}>
+                                <Text style={styles.priceLabel}>Buyer shipping (fixed):</Text>
+                                <Text style={styles.priceValue}>${shipCharge.amount.toFixed(2)}</Text>
+                              </View>
+                            );
+                          }
+                          return (
+                            <View style={{ marginTop: 4 }}>
+                              <View style={styles.totalRow}>
+                                <Text style={styles.priceLabel}>Buyer shipping (actual):</Text>
+                                <Text style={styles.priceValue}>$0.00</Text>
+                              </View>
+                              <Text style={styles.shippingActualNote}>Seller will contact the buyer directly for actual shipping cost.</Text>
+                            </View>
+                          );
+                        })()}
                         {item.itemType === "expertise" ? (
                           <View style={styles.lineTaxBlock}>
                             <View style={styles.lineTaxRow}>
@@ -1291,82 +1346,57 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                 <View style={styles.shippingCard}>
                   <TouchableOpacity
                     style={styles.escrowRow}
-                    onPress={() => setShippingEnabled((prev) => !prev)}
-                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (cartRequiresBuyerPaysShipping) return;
+                      setShippingEnabled((prev) => !prev);
+                    }}
+                    activeOpacity={cartRequiresBuyerPaysShipping ? 1 : 0.7}
+                    disabled={cartRequiresBuyerPaysShipping}
                   >
-                    <View style={[styles.checkbox, shippingEnabled && styles.checkboxChecked]}>
-                      {shippingEnabled && <Text style={styles.checkmark}>✓</Text>}
-                    </View>
-                    <Text style={styles.escrowLabel}>Shipping</Text>
+                    <View style={[styles.checkbox, shippingEffectiveEnabled && styles.checkboxChecked]}>{shippingEffectiveEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
+                    <Text style={styles.escrowLabel}>Shipping{cartRequiresBuyerPaysShipping ? " (required — at least one item requires shipping)" : ""}</Text>
                   </TouchableOpacity>
-                  {shippingEnabled ? (
+                  {cartRequiresBuyerPaysShipping ? <Text style={styles.shippingRequiredNote}>Shipping address is required because one or more items use buyer-paid shipping.</Text> : null}
+                  {shippingEffectiveEnabled ? (
                     <View style={styles.shippingFields}>
-                      <Text style={styles.shippingFieldLabel}>First Name</Text>
-                      <TextInput
-                        style={styles.shippingInput}
-                        value={shippingFirstName}
-                        onChangeText={setShippingFirstName}
-                        placeholder="First Name"
-                        autoCapitalize="words"
-                        autoCorrect={false}
-                      />
-                      <Text style={styles.shippingFieldLabel}>Last Name</Text>
-                      <TextInput
-                        style={styles.shippingInput}
-                        value={shippingLastName}
-                        onChangeText={setShippingLastName}
-                        placeholder="Last Name"
-                        autoCapitalize="words"
-                        autoCorrect={false}
-                      />
-                      <Text style={styles.shippingFieldLabel}>Street Address</Text>
+                      <Text style={styles.shippingFieldLabel}>First Name *</Text>
+                      <TextInput style={styles.shippingInput} value={shippingFirstName} onChangeText={setShippingFirstName} placeholder='First Name' autoCapitalize='words' autoCorrect={false} />
+                      <Text style={styles.shippingFieldLabel}>Last Name *</Text>
+                      <TextInput style={styles.shippingInput} value={shippingLastName} onChangeText={setShippingLastName} placeholder='Last Name' autoCapitalize='words' autoCorrect={false} />
+                      <Text style={styles.shippingFieldLabel}>Street Address *</Text>
                       <TextInput
                         style={styles.shippingInput}
                         value={shippingStreetLine1}
                         onChangeText={setShippingStreetLine1}
-                        placeholder="Street Address Line 1"
-                        autoCapitalize="words"
+                        placeholder='Street Address Line 1'
+                        autoCapitalize='words'
                         autoCorrect={false}
                       />
                       <TextInput
                         style={styles.shippingInput}
                         value={shippingStreetLine2}
                         onChangeText={setShippingStreetLine2}
-                        placeholder="Street Address Line 2"
-                        autoCapitalize="words"
+                        placeholder='Street Address Line 2 (optional)'
+                        autoCapitalize='words'
                         autoCorrect={false}
                       />
                       <View style={styles.shippingCityStateZipRow}>
                         <View style={styles.shippingCityField}>
-                          <Text style={styles.shippingFieldLabel}>City</Text>
-                          <TextInput
-                            style={styles.shippingInput}
-                            value={shippingCity}
-                            onChangeText={setShippingCity}
-                            placeholder="City"
-                            autoCapitalize="words"
-                            autoCorrect={false}
-                          />
+                          <Text style={styles.shippingFieldLabel}>City *</Text>
+                          <TextInput style={styles.shippingInput} value={shippingCity} onChangeText={setShippingCity} placeholder='City' autoCapitalize='words' autoCorrect={false} />
                         </View>
                         <View style={styles.shippingStateField}>
-                          <Text style={styles.shippingFieldLabel}>State</Text>
-                          <TextInput
-                            style={styles.shippingInput}
-                            value={shippingState}
-                            onChangeText={setShippingState}
-                            placeholder="State"
-                            autoCapitalize="words"
-                            autoCorrect={false}
-                          />
+                          <Text style={styles.shippingFieldLabel}>State *</Text>
+                          <TextInput style={styles.shippingInput} value={shippingState} onChangeText={setShippingState} placeholder='State' autoCapitalize='words' autoCorrect={false} />
                         </View>
                         <View style={styles.shippingZipField}>
-                          <Text style={styles.shippingFieldLabel}>Zip</Text>
+                          <Text style={styles.shippingFieldLabel}>Zip *</Text>
                           <TextInput
                             style={[styles.shippingInput, styles.shippingInputLast]}
                             value={shippingZip}
                             onChangeText={setShippingZip}
-                            placeholder="Zip"
-                            keyboardType="number-pad"
+                            placeholder='Zip'
+                            keyboardType='number-pad'
                             autoCorrect={false}
                           />
                         </View>
@@ -1395,6 +1425,21 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <Text style={styles.totalLabel}>Sales tax</Text>
                       <Text style={styles.totalValue}>${g.salesTaxTotal.toFixed(2)}</Text>
                     </View>
+                    {g.hasFixedShipping ? (
+                      <View style={styles.totalRow}>
+                        <Text style={styles.totalLabel}>Shipping (buyer fixed)</Text>
+                        <Text style={styles.totalValue}>${g.shippingSubtotal.toFixed(2)}</Text>
+                      </View>
+                    ) : null}
+                    {g.hasActualShipping ? (
+                      <View style={styles.shippingActualBlock}>
+                        <View style={styles.totalRow}>
+                          <Text style={styles.totalLabel}>Shipping (actual cost)</Text>
+                          <Text style={styles.totalValue}>$0.00</Text>
+                        </View>
+                        <Text style={styles.shippingActualNote}>Seller will contact the buyer directly for actual shipping cost.</Text>
+                      </View>
+                    ) : null}
                     <View style={styles.totalRow}>
                       <Text style={styles.totalLabel}>Credit card processing (3%)</Text>
                       <Text style={styles.totalValue}>${g.processingFee.toFixed(2)}</Text>
@@ -1472,9 +1517,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
               }}
               disabled={checkoutDisabled}
             >
-              <Text style={[styles.checkoutButtonText, checkoutDisabled && styles.checkoutButtonTextDisabled]}>
-                {loading ? "Processing..." : "Proceed to Checkout"}
-              </Text>
+              <Text style={[styles.checkoutButtonText, checkoutDisabled && styles.checkoutButtonTextDisabled]}>{loading ? "Processing..." : "Proceed to Checkout"}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.returnButton} onPress={handleReturnPress} disabled={loading}>
               <Text style={styles.returnButtonText}>{returnButtonLabel}</Text>
@@ -1505,9 +1548,11 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
             }
             merchandiseSubtotal={feeDialogFirstGroup ? feeDialogFirstGroup.merchandiseSubtotal : undefined}
             salesTaxTotal={feeDialogFirstGroup ? feeDialogFirstGroup.salesTaxTotal : undefined}
+            shippingSubtotal={feeDialogFirstGroup ? feeDialogFirstGroup.shippingSubtotal : undefined}
+            hasActualShipping={feeDialogFirstGroup ? feeDialogFirstGroup.hasActualShipping : undefined}
             cardProcessingFee={feeDialogFirstGroup ? feeDialogFirstGroup.processingFee : undefined}
             buyerPaysCardFee={feeDialogFirstGroup ? feeDialogFirstGroup.buyerPaysCardFee : undefined}
-            subtotal={feeDialogFirstGroup ? feeDialogFirstGroup.subtotalAfterTax : null}
+            subtotal={feeDialogFirstGroup ? (feeDialogFirstGroup.subtotalWithShipping ?? feeDialogFirstGroup.subtotalAfterTax) : null}
             totalWithFee={feeDialogFirstGroup ? feeDialogFirstGroup.total : null}
             payeeBusinessName={feeDialogFirstGroup?.displayName ?? null}
           />
@@ -1542,7 +1587,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
 
 export default function ShoppingCartScreen(props) {
   return (
-    <StripeNativeProvider businessCode="ECTEST">
+    <StripeNativeProvider businessCode='ECTEST'>
       <ShoppingCartScreenContent {...props} />
     </StripeNativeProvider>
   );
@@ -1656,6 +1701,22 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 10,
     marginTop: 10,
+  },
+  shippingRequiredNote: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 6,
+    marginBottom: 4,
+    marginLeft: 28,
+  },
+  shippingActualBlock: {
+    marginBottom: 2,
+  },
+  shippingActualNote: {
+    fontSize: 11,
+    color: "#666",
+    fontStyle: "italic",
+    marginBottom: 6,
   },
   shippingFields: {
     marginTop: 12,

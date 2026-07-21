@@ -3515,21 +3515,6 @@ export default function SearchScreen({ route }) {
             onPress={() =>
               navigation.navigate("ShoppingCart", {
                 cartItems,
-                onRemoveItem: async (index) => {
-                  const itemToRemove = cartItems[index];
-                  const businessUid = itemToRemove.business_uid;
-
-                  const newCartItems = cartItems.filter((_, i) => i !== index);
-                  setCartItems(newCartItems);
-                  setCartCount(newCartItems.length);
-
-                  await AsyncStorage.setItem(
-                    `cart_${businessUid}`,
-                    JSON.stringify({
-                      items: newCartItems.filter((item) => item.business_uid === businessUid),
-                    }),
-                  );
-                },
                 businessName: "All Items",
                 business_uid: "all",
                 returnTo: "Search",
