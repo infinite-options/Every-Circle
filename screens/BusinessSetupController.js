@@ -90,6 +90,8 @@ export default function BusinessSetupController({ navigation, route }) {
   const [formData, setFormData] = useState(getInitialFormData());
   const formDataRef = useRef(formData);
   const [step1HasPendingTags, setStep1HasPendingTags] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
     formDataRef.current = formData;
@@ -107,6 +109,8 @@ export default function BusinessSetupController({ navigation, route }) {
 
         // Reset to step 0
         setActiveStep(0);
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
 
         console.log("BusinessSetupController - Reset for NEW business creation");
       };
@@ -180,6 +184,8 @@ export default function BusinessSetupController({ navigation, route }) {
   };
 
   const handleContinue = () => {
+    if (isSubmittingRef.current) return;
+
     if (activeStep === 1 && step1HasPendingTags) {
       Alert.alert("Unsaved Tags", "Click Add to save your custom tags, or clear the tag field before submitting.");
       return;
@@ -217,6 +223,10 @@ export default function BusinessSetupController({ navigation, route }) {
   };
 
   const submitBusinessData = async () => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+
     try {
       const currentFormData = formDataRef.current;
       const customTags = currentFormData.customTags || [];
@@ -442,7 +452,8 @@ export default function BusinessSetupController({ navigation, route }) {
         console.log("✅ Business created successfully");
         console.log("🆔 Business UID:", result.business_uid);
         navigation.navigate("BusinessProfile", { business_uid: result.business_uid });
-        // navigation.navigate('BusinessProfile');
+        // Keep submit locked after success; screen will unmount on navigate.
+        return;
       } else {
         console.error("❌ Business creation failed:", result.message || "Unknown error");
         throw new Error(result.message || "Business creation failed.");
@@ -456,6 +467,8 @@ export default function BusinessSetupController({ navigation, route }) {
       console.error("Full error:", error);
       console.error("============================================");
       Alert.alert("Submission Error", error.message);
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -488,7 +501,8 @@ export default function BusinessSetupController({ navigation, route }) {
         onContinue={handleContinue}
         onSubmit={handleContinue}
         totalSteps={2}
-        submitDisabled={activeStep === 1 && (!canSubmitStep1() || step1HasPendingTags)}
+        submitDisabled={activeStep === 1 && (!canSubmitStep1() || step1HasPendingTags || isSubmitting)}
+        isSubmitting={isSubmitting}
       />
       <BottomNavBar navigation={navigation} />
     </View>

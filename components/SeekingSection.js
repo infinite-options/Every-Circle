@@ -674,10 +674,15 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               showRemove={!!getWishDisplayUri(item)}
             />
             <View style={styles.miniCardFields}>
-              <TextInput style={styles.input} placeholder='Seeking Title' value={item.helpNeeds} onChangeText={(text) => handleInputChange(index, "helpNeeds", text)} />
               <TextInput
-                style={styles.descriptionInput}
-                placeholder='Description'
+                style={[styles.input, !String(item.helpNeeds || "").trim() && styles.requiredInput]}
+                placeholder='Seeking Title *'
+                value={item.helpNeeds}
+                onChangeText={(text) => handleInputChange(index, "helpNeeds", text)}
+              />
+              <TextInput
+                style={[styles.descriptionInput, !String(item.details || "").trim() && styles.requiredInput]}
+                placeholder='Description *'
                 value={item.details}
                 onChangeText={(text) => handleInputChange(index, "details", text)}
                 multiline={true}
@@ -1280,6 +1285,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlignVertical: "center",
   },
+  requiredInput: {
+    borderColor: "#f44336",
+  },
   requiredDropdown: {
     borderColor: "#f44336",
   },
@@ -1323,10 +1331,13 @@ const styles = StyleSheet.create({
 });
 
 export const validateSeeking = (wishes) => {
-  return wishes.every((w) => {
-    if (!w.helpNeeds) return true; // skip empty entries
-    const unit = w.cost ? w.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i) : null;
-    return !!unit;
+  return (wishes || []).every((w) => {
+    const hasTitle = !!String(w.helpNeeds || "").trim();
+    const hasDescription = !!String(w.details || "").trim();
+    const hasUnit = !!(w.cost && w.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i));
+    // Skip blank placeholder entries (Seeking seeds one empty card when the user has none).
+    if (!hasTitle && !hasDescription && !String(w.cost || "").trim()) return true;
+    return hasTitle && hasDescription && hasUnit;
   });
 };
 

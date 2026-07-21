@@ -644,7 +644,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     }
 
     if (!validateSeeking(formData.wishes)) {
-      Alert.alert("Required Field", "Please select a unit for all Seeking entries before submitting.");
+      Alert.alert("Required Field", "Please fill in title, description, and unit for all Seeking entries before submitting.");
       return;
     }
 
@@ -1176,7 +1176,12 @@ const EditProfileScreen = ({ route, navigation }) => {
         </View>
       </View>
       <TextInput
-        style={[styles.input, !editable && (darkMode ? styles.darkDisabledInput : styles.disabledInput), darkMode && editable && styles.darkInput]}
+        style={[
+          styles.input,
+          !editable && (darkMode ? styles.darkDisabledInput : styles.disabledInput),
+          darkMode && editable && styles.darkInput,
+          (fieldName === "firstName" || fieldName === "lastName") && !String(value || "").trim() && styles.inputError,
+        ]}
         value={value}
         onChangeText={(text) => handleFieldChange(fieldName, text)}
         editable={editable}
@@ -2099,7 +2104,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   inputError: {
-    borderColor: "#c62828",
+    borderColor: "#f44336",
   },
 });
 
