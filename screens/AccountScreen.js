@@ -23,6 +23,7 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { getSessionProfile } from "../utils/sessionProfile";
+import { restockReturnedItems } from "../utils/purchaseService";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
@@ -3324,6 +3325,7 @@ function OrderDetailLinesTable({
     const displayBounty = signedRows ? -Math.abs(bountyAmount) : Math.abs(bountyAmount);
     const displayShare = signedRows ? -shareAmount : shareAmount;
     const fulfillment = includeFulfillment ? formatLineFulfillmentDisplay(line) : null;
+    const qtyNote = signedRows ? "" : formatOrderDetailLineQtyNote(line);
     const rowKey = String(line.ti_uid || line.transaction_item_uid || `${line.ti_bs_id}-${index}`).trim();
     return {
       key: rowKey,
@@ -3333,6 +3335,7 @@ function OrderDetailLinesTable({
       specialInstructions,
       unitCost: displayUnitCost,
       qty: displayQty,
+      qtyNote,
       bounty: displayBounty,
       bountyPctLabel,
       share: displayShare,
@@ -3436,7 +3439,14 @@ function OrderDetailLinesTable({
                   </Text>
                 ) : null}
               </View>
-              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>{row.qty}</Text>
+              <View style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty, { alignItems: "flex-end" }]}>
+                <Text style={[signedCellStyle, darkMode && !signedRows && { color: "#ccc" }, { fontSize: 13 }]}>{row.qty}</Text>
+                {row.qtyNote ? (
+                  <Text style={{ fontSize: 10, color: noteTextColor, marginTop: 2, textAlign: "right", lineHeight: 13 }} numberOfLines={2}>
+                    {row.qtyNote}
+                  </Text>
+                ) : null}
+              </View>
               <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
                 {formatCellAmount(row.unitCost)}
               </Text>
@@ -3963,6 +3973,11 @@ function ReturnDetailsModal({
   trrUids = null,
   returnTxnUid = null,
   sourceReturnRow = null,
+  restockCandidates = [],
+  restockQtyByKey = {},
+  onRestockQtyChange,
+  onRestockFillAll,
+  onRestockClearAll,
 }) {
   const sale = orderDetail?.sale || null;
   const scope = {
@@ -4035,6 +4050,48 @@ function ReturnDetailsModal({
       <Text style={[...valueStyle, parseFloat(value) < 0 && { color: "#B71C1C" }]}>{formatSignedOrderMoney(value)}</Text>
     </View>
   );
+
+  const showRestockSection = isSellerView && restockCandidates.length > 0 && (awaitingSellerAction || awaitingCancelConfirm);
+  const renderRestockSection = () => {
+    if (!showRestockSection) return null;
+    return (
+      <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
+        <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>Restore to inventory (optional)</Text>
+        <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
+          {awaitingCancelConfirm
+            ? "Add cancelled units back to Product Inventory Available when they are sellable again."
+            : "For each item you received, choose how many units to put back on sale."}
+        </Text>
+        {restockCandidates.map((candidate) => (
+          <ReturnModalQtyStepper
+            key={candidate.key}
+            label={`${candidate.itemName} · available now ${candidate.currentAvailableLabel}`}
+            value={restockQtyByKey[candidate.key] ?? 0}
+            max={candidate.maxQty}
+            onChange={(next) => onRestockQtyChange?.(candidate.key, next)}
+            darkMode={darkMode}
+            suffix={`of ${candidate.maxQty} returned`}
+          />
+        ))}
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
+          <TouchableOpacity
+            style={[styles.orderDetailShipSecondaryButton, { flex: 1 }, (confirming || declining) && { opacity: 0.5 }]}
+            disabled={confirming || declining}
+            onPress={() => onRestockFillAll?.()}
+          >
+            <Text style={styles.orderDetailShipSecondaryButtonText}>Restock all</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.orderDetailShipSecondaryButton, { flex: 1 }, (confirming || declining) && { opacity: 0.5 }]}
+            disabled={confirming || declining}
+            onPress={() => onRestockClearAll?.()}
+          >
+            <Text style={styles.orderDetailShipSecondaryButtonText}>Restock none</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
 
   const statusBanner = (() => {
     if (!logistics) return null;
@@ -4165,6 +4222,7 @@ function ReturnDetailsModal({
                   {!allItemsReceived && returnItems.length > 0 ? (
                     <Text style={{ color: "#B71C1C", fontSize: 12, marginTop: 8, textAlign: "center" }}>Please confirm receipt of every returned item.</Text>
                   ) : null}
+                  {renderRestockSection()}
 
                   <View style={[styles.orderDetailShipActions, { marginTop: 14 }]}>
                     <TouchableOpacity
@@ -4190,6 +4248,7 @@ function ReturnDetailsModal({
                   <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
                     These items were never shipped. Confirming cancels the ship quantity and issues the refund. No physical return is required.
                   </Text>
+                  {renderRestockSection()}
                   <View style={[styles.orderDetailShipActions, { marginTop: 14 }]}>
                     <TouchableOpacity
                       style={[styles.orderDetailShipSaveButton, { backgroundColor: "#18884A", flex: 1 }, (!canConfirmCancel || confirming || declining) && styles.orderDetailShipSaveButtonDisabled]}
@@ -4533,6 +4592,19 @@ function formatLineFulfillmentDisplay(line) {
     return { statusLabel: "Not shipped", trackingLabel: "—", trackingPairs: [], cancelNote: "" };
   }
   return { statusLabel: "—", trackingLabel: "—", trackingPairs: [], cancelNote: "" };
+}
+
+/** Sub-label under Qty in order detail when shipped/cancelled counts differ from purchased. */
+function formatOrderDetailLineQtyNote(line) {
+  if (!line || typeof line !== "object") return "";
+  const purchased = getLinePurchasedQty(line);
+  if (purchased <= 0) return "";
+  const shipped = getLineShippedQty(line);
+  const cancelled = getLineCancelledFromShipQty(line);
+  const parts = [];
+  if (shipped > 0 && shipped < purchased) parts.push(`${shipped} shipped`);
+  if (cancelled > 0) parts.push(`${cancelled} cancelled`);
+  return parts.join(" · ");
 }
 
 /**
@@ -5054,7 +5126,7 @@ function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress
           <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColOrder]}>Order</Text>
           <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColPlacedBy]}>Placed by</Text>
           <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColDate]}>Date</Text>
-          <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColMoney]}>Total</Text>
+          <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColTotal]}>Total</Text>
           <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColMoney]}>Bounty</Text>
           <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColStatus]}>Delivered</Text>
           <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColStatus]}>Received</Text>
@@ -5086,7 +5158,10 @@ function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress
                 )}
                 <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColPlacedBy, styles.productSalesDetailOrderText, darkMode && { color: "#eee" }]}>{row.placedBy}</Text>
                 <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate, darkMode && { color: "#ccc" }]}>{row.dateLabel}</Text>
-                <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColMoney, isReturnRow && { color: "#B71C1C" }, darkMode && !isReturnRow && { color: "#ccc" }]}>
+                <Text
+                  style={[styles.productSalesDetailCell, styles.productSalesDetailColTotal, isReturnRow && { color: "#B71C1C" }, darkMode && !isReturnRow && { color: "#ccc" }]}
+                  numberOfLines={1}
+                >
                   {formatSignedOrderMoney(row.total)}
                 </Text>
                 <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColMoney, isReturnRow && { color: "#B71C1C" }, darkMode && !isReturnRow && { color: "#ccc" }]}>
@@ -5125,7 +5200,9 @@ function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress
           <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColOrder]} />
           <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColPlacedBy]} />
           <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate]} />
-          <Text style={[styles.productSalesDetailTotalValue, styles.productSalesDetailColMoney, darkMode && { color: "#eee" }]}>{formatSignedOrderMoney(totals.total)}</Text>
+          <Text style={[styles.productSalesDetailTotalValue, styles.productSalesDetailColTotal, darkMode && { color: "#eee" }]} numberOfLines={1}>
+            {formatSignedOrderMoney(totals.total)}
+          </Text>
           <Text style={[styles.productSalesDetailTotalValue, styles.productSalesDetailColMoney, darkMode && { color: "#eee" }]}>{formatSignedOrderMoney(totals.bountyPaid)}</Text>
           <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColStatus]} />
           <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColStatus]} />
@@ -5314,6 +5391,69 @@ function formatBusinessServiceUnitsAvailableFromService(service) {
   const unlimited = service?.bs_qty_unlimited === 1 || service?.bs_qty_unlimited === "1" || service?.bs_qty_unlimited === true;
   if (unlimited) return "∞";
   return formatBusinessServiceUnitsAvailable(service?.bs_quantity ?? service?.bs_available_quantity ?? service?.quantity);
+}
+
+function isBusinessServiceInventoryLimited(service) {
+  if (!service || typeof service !== "object") return false;
+  return !(service.bs_qty_unlimited === 1 || service.bs_qty_unlimited === "1" || service.bs_qty_unlimited === true);
+}
+
+function findBusinessServiceForLine(services, line) {
+  const productUid = String(line?.ti_bs_id || line?.bs_uid || "").trim();
+  if (!productUid) return null;
+  return (services || []).find((service) => String(service?.bs_uid || service?.ti_bs_id || "").trim() === productUid) || null;
+}
+
+/** Limited-inventory lines eligible for restock when seller confirms return/cancel. */
+function buildReturnRestockCandidates(returnItems, businessServices, { receivedKeys = [], isPreShipCancel = false } = {}) {
+  const receivedSet = new Set(receivedKeys || []);
+  return (returnItems || [])
+    .map((item) => {
+      const line = item?.line || {};
+      const service = findBusinessServiceForLine(businessServices, line);
+      if (!service || !isBusinessServiceInventoryLimited(service)) return null;
+      const bs_uid = String(service.bs_uid || line.ti_bs_id || "").trim();
+      if (!bs_uid) return null;
+      const maxQty = Math.max(0, parseInt(item.qty, 10) || 0);
+      if (maxQty <= 0) return null;
+      if (!isPreShipCancel && !receivedSet.has(item.key)) return null;
+      return {
+        key: item.key,
+        bs_uid,
+        itemName: item.itemName || item.description || "Item",
+        maxQty,
+        currentAvailableLabel: formatBusinessServiceUnitsAvailableFromService(service),
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildRestockItemsPayload(candidates, restockQtyByKey) {
+  return (candidates || [])
+    .map((candidate) => ({
+      bs_uid: candidate.bs_uid,
+      quantity: Math.max(0, Math.min(candidate.maxQty, parseInt(restockQtyByKey?.[candidate.key], 10) || 0)),
+    }))
+    .filter((item) => item.quantity > 0);
+}
+
+function applyLocalInventoryRestock(setter, results) {
+  if (!Array.isArray(results) || !results.length) return;
+  setter((prev) =>
+    (prev || []).map((service) => {
+      const uid = String(service?.bs_uid || service?.ti_bs_id || "").trim();
+      const hit = results.find((row) => String(row.bs_uid || "").trim() === uid);
+      if (!hit) return service;
+      if (hit.remaining != null && Number.isFinite(hit.remaining)) {
+        const nextQty = String(Math.max(0, hit.remaining));
+        return { ...service, bs_available_quantity: nextQty, bs_quantity: nextQty };
+      }
+      const current = parseInt(service.bs_available_quantity ?? service.bs_quantity, 10);
+      const base = Number.isFinite(current) ? current : 0;
+      const nextQty = String(base + (parseInt(hit.quantity, 10) || 0));
+      return { ...service, bs_available_quantity: nextQty, bs_quantity: nextQty };
+    }),
+  );
 }
 
 function formatInventoryMoney(raw, currency) {
@@ -5542,6 +5682,7 @@ export default function AccountScreen({ navigation, route }) {
     isSellerView: true,
   });
   const [returnReceivedItemKeys, setReturnReceivedItemKeys] = useState([]);
+  const [returnRestockQtyByKey, setReturnRestockQtyByKey] = useState({});
   const [returnDetailAccepting, setReturnDetailAccepting] = useState(false);
   const [returnDetailDeclining, setReturnDetailDeclining] = useState(false);
   const [returnConfirmResult, setReturnConfirmResult] = useState(null);
@@ -6111,7 +6252,7 @@ export default function AccountScreen({ navigation, route }) {
     return { ok: true, result: result?.data && typeof result.data === "object" ? result.data : result };
   };
 
-  const handleSellerReturnConfirmAction = async ({ transactionUid, orderUidForStatus, trrUid = null, trrUids = null, action, sellerNote = "", stripeRefundResult = null }) => {
+  const handleSellerReturnConfirmAction = async ({ transactionUid, orderUidForStatus, trrUid = null, trrUids = null, action, sellerNote = "", stripeRefundResult = null, restockItems = null }) => {
     // Backend batch-confirm: pass trr_uids[] for a multi-item wave → one ledger + one Stripe.
     const batchTrrUids = normalizeTrrUidList(trrUids, trrUid);
     // transaction_uid must ALWAYS be the sale (500-… / order_uid). On pending rows, transaction_uid is the trr_uid.
@@ -6146,6 +6287,14 @@ export default function AccountScreen({ navigation, route }) {
         if (stripeRefundResult.refund_id) {
           body.stripe_refund_id = stripeRefundResult.refund_id;
         }
+      }
+      if (action === "confirm" && Array.isArray(restockItems) && restockItems.length) {
+        body.restock_items = restockItems
+          .map((item) => ({
+            bs_uid: String(item.bs_uid || "").trim(),
+            quantity: Math.max(0, parseInt(item.quantity, 10) || 0),
+          }))
+          .filter((item) => item.bs_uid && item.quantity > 0);
       }
       const response = await fetch(TRANSACTIONS_RETURN_CONFIRM_ENDPOINT, {
         method: "PUT",
@@ -6299,7 +6448,7 @@ export default function AccountScreen({ navigation, route }) {
     }
   };
 
-  const handleReturnAccept = async (transactionUid, orderUidForStatus, sellerNote = "Item received", stripeRefundResult = null, trrUid = null, trrUids = null) => {
+  const handleReturnAccept = async (transactionUid, orderUidForStatus, sellerNote = "Item received", stripeRefundResult = null, trrUid = null, trrUids = null, restockItems = null) => {
     return handleSellerReturnConfirmAction({
       transactionUid,
       orderUidForStatus,
@@ -6308,13 +6457,14 @@ export default function AccountScreen({ navigation, route }) {
       action: "confirm",
       sellerNote,
       stripeRefundResult,
+      restockItems,
     });
   };
 
   /**
    * Prompt for seller note, call IO-Payments createRefund (business_code from note), then confirm on EC backend.
    */
-  const openConfirmReceiptNoteModal = ({ transactionUid, orderUid, trrUid = null, trrUids = null, orderDetail = null, listIdx = null }) => {
+  const openConfirmReceiptNoteModal = ({ transactionUid, orderUid, trrUid = null, trrUids = null, orderDetail = null, listIdx = null, restockItems = null }) => {
     const detail = orderDetail || returnDetailModal.orderDetail || null;
     const resolvedTrrUids = normalizeTrrUidList(trrUids, trrUid, returnDetailModal.trrUids, returnDetailModal.trrUid, returnDetailModal.sourceReturnRow);
     setPendingConfirmReceipt({
@@ -6324,6 +6474,7 @@ export default function AccountScreen({ navigation, route }) {
       trrUids: resolvedTrrUids,
       orderDetail: detail,
       listIdx,
+      restockItems: Array.isArray(restockItems) ? restockItems : [],
     });
     setConfirmReceiptNote("");
     // Close Return Details / legacy return-note view first so Confirm Receipt is interactive.
@@ -6393,8 +6544,34 @@ export default function AccountScreen({ navigation, route }) {
         };
       }
 
-      const outcome = await handleReturnAccept(saleUid, saleUid, sellerNote, stripeRefundResult, trrUid || null, trrUids);
+      const outcome = await handleReturnAccept(saleUid, saleUid, sellerNote, stripeRefundResult, trrUid || null, trrUids, pending.restockItems || null);
       if (outcome?.ok) {
+        const restockItems = Array.isArray(pending.restockItems) ? pending.restockItems.filter((item) => (parseInt(item.quantity, 10) || 0) > 0) : [];
+        if (restockItems.length) {
+          const sellerId = resolveSellerIdForReturn(saleUid);
+          const backendRestocked = Boolean(outcome.result?.restock_applied || outcome.result?.inventory_restocked);
+          if (!backendRestocked) {
+            const restockOutcome = await restockReturnedItems(restockItems, {
+              sellerId,
+              trrUid,
+              orderUid: saleUid,
+            });
+            if (restockOutcome.ok) {
+              applyLocalInventoryRestock(setBusinessServices, restockOutcome.results);
+            } else if (restockOutcome.partial) {
+              applyLocalInventoryRestock(setBusinessServices, restockOutcome.results);
+              Alert.alert("Inventory", "Return confirmed, but some units could not be restocked. Update Product Inventory manually if needed.");
+            } else {
+              Alert.alert(
+                "Inventory",
+                "Return confirmed, but restock did not complete. Product Inventory was not updated — adjust Available quantity manually if needed.",
+              );
+            }
+          }
+          if (selectedAccountRef.current && selectedAccountRef.current !== "personal") {
+            void refreshAccountScreenBusiness();
+          }
+        }
         if (pending.listIdx != null) {
           const statusIds = trrUids.length ? trrUids : trrUid ? [trrUid] : [];
           setReturnStatuses((prev) => {
@@ -7105,6 +7282,7 @@ export default function AccountScreen({ navigation, route }) {
       isSellerView: true,
     });
     setReturnReceivedItemKeys([]);
+    setReturnRestockQtyByKey({});
     setReturnDetailAccepting(false);
     setReturnDetailDeclining(false);
     setReturnConfirmResult(null);
@@ -7133,6 +7311,7 @@ export default function AccountScreen({ navigation, route }) {
       const sourceReturnRow = isReturnListRow(raw) ? raw : null;
 
       setReturnReceivedItemKeys([]);
+      setReturnRestockQtyByKey({});
       setReturnConfirmResult(null);
       setReturnDetailModal({
         visible: true,
@@ -8352,6 +8531,53 @@ export default function AccountScreen({ navigation, route }) {
     }));
   }, [businessBountyData, businessServices]);
   const productInventorySummary = useMemo(() => buildProductInventoryRows(businessServices), [businessServices]);
+  const returnDetailRestockCandidates = useMemo(() => {
+    if (!returnDetailModal.visible || returnDetailModal.isSellerView === false || !returnDetailModal.orderDetail) return [];
+    const returnScope = {
+      trrUid: returnDetailModal.trrUid || null,
+      trrUids: returnDetailModal.trrUids || [],
+      returnTxnUid: returnDetailModal.returnTxnUid || null,
+      sourceReturnRow: returnDetailModal.sourceReturnRow || null,
+    };
+    const returnItems = buildReturnDetailDisplayItems(returnDetailModal.orderDetail, businessBountyData?.data || [], returnScope);
+    const returnLines = collectReturnDetailLines(returnDetailModal.orderDetail, returnScope);
+    const preShipCancel =
+      areScopedReturnItemsUnshipped(returnDetailModal.orderDetail, returnLines) ||
+      isPreShipCancelReturn(returnDetailModal.sourceReturnRow, returnDetailModal.orderDetail?.sale) ||
+      isPreShipCancelReturn(returnDetailModal.orderDetail?.sale?.pending_return, returnDetailModal.orderDetail?.sale);
+    return buildReturnRestockCandidates(returnItems, businessServices, {
+      receivedKeys: returnReceivedItemKeys,
+      isPreShipCancel: preShipCancel,
+    });
+  }, [
+    returnDetailModal.visible,
+    returnDetailModal.isSellerView,
+    returnDetailModal.orderDetail,
+    returnDetailModal.trrUid,
+    returnDetailModal.trrUids,
+    returnDetailModal.returnTxnUid,
+    returnDetailModal.sourceReturnRow,
+    businessServices,
+    businessBountyData,
+    returnReceivedItemKeys,
+  ]);
+  useEffect(() => {
+    if (!returnDetailRestockCandidates.length) return;
+    setReturnRestockQtyByKey((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const candidate of returnDetailRestockCandidates) {
+        if (next[candidate.key] == null) {
+          next[candidate.key] = candidate.maxQty;
+          changed = true;
+        } else if (next[candidate.key] > candidate.maxQty) {
+          next[candidate.key] = candidate.maxQty;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [returnDetailRestockCandidates]);
   const businessOrdersSummary = useMemo(
     () => buildBusinessOrdersListFromSellerTransactions(businessSellerTransactionList, businessBountyData?.data || [], orderShippingProgressByKey, returnStatuses),
     [businessSellerTransactionList, businessBountyData, orderShippingProgressByKey, returnStatuses],
@@ -10214,6 +10440,29 @@ export default function AccountScreen({ navigation, route }) {
         onToggleReceivedItem={(itemKey) => {
           setReturnReceivedItemKeys((prev) => (prev.includes(itemKey) ? prev.filter((key) => key !== itemKey) : [...prev, itemKey]));
         }}
+        restockCandidates={returnDetailRestockCandidates}
+        restockQtyByKey={returnRestockQtyByKey}
+        onRestockQtyChange={(itemKey, qty) => {
+          setReturnRestockQtyByKey((prev) => ({ ...prev, [itemKey]: qty }));
+        }}
+        onRestockFillAll={() => {
+          setReturnRestockQtyByKey((prev) => {
+            const next = { ...prev };
+            for (const candidate of returnDetailRestockCandidates) {
+              next[candidate.key] = candidate.maxQty;
+            }
+            return next;
+          });
+        }}
+        onRestockClearAll={() => {
+          setReturnRestockQtyByKey((prev) => {
+            const next = { ...prev };
+            for (const candidate of returnDetailRestockCandidates) {
+              next[candidate.key] = 0;
+            }
+            return next;
+          });
+        }}
         confirming={returnDetailAccepting}
         declining={returnDetailDeclining}
         confirmResult={returnConfirmResult}
@@ -10234,12 +10483,14 @@ export default function AccountScreen({ navigation, route }) {
           const allReceived = returnItems.length > 0 && returnItems.every((item) => returnReceivedItemKeys.includes(item.key));
           if (!saleUid) return;
           if (!preShipCancel && !allReceived) return;
+          const restockItems = buildRestockItemsPayload(returnDetailRestockCandidates, returnRestockQtyByKey);
           openConfirmReceiptNoteModal({
             transactionUid: saleUid,
             orderUid: returnDetailModal.orderUid || saleUid,
             trrUid: returnDetailModal.trrUid || null,
             trrUids: returnDetailModal.trrUids || [],
             orderDetail: returnDetailModal.orderDetail,
+            restockItems,
           });
         }}
         onDecline={() => {
@@ -10581,7 +10832,7 @@ const styles = StyleSheet.create({
     flexGrow: 0,
   },
   productSalesDetailTable: {
-    minWidth: 780,
+    minWidth: 804,
   },
   productSalesDetailHeaderRow: {
     flexDirection: "row",
@@ -10635,6 +10886,10 @@ const styles = StyleSheet.create({
   },
   productSalesDetailColQty: {
     width: 44,
+    textAlign: "right",
+  },
+  productSalesDetailColTotal: {
+    width: 96,
     textAlign: "right",
   },
   productSalesDetailColMoney: {
@@ -10804,7 +11059,7 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   businessOrderDetailColQty: {
-    width: 44,
+    width: 72,
     textAlign: "right",
   },
   businessOrderDetailColBounty: {
