@@ -59,7 +59,7 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import { mapBusinessToMiniCard, mapBusinessToMicroCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
-import { searchReferralProfiles, loadReferralNetworkByUid, mapReferralProfileToSearchItem } from "../utils/searchReferralProfiles";
+import { searchReferralProfiles, loadReferralNetworkByUid, mapReferralProfileToSearchItem, enrichSearchItemsWithReferralRelationships } from "../utils/searchReferralProfiles";
 import {
   SEARCH_LOCATION_HOME,
   SEARCH_LOCATION_CUSTOM,
@@ -1223,45 +1223,83 @@ export default function SearchScreen({ route }) {
     }
   }, [selectedSearchTabs.expertise, fetchMyExpertiseResponses]);
 
-  // Restore search state when returning from Profile
+  // Restore search state when returning from Profile, then refresh individual relationship badges
   useFocusEffect(
     React.useCallback(() => {
-      if (route.params?.restoreState && route.params?.searchState) {
-        const state = route.params.searchState;
-        console.log("🔄 Restoring Search screen state:", state);
-        if (state.searchQuery !== undefined) setSearchQuery(state.searchQuery);
-        if (state.selectedSearchTabs) {
-          setSelectedSearchTabs(normalizeSearchTabs(state.selectedSearchTabs));
-        } else if (state.searchType !== undefined) {
-          setSelectedSearchTabs(searchTabsFromLegacyType(state.searchType));
+      let cancelled = false;
+
+      const refreshIndividualRelationships = async (list) => {
+        if (!Array.isArray(list) || !list.some((item) => item?.itemType === "individuals")) {
+          return list;
         }
-        const raw = state.rawResults?.length ? state.rawResults : state.results;
-        if (raw?.length) {
-          rawResultsRef.current = [...raw];
-          if (state.browseAllActive) browseAllActiveRef.current = true;
-          const restoredBounty = state.bounty !== undefined ? state.bounty : bountyRef.current;
-          const restoredAlphabetical = state.sortAlphabetical !== undefined ? state.sortAlphabetical : sortAlphabeticalRef.current;
-          setResults(
-            applyClientSorts(raw, {
-              browseAll: !!state.browseAllActive,
-              searchType: "global",
-              bounty: restoredBounty,
-              alphabetical: restoredAlphabetical,
-            }),
-          );
-        } else if (state.results !== undefined) {
-          setResults(state.results);
+        try {
+          const networkByUid = await loadReferralNetworkByUid();
+          return enrichSearchItemsWithReferralRelationships(list, networkByUid);
+        } catch (e) {
+          console.warn("SearchScreen - could not refresh individual relationships:", e);
+          return list;
         }
-        if (state.distance !== undefined) setDistance(state.distance);
-        if (state.searchLocation !== undefined) setSearchLocation(state.searchLocation);
-        if (state.customSearchCity !== undefined) setCustomSearchCity(state.customSearchCity);
-        if (state.network !== undefined) setNetwork(state.network);
-        if (state.bounty !== undefined) setBounty(state.bounty);
-        if (state.sortAlphabetical !== undefined) setSortAlphabetical(state.sortAlphabetical);
-        if (state.rating !== undefined) setRating(state.rating);
-        if (state.browseAllActive) setBrowseAllActive(true);
-        console.log(" Search screen state restored");
-      }
+      };
+
+      (async () => {
+        if (route.params?.restoreState && route.params?.searchState) {
+          const state = route.params.searchState;
+          console.log("🔄 Restoring Search screen state:", state);
+          if (state.searchQuery !== undefined) setSearchQuery(state.searchQuery);
+          if (state.selectedSearchTabs) {
+            setSelectedSearchTabs(normalizeSearchTabs(state.selectedSearchTabs));
+          } else if (state.searchType !== undefined) {
+            setSelectedSearchTabs(searchTabsFromLegacyType(state.searchType));
+          }
+          const raw = state.rawResults?.length ? state.rawResults : state.results;
+          let listToShow = raw?.length ? raw : state.results;
+          if (listToShow?.length) {
+            listToShow = await refreshIndividualRelationships(listToShow);
+            if (cancelled) return;
+            rawResultsRef.current = [...listToShow];
+            if (state.browseAllActive) browseAllActiveRef.current = true;
+            const restoredBounty = state.bounty !== undefined ? state.bounty : bountyRef.current;
+            const restoredAlphabetical = state.sortAlphabetical !== undefined ? state.sortAlphabetical : sortAlphabeticalRef.current;
+            setResults(
+              applyClientSorts(listToShow, {
+                browseAll: !!state.browseAllActive,
+                searchType: "global",
+                bounty: restoredBounty,
+                alphabetical: restoredAlphabetical,
+              }),
+            );
+          }
+          if (state.distance !== undefined) setDistance(state.distance);
+          if (state.searchLocation !== undefined) setSearchLocation(state.searchLocation);
+          if (state.customSearchCity !== undefined) setCustomSearchCity(state.customSearchCity);
+          if (state.network !== undefined) setNetwork(state.network);
+          if (state.bounty !== undefined) setBounty(state.bounty);
+          if (state.sortAlphabetical !== undefined) setSortAlphabetical(state.sortAlphabetical);
+          if (state.rating !== undefined) setRating(state.rating);
+          if (state.browseAllActive) setBrowseAllActive(true);
+          console.log(" Search screen state restored");
+          return;
+        }
+
+        // Returning from Profile without restore payload — still refresh badges on current results.
+        const current = rawResultsRef.current.length > 0 ? rawResultsRef.current : null;
+        if (!current?.length) return;
+        const enriched = await refreshIndividualRelationships(current);
+        if (cancelled || enriched === current) return;
+        rawResultsRef.current = [...enriched];
+        setResults(
+          applyClientSorts(enriched, {
+            browseAll: browseAllActiveRef.current,
+            searchType: "global",
+            bounty: bountyRef.current,
+            alphabetical: sortAlphabeticalRef.current,
+          }),
+        );
+      })();
+
+      return () => {
+        cancelled = true;
+      };
     }, [route.params?.restoreState, route.params?.searchState]),
   );
 
@@ -1369,13 +1407,22 @@ export default function SearchScreen({ route }) {
                 }
               : item,
           ));
-          setResults(parsedResults);
+          let initialResults = parsedResults;
+          try {
+            if (parsedResults.some((item) => item?.itemType === "individuals")) {
+              const networkByUid = await loadReferralNetworkByUid();
+              initialResults = enrichSearchItemsWithReferralRelationships(parsedResults, networkByUid);
+            }
+          } catch (e) {
+            console.warn("Could not enrich restored individual relationships:", e);
+          }
+          setResults(initialResults);
           setIsFirstVisit(false);
           setHasLoadedInitialSearch(true);
           setLoading(false);
-          const bizItems = parsedResults.filter((r) => r.itemType === "businesses" && r.id);
+          const bizItems = initialResults.filter((r) => r.itemType === "businesses" && r.id);
           const enrichCachedResults = async () => {
-            let updated = parsedResults;
+            let updated = initialResults;
             if (bizItems.length > 0) {
               updated = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(updated);
             }

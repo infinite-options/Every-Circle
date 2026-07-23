@@ -24,7 +24,7 @@ import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTok
 import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened";
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { addScannedCircleConnection } from "../utils/addScannedCircleConnection";
-import { getSessionProfile } from "../utils/sessionProfile";
+import { getSessionProfile, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import NearbyPeopleMapView from "../components/NearbyPeopleMapView";
@@ -2351,7 +2351,12 @@ const NetworkScreen = ({ navigation }) => {
       const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${encodeURIComponent(uid)}`);
       if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
       const json = await res.json();
-      setMessagesOff(json?.personal_info?.profile_personal_messages_off === 1);
+      const off = json?.personal_info?.profile_personal_messages_off;
+      setMessagesOff(off === 1 || off === "1" || off === true);
+      // Keep session cache aligned with the network value.
+      try {
+        await refreshSessionProfileFromNetwork(uid);
+      } catch (_) {}
     } catch (e) {
       console.warn("fetchMessagesOffSetting failed", isRetry ? "(retry)" : "", e);
       if (!isRetry) setTimeout(() => fetchMessagesOffSetting(true), 1500);
@@ -2372,7 +2377,11 @@ const NetworkScreen = ({ navigation }) => {
         method: "PUT",
         body: formData,
       });
-      if (!res.ok) throw new Error("Failed to update");
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || (result.code != null && result.code !== 200)) {
+        throw new Error(result.message || "Failed to update");
+      }
+      await refreshSessionProfileFromNetwork(uid);
     } catch (e) {
       setMessagesOff(!next);
       Alert.alert("Error", "Could not update your messages setting.");

@@ -12,7 +12,7 @@ import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
-import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
+import { clearUserProfileCacheStorage, getSessionProfile, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
@@ -681,49 +681,64 @@ export default function SettingsScreen() {
   };
 
   useEffect(() => {
-    const loadProfileFromCache = async () => {
+    const applyProfileToSettings = (result) => {
+      if (!result?.personal_info) return;
+      setPersonalProfileData({
+        firstName: result.personal_info.profile_personal_first_name || "",
+        lastName: result.personal_info.profile_personal_last_name || "",
+        email: result.user_email || "",
+        phoneNumber: result.personal_info.profile_personal_phone_number || "",
+        tagLine: result.personal_info.profile_personal_tag_line || "",
+        city: result.personal_info.profile_personal_city || "",
+        state: result.personal_info.profile_personal_state || "",
+        profileImage: result.personal_info.profile_personal_image || "",
+        emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
+        phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
+        tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
+        locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
+        imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+      });
+      const nearbyLat = parseCoordinateValue(result.personal_info.profile_personal_nearby_lat);
+      const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
+      const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
+      if (nearbyLat != null && nearbyLng != null) {
+        setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
+      }
+      const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
+      const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
+      if (homeLat != null && homeLng != null) {
+        setHomeAddressCoords({ lat: homeLat, lng: homeLng });
+      }
+      setMessagesSettings({
+        receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
+        receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
+      });
+      setMessagesOff(
+        result.personal_info.profile_personal_messages_off === 1 ||
+          result.personal_info.profile_personal_messages_off === "1" ||
+          result.personal_info.profile_personal_messages_off === true,
+      );
+    };
+
+    const loadProfileForSettings = async () => {
       try {
-        const { getSessionProfile } = require("../utils/sessionProfile");
-        const session = await getSessionProfile({ forceRefresh: true });
-        const result = session?.rawProfile;
-        if (result && result.personal_info) {
-          setPersonalProfileData({
-            firstName: result.personal_info.profile_personal_first_name || "",
-            lastName: result.personal_info.profile_personal_last_name || "",
-            email: result.user_email || "",
-            phoneNumber: result.personal_info.profile_personal_phone_number || "",
-            tagLine: result.personal_info.profile_personal_tag_line || "",
-            city: result.personal_info.profile_personal_city || "",
-            state: result.personal_info.profile_personal_state || "",
-            profileImage: result.personal_info.profile_personal_image || "",
-            emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
-            phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
-            tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
-            locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
-            imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
-          });
-          const nearbyLat = parseCoordinateValue(result.personal_info.profile_personal_nearby_lat);
-          const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
-          const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
-          if (nearbyLat != null && nearbyLng != null) {
-            setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
-          }
-          const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
-          const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
-          if (homeLat != null && homeLng != null) {
-            setHomeAddressCoords({ lat: homeLat, lng: homeLng });
-          }
-          setMessagesSettings({
-            receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
-            receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
-          });
-          setMessagesOff(result.personal_info.profile_personal_messages_off === 1);
+        // Prefer a fresh network profile so message privacy (and other settings)
+        // reflect the latest DB values, not a stale AsyncStorage snapshot.
+        let session = null;
+        try {
+          session = await refreshSessionProfileFromNetwork();
+        } catch (networkErr) {
+          console.warn("SettingsScreen - network profile refresh failed, using cache:", networkErr);
         }
+        if (!session?.rawProfile) {
+          session = await getSessionProfile({ forceRefresh: true });
+        }
+        applyProfileToSettings(session?.rawProfile);
       } catch (e) {
-        console.error("Error loading cached profile for settings:", e);
+        console.error("Error loading profile for settings:", e);
       }
     };
-    loadProfileFromCache();
+    loadProfileForSettings();
   }, []);
 
   // --- Live location sharing ---
@@ -891,10 +906,11 @@ export default function SettingsScreen() {
   };
 
   const updateMessagesSettings = async (newSettings) => {
+    const previous = messagesSettings;
     setMessagesSettings(newSettings);
     try {
-      const uid = await AsyncStorage.getItem("profile_uid");
-      if (!uid) return;
+      const uid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (!uid) throw new Error("Not logged in");
       const formData = new FormData();
       formData.append("profile_uid", uid);
       formData.append("profile_personal_messages_receive_from", newSettings.receiveFrom);
@@ -904,20 +920,28 @@ export default function SettingsScreen() {
           .filter((k) => newSettings.receiveFromTypes[k])
           .join(","),
       );
-      await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
+      const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
         method: "PUT",
         body: formData,
       });
-    } catch (_) {
-      /* keep local state on failure — next load will resync from the server */
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || (result.code != null && result.code !== 200)) {
+        throw new Error(result.message || `Failed to update: ${res.status}`);
+      }
+      // Keep session cache in sync so reopening Settings shows the saved values.
+      await refreshSessionProfileFromNetwork(uid);
+    } catch (e) {
+      console.error("updateMessagesSettings failed:", e);
+      setMessagesSettings(previous);
+      Alert.alert("Error", e?.message || "Could not update your messages privacy setting.");
     }
   };
 
   const toggleMessagesOff = async (value) => {
     setMessagesOff(value);
     try {
-      const uid = await AsyncStorage.getItem("profile_uid");
-      if (!uid) return;
+      const uid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (!uid) throw new Error("Not logged in");
       const formData = new FormData();
       formData.append("profile_uid", uid);
       formData.append("profile_personal_messages_off", value ? "1" : "0");
@@ -925,10 +949,15 @@ export default function SettingsScreen() {
         method: "PUT",
         body: formData,
       });
-      if (!res.ok) throw new Error(`Failed to update: ${res.status}`);
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || (result.code != null && result.code !== 200)) {
+        throw new Error(result.message || `Failed to update: ${res.status}`);
+      }
+      await refreshSessionProfileFromNetwork(uid);
     } catch (e) {
+      console.error("toggleMessagesOff failed:", e);
       setMessagesOff(!value);
-      Alert.alert("Error", "Could not update your messages setting.");
+      Alert.alert("Error", e?.message || "Could not update your messages setting.");
     }
   };
 
