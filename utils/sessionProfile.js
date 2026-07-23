@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "./httpMiddleware";
+import { mapBusinessToMiniCard } from "./mapBusinessToMiniCard";
 import { persistMyBusinessUidsFromProfile } from "./myBusinessUids";
 
 /** Full GET /api/v1/userprofileinfo/:id JSON for the logged-in user — persisted for offline reuse across screens */
@@ -9,20 +10,89 @@ export const USER_PROFILE_JSON_CACHE_KEY = "user_profile_info_json_cache_v1";
 const VIEWER_PROFILE_PATH_KEY = "viewer_profile_personal_path_v1";
 
 let cachedSessionProfile = null;
+const sessionListeners = new Set();
+
+/** API may return a JSON string, an array, or a single object. */
+export function parseProfileBusinessInfo(raw) {
+  if (raw == null || raw === "") return [];
+  let value = raw;
+  if (typeof raw === "string") {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return [value];
+  return [];
+}
+
+/** Canonical mapped business rows for Profile dropdown, Account dropdown, MiniCard, etc. */
+export function mapSessionBusinesses(rawBusinessInfo, { enrichEntry } = {}) {
+  return parseProfileBusinessInfo(rawBusinessInfo).map((bus, index) => {
+    const entry = {
+      ...mapBusinessToMiniCard(bus),
+      business_uid: bus.business_uid || "",
+      profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
+      role: bus.bu_role || bus.profile_business_role || bus.role || "",
+      individualIsPublic:
+        bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
+      index,
+      business_updated_at: bus.business_updated_at ?? bus.updated_at,
+    };
+    return enrichEntry ? { ...entry, ...enrichEntry(bus, index) } : entry;
+  });
+}
+
+export function resolveBusinessUid(business) {
+  return String(business?.business_uid || business?.profile_business_uid || "").trim();
+}
+
+/** Raw profile row may use profile_business_business_id (e.g. ownership checks on BusinessProfile). */
+export function resolveBusinessUidFromProfileRow(business) {
+  return String(business?.business_uid || business?.profile_business_uid || business?.profile_business_business_id || "").trim();
+}
+
+export function getPrimaryBusinessUid(businesses) {
+  const first = Array.isArray(businesses) ? businesses[0] : null;
+  const uid = resolveBusinessUid(first);
+  return uid || null;
+}
 
 function normalizeBizUids(profileJson) {
-  return (profileJson?.business_info || []).map((b) => b.business_uid).filter(Boolean);
+  return parseProfileBusinessInfo(profileJson?.business_info)
+    .map((b) => b.business_uid)
+    .filter(Boolean);
 }
 
 function buildSessionFromRaw(json, profileUid) {
+  const parsedBusinessInfo = parseProfileBusinessInfo(json?.business_info);
   return {
     profileUid,
     businessUids: normalizeBizUids(json),
-    businessInfo: json?.business_info || [],
+    businessInfo: parsedBusinessInfo,
+    businesses: mapSessionBusinesses(parsedBusinessInfo),
     personalInfo: json?.personal_info || null,
     userEmail: json?.user_email || null,
     rawProfile: json || null,
   };
+}
+
+function notifySessionProfileListeners(session) {
+  for (const listener of sessionListeners) {
+    try {
+      listener(session);
+    } catch (error) {
+      console.warn("sessionProfile listener failed:", error?.message || error);
+    }
+  }
+}
+
+/** Subscribe to in-memory session updates after saveSessionProfilePayload / cache clear. */
+export function subscribeSessionProfile(listener) {
+  sessionListeners.add(listener);
+  return () => sessionListeners.delete(listener);
 }
 
 function profileUidFromPayload(json) {
@@ -73,6 +143,7 @@ async function hydrateFromStorage() {
     profileUid,
     businessUids,
     businessInfo: [],
+    businesses: [],
     personalInfo: null,
     userEmail: null,
     rawProfile: null,
@@ -107,6 +178,7 @@ export async function saveSessionProfilePayload(json) {
 
   const session = buildSessionFromRaw(json, trimmed);
   cachedSessionProfile = session;
+  notifySessionProfileListeners(session);
   try {
     await persistMyBusinessUidsFromProfile(json);
   } catch (_) {}
@@ -120,6 +192,21 @@ export async function refreshSessionProfileFromNetwork(profileUidOptional) {
   const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`);
   const json = await res.json();
   return saveSessionProfilePayload(json);
+}
+
+/** Update one personal_info field in the cached session (after a PUT from Settings/Connect). */
+export async function patchSessionPersonalInfoField(field, value) {
+  const session = await getSessionProfile({ forceRefresh: true });
+  const raw = session?.rawProfile;
+  if (!raw || !field) return null;
+  const next = {
+    ...raw,
+    personal_info: {
+      ...(raw.personal_info || {}),
+      [field]: value,
+    },
+  };
+  return saveSessionProfilePayload(next);
 }
 
 /**
@@ -140,6 +227,7 @@ export async function getSessionProfile({ forceRefresh = false } = {}) {
 
 export function clearSessionProfileCache() {
   cachedSessionProfile = null;
+  notifySessionProfileListeners(null);
 }
 
 export async function clearStoredUserProfileJson() {

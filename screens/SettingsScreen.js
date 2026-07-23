@@ -13,6 +13,7 @@ import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
+import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
@@ -548,53 +549,7 @@ export default function SettingsScreen() {
         // console.log("SettingsScreen.js - Web platform: Skipping Google Sign Out");
       }
 
-      // Get all keys to clear Apple authentication data
-      const allKeys = await AsyncStorage.getAllKeys();
-      const appleKeys = allKeys.filter((key) => key.startsWith("apple_"));
-
-      // Clear all stored data - comprehensive cleanup
-      const keysToRemove = [
-        // User authentication data
-        "user_uid",
-        "user_email_id",
-        "profile_uid",
-        "user_id",
-        "user_name",
-
-        // User profile data
-        "user_email",
-        "user_first_name",
-        "user_last_name",
-        "user_phone_number",
-
-        // Settings
-        "displayEmail",
-        "displayPhone",
-        "darkMode",
-        "isThirdPartyAuth",
-
-        // Business data
-        "businessFormData",
-        "my_business_uids",
-
-        // Cart data (all cart keys)
-        ...allKeys.filter((key) => key.startsWith("cart_")),
-
-        // Ratings data
-        "user_ratings_info",
-
-        // Live location session
-        "shareLiveLocationUntil",
-        // Auto-cleanup of ignore list disabled — uncomment to clear on logout
-        // NEARBY_IGNORED_KEY,
-
-        // Apple authentication data
-        ...appleKeys,
-      ];
-
-      // console.log("SettingsScreen.js - Clearing AsyncStorage keys:", keysToRemove);
-      // console.log("SettingsScreen.js - Total keys to remove:", keysToRemove.length);
-      await AsyncStorage.multiRemove(keysToRemove);
+      await clearSessionAsyncStorage();
       // console.log("SettingsScreen.js - AsyncStorage cleared successfully");
 
       // Clear shared Ably client so next login reauths cleanly with new client_id.

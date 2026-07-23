@@ -1,403 +1,4482 @@
-// ConnectScreen.js - Handles QR code deep links to add connections
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Alert } from "react-native";
-import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
+// ConnectScreen.js - Connect tab (QR, network graph, messages, nearby)
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal, PanResponder, Alert, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
-import { USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
+import { useUnread } from "../contexts/UnreadContext";
+import { useSessionBusinesses } from "../contexts/SessionProfileContext";
+import { useFocusEffect, useRoute } from "@react-navigation/native";
+import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT, PROFILE_VIEWS_ENDPOINT, BLOCKED_USERS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
-import { sanitizeText } from "../utils/textSanitizer";
-import AppHeader from "../components/AppHeader";
-import BottomNavBar from "../components/BottomNavBar";
+import MicroCard from "../components/MicroCard";
+import WebTextInput from "../components/WebTextInput";
+import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
-const ConnectScreen = () => {
-  const { darkMode } = useDarkMode();
+import FeedbackPopup from "../components/FeedbackPopup";
+import ReferralSearch from "../components/ReferralSearch";
+import ScannedProfilePopup from "../components/ScannedProfilePopup";
+import { getHeaderColors, getHeaderColor } from "../config/headerColors";
+import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
+import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
+import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened";
+import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
+import { addScannedCircleConnection } from "../utils/addScannedCircleConnection";
+import { getSessionProfile, patchSessionPersonalInfoField, subscribeSessionProfile } from "../utils/sessionProfile";
+import { miniCardUserFromSession, messagesOffFromSession } from "../utils/connectProfileHydration";
+import { normalizeConversationsResponse } from "../utils/chatConversations";
+import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
+import NearbyPeopleMapView from "../components/NearbyPeopleMapView";
+import { isNearbySharingActive } from "../utils/nearbySharing";
+import { nearbyPeopleToMapMarkers } from "../utils/nearbyPeopleToMapMarkers";
+
+// Web-compatible QR code - react-native-qrcode-svg works on both web and native
+let QRCodeComponent = null;
+try {
+  QRCodeComponent = require("react-native-qrcode-svg").default;
+} catch (e) {
+  console.warn("QRCode not available:", e.message);
+}
+
+// WebView handling - use iframe on web, WebView on native
+let WebViewComponent = null;
+if (Platform.OS !== "web") {
+  try {
+    const webviewModule = require("react-native-webview");
+    if (webviewModule && webviewModule.WebView) {
+      WebViewComponent = webviewModule.WebView;
+    }
+  } catch (e) {
+    console.warn("WebView not available on native platform");
+  }
+}
+
+/** Short label for filter dropdown button when value is long (e.g. notes). */
+function formatFilterButtonLabel(value) {
+  if (value == null || value === "All") return "All";
+  const s = String(value);
+  return s.length > 28 ? `${s.slice(0, 28)}…` : s;
+}
+
+/** One filter field: opens its own list (replaces multi-column “Filter Connections” popup). */
+function ConnectionFilterModal({ visible, title, options, selected, onSelect, onClose, darkMode }) {
+  const accent = "#535db7";
+  const bg = darkMode ? "#1e1e2e" : "#ffffff";
+  const borderColor = darkMode ? "#3a3a5c" : "#e0e4f7";
+  const labelColor = darkMode ? "#a0a8d0" : "#5060a0";
+  const textColor = darkMode ? "#e8eaf6" : "#1a1a2e";
+
+  return (
+    <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
+      <TouchableOpacity style={connectionFilterModalStyles.overlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()} style={[connectionFilterModalStyles.sheet, { backgroundColor: bg, borderColor }]}>
+          <View style={[connectionFilterModalStyles.header, { borderBottomColor: borderColor, backgroundColor: darkMode ? "#252538" : "#f0f2ff" }]}>
+            <Text style={[connectionFilterModalStyles.headerTitle, { color: textColor }]}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={{ padding: 4 }} accessibilityRole='button' accessibilityLabel='Close'>
+              <Ionicons name='close-circle' size={26} color={darkMode ? "#7880c0" : "#8890c8"} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps='handled'>
+            {options.map((opt, idx) => {
+              const isActive = selected === opt;
+              const rowLabel = opt === "All" ? "All" : opt.length > 120 ? `${opt.slice(0, 120)}…` : opt;
+              return (
+                <TouchableOpacity
+                  key={`conn-filter-${idx}-${opt.length}`}
+                  onPress={() => {
+                    onSelect(opt);
+                    onClose();
+                  }}
+                  style={{
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderBottomWidth: 1,
+                    borderBottomColor: borderColor,
+                    backgroundColor: isActive ? accent : "transparent",
+                  }}
+                >
+                  <Text style={{ fontSize: 14, color: isActive ? "#fff" : textColor, fontWeight: isActive ? "700" : "400" }} numberOfLines={opt === "All" ? 1 : 4}>
+                    {rowLabel}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <Text style={{ fontSize: 12, color: labelColor, padding: 12, textAlign: "center" }}>Tap a row to apply</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+/**
+ * Popover for a single conversation row's "..." menu (Block/Unblock), anchored just under the
+ * tapped button via measured screen coordinates. Renders in a top-level Modal so it floats above
+ * everything and isn't clipped by the accordion's overflow:hidden.
+ */
+function RowActionModal({ visible, name, isBlocked, anchor, onToggleBlock, onClose, darkMode }) {
+  const bg = darkMode ? "#1e1e2e" : "#ffffff";
+  const borderColor = darkMode ? "#3a3a5c" : "#e0e4f7";
+  const textColor = darkMode ? "#e8eaf6" : "#1a1a2e";
+  const screenWidth = Dimensions.get("window").width;
+  const popupWidth = 200;
+  const top = (anchor?.y ?? 0) + (anchor?.height ?? 0) + 4;
+  const right = Math.max(8, screenWidth - ((anchor?.x ?? 0) + (anchor?.width ?? 0)));
+
+  return (
+    <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
+      <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={(e) => e.stopPropagation()}
+          style={{ position: "absolute", top, right, width: popupWidth, backgroundColor: bg, borderRadius: 10, borderWidth: 1, borderColor, overflow: "hidden" }}
+        >
+          <TouchableOpacity
+            style={{ paddingVertical: 12, paddingHorizontal: 16 }}
+            onPress={() => {
+              onToggleBlock();
+              onClose();
+            }}
+          >
+            <Text style={{ fontSize: 14, color: textColor, fontWeight: "600" }}>{isBlocked ? `Unblock ${name}` : `Block ${name}`}</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+/** Lists blocked people with an Unblock action for each. Modeled on ConnectionFilterModal. */
+function BlockedPeopleModal({ visible, blockedList, onUnblock, onClose, darkMode }) {
+  const bg = darkMode ? "#1e1e2e" : "#ffffff";
+  const borderColor = darkMode ? "#3a3a5c" : "#e0e4f7";
+  const textColor = darkMode ? "#e8eaf6" : "#1a1a2e";
+
+  return (
+    <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
+      <TouchableOpacity style={connectionFilterModalStyles.overlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()} style={[connectionFilterModalStyles.sheet, { backgroundColor: bg, borderColor }]}>
+          <View style={[connectionFilterModalStyles.header, { borderBottomColor: borderColor, backgroundColor: darkMode ? "#252538" : "#f0f2ff" }]}>
+            <Text style={[connectionFilterModalStyles.headerTitle, { color: textColor }]}>Blocked People</Text>
+            <TouchableOpacity onPress={onClose} style={{ padding: 4 }} accessibilityRole='button' accessibilityLabel='Close'>
+              <Ionicons name='close-circle' size={26} color={darkMode ? "#7880c0" : "#8890c8"} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps='handled'>
+            {blockedList.length === 0 ? (
+              <Text style={{ fontSize: 14, color: textColor, padding: 16, textAlign: "center" }}>You haven't blocked anyone.</Text>
+            ) : (
+              blockedList.map((person) => {
+                const name = `${person.first_name || ""} ${person.last_name || ""}`.trim() || person.blocked_uid;
+                const initials = `${(person.first_name || "?")[0]}${(person.last_name || "?")[0]}`.toUpperCase();
+                return (
+                  <View
+                    key={person.blocked_uid}
+                    style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: borderColor }}
+                  >
+                    {person.image ? (
+                      <Image source={{ uri: person.image }} style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10 }} />
+                    ) : (
+                      <View style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10, backgroundColor: "#AF52DE", alignItems: "center", justifyContent: "center" }}>
+                        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>{initials}</Text>
+                      </View>
+                    )}
+                    <Text style={{ flex: 1, fontSize: 14, color: textColor }} numberOfLines={1}>
+                      {name}
+                    </Text>
+                    <TouchableOpacity onPress={() => onUnblock(person.blocked_uid)} style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 14, backgroundColor: "#AF52DE" }}>
+                      <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Unblock</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+const RELATIONSHIP_FILTER_OPTIONS = ["All", "Colleagues", "Friends", "Family"];
+const DATE_FILTER_OPTIONS = ["All", "This Week", "This Month", "This Year"];
+const EVERY_CIRCLE_ZERO_NODE_UID = "110-000001";
+const NETWORK_GRAPH_PURPLE = "#9C45F7";
+const NETWORK_GRAPH_PURPLE_FILL_50 = "rgba(156, 69, 247, 0.5)";
+
+function escapeVisHtmlLabel(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Persist connections graph and circles separately so one fetch does not wipe the other. */
+const ASYNC_NETWORK_DATA_CONNECTIONS = "network_data_connections";
+const ASYNC_NETWORK_GROUPED_CONNECTIONS = "network_grouped_connections";
+const ASYNC_NETWORK_DATA_CIRCLES = "network_data_circles";
+const ASYNC_NETWORK_GROUPED_CIRCLES = "network_grouped_circles";
+
+/** Merge connections + circles for Connect Directly / referral lookup (dedupe by profile uid, prefer richer node). */
+function mergeNetworkNodesForReferral(connectionsList, circlesList) {
+  const score = (n) => {
+    let s = 0;
+    const rel = n.circle_relationship;
+    if (rel != null && String(rel).trim() !== "") s += 2;
+    if (n.degree != null && String(n.degree).trim() !== "") s += 1;
+    return s;
+  };
+  const pick = (a, b) => (score(b) > score(a) ? b : a);
+  const map = new Map();
+  for (const n of connectionsList || []) {
+    const u = n.network_profile_personal_uid;
+    if (u) map.set(u, n);
+  }
+  for (const n of circlesList || []) {
+    const u = n.network_profile_personal_uid;
+    if (!u) continue;
+    map.set(u, map.has(u) ? pick(map.get(u), n) : n);
+  }
+  return Array.from(map.values());
+}
+
+function groupNetworkByDegree(data) {
+  const grouped = {};
+  (data || []).forEach((item) => {
+    const deg = Number(item.degree) || 0;
+    if (!grouped[deg]) grouped[deg] = [];
+    grouped[deg].push(item);
+  });
+  return grouped;
+}
+
+function applyConnectionFilters(nodes, filters) {
+  const {
+    relationshipFilter,
+    dateFilter,
+    locationFilter,
+    eventFilter,
+    notesFilter,
+    introducedByFilter,
+    searchQuery = "",
+  } = filters;
+
+  let filtered = nodes || [];
+
+  if (relationshipFilter !== "All") {
+    filtered = filtered.filter((node) => {
+      const relationship = node.circle_relationship;
+      if (relationshipFilter === "Colleagues") return relationship === "colleague";
+      if (relationshipFilter === "Friends") return relationship === "friend";
+      if (relationshipFilter === "Family") return relationship === "family";
+      return true;
+    });
+  }
+
+  if (dateFilter !== "All") {
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+
+    filtered = filtered.filter((node) => {
+      const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
+      if (!circleDateStr) return false;
+      try {
+        const circleDate = new Date(circleDateStr);
+        if (dateFilter === "This Week") return circleDate >= oneWeekAgo;
+        if (dateFilter === "This Month") return circleDate >= oneMonthAgo;
+        if (dateFilter === "This Year") return circleDate >= oneYearAgo;
+      } catch (e) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  if (locationFilter !== "All") {
+    filtered = filtered.filter((node) => {
+      const city = node.circle_city || "";
+      const state = node.circle_state || "";
+      let nodeLocation = "";
+      if (city && state) nodeLocation = `${city.trim()}, ${state.trim()}`;
+      else if (city) nodeLocation = city.trim();
+      else if (state) nodeLocation = state.trim();
+      return nodeLocation === locationFilter;
+    });
+  }
+
+  if (eventFilter !== "All") {
+    filtered = filtered.filter((node) => (node.circle_event || "").trim() === eventFilter);
+  }
+
+  if (notesFilter !== "All") {
+    filtered = filtered.filter((node) => (node.circle_note || "").trim() === notesFilter);
+  }
+
+  if (introducedByFilter !== "All") {
+    filtered = filtered.filter((node) => (node.circle_introduced_by || "").trim() === introducedByFilter);
+  }
+
+  if (searchQuery.trim() !== "") {
+    const query = searchQuery.toLowerCase();
+    filtered = filtered.filter((node) => {
+      const searchableText = [
+        node.__mc?.firstName || "",
+        node.__mc?.lastName || "",
+        node.__mc?.tagLine || "",
+        node.__mc?.city || "",
+        node.__mc?.state || "",
+        node.__mc?.phoneNumber || "",
+        node.circle_event || "",
+        node.circle_note || "",
+        node.circle_introduced_by || "",
+        node.circle_relationship || "",
+        node.network_profile_personal_uid || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(query);
+    });
+  }
+
+  return filtered;
+}
+
+async function resolveProfileUidForNetwork(overrideUid, profileUidState) {
+  let uid = overrideUid;
+  if (!uid) {
+    try {
+      const directUid = await AsyncStorage.getItem("profile_uid");
+      if (directUid) {
+        try {
+          const parsed = JSON.parse(directUid);
+          uid = typeof parsed === "string" ? parsed : String(parsed);
+        } catch (e) {
+          uid = String(directUid).trim();
+        }
+      } else {
+        uid = profileUidState;
+      }
+    } catch (e) {
+      uid = profileUidState;
+    }
+  }
+  return String(uid || "").trim();
+}
+
+function networkListFetchOptions() {
+  return Platform.OS === "web"
+    ? {
+        method: "GET",
+        mode: "cors",
+        credentials: "omit",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        cache: "no-cache",
+      }
+    : {
+        method: "GET",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+      };
+}
+
+const connectionFilterModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  sheet: {
+    borderRadius: 16,
+    width: "100%",
+    maxWidth: 420,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    flex: 1,
+    paddingRight: 8,
+  },
+});
+
+const NEARBY_RADIUS_MIN = 1;
+const NEARBY_RADIUS_MAX = 12500; // ~half Earth circumference in miles
+const NEARBY_THUMB = 22;
+const LOG_MIN = Math.log(NEARBY_RADIUS_MIN);
+const LOG_MAX = Math.log(NEARBY_RADIUS_MAX);
+
+function snapMiles(raw) {
+  if (raw < 10) return Math.round(raw);
+  if (raw < 100) return Math.round(raw / 5) * 5;
+  if (raw < 1000) return Math.round(raw / 25) * 25;
+  return Math.round(raw / 100) * 100;
+}
+
+function formatMiles(miles) {
+  return miles >= 1000 ? `${miles.toLocaleString()} mi` : `${miles} mi`;
+}
+
+function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
+  const trackRef = useRef(200);
+  const startXRef = useRef(0);
+  const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
+  const onReleaseRef = useRef(onRelease);
+  useEffect(() => { valueRef.current = value; });
+  useEffect(() => { onChangeRef.current = onChange; });
+  useEffect(() => { onReleaseRef.current = onRelease; });
+
+  const mileToX = (miles) => {
+    if (miles == null) return 0;
+    const usable = Math.max(1, trackRef.current - NEARBY_THUMB);
+    return ((Math.log(Math.max(NEARBY_RADIUS_MIN, miles)) - LOG_MIN) / (LOG_MAX - LOG_MIN)) * usable;
+  };
+
+  const xToMile = (x) => {
+    const usable = Math.max(1, trackRef.current - NEARBY_THUMB);
+    const pct = x / usable;
+    if (pct <= 0.005) return null;
+    return snapMiles(Math.exp(LOG_MIN + Math.max(0, Math.min(1, pct)) * (LOG_MAX - LOG_MIN)));
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => {
+        const tapX = e.nativeEvent.locationX - NEARBY_THUMB / 2;
+        const clamped = Math.max(0, Math.min(trackRef.current - NEARBY_THUMB, tapX));
+        startXRef.current = clamped;
+        onChangeRef.current(xToMile(clamped));
+      },
+      onPanResponderMove: (_, gs) => {
+        const newX = Math.max(0, Math.min(trackRef.current - NEARBY_THUMB, startXRef.current + gs.dx));
+        onChangeRef.current(xToMile(newX));
+      },
+      onPanResponderRelease: () => { onReleaseRef.current?.(); },
+      onPanResponderTerminate: () => { onReleaseRef.current?.(); },
+    })
+  ).current;
+
+  const thumbX = mileToX(value);
+
+  return (
+    <View
+      style={nearbySliderStyles.track}
+      onLayout={(e) => { trackRef.current = e.nativeEvent.layout.width; }}
+      {...panResponder.panHandlers}
+    >
+      <View style={[nearbySliderStyles.rail, darkMode && nearbySliderStyles.railDark]} />
+      {value != null && <View style={[nearbySliderStyles.fill, { width: thumbX + NEARBY_THUMB / 2 }]} />}
+      <View style={[nearbySliderStyles.thumb, { left: thumbX }, darkMode && nearbySliderStyles.thumbDark]} />
+    </View>
+  );
+}
+
+const nearbySliderStyles = StyleSheet.create({
+  track: { flex: 1, height: NEARBY_THUMB, justifyContent: "center", position: "relative" },
+  rail: { height: 4, backgroundColor: "#ddd", borderRadius: 2, position: "absolute", left: 0, right: 0 },
+  railDark: { backgroundColor: "#444" },
+  fill: { height: 4, backgroundColor: "#AF52DE", borderRadius: 2, position: "absolute", left: 0 },
+  thumb: {
+    width: NEARBY_THUMB, height: NEARBY_THUMB, borderRadius: NEARBY_THUMB / 2,
+    backgroundColor: "#AF52DE", borderWidth: 2, borderColor: "#fff",
+    position: "absolute",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3,
+  },
+  thumbDark: { borderColor: "#2a2a2a" },
+});
+
+/** Pretty-print AsyncStorage values when JSON; otherwise return as string. */
+function formatAsyncStorageDisplayValue(raw) {
+  if (raw == null) return "null";
+  const asString = String(raw);
+  try {
+    return JSON.stringify(JSON.parse(asString), null, 2);
+  } catch {
+    return asString;
+  }
+}
+
+const ConnectScreen = ({ navigation }) => {
   const route = useRoute();
-  const navigation = useNavigation();
+  const { darkMode } = useDarkMode();
+  const { clearUnread } = useUnread();
+  const { businesses, refreshFromSession } = useSessionBusinesses();
+  const [storageData, setStorageData] = useState([]);
+  const [networkData, setNetworkData] = useState([]);
+  const [groupedNetwork, setGroupedNetwork] = useState({});
+  /** Last loaded connections graph (persists separately from circles). */
+  const [connectionsNetworkCache, setConnectionsNetworkCache] = useState([]);
+  /** Last loaded circles list. */
+  const [circlesNetworkCache, setCirclesNetworkCache] = useState([]);
+  const [connectDirectlyPrepareLoading, setConnectDirectlyPrepareLoading] = useState(false);
+  const [profileUid, setProfileUid] = useState("");
+  const [degree, setDegree] = useState("2");
   const [loading, setLoading] = useState(false);
-  const [profileData, setProfileData] = useState(null); // scanned person
-  const [myProfileData, setMyProfileData] = useState(null); // logged-in user
   const [error, setError] = useState(null);
-  const [addingConnection, setAddingConnection] = useState(false);
+  const [viewMode, setViewMode] = useState("list");
+  const [userProfileData, setUserProfileData] = useState(null);
+  const [qrCodeData, setQrCodeData] = useState("");
+  const [qrCodeDataObject, setQrCodeDataObject] = useState(null); // Store parsed QR code data object for display
+  /** Ably `connection.state` and `Channel.state` (exact strings from the SDK) */
+  const [ablyConnectionStatus, setAblyConnectionStatus] = useState("—");
+  const [ablyChannelStatus, setAblyChannelStatus] = useState("—");
+  /** Channel name this screen subscribed to, e.g. /110-000016 */
+  const [ablyListeningChannel, setAblyListeningChannel] = useState("");
+  /** `null` = no active token for display; string = obscured credential from Ably auth. */
+  const [ablyTokenObscured, setAblyTokenObscured] = useState(null);
+  const [ablyMessageReceived, setAblyMessageReceived] = useState(null); // Store Ably message received info: { channel, message, timestamp }
+  const ablyNewConnectionHandlerRef = useRef(null);
+  const ablyAnyMessageHandlerRef = useRef(null);
+  const ablyNetworkChannelRef = useRef(null);
+  const ablyStateSyncCleanupRef = useRef(null);
+  const [formSwitchEnabled, setFormSwitchEnabled] = useState(false); // Form Switch: show form when others scan your QR code
+  const formSwitchEnabledRef = React.useRef(false); // Ref to track current value for Ably callback
+  const [showDebugBlocks, setShowDebugBlocks] = useState(false); // Toggle visibility of QR Code Contains and Ably Messages Received blocks
+  const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false); // Settings → Debug Mode (requires SHOW_NETWORK_DEBUG_UI)
+  const [showAsyncStorage, setShowAsyncStorage] = useState(false);
+  /** Per-key expand/collapse for Async Storage debug rows (key → expanded). */
+  const [expandedStorageKeys, setExpandedStorageKeys] = useState({});
+  const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
+  const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
+  const [locationFilter, setLocationFilter] = useState("All");
+  const [eventFilter, setEventFilter] = useState("All");
+  const [availableEvents, setAvailableEvents] = useState([]);
+  const [availableCities, setAvailableCities] = useState([]);
+  const [notesFilter, setNotesFilter] = useState("All");
+  const [introducedByFilter, setIntroducedByFilter] = useState("All");
+  const [availableNotes, setAvailableNotes] = useState([]);
+  const [availableIntroducedBy, setAvailableIntroducedBy] = useState([]);
+  /** Which single filter list is open: relationship | date | location | event | notes | introduced */
+  const [filterModalKind, setFilterModalKind] = useState(null);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [graphHtml, setGraphHtml] = useState(""); // For web iframe
+  const iframeContainerRef = React.useRef(null); // Ref for web iframe container
+  const [activeView, setActiveView] = useState("connections"); // "connections" or "circles" - default to connections
+  const activeViewRef = React.useRef(activeView);
+  activeViewRef.current = activeView;
 
-  const profileUid = route.params?.profile_uid;
+  const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
+  const [scannedProfileData, setScannedProfileData] = useState(null);
+  const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
+  const showScannedProfileModalRef = useRef(null);
+  const [showViewMyNetwork, setShowViewMyNetwork] = useState(true);
+  /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
+  const [focusTick, setFocusTick] = useState(0);
+  const [showMessages, setShowMessages] = useState(false);
+  const [conversations, setConversations] = useState([]);
+  const [conversationsLoading, setConversationsLoading] = useState(false);
+  const [showMessagesMenu, setShowMessagesMenu] = useState(false);
+  const [messagesOff, setMessagesOff] = useState(false);
+  const [blockedUids, setBlockedUids] = useState(new Set());
+  const [blockedList, setBlockedList] = useState([]);
+  const [showBlockedManager, setShowBlockedManager] = useState(false);
+  const [openRowMenuUid, setOpenRowMenuUid] = useState(null);
+  const [rowMenuAnchor, setRowMenuAnchor] = useState(null);
+  const rowMenuButtonRefs = useRef({});
+
+  const [showNearby, setShowNearby] = useState(false);
+  const [nearbyUsers, setNearbyUsers] = useState([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbyError, setNearbyError] = useState(null);
+  const [nearbySharingActive, setNearbySharingActive] = useState(false);
+  const [myNearbyLocation, setMyNearbyLocation] = useState(null);
+  const [ignoredNearbyUids, setIgnoredNearbyUids] = useState(new Set());
+  const [nearbyRadiusMiles, setNearbyRadiusMiles] = useState(null);
+  const [nearbySearchQuery, setNearbySearchQuery] = useState("");
+  const nearbyRadiusMilesRef = useRef(null);
+  const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
+
+  // Who Viewed My Profile
+  const [profileViewers, setProfileViewers] = useState([]);
+  const [viewersLoading, setViewersLoading] = useState(false);
+  const [showProfileViewers, setShowProfileViewers] = useState(false);
+  const [viewersSelectedAccount, setViewersSelectedAccount] = useState("personal");
+  const [showViewersAccountDropdown, setShowViewersAccountDropdown] = useState(false);
+  const [connectDirectlyVisible, setConnectDirectlyVisible] = useState(false);
+
+  const connectDirectlyMergedNetworkData = useMemo(() => mergeNetworkNodesForReferral(connectionsNetworkCache, circlesNetworkCache), [connectionsNetworkCache, circlesNetworkCache]);
+
+  const fetchProfileViewers = async (accountId) => {
+    try {
+      setViewersLoading(true);
+      const id = accountId || (await AsyncStorage.getItem("profile_uid"));
+      if (!id) return;
+      const response = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setProfileViewers(data.viewers || []);
+      } else {
+        setProfileViewers([]);
+      }
+    } catch (e) {
+      console.warn("ConnectScreen - Failed to fetch viewers:", e);
+      setProfileViewers([]);
+    } finally {
+      setViewersLoading(false);
+    }
+  };
+
+  const networkFeedbackInstructions = "Instructions for Connect";
+
+  //Define custom questions for the Network page
+  const networkFeedbackQuestions = ["Connect - Question 1?", "Connect - Question 2?", "Connect - Question 3?"];
+
+  // Load persisted Network screen settings
+  const loadNetworkSettings = async () => {
+    try {
+      console.log("📥 Loading Network screen settings from AsyncStorage...");
+      const [
+        showAsyncStorageValue,
+        degreeValue,
+        viewModeValue,
+        networkDataValue,
+        groupedNetworkValue,
+        activeViewValue,
+        showViewMyNetworkValue,
+        dateFilterValue,
+        locationFilterValue,
+        eventFilterValue,
+        notesFilterValue,
+        introducedByFilterValue,
+        settingsDebugModeValue,
+        connectionsDataStr,
+        circlesDataStr,
+        groupedConnectionsStr,
+        groupedCirclesStr,
+      ] = await Promise.all([
+        AsyncStorage.getItem("network_showAsyncStorage"),
+        AsyncStorage.getItem("network_degree"),
+        AsyncStorage.getItem("network_viewMode"),
+        AsyncStorage.getItem("network_data"),
+        AsyncStorage.getItem("network_grouped"),
+        AsyncStorage.getItem("network_activeView"),
+        AsyncStorage.getItem("network_showViewMyNetwork"),
+        AsyncStorage.getItem("network_dateFilter"),
+        AsyncStorage.getItem("network_locationFilter"),
+        AsyncStorage.getItem("network_eventFilter"),
+        AsyncStorage.getItem("network_notesFilter"),
+        AsyncStorage.getItem("network_introducedByFilter"),
+        AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY),
+        AsyncStorage.getItem(ASYNC_NETWORK_DATA_CONNECTIONS),
+        AsyncStorage.getItem(ASYNC_NETWORK_DATA_CIRCLES),
+        AsyncStorage.getItem(ASYNC_NETWORK_GROUPED_CONNECTIONS),
+        AsyncStorage.getItem(ASYNC_NETWORK_GROUPED_CIRCLES),
+      ]);
+
+      console.log("📥 Loaded values:", {
+        showAsyncStorage: showAsyncStorageValue,
+        degree: degreeValue,
+        viewMode: viewModeValue,
+        hasNetworkData: networkDataValue !== null,
+        hasGroupedNetwork: groupedNetworkValue !== null,
+        hasConnectionsKey: connectionsDataStr !== null,
+        hasCirclesKey: circlesDataStr !== null,
+      });
+
+      if (showAsyncStorageValue !== null) {
+        const parsedValue = JSON.parse(showAsyncStorageValue);
+        console.log("📥 Setting showAsyncStorage to:", parsedValue);
+        setShowAsyncStorage(parsedValue);
+      } else {
+        console.log("📥 No persisted showAsyncStorage value, using default: false (collapsed)");
+      }
+      if (degreeValue !== null) {
+        console.log("📥 Setting degree to:", degreeValue);
+        setDegree(degreeValue);
+      } else {
+        console.log("📥 No persisted degree value, using default: 2");
+      }
+      if (viewModeValue !== null) {
+        console.log("📥 Setting viewMode to:", viewModeValue);
+        setViewMode(viewModeValue);
+      } else {
+        console.log("📥 No persisted viewMode value, using default: list");
+      }
+
+      if (dateFilterValue !== null) {
+        console.log("📥 Setting dateFilter to:", dateFilterValue);
+        setDateFilter(dateFilterValue);
+      } else {
+        console.log("📥 No persisted dateFilter value, using default: All");
+      }
+
+      if (locationFilterValue !== null) {
+        console.log("📥 Setting locationFilter to:", locationFilterValue);
+        setLocationFilter(locationFilterValue);
+      } else {
+        console.log("📥 No persisted locationFilter value, using default: All");
+      }
+
+      if (eventFilterValue !== null) {
+        console.log("📥 Setting eventFilter to:", eventFilterValue);
+        setEventFilter(eventFilterValue);
+      } else {
+        console.log("📥 No persisted eventFilter value, using default: All");
+      }
+
+      if (notesFilterValue !== null) {
+        setNotesFilter(notesFilterValue);
+      }
+      if (introducedByFilterValue !== null) {
+        setIntroducedByFilter(introducedByFilterValue);
+      }
+
+      const parseNetworkJson = (s) => {
+        if (s == null) return null;
+        try {
+          return JSON.parse(s);
+        } catch (e) {
+          console.error("❌ Error parsing persisted network JSON:", e);
+          return null;
+        }
+      };
+
+      let connectionsParsed = connectionsDataStr != null ? parseNetworkJson(connectionsDataStr) : null;
+      let circlesParsed = circlesDataStr != null ? parseNetworkJson(circlesDataStr) : null;
+      let groupedConnectionsParsed = groupedConnectionsStr != null ? parseNetworkJson(groupedConnectionsStr) : null;
+      let groupedCirclesParsed = groupedCirclesStr != null ? parseNetworkJson(groupedCirclesStr) : null;
+
+      const legacyParsed = networkDataValue != null ? parseNetworkJson(networkDataValue) : null;
+      const legacyGrouped = groupedNetworkValue != null ? parseNetworkJson(groupedNetworkValue) : null;
+      const activeForMigrate = activeViewValue === "circles" ? "circles" : "connections";
+
+      if (connectionsParsed == null && legacyParsed != null && Array.isArray(legacyParsed) && activeForMigrate !== "circles") {
+        connectionsParsed = legacyParsed;
+        groupedConnectionsParsed = legacyGrouped && typeof legacyGrouped === "object" ? legacyGrouped : groupNetworkByDegree(legacyParsed);
+        try {
+          await AsyncStorage.multiSet([
+            [ASYNC_NETWORK_DATA_CONNECTIONS, JSON.stringify(connectionsParsed)],
+            [ASYNC_NETWORK_GROUPED_CONNECTIONS, JSON.stringify(groupedConnectionsParsed)],
+          ]);
+        } catch (migrateErr) {
+          console.warn("Network migration to connections keys failed:", migrateErr);
+        }
+      }
+      if (circlesParsed == null && legacyParsed != null && Array.isArray(legacyParsed) && activeForMigrate === "circles") {
+        circlesParsed = legacyParsed;
+        groupedCirclesParsed = legacyGrouped && typeof legacyGrouped === "object" ? legacyGrouped : { 1: legacyParsed };
+        try {
+          await AsyncStorage.multiSet([
+            [ASYNC_NETWORK_DATA_CIRCLES, JSON.stringify(circlesParsed)],
+            [ASYNC_NETWORK_GROUPED_CIRCLES, JSON.stringify(groupedCirclesParsed)],
+          ]);
+        } catch (migrateErr) {
+          console.warn("Network migration to circles keys failed:", migrateErr);
+        }
+      }
+
+      const connectionsList = Array.isArray(connectionsParsed) ? connectionsParsed : [];
+      const circlesList = Array.isArray(circlesParsed) ? circlesParsed : [];
+      setConnectionsNetworkCache(connectionsList);
+      setCirclesNetworkCache(circlesList);
+
+      const view = activeViewValue === "circles" ? "circles" : "connections";
+      if (view === "circles") {
+        if (circlesList.length > 0 || circlesDataStr != null) {
+          setNetworkData(circlesList);
+          setGroupedNetwork(groupedCirclesParsed && typeof groupedCirclesParsed === "object" && Object.keys(groupedCirclesParsed).length > 0 ? groupedCirclesParsed : { 1: circlesList });
+        } else if (legacyParsed != null && Array.isArray(legacyParsed) && activeForMigrate === "circles") {
+          setNetworkData(legacyParsed);
+          setGroupedNetwork(legacyGrouped && typeof legacyGrouped === "object" ? legacyGrouped : { 1: legacyParsed });
+        } else {
+          setNetworkData([]);
+          setGroupedNetwork({});
+        }
+      } else if (connectionsList.length > 0 || connectionsDataStr != null) {
+        setNetworkData(connectionsList);
+        setGroupedNetwork(
+          groupedConnectionsParsed && typeof groupedConnectionsParsed === "object" && Object.keys(groupedConnectionsParsed).length > 0
+            ? groupedConnectionsParsed
+            : groupNetworkByDegree(connectionsList),
+        );
+      } else if (legacyParsed != null && Array.isArray(legacyParsed)) {
+        setNetworkData(legacyParsed);
+        setGroupedNetwork(legacyGrouped && typeof legacyGrouped === "object" ? legacyGrouped : groupNetworkByDegree(legacyParsed));
+      } else {
+        setNetworkData([]);
+        setGroupedNetwork({});
+      }
+
+      if (activeViewValue === "connections" || activeViewValue === "circles") {
+        console.log("📥 Loading activeView:", activeViewValue);
+        setActiveView(activeViewValue);
+      } else {
+        console.log("📥 No persisted activeView, using default: connections");
+      }
+
+      if (showViewMyNetworkValue !== null) {
+        try {
+          setShowViewMyNetwork(JSON.parse(showViewMyNetworkValue) === true);
+        } catch (e) {
+          /* keep state */
+        }
+      }
+
+      if (settingsDebugModeValue !== null) {
+        try {
+          setSettingsDebugModeEnabled(JSON.parse(settingsDebugModeValue) === true);
+        } catch (e) {
+          setSettingsDebugModeEnabled(false);
+        }
+      } else {
+        setSettingsDebugModeEnabled(false);
+      }
+
+      // Mark settings as loaded so we can start saving changes
+      setSettingsLoaded(true);
+      console.log("✅ Settings loaded, now tracking changes for persistence");
+    } catch (e) {
+      console.error("❌ Error loading network settings:", e);
+    }
+  };
+
+  // Track if settings have been loaded to avoid saving defaults
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // Save Network screen settings when they change (but only after initial load)
+  useEffect(() => {
+    if (!settingsLoaded) {
+      // Don't save on initial render before settings are loaded
+      return;
+    }
+    const saveSettings = async () => {
+      try {
+        console.log("💾 Saving Network screen settings:", {
+          showAsyncStorage,
+          degree,
+          viewMode,
+          showViewMyNetwork,
+        });
+        await Promise.all([
+          AsyncStorage.setItem("network_showAsyncStorage", JSON.stringify(showAsyncStorage)),
+          AsyncStorage.setItem("network_degree", degree),
+          AsyncStorage.setItem("network_viewMode", viewMode),
+          AsyncStorage.setItem("network_showViewMyNetwork", JSON.stringify(showViewMyNetwork)),
+          AsyncStorage.setItem("network_dateFilter", dateFilter),
+          AsyncStorage.setItem("network_locationFilter", locationFilter),
+          AsyncStorage.setItem("network_eventFilter", eventFilter),
+          AsyncStorage.setItem("network_notesFilter", notesFilter),
+          AsyncStorage.setItem("network_introducedByFilter", introducedByFilter),
+        ]);
+        console.log("✅ Network screen settings saved successfully");
+      } catch (e) {
+        console.error("❌ Error saving network settings:", e);
+      }
+    };
+    saveSettings();
+  }, [showAsyncStorage, degree, viewMode, showViewMyNetwork, dateFilter, locationFilter, eventFilter, notesFilter, introducedByFilter, settingsLoaded]);
+
+  // Debounced GET /api/network: settings ready, panel open, connections view, and on focus (focusTick) or degree change.
+  // useFocusEffect no longer calls fetchNetwork — avoids duplicate with this effect. activeView via ref so Circles→Connections does not schedule twice.
+  useEffect(() => {
+    if (!settingsLoaded || !showViewMyNetwork || activeViewRef.current !== "connections") return;
+    const deg = String(degree || "").trim();
+    if (!deg || Number(deg) < 1) return;
+
+    const timer = setTimeout(() => {
+      fetchNetwork(null, deg);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [degree, settingsLoaded, showViewMyNetwork, focusTick]);
 
   useEffect(() => {
-    if (profileUid) {
-      setLoading(true);
-      fetchProfileData();
+    if (!__DEV__) return;
+    console.log("🔵 ConnectScreen - data/state changed", {
+      profileUid: profileUid || null,
+      activeView,
+      networkCount: networkData.length,
+      degree,
+      loading,
+      error: error || null,
+    });
+  }, [profileUid, activeView, networkData, degree, loading, error]);
+
+  // Extract unique events from network data
+  useEffect(() => {
+    if (networkData && networkData.length > 0) {
+      const events = new Set();
+      networkData.forEach((node) => {
+        const event = node.circle_event;
+        if (event && event.trim() !== "") {
+          events.add(event.trim());
+        }
+      });
+      const sortedEvents = Array.from(events).sort();
+      setAvailableEvents(sortedEvents);
+      console.log("📋 Available events:", sortedEvents);
     } else {
-      setError("No profile UID provided");
+      setAvailableEvents([]);
+    }
+  }, [networkData]);
+
+  // Extract unique cities from circle data
+  useEffect(() => {
+    if (networkData && networkData.length > 0) {
+      const locations = new Set();
+      networkData.forEach((node) => {
+        const city = node.circle_city || "";
+        const state = node.circle_state || "";
+
+        // Create location string
+        if (city && state) {
+          locations.add(`${city.trim()}, ${state.trim()}`);
+        } else if (city) {
+          locations.add(city.trim());
+        } else if (state) {
+          locations.add(state.trim());
+        }
+      });
+      const sortedLocations = Array.from(locations).sort();
+      setAvailableCities(sortedLocations);
+      console.log("📋 Available locations:", sortedLocations);
+    } else {
+      setAvailableCities([]);
+    }
+  }, [networkData]);
+
+  // Unique circle_note / circle_introduced_by values for filters 7–8
+  useEffect(() => {
+    if (networkData && networkData.length > 0) {
+      const notes = new Set();
+      const intros = new Set();
+      networkData.forEach((node) => {
+        const n = (node.circle_note || "").trim();
+        if (n) notes.add(n);
+        const i = (node.circle_introduced_by || "").trim();
+        if (i) intros.add(i);
+      });
+      setAvailableNotes(Array.from(notes).sort());
+      setAvailableIntroducedBy(Array.from(intros).sort());
+    } else {
+      setAvailableNotes([]);
+      setAvailableIntroducedBy([]);
+    }
+  }, [networkData]);
+
+  const noteOptionsForModal = useMemo(() => {
+    const s = new Set(availableNotes);
+    if (notesFilter !== "All") s.add(notesFilter);
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  }, [availableNotes, notesFilter]);
+
+  const introducedOptionsForModal = useMemo(() => {
+    const s = new Set(availableIntroducedBy);
+    if (introducedByFilter !== "All") s.add(introducedByFilter);
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  }, [availableIntroducedBy, introducedByFilter]);
+
+  const sortedStorageData = useMemo(
+    () => [...storageData].sort(([keyA], [keyB]) => String(keyA).localeCompare(String(keyB))),
+    [storageData],
+  );
+
+  const toggleStorageKeyExpanded = useCallback((key) => {
+    setExpandedStorageKeys((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  useEffect(() => {
+    const loadAsyncStorage = async () => {
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const stores = await AsyncStorage.multiGet(keys);
+        setStorageData(stores);
+        const profileEntry = stores.find(([key]) => key === "profile_uid");
+        if (profileEntry) {
+          let uid = profileEntry[1];
+          // AsyncStorage.multiGet returns values as strings, but handle edge cases
+          if (uid === null || uid === undefined) {
+            uid = "";
+          } else {
+            // Try to parse if it's a JSON string
+            try {
+              const parsed = JSON.parse(uid);
+              if (typeof parsed === "string") {
+                uid = parsed;
+              } else if (typeof parsed === "object" && parsed !== null) {
+                // Extract UID from object
+                uid = parsed.profile_uid || parsed.uid || parsed.id || parsed.profile_personal_uid || "";
+                console.warn("⚠️ profile_uid was stored as JSON object, extracted:", uid);
+              } else {
+                uid = String(parsed);
+              }
+            } catch (e) {
+              // Not JSON, use as string
+              uid = String(uid).trim();
+            }
+          }
+
+          uid = String(uid || "").trim();
+          console.log("📋 Loaded profile_uid from AsyncStorage:", uid, "Type:", typeof uid);
+
+          if (uid && uid !== "[object Object]") {
+            setProfileUid(uid);
+          } else {
+            console.warn("⚠️ Invalid profile_uid loaded:", uid);
+          }
+        }
+
+        // Load Form Switch setting
+        const formSwitchSetting = await AsyncStorage.getItem("form_switch_enabled");
+        if (formSwitchSetting !== null) {
+          const isEnabled = formSwitchSetting === "true";
+          setFormSwitchEnabled(isEnabled);
+          formSwitchEnabledRef.current = isEnabled; // Update ref
+          console.log("📋 Loaded form_switch_enabled from AsyncStorage:", isEnabled);
+        }
+      } catch (e) {
+        setStorageData([["error", e.message]]);
+      }
+    };
+    loadAsyncStorage();
+  }, []);
+
+  const applyQrFromProfile = useCallback((profileUID) => {
+    if (!profileUID) return;
+    const scanUrl = `https://everycircle.com/scan/${profileUID}`;
+    setQrCodeData(scanUrl);
+    setQrCodeDataObject({
+      type: "everycircle",
+      profile_uid: profileUID,
+      version: "1.0",
+      url: scanUrl,
+      form_switch_enabled: formSwitchEnabledRef.current,
+    });
+    console.log("🔗 QR Code URL:", scanUrl);
+  }, []);
+
+  const hydrateMyProfileFromSession = useCallback(async () => {
+    try {
+      const session = await refreshFromSession({ forceRefresh: true });
+      const profileId = String(session?.profileUid || profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (!profileId) return;
+
+      let userUid = "";
+      try {
+        userUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
+      } catch (_) {}
+
+      const userData = miniCardUserFromSession(session, profileId, userUid);
+      if (userData) setUserProfileData(userData);
+      setMessagesOff(messagesOffFromSession(session));
+      applyQrFromProfile(profileId);
+      initializeAblyChannel(profileId);
+    } catch (e) {
+      console.warn("ConnectScreen - Failed to hydrate profile from session:", e);
+    }
+  }, [profileUid, refreshFromSession, applyQrFromProfile]);
+
+  // Load settings + session profile when Connect tab is focused.
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log("Connect screen focused - loading settings...");
+      loadNetworkSettings();
+      setFocusTick((t) => t + 1);
+
+      const syncProfileUidFromStorage = async () => {
+        let currentProfileUid = await AsyncStorage.getItem("profile_uid");
+        if (currentProfileUid) {
+          try {
+            const parsed = JSON.parse(currentProfileUid);
+            currentProfileUid = typeof parsed === "string" ? parsed : String(parsed);
+          } catch (e) {
+            currentProfileUid = String(currentProfileUid).trim();
+          }
+        } else {
+          currentProfileUid = "";
+        }
+        if (currentProfileUid && currentProfileUid !== profileUid) {
+          console.log("Updating profileUid from AsyncStorage:", currentProfileUid);
+          setProfileUid(currentProfileUid);
+        }
+      };
+      syncProfileUidFromStorage();
+      void hydrateMyProfileFromSession();
+    }, [hydrateMyProfileFromSession, profileUid]),
+  );
+
+  useEffect(() => {
+    return subscribeSessionProfile((session) => {
+      if (!session?.profileUid) return;
+      void (async () => {
+        let userUid = "";
+        try {
+          userUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
+        } catch (_) {}
+        const userData = miniCardUserFromSession(session, session.profileUid, userUid);
+        if (userData) setUserProfileData(userData);
+        setMessagesOff(messagesOffFromSession(session));
+      })();
+    });
+  }, []);
+
+  const initializeAblyChannel = async (profileUidForAbly) => {
+    if (!profileUidForAbly) {
+      console.warn("⚠️ ConnectScreen - Cannot initialize Ably: no profile_uid");
+      return;
+    }
+
+    try {
+      if (ablyStateSyncCleanupRef.current) {
+        try {
+          ablyStateSyncCleanupRef.current();
+        } catch (_) {}
+        ablyStateSyncCleanupRef.current = null;
+      }
+      // Remove previous handlers before setting a new channel subscription.
+      try {
+        const prevCh = ablyNetworkChannelRef.current;
+        if (prevCh) {
+          if (ablyNewConnectionHandlerRef.current) {
+            prevCh.unsubscribe("new-connection-opened", ablyNewConnectionHandlerRef.current);
+          }
+          if (ablyAnyMessageHandlerRef.current) {
+            prevCh.unsubscribe(ablyAnyMessageHandlerRef.current);
+          }
+        }
+      } catch (_) {}
+      ablyNetworkChannelRef.current = null;
+
+      // Dynamically import Ably - handle web vs native differently
+      let Ably;
+      const isWeb = Platform.OS === "web";
+
+      try {
+        if (isWeb) {
+          // On web, try dynamic import or use Ably from window if available
+          if (typeof window !== "undefined" && window.Ably) {
+            Ably = window.Ably;
+            // console.log("✅ ConnectScreen - Ably loaded from window.Ably (web)");
+          } else {
+            // Try require for web (might work with bundler)
+            try {
+              Ably = require("ably");
+              // console.log("✅ ConnectScreen - Ably module loaded via require (web)");
+            } catch (requireError) {
+              // Try dynamic import for web
+              console.warn("⚠️ ConnectScreen - require() failed on web, trying dynamic import");
+              throw new Error("Ably package not available on web. Please install: npm install ably");
+            }
+          }
+        } else {
+          // On native, use require
+          Ably = require("ably");
+          // console.log("✅ ConnectScreen - Ably module loaded (native)");
+        }
+      } catch (e) {
+        const errorMessage = e.message || String(e);
+        console.warn("⚠️ ConnectScreen - Ably not available:", errorMessage);
+        console.error("❌ ConnectScreen - Ably import error details:", e);
+        console.error("❌ ConnectScreen - Platform:", Platform.OS);
+        console.error("❌ ConnectScreen - Is Web:", isWeb);
+
+        setAblyMessageReceived({
+          channel: `/${profileUidForAbly}`,
+          message: "Error: Ably module not found",
+          timestamp: new Date().toISOString(),
+          error: `Ably not installed or not available on ${Platform.OS}. Please run: npm install ably`,
+        });
+        return;
+      }
+
+      // Verify Ably is actually available
+      if (!Ably || !Ably.Realtime) {
+        const errorMsg = "Ably module loaded but Realtime class not found";
+        console.error("❌ ConnectScreen -", errorMsg);
+        setAblyMessageReceived({
+          channel: `/${profileUidForAbly}`,
+          message: "Error: Ably module incomplete",
+          timestamp: new Date().toISOString(),
+          error: errorMsg,
+        });
+        return;
+      }
+
+      // console.log("🔵 ConnectScreen - Initializing Ably channel for profile_uid:", profileUid);
+
+      // Old key-based auth (kept for reference):
+      // const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
+      // if (!ablyApiKey) {
+      //   console.warn("⚠️ ConnectScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
+      //   return;
+      // }
+      // const client = new Ably.Realtime({ key: ablyApiKey });
+      const client = createAblyRealtimeClient(profileUidForAbly, {
+        onTokenObtained: (obscured) => setAblyTokenObscured(obscured),
+      });
+
+      // Create channel name using profile_uid (e.g., /110-000014)
+      const channelName = `/${profileUidForAbly}`;
+      setAblyListeningChannel(channelName);
+
+      const channel = client.channels.get(channelName);
+      ablyNetworkChannelRef.current = channel;
+
+      // Mirror exact Ably `connection.state` and `Channel.state` (see ably-js ConnectionState / ChannelState)
+      const onConnectionStateChange = (stateChange) => {
+        const state = String(stateChange && stateChange.current != null ? stateChange.current : client.connection.state);
+        if (state === "failed" || state === "closed") {
+          markAblyTokenNoLongerActive();
+          setAblyTokenObscured(null);
+        }
+        setAblyConnectionStatus(state);
+      };
+      const onChannelStateChange = (stateChange) => {
+        setAblyChannelStatus(String(stateChange && stateChange.current != null ? stateChange.current : channel.state));
+      };
+      client.connection.on(onConnectionStateChange);
+      channel.on(onChannelStateChange);
+      setAblyConnectionStatus(String(client.connection.state));
+      setAblyChannelStatus(String(channel.state));
+
+      ablyStateSyncCleanupRef.current = () => {
+        try {
+          client.connection.off(onConnectionStateChange);
+        } catch (_) {}
+        try {
+          channel.off(onChannelStateChange);
+        } catch (_) {}
+      };
+
+      // Attach to channel
+      console.log("🔵 ConnectScreen - Initial channel state:", channel.state);
+      console.log("🔵 ConnectScreen - Attaching to channel:", channelName);
+
+      channel.attach((err) => {
+        if (err) {
+          console.error("❌ ConnectScreen - Error attaching to Ably channel:", err);
+        } else {
+          console.log("✅ ConnectScreen - Ready to receive messages on channel:", channelName);
+        }
+        setAblyChannelStatus(String(channel.state));
+      });
+
+      // Subscribe to messages on this channel
+      const newConnectionHandler = async (message) => {
+        console.log("📨 ConnectScreen - Received message on channel:", channelName);
+        // console.log("📨 ConnectScreen - Message data:", JSON.stringify(message.data, null, 2));
+        // console.log("📨 ConnectScreen - Message name:", message.name);
+
+        if (message.data && message.data.message) {
+          // console.log("✅ ConnectScreen -", message.data.message);
+
+          // Update state to display message info
+          setAblyMessageReceived({
+            channel: channelName,
+            message: message.data.message,
+            timestamp: message.data.timestamp || new Date().toISOString(),
+            scanner_profile_uid: message.data.scanner_profile_uid || null,
+          });
+
+          // Exchange Contact Info: show same connect modal as the scanner (stay on Network)
+          if (formSwitchEnabledRef.current && message.data.scanner_profile_uid) {
+            const scannerProfileUid = message.data.scanner_profile_uid;
+            InteractionManager.runAfterInteractions(() => {
+              showScannedProfileModalRef.current?.(scannerProfileUid);
+            });
+          } else {
+            console.log("🔵 ConnectScreen - Form Switch is OFF or no scanner_profile_uid, not opening connect modal");
+          }
+        } else {
+          console.warn("⚠️ ConnectScreen - Message received but data structure unexpected:", message.data);
+        }
+      };
+      ablyNewConnectionHandlerRef.current = newConnectionHandler;
+      channel.subscribe("new-connection-opened", newConnectionHandler);
+
+      // Also subscribe to all messages for debugging
+      const anyMessageHandler = (message) => {
+        console.log("📨 ConnectScreen - Received ANY message on channel:", channelName);
+        // console.log("📨 ConnectScreen - Message name:", message.name);
+        // console.log("📨 ConnectScreen - Message data:", JSON.stringify(message.data, null, 2));
+      };
+      ablyAnyMessageHandlerRef.current = anyMessageHandler;
+      channel.subscribe(anyMessageHandler);
+    } catch (error) {
+      console.error("❌ ConnectScreen - Error initializing Ably:", error);
+    }
+  };
+
+  // Unsubscribe and remove this screen's state listeners on unmount only (do not close shared client).
+  useEffect(() => {
+    return () => {
+      if (ablyStateSyncCleanupRef.current) {
+        try {
+          ablyStateSyncCleanupRef.current();
+        } catch (_) {}
+        ablyStateSyncCleanupRef.current = null;
+      }
+      const ch = ablyNetworkChannelRef.current;
+      try {
+        if (ch) {
+          if (ablyNewConnectionHandlerRef.current) {
+            ch.unsubscribe("new-connection-opened", ablyNewConnectionHandlerRef.current);
+          }
+          if (ablyAnyMessageHandlerRef.current) {
+            ch.unsubscribe(ablyAnyMessageHandlerRef.current);
+          }
+        }
+      } catch (_) {}
+      ablyNetworkChannelRef.current = null;
+      setAblyConnectionStatus("—");
+      setAblyChannelStatus("—");
+      setAblyListeningChannel("");
+      setAblyTokenObscured(null);
+    };
+  }, []);
+
+  // Keep token row in sync when JWT `exp` passes (Ably may refresh in the background separately).
+  useEffect(() => {
+    if (!ablyListeningChannel) {
+      return undefined;
+    }
+    const id = setInterval(() => {
+      setAblyTokenObscured(getAblyTokenObscuredIfStillValid());
+    }, 5000);
+    return () => clearInterval(id);
+  }, [ablyListeningChannel]);
+
+  const showScannedProfileModal = useCallback(async (profileUid) => {
+    if (!profileUid) return;
+    try {
+      const profileInfo = await fetchPublicProfileCard(profileUid);
+      setScannedProfileData(profileInfo);
+      setShowScannedProfilePopup(true);
+    } catch (error) {
+      console.error("Error loading profile for connect modal:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    showScannedProfileModalRef.current = showScannedProfileModal;
+  }, [showScannedProfileModal]);
+
+  const lastHandledScanConnectKeyRef = useRef(null);
+
+  const openConnectModalFromScanParam = useCallback(
+    (uid, scanConnectToken) => {
+      if (!uid) return;
+      const key = `${uid}:${scanConnectToken ?? ""}`;
+      if (lastHandledScanConnectKeyRef.current === key) return;
+      lastHandledScanConnectKeyRef.current = key;
+      showScannedProfileModal(uid);
+      navigation.setParams({ scannedProfileUid: undefined, scanConnectToken: undefined });
+    },
+    [showScannedProfileModal, navigation],
+  );
+
+  const scanUid = route.params?.scannedProfileUid;
+  const scanToken = route.params?.scanConnectToken;
+
+  // Scan landing / QR scanner → show connect modal (Ably publish is done in goToNetworkForScanConnect or handleQRScanComplete)
+  useEffect(() => {
+    openConnectModalFromScanParam(scanUid, scanToken);
+  }, [scanUid, scanToken, openConnectModalFromScanParam]);
+
+  useFocusEffect(
+    useCallback(() => {
+      openConnectModalFromScanParam(scanUid, scanToken);
+    }, [scanUid, scanToken, openConnectModalFromScanParam]),
+  );
+
+  // Handle QR scan complete - fetch profile data and show popup
+  const handleQRScanComplete = async (scanData) => {
+    try {
+      if (!scanData || !scanData.profile_uid) {
+        console.error("Invalid scan data:", scanData);
+        return;
+      }
+
+      await showScannedProfileModal(scanData.profile_uid);
+
+      // Notify QR owner (Exchange Contact Info)
+      publishNewConnectionOpened(scanData.profile_uid, { message: "QR Code Scanned" }).then((result) => {
+        if (result.ok) {
+          console.log("✅ ConnectScreen - Ably new-connection-opened published for reciprocal exchange");
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching scanned profile:", error);
+    }
+  };
+
+  // Handle adding connection from scanned profile
+  const handleAddScannedConnection = async (connectionData) => {
+    try {
+      if (!scannedProfileData?.profile_uid) return;
+
+      const result = await addScannedCircleConnection(scannedProfileData.profile_uid, connectionData);
+      if (result.ok) {
+        const currentProfileUID = await AsyncStorage.getItem("profile_uid");
+        const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
+        if (currentProfileUID) {
+          fetchNetwork(currentProfileUID, currentDegree);
+        }
+        setShowScannedProfilePopup(false);
+        setScannedProfileData(null);
+      } else if (result.error && result.error !== "not_logged_in" && result.error !== "self") {
+        console.error("Error adding scanned connection:", result.error);
+      }
+    } catch (error) {
+      console.error("Error adding scanned connection:", error);
+    }
+  };
+
+  // Create vCard format (standard contact card format that QR scanners recognize)
+  const createVCard = (data) => {
+    const lines = ["BEGIN:VCARD", "VERSION:3.0"];
+
+    // Name (required)
+    const fullName = `${data.firstName} ${data.lastName}`.trim();
+    if (fullName) {
+      lines.push(`FN:${fullName}`);
+      lines.push(`N:${data.lastName || ""};${data.firstName || ""};;;`);
+    }
+
+    // Organization/Title (using tagLine)
+    if (data.tagLine) {
+      lines.push(`ORG:${escapeVCardValue(data.tagLine)}`);
+    }
+
+    // Location (city, state)
+    if (data.city || data.state) {
+      lines.push(`ADR;TYPE=home:;;${data.city || ""};${data.state || ""};;;`);
+    }
+
+    // Email
+    if (data.email) {
+      lines.push(`EMAIL:${data.email}`);
+    }
+
+    // Phone
+    if (data.phoneNumber) {
+      // Remove any non-digit characters for phone
+      const phone = data.phoneNumber.replace(/\D/g, "");
+      lines.push(`TEL:${phone}`);
+    }
+
+    // Profile UID as a note
+    if (data.profile_uid) {
+      lines.push(`NOTE:Profile ID: ${data.profile_uid}`);
+    }
+
+    // User UID (the 110 number) as a note - important for identifying the user
+    if (data.user_uid) {
+      lines.push(`NOTE:User ID: ${data.user_uid}`);
+    }
+
+    // Profile Image URL (if available)
+    if (data.profileImage) {
+      lines.push(`PHOTO;TYPE=URL:${data.profileImage}`);
+    }
+
+    lines.push("END:VCARD");
+    return lines.join("\n");
+  };
+
+  // Escape special characters in vCard values
+  const escapeVCardValue = (value) => {
+    if (!value) return "";
+    return String(value).replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;").replace(/\n/g, "\\n");
+  };
+
+  // Update graph HTML when network data or view mode or filters change (for web)
+  useEffect(() => {
+    if (Platform.OS === "web" && viewMode === "graph" && profileUid) {
+      const filtered = applyConnectionFilters(networkData, {
+        relationshipFilter,
+        dateFilter,
+        locationFilter,
+        eventFilter,
+        notesFilter,
+        introducedByFilter,
+        searchQuery,
+      });
+
+      const html = generateVisHTML(filtered, profileUid || "YOU");
+      setGraphHtml(html);
+    }
+  }, [viewMode, networkData, profileUid, relationshipFilter, dateFilter, locationFilter, eventFilter, notesFilter, introducedByFilter, searchQuery, userProfileData]);
+
+  // Create/update iframe element for web
+  useEffect(() => {
+    if (Platform.OS === "web" && viewMode === "graph" && graphHtml && iframeContainerRef.current && typeof document !== "undefined") {
+      const container = iframeContainerRef.current;
+      // Get the actual DOM element (in React Native Web, ref.current is the DOM element)
+      const domElement = container;
+      if (domElement && domElement.nodeName) {
+        // Clear existing iframe
+        while (domElement.firstChild) {
+          domElement.removeChild(domElement.firstChild);
+        }
+        // Create new iframe
+        const iframe = document.createElement("iframe");
+        iframe.setAttribute("srcDoc", graphHtml);
+        iframe.setAttribute("title", "Network Graph");
+        iframe.style.width = "100%";
+        iframe.style.height = "100%";
+        iframe.style.border = "none";
+        domElement.appendChild(iframe);
+      }
+    }
+
+    // Cleanup function
+    return () => {
+      if (Platform.OS === "web" && iframeContainerRef.current && typeof document !== "undefined") {
+        const domElement = iframeContainerRef.current;
+        if (domElement && domElement.nodeName) {
+          while (domElement.firstChild) {
+            domElement.removeChild(domElement.firstChild);
+          }
+        }
+      }
+    };
+  }, [graphHtml, viewMode]);
+
+  const pluckMiniCardFields = (apiUser) => {
+    const p = apiUser?.personal_info || {};
+    return {
+      firstName: sanitizeText(p.profile_personal_first_name),
+      lastName: sanitizeText(p.profile_personal_last_name),
+      tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline),
+      city: sanitizeText(p.profile_personal_city || ""),
+      state: sanitizeText(p.profile_personal_state || ""),
+      email: sanitizeText(apiUser?.user_email),
+      phoneNumber: sanitizeText(p.profile_personal_phone_number),
+      profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+    };
+  };
+
+  const getParentUid = (n) => {
+    if (!n) return null;
+    const tryJsonArray = (val) => {
+      try {
+        const arr = typeof val === "string" ? JSON.parse(val) : val;
+        return Array.isArray(arr) && arr.length >= 2 ? arr[arr.length - 2] : null;
+      } catch {
+        return null;
+      }
+    };
+    return (
+      n.parent_uid ||
+      n.via_uid ||
+      n.source_uid ||
+      n.connection_uid ||
+      (Array.isArray(n.path) ? (n.path.length >= 2 ? n.path[n.path.length - 2] : null) : null) ||
+      tryJsonArray(n.path) ||
+      tryJsonArray(n.connection_path) ||
+      null
+    );
+  };
+
+  const fetchConnectionsPayload = useCallback(
+    async (overrideProfileUid = null, overrideDegree = null) => {
+      const uid = await resolveProfileUidForNetwork(overrideProfileUid, profileUid);
+      const deg = String(overrideDegree ?? degree ?? "1").trim();
+      if (!uid) {
+        throw new Error("No profile UID available");
+      }
+      const response = await fetch(`${API_BASE_URL}/api/network/${uid}/${deg}`, networkListFetchOptions());
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      const data = await response.json();
+      return data.map((node) => ({
+        ...node,
+        __mc: {
+          firstName: sanitizeText(node.profile_personal_first_name || ""),
+          lastName: sanitizeText(node.profile_personal_last_name || ""),
+          tagLine: sanitizeText(node.profile_personal_tag_line || ""),
+          city: sanitizeText(node.profile_personal_city || ""),
+          state: sanitizeText(node.profile_personal_state || ""),
+          phoneNumber: sanitizeText(node.profile_personal_phone_number || ""),
+          profileImage: sanitizeText(node.profile_personal_image || ""),
+          relationship: node.circle_relationship || null,
+          emailIsPublic: node.profile_personal_email_is_public === 1,
+          phoneIsPublic: node.profile_personal_phone_number_is_public === 1,
+          tagLineIsPublic: node.profile_personal_tag_line_is_public === 1,
+          locationIsPublic: node.profile_personal_location_is_public === 1,
+          imageIsPublic: node.profile_personal_image_is_public === 1,
+          personal_info: {
+            profile_personal_first_name: sanitizeText(node.profile_personal_first_name || ""),
+            profile_personal_last_name: sanitizeText(node.profile_personal_last_name || ""),
+            profile_personal_tag_line: sanitizeText(node.profile_personal_tag_line || ""),
+            profile_personal_phone_number: sanitizeText(node.profile_personal_phone_number || ""),
+            profile_personal_image: sanitizeText(node.profile_personal_image || ""),
+            profile_personal_email_is_public: node.profile_personal_email_is_public || 0,
+            profile_personal_phone_number_is_public: node.profile_personal_phone_number_is_public || 0,
+            profile_personal_tag_line_is_public: node.profile_personal_tag_line_is_public || 0,
+            profile_personal_image_is_public: node.profile_personal_image_is_public || 0,
+          },
+        },
+      }));
+    },
+    [profileUid, degree],
+  );
+
+  const fetchCirclesPayload = useCallback(
+    async (overrideProfileUid = null) => {
+      const uid = await resolveProfileUidForNetwork(overrideProfileUid, profileUid);
+      if (!uid) {
+        throw new Error("No profile UID available");
+      }
+      const response = await fetch(`${CIRCLES_ENDPOINT}/${uid}`, networkListFetchOptions());
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      const result = await response.json();
+      if (result && result.data && Array.isArray(result.data)) {
+        return result.data.map((circle) => {
+          const p = circle;
+          const tagLineRaw = p.profile_personal_tag_line || p.profile_personal_tagline || "";
+          const emailRaw = p.user_email_id ?? p.user_email ?? "";
+          return {
+            ...circle,
+            degree: 1,
+            __mc: {
+              firstName: sanitizeText(p.profile_personal_first_name || ""),
+              lastName: sanitizeText(p.profile_personal_last_name || ""),
+              tagLine: sanitizeText(tagLineRaw || ""),
+              city: sanitizeText(p.profile_personal_city || ""),
+              state: sanitizeText(p.profile_personal_state || ""),
+              email: sanitizeText(emailRaw || ""),
+              phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+              profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+              relationship: circle.circle_relationship || null,
+              emailIsPublic: p.profile_personal_email_is_public === 1,
+              phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
+              tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
+              locationIsPublic: p.profile_personal_location_is_public === 1,
+              imageIsPublic: p.profile_personal_image_is_public === 1,
+              personal_info: {
+                profile_personal_first_name: sanitizeText(p.profile_personal_first_name || ""),
+                profile_personal_last_name: sanitizeText(p.profile_personal_last_name || ""),
+                profile_personal_tag_line: sanitizeText(tagLineRaw || ""),
+                profile_personal_tagline: sanitizeText(tagLineRaw || ""),
+                profile_personal_phone_number: sanitizeText(p.profile_personal_phone_number || ""),
+                profile_personal_image: sanitizeText(p.profile_personal_image || ""),
+                profile_personal_city: sanitizeText(p.profile_personal_city || ""),
+                profile_personal_state: sanitizeText(p.profile_personal_state || ""),
+                profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
+                profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
+                profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
+                profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
+                profile_personal_location_is_public: p.profile_personal_location_is_public || 0,
+              },
+            },
+            network_profile_personal_uid: circle.circle_related_person_id || circle.profile_personal_uid,
+          };
+        });
+      }
+      return [];
+    },
+    [profileUid],
+  );
+
+  const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
+    if (__DEV__) {
+      console.log("🔵 ConnectScreen - fetchNetwork", { degree: overrideDegree ?? degree });
+    }
+    setActiveView("connections");
+    // Keep current viewMode (list or graph) so user stays on View as Graph if they switched Network
+    setRelationshipFilter("All");
+    setDateFilter("All");
+    setLocationFilter("All");
+    setEventFilter("All");
+    setNotesFilter("All");
+    setIntroducedByFilter("All");
+    setLoading(true);
+    setError(null);
+
+    try {
+      const formatted = await fetchConnectionsPayload(overrideProfileUid, overrideDegree);
+      const grouped = groupNetworkByDegree(formatted);
+      setNetworkData(formatted);
+      setGroupedNetwork(grouped);
+      setConnectionsNetworkCache(formatted);
+      try {
+        await AsyncStorage.multiSet([
+          [ASYNC_NETWORK_DATA_CONNECTIONS, JSON.stringify(formatted)],
+          [ASYNC_NETWORK_GROUPED_CONNECTIONS, JSON.stringify(grouped)],
+          ["network_data", JSON.stringify(formatted)],
+          ["network_grouped", JSON.stringify(grouped)],
+          ["network_activeView", "connections"],
+        ]);
+      } catch (e) {
+        console.error("❌ Error saving network data:", e);
+      }
+    } catch (err) {
+      console.error("❌ Fetch failed:", err);
+      setError(err.message);
+    } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCircle = async () => {
+    if (__DEV__) console.log("🔵 ConnectScreen - fetchCircle");
+    setActiveView("circles");
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const formatted = await fetchCirclesPayload(null);
+      const grouped = { 1: formatted };
+      setNetworkData(formatted);
+      setGroupedNetwork(grouped);
+      setCirclesNetworkCache(formatted);
+      setError(null);
+      try {
+        await AsyncStorage.multiSet([
+          [ASYNC_NETWORK_DATA_CIRCLES, JSON.stringify(formatted)],
+          [ASYNC_NETWORK_GROUPED_CIRCLES, JSON.stringify(grouped)],
+          ["network_data", JSON.stringify(formatted)],
+          ["network_grouped", JSON.stringify(grouped)],
+          ["network_activeView", "circles"],
+        ]);
+      } catch (e) {
+        console.error("❌ Error saving circles data:", e);
+      }
+    } catch (err) {
+      console.error("Error fetching circles:", err);
+      setError(err.message || "Failed to fetch circles");
+      setNetworkData([]);
+      setGroupedNetwork({});
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // When Connect Directly opens, ensure both connections and circles snapshots exist (fetch missing side).
+  useEffect(() => {
+    if (!connectDirectlyVisible || !settingsLoaded) return;
+    let cancelled = false;
+    (async () => {
+      setConnectDirectlyPrepareLoading(true);
+      try {
+        const uid = await resolveProfileUidForNetwork(null, profileUid);
+        if (!uid) return;
+
+        const degStored = await AsyncStorage.getItem("network_degree");
+        const deg = String(degStored || degree || "2").trim() || "2";
+
+        const [connStr, circStr] = await Promise.all([AsyncStorage.getItem(ASYNC_NETWORK_DATA_CONNECTIONS), AsyncStorage.getItem(ASYNC_NETWORK_DATA_CIRCLES)]);
+
+        let connections = null;
+        let circles = null;
+        if (connStr != null) {
+          try {
+            connections = JSON.parse(connStr);
+          } catch {
+            connections = null;
+          }
+        }
+        if (circStr != null) {
+          try {
+            circles = JSON.parse(circStr);
+          } catch {
+            circles = null;
+          }
+        }
+
+        if (connections === null) {
+          try {
+            const fetched = await fetchConnectionsPayload(null, deg);
+            if (cancelled) return;
+            connections = fetched;
+            const grouped = groupNetworkByDegree(fetched);
+            await AsyncStorage.multiSet([
+              [ASYNC_NETWORK_DATA_CONNECTIONS, JSON.stringify(fetched)],
+              [ASYNC_NETWORK_GROUPED_CONNECTIONS, JSON.stringify(grouped)],
+            ]);
+            setConnectionsNetworkCache(fetched);
+          } catch (e) {
+            console.warn("Connect Directly — connections prefetch failed:", e);
+            if (!cancelled) {
+              await AsyncStorage.multiSet([
+                [ASYNC_NETWORK_DATA_CONNECTIONS, "[]"],
+                [ASYNC_NETWORK_GROUPED_CONNECTIONS, JSON.stringify({})],
+              ]);
+              setConnectionsNetworkCache([]);
+            }
+          }
+        } else if (!cancelled) {
+          setConnectionsNetworkCache(Array.isArray(connections) ? connections : []);
+        }
+
+        if (circles === null) {
+          try {
+            const fetchedCircles = await fetchCirclesPayload(null);
+            if (cancelled) return;
+            circles = fetchedCircles;
+            const groupedC = { 1: fetchedCircles };
+            await AsyncStorage.multiSet([
+              [ASYNC_NETWORK_DATA_CIRCLES, JSON.stringify(fetchedCircles)],
+              [ASYNC_NETWORK_GROUPED_CIRCLES, JSON.stringify(groupedC)],
+            ]);
+            setCirclesNetworkCache(fetchedCircles);
+          } catch (e) {
+            console.warn("Connect Directly — circles prefetch failed:", e);
+            if (!cancelled) {
+              await AsyncStorage.multiSet([
+                [ASYNC_NETWORK_DATA_CIRCLES, "[]"],
+                [ASYNC_NETWORK_GROUPED_CIRCLES, JSON.stringify({ 1: [] })],
+              ]);
+              setCirclesNetworkCache([]);
+            }
+          }
+        } else if (!cancelled) {
+          setCirclesNetworkCache(Array.isArray(circles) ? circles : []);
+        }
+      } catch (outer) {
+        console.warn("Connect Directly — prepare failed:", outer);
+      } finally {
+        if (!cancelled) setConnectDirectlyPrepareLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connectDirectlyVisible, settingsLoaded, profileUid, degree, fetchConnectionsPayload, fetchCirclesPayload]);
+
+  const degreeLabel = (deg) => {
+    if (deg === 1) return "1st-Level Connections";
+    if (deg === 2) return "2nd-Level Connections";
+    if (deg === 3) return "3rd-Level Connections";
+    return `${deg}-Level Connections`;
+  };
+
+  /** ✅ Build vis-network HTML (hierarchical layout by degree) */
+  const generateVisHTML = (data, youId) => {
+    // console.log("🔷 generateVisHTML called with:");
+    // console.log("  - youId:", youId);
+    // console.log("  - data length:", data.length);
+    console.log(
+      "  - data sample (first 3):",
+      JSON.stringify(
+        data.slice(0, 3).map((n) => ({
+          network_profile_personal_uid: n.network_profile_personal_uid,
+          profile_personal_uid: n.profile_personal_uid,
+          target_uid: n.target_uid,
+          degree: n.degree,
+          parent_uid: n.parent_uid,
+          via_uid: n.via_uid,
+          source_uid: n.source_uid,
+          connection_uid: n.connection_uid,
+        })),
+        null,
+        2,
+      ),
+    );
+
+    // Get user's profile image if available
+    const userImage = userProfileData?.profileImage || "";
+    const hasUserImage = userImage && String(userImage).trim() !== "";
+
+    // Calculate base size for other nodes (max of image nodes or dot nodes)
+    const otherNodeSizes = data.map((n) => {
+      const img = n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
+      const hasImg = img && String(img).trim() !== "";
+      return hasImg ? 18 : 10;
+    });
+    const maxOtherSize = otherNodeSizes.length > 0 ? Math.max(...otherNodeSizes) : 18;
+
+    // User's node should be 150% of the max other node size
+    const userNodeSize = Math.round(maxOtherSize * 1.5);
+    const userNodeBorderWidth = Math.round(userNodeSize * 0.15);
+
+    const userDisplayName = [userProfileData?.firstName, userProfileData?.lastName].filter(Boolean).join(" ").trim() || "You";
+    const userNodeLabel = `<b>${escapeVisHtmlLabel(userDisplayName)}</b>`;
+
+    // Current user: purple border ring; image nodes get the ring via borderWidth
+    const userNodeColor = { border: NETWORK_GRAPH_PURPLE, background: "#e53935" };
+
+    const nodes = [
+      {
+        id: youId || "YOU",
+        label: userNodeLabel,
+        shape: hasUserImage ? "circularImage" : "dot",
+        image: hasUserImage ? userImage : undefined,
+        size: userNodeSize,
+        borderWidth: userNodeBorderWidth,
+        color: userNodeColor,
+        font: { multi: "html", color: "#000000", size: 10 },
+        level: 0,
+      },
+    ];
+
+    const allUids = new Set([youId]);
+    data.forEach((n) => allUids.add(n.network_profile_personal_uid));
+
+    data.forEach((n) => {
+      const name = n.__mc?.personal_info?.profile_personal_first_name || n.__mc?.firstName || "";
+      const last = n.__mc?.personal_info?.profile_personal_last_name || n.__mc?.lastName || "";
+      const label = [name, last].filter(Boolean).join(" ") || (n.network_profile_personal_uid ? n.network_profile_personal_uid.slice(-3) : "???");
+
+      const img = n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
+
+      const hasImg = img && String(img).trim() !== "";
+      const isZeroNode = n.network_profile_personal_uid === EVERY_CIRCLE_ZERO_NODE_UID;
+
+      nodes.push({
+        id: n.network_profile_personal_uid,
+        label,
+        shape: hasImg && !isZeroNode ? "circularImage" : "dot",
+        image: hasImg && !isZeroNode ? img : undefined,
+        size: isZeroNode ? userNodeSize : hasImg ? 18 : 10,
+        borderWidth: isZeroNode ? userNodeBorderWidth : undefined,
+        color: isZeroNode
+          ? { border: NETWORK_GRAPH_PURPLE, background: NETWORK_GRAPH_PURPLE_FILL_50 }
+          : hasImg
+            ? undefined
+            : { border: "#FFFFFF", background: "#e9d4ff" },
+        font: { size: 11, color: "#444" },
+        level: Number(n.degree) || 1,
+      });
+    });
+
+    const edges = [];
+    // console.log("🔷 Building edges...");
+    data.forEach((n) => {
+      const deg = Number(n.degree) || 1;
+      const nodeUid = n.network_profile_personal_uid;
+      console.log(`\n  Processing node ${nodeUid} (degree ${deg}):`, {
+        profile_personal_referred_by: n.profile_personal_referred_by,
+        profile_personal_uid: n.profile_personal_uid,
+        target_uid: n.target_uid,
+        parent_uid: n.parent_uid,
+        via_uid: n.via_uid,
+      });
+
+      let parent = null;
+
+      // HIGHEST PRIORITY: Use profile_personal_referred_by - this is who referred/connected this person
+      if (n.profile_personal_referred_by && n.profile_personal_referred_by !== nodeUid && allUids.has(n.profile_personal_referred_by)) {
+        const referredByNode = data.find((x) => x.network_profile_personal_uid === n.profile_personal_referred_by);
+        if (referredByNode) {
+          const referredByDeg = Number(referredByNode.degree) || 1;
+          // For degree 1, the referrer should be YOU or in degree 1
+          // For degree > 1, the referrer should be in degree-1
+          if (deg === 1) {
+            if (n.profile_personal_referred_by === youId || referredByDeg === 1) {
+              parent = n.profile_personal_referred_by;
+              console.log(`    ✅ Found parent via profile_personal_referred_by (degree 1): ${parent}`);
+            }
+          } else if (referredByDeg === deg - 1) {
+            parent = n.profile_personal_referred_by;
+            console.log(`    ✅ Found parent via profile_personal_referred_by (${parent} is in degree ${referredByDeg}): ${parent}`);
+          } else {
+            console.log(`    ⚠️ profile_personal_referred_by ${n.profile_personal_referred_by} exists but is degree ${referredByDeg}, not ${deg - 1}`);
+          }
+        } else if (n.profile_personal_referred_by === youId) {
+          // If referrer is YOU, use it directly
+          parent = youId;
+          console.log(`    ✅ Found parent via profile_personal_referred_by (YOU): ${parent}`);
+        }
+      }
+
+      // Fallback: try getParentUid (checks parent_uid, via_uid, etc.)
+      if (!parent) {
+        try {
+          const p = getParentUid(n);
+          if (p && allUids.has(p)) {
+            parent = p;
+            console.log(`    ✅ Found parent via getParentUid: ${parent}`);
+          }
+        } catch (e) {
+          console.log(`    ❌ Error in getParentUid:`, e);
+        }
+      }
+
+      // Fallback: Check if this node's profile_personal_uid or target_uid points to a valid parent
+      // Circle API rows set profile_personal_uid to the *contact* (same as network_profile_personal_uid).
+      // Treating that as "parent" sets parent === nodeUid (self-loop) and breaks vis-network layout
+      // (image vs ring misalignment, missing-looking edges). Connections rows use these as real parent refs.
+      if (!parent && (n.profile_personal_uid || n.target_uid)) {
+        const directParentUid = n.profile_personal_uid || n.target_uid;
+        if (directParentUid !== nodeUid && allUids.has(directParentUid)) {
+          const parentNode = data.find((x) => x.network_profile_personal_uid === directParentUid);
+          if (parentNode) {
+            const parentDeg = Number(parentNode.degree) || 1;
+            if (deg === 1) {
+              if (directParentUid === youId || parentDeg === 1) {
+                parent = directParentUid;
+                console.log(`    ✅ Found parent via profile_personal_uid/target_uid (degree 1): ${parent}`);
+              }
+            } else if (parentDeg === deg - 1) {
+              parent = directParentUid;
+              console.log(`    ✅ Found parent via profile_personal_uid/target_uid (${directParentUid} is in degree ${parentDeg}): ${parent}`);
+            }
+          }
+        }
+      }
+
+      // For degree > 1, if still no parent, try reverse lookup
+      // Find a node in degree-1 that has this node's UID as its profile_personal_uid or target_uid
+      if (!parent && deg > 1) {
+        const connectingNode = data.find((x) => {
+          const xDeg = Number(x.degree) || 1;
+          const connectsToThisNode = x.profile_personal_uid === nodeUid || x.target_uid === nodeUid;
+          const isPreviousDegree = xDeg === deg - 1;
+          return connectsToThisNode && isPreviousDegree;
+        });
+
+        if (connectingNode && allUids.has(connectingNode.network_profile_personal_uid)) {
+          parent = connectingNode.network_profile_personal_uid;
+          console.log(`    ✅ Found parent via reverse lookup (node ${parent} connects to ${nodeUid}): ${parent}`);
+        }
+      }
+
+      // For degree 1, connect to YOU if no parent found
+      if (!parent && deg === 1) {
+        parent = youId || "YOU";
+        console.log(`    ✅ Connecting to YOU (degree 1, no parent found)`);
+      }
+
+      // Last resort for degree > 1: find any node with degree-1
+      if (!parent && deg > 1) {
+        const fallbackParent = data.find((x) => Number(x.degree) === deg - 1);
+        if (fallbackParent && allUids.has(fallbackParent.network_profile_personal_uid)) {
+          parent = fallbackParent.network_profile_personal_uid;
+          console.log(`    ⚠️ Using fallback parent (first degree-1 node): ${parent}`);
+        } else {
+          parent = youId || "YOU";
+          console.log(`    ⚠️ No parent found, connecting to YOU`);
+        }
+      }
+
+      if (parent) {
+        console.log(`  ✅ Edge: ${parent} -> ${nodeUid} (degree ${deg})`);
+        edges.push({
+          from: parent,
+          to: nodeUid,
+          color: { color: deg === 1 ? "#bbbbbb" : "#cccccc" },
+          width: deg === 1 ? 3 : 2,
+          smooth: true,
+        });
+      }
+    });
+
+    console.log("🔷 Total edges created:", edges.length);
+    console.log(
+      "🔷 Edges:",
+      JSON.stringify(
+        edges.map((e) => `${e.from} -> ${e.to}`),
+        null,
+        2,
+      ),
+    );
+
+    const payload = { nodes, edges };
+
+    // For web, we need to handle message passing differently
+    const messageHandler =
+      Platform.OS === "web"
+        ? `window.addEventListener('message', function(event) {
+          if (event.data && event.data.type === 'nodeClick') {
+            window.parent.postMessage({ type: 'nodeClick', uid: event.data.uid }, '*');
+          }
+        });`
+        : "";
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<style>
+  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#ffffff; }
+  #mynetwork { width:100%; height:100%; background:#ffffff; }
+</style>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+  <div id="mynetwork"></div>
+  <script>
+    (function() {
+      const data = ${JSON.stringify(payload)};
+      const container = document.getElementById('mynetwork');
+
+      const options = {
+        layout: {
+          improvedLayout: true,
+          randomSeed: 58  // for consistent layout
+        },
+        physics: {
+          enabled: true,
+          solver: "repulsion",
+          repulsion: {
+            nodeDistance: 180,     // controls how far apart the rings are
+            centralGravity: 0.3,
+            springLength: 100,
+            springConstant: 0.02,
+            damping: 0.15
+          },
+          stabilization: {
+            iterations: 200,
+            updateInterval: 25
+          }
+        },
+
+        edges: {
+          color: '#cccccc',
+          width: 0.5,
+          smooth: { enabled: true, type: 'continuous', roundness: 0.3 }
+        },
+        interaction: {
+          hover: true,
+          zoomView: true,
+          dragView: true,
+          dragNodes: true
+        }
+      };
+
+      const network = new vis.Network(container, data, options);
+
+      network.once('stabilizationIterationsDone', () => {
+        network.fit({ animation: { duration: 200 }});
+      });
+
+      network.on('click', function(params) {
+        if (params && params.nodes && params.nodes.length > 0) {
+          const id = params.nodes[0];
+          ${
+            Platform.OS === "web"
+              ? `window.parent.postMessage({ type: 'nodeClick', uid: String(id) }, '*');`
+              : `if (id && window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(String(id));
+          }`
+          }
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        network.fit({ animation: false });
+      });
+    })();
+  </script>
+</body>
+</html>
+`;
+  };
+
+  // Handle iframe message for web
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      const handleMessage = (event) => {
+        // In production, you should validate event.origin for security
+        if (event.data && event.data.type === "nodeClick") {
+          const uid = event.data.uid;
+          if (uid && uid !== (profileUid || "YOU")) {
+            navigation.navigate("Profile", {
+              profile_uid: uid,
+              returnTo: "Connect",
+            });
+          }
+        }
+      };
+
+      window.addEventListener("message", handleMessage);
+      return () => {
+        window.removeEventListener("message", handleMessage);
+      };
+    }
+  }, [navigation, profileUid]);
+
+  // Apply filters to network data for graph/list views
+  const filteredNetworkData = applyConnectionFilters(networkData, {
+    relationshipFilter,
+    dateFilter,
+    locationFilter,
+    eventFilter,
+    notesFilter,
+    introducedByFilter,
+    searchQuery,
+  });
+  const filteredGroupedNetwork = groupNetworkByDegree(filteredNetworkData);
+
+  // Filters "Who's Nearby" results by name against nearbySearchQuery
+  const nearbySearchLower = nearbySearchQuery.trim().toLowerCase();
+  const matchesNearbySearch = (u) => {
+    if (!nearbySearchLower) return true;
+    const searchableText = [u.profile_personal_first_name, u.profile_personal_last_name, u.profile_personal_tag_line, u.profile_personal_short_bio]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return searchableText.includes(nearbySearchLower);
+  };
+
+  const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
+  const NEARBY_SETTINGS_KEY = "nearby_share_settings";
+
+  const fetchNearbyUsers = async (radiusMiles) => {
+    const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
+    if (!uid) return;
+
+    const sharingActive = await isNearbySharingActive();
+    setNearbySharingActive(sharingActive);
+
+    // Reuse the same privacy settings that SettingsScreen persists
+    let mode = "all_circles";
+    try {
+      const raw = await AsyncStorage.getItem(NEARBY_SETTINGS_KEY);
+      if (raw) {
+        const s = JSON.parse(raw);
+        mode = s.receiveFrom || "all_circles";
+      }
+    } catch (_) {}
+
+    // Load ignored UIDs from storage
+    try {
+      const raw = await AsyncStorage.getItem(NEARBY_IGNORED_KEY);
+      if (raw) setIgnoredNearbyUids(new Set(JSON.parse(raw)));
+    } catch (_) {}
+
+    const isRadiusRefresh = radiusMiles != null;
+    if (!isRadiusRefresh) {
+      setNearbyLoading(true);
+      setNearbyError(null);
+      setNearbyUsers([]);
+      setMyNearbyLocation(null);
+    }
+    try {
+      const radiusMeters = radiusMiles != null ? Math.round(radiusMiles * 1609) : null;
+      const radiusParam = radiusMeters != null ? `&radius_meters=${radiusMeters}` : "";
+      const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}${radiusParam}`);
+      const json = await res.json();
+      if (json.code === 200) {
+        const raw = json.result || [];
+        const seen = new Set();
+        const deduped = raw.filter((u) => {
+          const id = String(u.profile_personal_uid || "").trim();
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+        setNearbyUsers(deduped);
+        const viewer = json.viewer_location;
+        if (viewer?.lat != null && viewer?.lng != null) {
+          setMyNearbyLocation({ lat: viewer.lat, lng: viewer.lng });
+        }
+      } else if (json.code === 410) {
+        if (!isRadiusRefresh) setNearbyError("Your location has expired. Update it in Settings to see who's nearby.");
+      } else {
+        if (!isRadiusRefresh) setNearbyError(json.message || "Could not fetch nearby users.");
+      }
+    } catch (_) {
+      if (!isRadiusRefresh) setNearbyError("Network error. Please try again.");
+    }
+    if (!isRadiusRefresh) setNearbyLoading(false);
+  };
+
+  const ignoreNearbyUser = async (uid) => {
+    const next = new Set(ignoredNearbyUids);
+    next.add(uid);
+    setIgnoredNearbyUids(next);
+    try {
+      await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
+    } catch (_) {}
+  };
+
+  const unignoreNearbyUser = async (uid) => {
+    const next = new Set(ignoredNearbyUids);
+    next.delete(uid);
+    setIgnoredNearbyUids(next);
+    try {
+      await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
+    } catch (_) {}
+  };
+
+  const fetchConversations = useCallback(async () => {
+    const session = await getSessionProfile();
+    const uid = (profileUid || session?.profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+    if (!uid) return;
+    setConversationsLoading(true);
+    try {
+      const res = await fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${encodeURIComponent(uid)}`);
+      const json = await res.json();
+      setConversations(normalizeConversationsResponse(json, uid));
+    } catch (_) {
+      setConversations([]);
+    }
+    setConversationsLoading(false);
+  }, [profileUid]);
+
+  const resolveMyUid = async () => {
+    if (profileUid) return profileUid.trim();
+    const session = await getSessionProfile();
+    if (session?.profileUid) return String(session.profileUid).trim();
+    const stored = await AsyncStorage.getItem("profile_uid");
+    if (!stored) return "";
+    try {
+      const parsed = JSON.parse(stored);
+      return (typeof parsed === "string" ? parsed : String(parsed)).trim();
+    } catch (e) {
+      return String(stored).trim();
+    }
+  };
+
+  const fetchBlockedUsers = useCallback(async (isRetry = false) => {
+    const uid = await resolveMyUid();
+    if (!uid) return;
+    try {
+      const res = await fetch(`${BLOCKED_USERS_ENDPOINT}/${encodeURIComponent(uid)}`);
+      if (!res.ok) throw new Error(`Blocked-users fetch failed: ${res.status}`);
+      const json = await res.json();
+      const list = Array.isArray(json.result) ? json.result : [];
+      setBlockedList(list);
+      setBlockedUids(new Set(list.map((b) => b.blocked_uid)));
+    } catch (e) {
+      console.warn("fetchBlockedUsers failed", isRetry ? "(retry)" : "", e);
+      // Local dev server can briefly restart on file changes — retry once after a short delay
+      // instead of silently leaving stale/empty blocked state on screen.
+      if (!isRetry) setTimeout(() => fetchBlockedUsers(true), 1500);
     }
   }, [profileUid]);
 
-  // Load logged-in user's profile + businesses on focus
+  const toggleMessagesOff = async () => {
+    const uid = await resolveMyUid();
+    if (!uid) return;
+    const next = !messagesOff;
+    setMessagesOff(next);
+    setShowMessagesMenu(false);
+    try {
+      const formData = new FormData();
+      formData.append("profile_uid", uid);
+      formData.append("profile_personal_messages_off", next ? "1" : "0");
+      const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
+        method: "PUT",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      await patchSessionPersonalInfoField("profile_personal_messages_off", next ? 1 : 0);
+    } catch (e) {
+      setMessagesOff(!next);
+      Alert.alert("Error", "Could not update your messages setting.");
+    }
+  };
+
+  const toggleBlock = async (otherUid) => {
+    const uid = await resolveMyUid();
+    if (!uid || !otherUid) return;
+    const wasBlocked = blockedUids.has(otherUid);
+    setOpenRowMenuUid(null);
+    setBlockedUids((prev) => {
+      const next = new Set(prev);
+      if (wasBlocked) next.delete(otherUid);
+      else next.add(otherUid);
+      return next;
+    });
+    try {
+      const res = await fetch(BLOCKED_USERS_ENDPOINT, {
+        method: wasBlocked ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blocker_uid: uid, blocked_uid: otherUid }),
+      });
+      if (!res.ok) throw new Error("Failed to update block status");
+      fetchBlockedUsers();
+    } catch (e) {
+      setBlockedUids((prev) => {
+        const next = new Set(prev);
+        if (wasBlocked) next.add(otherUid);
+        else next.delete(otherUid);
+        return next;
+      });
+      Alert.alert("Error", "Could not update block status.");
+    }
+  };
+
+  // When returning from Chat, refresh the list so the just-sent message appears immediately.
   useFocusEffect(
-    React.useCallback(() => {
-      fetchMyData();
-    }, []),
+    useCallback(() => {
+      if (showMessages) {
+        fetchConversations();
+        clearUnread();
+      }
+      // Always keep block/mute status current on focus (not gated on the accordion being open),
+      // so the "Blocked" badge is correct as soon as Messages is expanded — no stale state after
+      // a refresh, sign-out/sign-in, or navigating back from elsewhere in the app.
+      fetchBlockedUsers();
+    }, [showMessages, fetchConversations, fetchBlockedUsers, clearUnread]),
   );
 
-  const fetchMyData = async () => {
-    try {
-      const profileId = await AsyncStorage.getItem("profile_uid");
-      if (!profileId) return;
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-      if (!response.ok) return;
-      const result = await response.json();
-      // Build my profile card data
-      const p = result?.personal_info || {};
-      setMyProfileData({
-        profile_uid: profileId,
-        firstName: sanitizeText(p.profile_personal_first_name || ""),
-        lastName: sanitizeText(p.profile_personal_last_name || ""),
-        tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
-        city: sanitizeText(p.profile_personal_city || ""),
-        state: sanitizeText(p.profile_personal_state || ""),
-        email: sanitizeText(result?.user_email || ""),
-        phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
-        profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-        emailIsPublic: p.profile_personal_email_is_public === 1,
-        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-        locationIsPublic: p.profile_personal_location_is_public === 1,
-        imageIsPublic: p.profile_personal_image_is_public === 1,
-      });
-    } catch (e) {
-      console.warn("ConnectScreen - Failed to fetch my data:", e);
-    }
+  useFocusEffect(
+    useCallback(() => {
+      if (showNearby) {
+        fetchNearbyUsers(nearbyRadiusMilesRef.current);
+      }
+    }, [showNearby]),
+  );
+
+  const _convRelTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso.replace(" ", "T") + "Z");
+    const diffMs = Date.now() - d;
+    const m = Math.floor(diffMs / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const days = Math.floor(h / 24);
+    if (days < 7) return `${days}d ago`;
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
   };
-
-  const fetchProfileData = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
-      if (!response.ok) {
-        throw new Error("Profile not found");
-      }
-      const apiUser = await response.json();
-
-      const p = apiUser?.personal_info || {};
-      const profileInfo = {
-        profile_uid: profileUid,
-        firstName: sanitizeText(p.profile_personal_first_name || ""),
-        lastName: sanitizeText(p.profile_personal_last_name || ""),
-        tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
-        city: sanitizeText(p.profile_personal_city || ""),
-        state: sanitizeText(p.profile_personal_state || ""),
-        email: sanitizeText(apiUser?.user_email || ""),
-        phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
-        profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-        emailIsPublic: p.profile_personal_email_is_public === 1,
-        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-        locationIsPublic: p.profile_personal_location_is_public === 1,
-        imageIsPublic: p.profile_personal_image_is_public === 1,
-      };
-
-      setProfileData(profileInfo);
-    } catch (err) {
-      console.error("Error fetching profile:", err);
-      setError(err.message || "Failed to load profile");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAddConnection = async (relationship = null) => {
-    try {
-      setAddingConnection(true);
-      const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
-
-      if (!loggedInProfileUID) {
-        Alert.alert("Not Logged In", "Please log in to add connections.");
-        navigation.navigate("Login");
-        return;
-      }
-
-      if (loggedInProfileUID === profileUid) {
-        Alert.alert("Cannot Add Self", "You cannot add yourself as a connection.");
-        return;
-      }
-
-      // Format current date (YYYY-MM-DD)
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, "0");
-      const day = String(now.getDate()).padStart(2, "0");
-      const circleDate = `${year}-${month}-${day}`;
-
-      const requestBody = {
-        circle_profile_id: loggedInProfileUID,
-        circle_related_person_id: profileUid,
-        circle_relationship: relationship || "friend",
-        circle_date: circleDate,
-      };
-
-      const response = await fetch(CIRCLES_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (response.ok) {
-        Alert.alert("Success", "Connection added successfully!", [
-          {
-            text: "OK",
-            onPress: () => navigation.navigate("Network"),
-          },
-        ]);
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to add connection");
-      }
-    } catch (err) {
-      console.error("Error adding connection:", err);
-      Alert.alert("Error", err.message || "Failed to add connection");
-    } finally {
-      setAddingConnection(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <View style={[styles.container, darkMode && styles.darkContainer]}>
-        <AppHeader
-          title='Connect'
-          rightButton={
-            <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("QRScanner")}>
-              <Ionicons name='camera' size={20} color='#fff' />
-            </TouchableOpacity>
-          }
-        />
-        <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size='large' color='#AF52DE' />
-            <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading profile...</Text>
-          </View>
-        </SafeAreaView>
-      </View>
-    );
-  }
 
   return (
-    <View style={[styles.container, darkMode && styles.darkContainer]}>
-      <AppHeader
-        title='CONNECT'
-        rightButton={
-          <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("Search")}>
-            <Ionicons name='camera' size={20} color='#fff' />
-          </TouchableOpacity>
-        }
-      />
+    <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
+      {/* Header */}
+      {/* <AppHeader title='Connect' backgroundColor='#AF52DE' /> */}
+      <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
+        <AppHeader title='CONNECT' {...getHeaderColors("network")} />
+      </TouchableOpacity>
+
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          {/* Logged-in user's own profile card */}
-          {myProfileData && (
-            <View style={styles.myProfileCard}>
-              <MiniCard user={myProfileData} />
-            </View>
+        <ScrollView
+          style={[styles.scrollContainer, darkMode && styles.darkScrollContainer]}
+          contentContainerStyle={{ padding: 15, paddingBottom: 120 }}
+          keyboardShouldPersistTaps='handled'
+          showsVerticalScrollIndicator
+          nestedScrollEnabled={true}
+        >
+          {userProfileData && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                const uid = userProfileData.profile_uid || profileUid;
+                if (uid) {
+                  navigation.navigate("Profile", { profile_uid: uid, returnTo: "Connect" });
+                } else {
+                  navigation.navigate("Profile");
+                }
+              }}
+            >
+              <View style={{ marginBottom: 16 }}>
+                <MiniCard user={userProfileData} />
+              </View>
+            </TouchableOpacity>
           )}
 
-          {/* Divider before scanned person card */}
-          {profileData && (
-            <View style={styles.divider} />
-          )}
+          {/* QR Code Section */}
+          {(() => {
+            // if (__DEV__) console.log("🔵 ConnectScreen - Rendering QR Code Section");
+            if (qrCodeData && userProfileData && QRCodeComponent) {
+              // if (__DEV__) console.log("🔵 ConnectScreen - QR Code data exists, rendering QR section");
+              return (
+                <View style={styles.qrCodeContainer}>
+                  <Text accessibilityRole='header' style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>
+                    Connect with Me!
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 15 }}>
+                    <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle, { marginBottom: 0 }]}>SCAN My QR Code</Text>
+                    {/* <TouchableOpacity
+                      style={{ padding: 6 }}
+                      onPress={() =>
+                        navigation.navigate("QRScanner", {
+                          onScanComplete: handleQRScanComplete,
+                        })
+                      }
+                    >
+                      <Ionicons name='camera-outline' size={25} color='#000' />
+                    </TouchableOpacity> */}
+                  </View>
 
-          {/* Scanned person's card + Add Connection buttons (only when arriving via QR) */}
-          {profileData && (
-            <>
-              {error ? (
-                <View style={styles.errorContainer}>
-                  <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error}</Text>
+                  {/* QR at original 220px; form rows wider (286px) */}
+                  <View style={styles.qrCodeSectionWrapper}>
+                    <View style={[styles.qrCodeWrapper, darkMode && styles.darkQrCodeWrapper]}>
+                      <QRCodeComponent value={qrCodeData} size={200} color={darkMode ? "#ffffff" : "#000000"} backgroundColor={darkMode ? "#1a1a1a" : "#ffffff"} />
+                    </View>
+
+                    {/* Form Switch Toggle */}
+                    <View style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]}>
+                      <View style={styles.formSwitchTextContainer}>
+                        {/* <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Automatically add user scanning my QR Code to my Circles of Influence</Text> */}
+                        <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Exchange Contact Info</Text>
+                      </View>
+                      <Switch
+                        value={formSwitchEnabled}
+                        onValueChange={async (value) => {
+                          setFormSwitchEnabled(value);
+                          formSwitchEnabledRef.current = value; // Update ref
+                          // Persist the setting
+                          await AsyncStorage.setItem("form_switch_enabled", value ? "true" : "false");
+                          console.log("🔵 ConnectScreen - Form Switch set to:", value);
+                          // Update QR code with new setting
+                          if (profileUid) {
+                            applyQrFromProfile(profileUid);
+                          }
+                        }}
+                        trackColor={{ false: "#767577", true: "rgba(36, 52, 194, 0.5)" }}
+                        thumbColor={formSwitchEnabled ? getHeaderColor("network") : "#f4f3f4"}
+                        ios_backgroundColor='#767577'
+                        activeThumbColor={getHeaderColor("network")}
+                        activeTrackColor='rgba(36, 52, 194, 0.5)'
+                        accessibilityRole='switch'
+                        accessibilitylabel='Exchange contact info'
+                        accessibilityHint='Turns contact info exchange on or off when someone scans your QR code'
+                        accessibilityState={{ checked: formSwitchEnabled }}
+                      />
+                    </View>
+
+                    {/* Scan Other's QR Code Button */}
+                    <TouchableOpacity
+                      style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]}
+                      onPress={() =>
+                        navigation.navigate("QRScanner", {
+                          onScanComplete: handleQRScanComplete,
+                        })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.formSwitchTextContainer}>
+                        <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Scan Other's QR Code</Text>
+                      </View>
+                      <Ionicons name='camera-outline' size={28} color={darkMode ? "#ffffff" : "#000000"} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]} onPress={() => setConnectDirectlyVisible(true)} activeOpacity={0.7}>
+                      <View style={styles.formSwitchTextContainer}>
+                        <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Connect & Follow</Text>
+                      </View>
+                      <Ionicons name='person-add-outline' size={28} color={darkMode ? "#ffffff" : "#000000"} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            }
+            // if (__DEV__) console.log("🔵 ConnectScreen - QR Code section not rendered (missing data)");
+            return null;
+          })()}
+
+          {(() => {
+            // if (__DEV__) console.log("🔵 ConnectScreen - Rendering Network Section");
+            return (
+              <View style={{ marginTop: 20 }}>
+                {/* View My Network Dropdown Header */}
+                <TouchableOpacity
+                  style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader]}
+                  onPress={() => {
+                    const willExpand = !showViewMyNetwork;
+                    setShowViewMyNetwork(willExpand);
+                    if (willExpand) {
+                      setDegree("3");
+                      setViewMode("list");
+                      setActiveView("connections");
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>View My Network</Text>
+                  <Ionicons name={showViewMyNetwork ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+                </TouchableOpacity>
+
+                {showViewMyNetwork && (
+                  <>
+                    {/* Search Input - wrapped with borderless strategy to match Levels/Relationship boxes */}
+                    {Object.keys(groupedNetwork).length > 0 && (
+                      <View style={{ width: "100%", marginBottom: 12, marginTop: 8 }}>
+                        <View style={[styles.searchInputWrapper, darkMode && styles.darkSearchInputWrapper]}>
+                          <WebTextInput
+                            style={[styles.searchInputInner, darkMode && { color: "#fff" }]}
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                            placeholder='Search Connections...'
+                            placeholderTextColor={darkMode ? "#888" : "#999"}
+                            borderless
+                            accessibilitylabel='Search connections'
+                            accessibilityHint='Type to search your connections by name, location, event, or relationship'
+                            accessibilityRole='search'
+                            aria-label='search connection'
+                          />
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Graph/List View Mode Toggle */}
+                    <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
+                      <TouchableOpacity onPress={() => setViewMode("list")} style={[styles.toggleButton, viewMode === "list" && styles.toggleButtonActive]}>
+                        <Text style={[styles.toggleButtonText, viewMode === "list" && styles.toggleButtonTextActive]}>View as List</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setViewMode("graph")} style={[styles.toggleButton, viewMode === "graph" && styles.toggleButtonActive]}>
+                        <Text style={[styles.toggleButtonText, viewMode === "graph" && styles.toggleButtonTextActive]}>View as Graph</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={{ marginTop: 10 }}>
+                      {/* Row 1: Network - Toggle between Connections (multi-degree) and Circles (direct) */}
+                      <View style={styles.controlRow}>
+                        <Text style={styles.controlRowLabel}>1. Network</Text>
+                        <TouchableOpacity
+                          style={[styles.pullDownButton, styles.pullDownButtonActive]}
+                          onPress={() => {
+                            if (activeView === "connections") {
+                              fetchCircle();
+                            } else {
+                              fetchNetwork(null, degree);
+                            }
+                          }}
+                        >
+                          <Text style={[styles.pullDownButtonText, styles.pullDownButtonTextActive]}>{activeView === "connections" ? "Connections" : "Circles"}</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Row 2: Levels to Display - only for Connections view (Circles are all 1st-level) */}
+                      {activeView === "connections" && (
+                        <View style={styles.controlRow}>
+                          <Text style={styles.controlRowLabel}>2. Levels to Display</Text>
+                          <View style={[styles.pullDownButton, { overflow: "hidden", height: 30 }]}>
+                            <WebTextInput
+                              style={styles.pullDownButtonInputInner}
+                              value={degree}
+                              onChangeText={setDegree}
+                              keyboardType='numeric'
+                              borderless
+                              accessibilitylabel='Levels to display'
+                              accessibilityHint='Enter the number of connection levels to show'
+                              aria-label='Levels to display'
+                            />
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Advanced filters dropdown (rows 3–8) */}
+                      <TouchableOpacity
+                        style={[styles.advancedFiltersHeader, darkMode && styles.darkAdvancedFiltersHeader]}
+                        onPress={() => setShowAdvancedFilters((prev) => !prev)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.advancedFiltersHeaderText, darkMode && styles.darkAdvancedFiltersHeaderText]}>
+                          Advanced Filters
+                          {(relationshipFilter !== "All" ||
+                            dateFilter !== "All" ||
+                            locationFilter !== "All" ||
+                            eventFilter !== "All" ||
+                            notesFilter !== "All" ||
+                            introducedByFilter !== "All") &&
+                            " (active)"}
+                        </Text>
+                        <Ionicons name={showAdvancedFilters ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#e0e0e0" : "#333"} />
+                      </TouchableOpacity>
+
+                      {showAdvancedFilters && (
+                        <>
+                          {/* Row 3: Relationship */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>3. Relationship</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, relationshipFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("relationship")}>
+                              <Text style={[styles.pullDownButtonText, relationshipFilter !== "All" && styles.pullDownButtonTextActive]}>{relationshipFilter === "All" ? "All" : relationshipFilter}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Row 4: Date(s) */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>4. Date(s)</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, dateFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("date")}>
+                              <Text style={[styles.pullDownButtonText, dateFilter !== "All" && styles.pullDownButtonTextActive]}>{dateFilter === "All" ? "All" : dateFilter}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Row 5: Location(s) */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>5. Location(s)</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, locationFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("location")}>
+                              <Text style={[styles.pullDownButtonText, locationFilter !== "All" && styles.pullDownButtonTextActive]}>{locationFilter === "All" ? "All" : locationFilter}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Row 6: Event(s) */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>6. Event(s)</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, eventFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("event")}>
+                              <Text style={[styles.pullDownButtonText, eventFilter !== "All" && styles.pullDownButtonTextActive]}>{eventFilter === "All" ? "All" : eventFilter}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Row 7: Notes */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>7. Notes</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, notesFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("notes")}>
+                              <Text style={[styles.pullDownButtonText, notesFilter !== "All" && styles.pullDownButtonTextActive]}>{formatFilterButtonLabel(notesFilter)}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Row 8: Introduced by */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>8. Introduced by</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, introducedByFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("introduced")}>
+                              <Text style={[styles.pullDownButtonText, introducedByFilter !== "All" && styles.pullDownButtonTextActive]}>{formatFilterButtonLabel(introducedByFilter)}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          <TouchableOpacity
+                            onPress={() => {
+                              setRelationshipFilter("All");
+                              setDateFilter("All");
+                              setLocationFilter("All");
+                              setEventFilter("All");
+                              setNotesFilter("All");
+                              setIntroducedByFilter("All");
+                              setFilterModalKind(null);
+                            }}
+                            style={{ alignSelf: "center", marginTop: 8, paddingVertical: 8, paddingHorizontal: 14 }}
+                          >
+                            <Text style={{ color: "#535db7", fontWeight: "600", fontSize: 13 }}>Reset filters (3–8)</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+
+                    {loading && <ActivityIndicator size='large' color='#AF52DE' />}
+                    {error && <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error}</Text>}
+
+                    {/* Graph View */}
+                    {viewMode === "graph" && profileUid && (
+                      <View
+                        style={{
+                          height: 400,
+                          borderRadius: 10,
+                          overflow: "hidden",
+                          borderWidth: 0,
+                        }}
+                      >
+                        {Platform.OS === "web" ? (
+                          // Web: Use iframe via ref
+                          graphHtml ? (
+                            <View
+                              ref={iframeContainerRef}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                              }}
+                            />
+                          ) : (
+                            <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+                              <ActivityIndicator size='large' color='#AF52DE' />
+                              <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading graph view...</Text>
+                            </View>
+                          )
+                        ) : WebViewComponent ? (
+                          // Native: Use WebView
+                          <WebViewComponent
+                            originWhitelist={["*"]}
+                            source={{ html: generateVisHTML(filteredNetworkData, profileUid || "YOU") }}
+                            onMessage={(event) => {
+                              const uid = event?.nativeEvent?.data;
+                              if (uid && uid !== (profileUid || "YOU")) {
+                                navigation.navigate("Profile", {
+                                  profile_uid: uid,
+                                  returnTo: "Connect",
+                                });
+                              }
+                            }}
+                            javaScriptEnabled
+                            domStorageEnabled
+                            automaticallyAdjustContentInsets
+                            allowsInlineMediaPlayback
+                            androidLayerType={Platform.OS === "android" ? "hardware" : "none"}
+                          />
+                        ) : (
+                          <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 20 }}>
+                            <Text style={[styles.errorText, darkMode && styles.darkErrorText, { textAlign: "center", marginBottom: 10 }]}>
+                              WebView is not available. The native module needs to be linked.
+                            </Text>
+                            <Text style={[styles.helperText, darkMode && styles.darkHelperText, { textAlign: "center", marginTop: 5 }]}>
+                              To fix: Run {"\n"}
+                              npx expo prebuild --clean{"\n"}
+                              npx expo run:android
+                            </Text>
+                            <Text style={[styles.helperText, darkMode && styles.darkHelperText, { textAlign: "center", marginTop: 5, fontSize: 10 }]}>(or run:ios for iOS)</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+
+                    {(() => {
+                      // if (__DEV__) console.log("🔵 ConnectScreen - Checking list view mode");
+                      return (
+                        <>
+                          {/* List View */}
+                          {viewMode === "list" && Object.keys(filteredGroupedNetwork).length > 0 && (
+                            <View style={{ marginTop: 10 }}>
+                              {Object.keys(filteredGroupedNetwork)
+                                .map((d) => Number(d))
+                                .sort((a, b) => a - b)
+                                .map((deg) => {
+                                  const list = filteredGroupedNetwork[deg];
+                                  if (!list || list.length === 0) {
+                                    return null;
+                                  }
+
+                                  const label = activeView === "circles" ? "Circles" : degreeLabel(Number(deg));
+                                  const isExpanded = expandedDegrees[deg] !== false;
+                                  return (
+                                    <View key={deg} style={{ marginBottom: 12 }}>
+                                      <TouchableOpacity
+                                        style={[styles.degreeLevelHeader, darkMode && styles.darkDegreeLevelHeader]}
+                                        onPress={() => setExpandedDegrees((prev) => ({ ...prev, [deg]: !(prev[deg] !== false) }))}
+                                        activeOpacity={0.7}
+                                      >
+                                        <Text style={[styles.degreeLevelHeaderText, darkMode && styles.darkDegreeLevelHeaderText]}>{label}</Text>
+                                        <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+                                      </TouchableOpacity>
+
+                                      {isExpanded && (
+                                        <View style={{ marginTop: 8 }}>
+                                          {list.map((node, index) => {
+                                            if (!node.__mc) {
+                                              return null;
+                                            }
+                                            return (
+                                              <TouchableOpacity
+                                                key={`${deg}-${node.network_profile_personal_uid || index}`}
+                                                onPress={() =>
+                                                  navigation.navigate("Profile", {
+                                                    profile_uid: node.network_profile_personal_uid,
+                                                    returnTo: "Connect",
+                                                  })
+                                                }
+                                                style={{ marginVertical: 6 }}
+                                              >
+                                                <MicroCard user={node.__mc} />
+                                              </TouchableOpacity>
+                                            );
+                                          })}
+                                        </View>
+                                      )}
+                                    </View>
+                                  );
+                                })}
+                            </View>
+                          )}
+                        </>
+                      );
+                    })()}
+
+                    {(() => {
+                      // if (__DEV__) console.log("🔵 ConnectScreen - Rendering 'No connections' message");
+                      if (!loading && !error && viewMode === "list" && activeView === "connections" && networkData.length > 0 && filteredNetworkData.length === 0) {
+                        return <Text style={[styles.degreeLevelHeaderText, darkMode && styles.darkDegreeLevelHeaderText]}>No Connections</Text>;
+                      }
+                      if (!loading && !error && Object.keys(groupedNetwork).length === 0) {
+                        return <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>{activeView === "circles" ? "No circles found." : "No network connections found."}</Text>;
+                      }
+                      return null;
+                    })()}
+                  </>
+                )}
+              </View>
+            );
+          })()}
+          {/* ── Who's Nearby Accordion ───────────────────────────────── */}
+          <TouchableOpacity
+            style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8 }]}
+            onPress={() => {
+              const willExpand = !showNearby;
+              setShowNearby(willExpand);
+              if (willExpand) fetchNearbyUsers(nearbyRadiusMilesRef.current);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Who's Nearby?</Text>
+            <Ionicons name={showNearby ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+          </TouchableOpacity>
+
+          {showNearby && (
+            <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
+              {nearbyUsers.length > 0 && (
+                <View style={{ width: "100%", marginBottom: 12 }}>
+                  <View style={[styles.searchInputWrapper, darkMode && styles.darkSearchInputWrapper]}>
+                    <WebTextInput
+                      style={[styles.searchInputInner, darkMode && { color: "#fff" }]}
+                      value={nearbySearchQuery}
+                      onChangeText={setNearbySearchQuery}
+                      placeholder='Search Nearby...'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      borderless
+                      accessibilitylabel='Search nearby profiles'
+                      accessibilityHint='Type to search nearby profiles by name, tagline, or bio'
+                      accessibilityRole='search'
+                      aria-label='search nearby profiles'
+                    />
+                  </View>
+                </View>
+              )}
+              {myNearbyLocation && !nearbyLoading && !nearbyError && (
+                <View style={styles.nearbyMapWrap}>
+                  <NearbyPeopleMapView
+                    mapCenter={myNearbyLocation}
+                    people={nearbyPeopleToMapMarkers(
+                      nearbyUsers
+                        .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
+                        .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
+                        .filter(matchesNearbySearch)
+                    )}
+                    radiusMiles={nearbyRadiusMiles}
+                    onPersonPress={(person) => navigation.navigate("Profile", { profile_uid: person.uid })}
+                  />
+                </View>
+              )}
+              {/* Radius slider — always visible when not loading / error */}
+              {!nearbyLoading && !nearbyError && (
+                <View style={[styles.nearbyRadiusRow, darkMode && styles.nearbyRadiusRowDark]}>
+                  <Text style={[styles.nearbyRadiusLabel, darkMode && styles.nearbyRadiusLabelDark]}>Within:</Text>
+                  <NearbyRadiusSlider
+                    value={nearbyRadiusMiles}
+                    onChange={(v) => { nearbyRadiusMilesRef.current = v; setNearbyRadiusMiles(v); }}
+                    onRelease={() => fetchNearbyUsers(nearbyRadiusMilesRef.current)}
+                    darkMode={darkMode}
+                  />
+                  <View style={styles.nearbyRadiusValueWrap}>
+                    {nearbyRadiusMiles != null ? (
+                      <TouchableOpacity onPress={() => { nearbyRadiusMilesRef.current = null; setNearbyRadiusMiles(null); fetchNearbyUsers(null); }} style={styles.nearbyRadiusClearBtn} accessibilityLabel="Clear radius filter">
+                        <Text style={styles.nearbyRadiusValueActive}>{formatMiles(nearbyRadiusMiles)}</Text>
+                        <Text style={styles.nearbyRadiusClearIcon}> ✕</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.nearbyRadiusValueText}>All</Text>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {nearbyLoading ? (
+                <ActivityIndicator size='small' color='#AF52DE' style={{ paddingVertical: 20 }} />
+              ) : nearbyError ? (
+                <View style={styles.messagesEmpty}>
+                  <Ionicons name='location-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark, { textAlign: "center", paddingHorizontal: 16 }]}>{nearbyError}</Text>
+                </View>
+              ) : nearbyUsers.filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid)).length === 0 && nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length === 0 ? (
+                <View style={styles.messagesEmpty}>
+                  <Ionicons name='people-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>No one nearby right now</Text>
                 </View>
               ) : (
                 <>
-                  <Text style={[styles.title, darkMode && styles.darkTitle]}>Add to Your Network</Text>
-                  <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Connect with this person</Text>
+                  {/* Active (non-ignored) users, filtered by radius and search */}
+                  {nearbySearchLower &&
+                    nearbyUsers
+                      .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
+                      .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
+                      .filter(matchesNearbySearch).length === 0 && (
+                      <View style={styles.messagesEmpty}>
+                        <Ionicons name='search-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
+                        <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>No matches for "{nearbySearchQuery.trim()}"</Text>
+                      </View>
+                    )}
+                  {nearbyUsers
+                    .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
+                    .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
+                    .filter(matchesNearbySearch)
+                    .map((item, idx) => {
+                      const fullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
+                      const initials = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
+                      const distMiles = item.distance_meters != null ? (item.distance_meters / 1609).toFixed(1) : "?";
+                      return (
+                        <View
+                          key={`nearby-active-${item.profile_personal_uid}-${idx}`}
+                          style={[styles.nearbyRow, darkMode && styles.nearbyRowDark, idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder)]}
+                        >
+                          {item.profile_personal_image ? (
+                            <Image source={{ uri: item.profile_personal_image }} style={styles.nearbyAvatar} />
+                          ) : (
+                            <View style={[styles.nearbyAvatar, styles.nearbyAvatarFallback]}>
+                              <Text style={styles.nearbyAvatarText}>{initials}</Text>
+                            </View>
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.messagesName, darkMode && styles.messagesNameDark]} numberOfLines={1}>
+                              {fullName}
+                            </Text>
+                            <Text style={[styles.nearbyDist, darkMode && styles.nearbyDistDark]}>{distMiles} mi away</Text>
+                          </View>
+                          {/* View profile */}
+                          <TouchableOpacity
+                            style={styles.nearbyBtn}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            onPress={() => navigation.navigate("Profile", { profile_uid: item.profile_personal_uid })}
+                          >
+                            <Ionicons name='person-outline' size={16} color='#4B2E83' />
+                          </TouchableOpacity>
+                          {/* Chat */}
+                          <TouchableOpacity
+                            style={[styles.nearbyBtn, styles.nearbyBtnChat]}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            onPress={() =>
+                              navigation.navigate("Chat", {
+                                other_uid: item.profile_personal_uid,
+                                other_name: fullName || "Chat",
+                                other_image: item.profile_personal_image || null,
+                              })
+                            }
+                          >
+                            <Ionicons name='chatbubble-ellipses-outline' size={16} color='#fff' />
+                          </TouchableOpacity>
+                          {/* Ignore */}
+                          <TouchableOpacity
+                            style={[styles.nearbyBtn, styles.nearbyBtnIgnore]}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            onPress={() => ignoreNearbyUser(item.profile_personal_uid)}
+                          >
+                            <Ionicons name='eye-off-outline' size={16} color='#fff' />
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
 
-                  <View style={styles.cardContainer}>
-                    <MiniCard user={profileData} />
-                  </View>
-
-                  <View style={styles.buttonContainer}>
-                    <TouchableOpacity style={[styles.addButton, addingConnection && styles.addButtonDisabled]} onPress={() => handleAddConnection("friend")} disabled={addingConnection}>
-                      {addingConnection ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.addButtonText}>Add as Friend</Text>}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.addButton, styles.addButtonSecondary, addingConnection && styles.addButtonDisabled]}
-                      onPress={() => handleAddConnection("colleague")}
-                      disabled={addingConnection}
-                    >
-                      {addingConnection ? <ActivityIndicator size='small' color='#AF52DE' /> : <Text style={[styles.addButtonText, styles.addButtonTextSecondary]}>Add as Colleague</Text>}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.addButton, styles.addButtonSecondary, addingConnection && styles.addButtonDisabled]}
-                      onPress={() => handleAddConnection("family")}
-                      disabled={addingConnection}
-                    >
-                      {addingConnection ? <ActivityIndicator size='small' color='#AF52DE' /> : <Text style={[styles.addButtonText, styles.addButtonTextSecondary]}>Add as Family</Text>}
-                    </TouchableOpacity>
-                  </View>
-
-                  <TouchableOpacity style={styles.viewProfileButton} onPress={() => navigation.navigate("Profile", { profile_uid: profileUid })}>
-                    <Text style={[styles.viewProfileText, darkMode && styles.darkViewProfileText]}>View Full Profile</Text>
-                  </TouchableOpacity>
+                  {/* Ignored section */}
+                  {nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).filter(matchesNearbySearch).length > 0 && (
+                    <>
+                      <View style={[styles.nearbyIgnoredHeader, darkMode && styles.nearbyIgnoredHeaderDark]}>
+                        <Ionicons name='eye-off-outline' size={13} color={darkMode ? "#888" : "#aaa"} style={{ marginRight: 5 }} />
+                        <Text style={[styles.nearbyIgnoredTitle, darkMode && styles.nearbyIgnoredTitleDark]}>
+                          Ignored ({nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).filter(matchesNearbySearch).length})
+                        </Text>
+                      </View>
+                      {nearbyUsers
+                        .filter((u) => ignoredNearbyUids.has(u.profile_personal_uid))
+                        .filter(matchesNearbySearch)
+                        .map((item, ignoredIdx) => {
+                          const iName = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
+                          const iFullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
+                          return (
+                            <View key={`nearby-ignored-${item.profile_personal_uid}-${ignoredIdx}`} style={[styles.nearbyRow, styles.nearbyRowIgnored, darkMode && styles.nearbyRowDark]}>
+                              {item.profile_personal_image ? (
+                                <Image source={{ uri: item.profile_personal_image }} style={[styles.nearbyAvatar, { opacity: 0.4 }]} />
+                              ) : (
+                                <View style={[styles.nearbyAvatar, styles.nearbyAvatarFallback, { opacity: 0.4 }]}>
+                                  <Text style={styles.nearbyAvatarText}>{iName}</Text>
+                                </View>
+                              )}
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.messagesName, { opacity: 0.5 }, darkMode && styles.messagesNameDark]} numberOfLines={1}>
+                                  {iFullName}
+                                </Text>
+                              </View>
+                              {/* Unignore */}
+                              <TouchableOpacity
+                                style={[styles.nearbyBtn, styles.nearbyBtnUnignore]}
+                                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                onPress={() => unignoreNearbyUser(item.profile_personal_uid)}
+                              >
+                                <Ionicons name='eye-outline' size={16} color='#fff' />
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })}
+                    </>
+                  )}
                 </>
               )}
+            </View>
+          )}
+
+          {/* ── Messages Accordion ─────────────────────────────────────── */}
+          <View style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8, flexDirection: "row" }]}>
+            <TouchableOpacity
+              style={{ flex: 1, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+              onPress={() => {
+                const willExpand = !showMessages;
+                setShowMessages(willExpand);
+                if (willExpand) {
+                  fetchConversations();
+                  clearUnread();
+                } else {
+                  setShowMessagesMenu(false);
+                  setOpenRowMenuUid(null);
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Messages</Text>
+              <Ionicons name={showMessages ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+            </TouchableOpacity>
+            {showMessages && (
+              <TouchableOpacity
+                onPress={() => setShowMessagesMenu((p) => !p)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ marginLeft: 10, justifyContent: "center" }}
+                accessibilityLabel='Messages options'
+              >
+                <Ionicons name='ellipsis-vertical' size={20} color={darkMode ? "#e0e0e0" : "#333"} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {showMessages && showMessagesMenu && (
+            <View style={[styles.viewersDropdownMenu, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444" }]}>
+              <TouchableOpacity style={styles.viewersDropdownItem} onPress={toggleMessagesOff}>
+                <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>{messagesOff ? "Turn on all messages" : "Turn off all messages"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.viewersDropdownItem}
+                onPress={() => {
+                  setShowMessagesMenu(false);
+                  setShowBlockedManager(true);
+                  fetchBlockedUsers();
+                }}
+              >
+                <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>Manage blocked people</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {showMessages && (
+            <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
+              {conversationsLoading ? (
+                <ActivityIndicator size='small' color='#AF52DE' style={{ paddingVertical: 20 }} />
+              ) : conversations.length === 0 ? (
+                <View style={styles.messagesEmpty}>
+                  <Ionicons name='chatbubbles-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>No conversations yet</Text>
+                </View>
+              ) : (
+                conversations.map((conv, idx) => {
+                  const listTitle = conv.connectListTitle || conv.displayName || `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || conv.other_uid || "Unknown";
+                  const initials = conv.connectListInitials || ((conv.first_name || "").charAt(0) + (conv.last_name || "").charAt(0)).toUpperCase() || "?";
+                  const preview = conv.last_message || "No messages yet";
+                  const time = _convRelTime(conv.last_sent_at || conv.last_message_at);
+                  const chatHeaderName = conv.displayName || listTitle;
+                  const isBlocked = blockedUids.has(conv.other_uid);
+                  return (
+                    <View
+                      key={conv.conversation_uid}
+                      style={[styles.messagesRow, darkMode && styles.messagesRowDark, idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder)]}
+                    >
+                      <TouchableOpacity
+                        style={{ flex: 1, flexDirection: "row", alignItems: "center" }}
+                        onPress={() => {
+                          navigation.navigate("Chat", {
+                            conversation_uid: conv.conversation_uid,
+                            other_uid: conv.other_uid,
+                            other_name: chatHeaderName,
+                            other_image: conv.image || null,
+                          });
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.messagesAvatar}>
+                          {conv.image ? (
+                            <Image source={{ uri: conv.image }} style={[styles.messagesAvatarImg, isBlocked && { opacity: 0.4 }]} />
+                          ) : (
+                            <View style={[styles.messagesAvatarImg, styles.messagesAvatarFallback, isBlocked && { opacity: 0.4 }]}>
+                              <Text style={styles.messagesAvatarText}>{initials}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <View style={styles.messagesTextBlock}>
+                          <View style={styles.messagesNameRow}>
+                            <View style={{ flex: 1, flexDirection: "row", alignItems: "center", marginRight: 8 }}>
+                              <Text style={[styles.messagesName, darkMode && styles.messagesNameDark, { marginRight: 0, flexShrink: 1 }]} numberOfLines={2}>
+                                {listTitle}
+                              </Text>
+                              {isBlocked && (
+                                <View style={styles.blockedBadge}>
+                                  <Text style={styles.blockedBadgeText}>Blocked</Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={[styles.messagesTime, darkMode && styles.messagesTimeDark]}>{time}</Text>
+                          </View>
+                          <Text style={[styles.messagesPreview, darkMode && styles.messagesPreviewDark]} numberOfLines={1}>
+                            {preview}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        ref={(el) => {
+                          rowMenuButtonRefs.current[conv.other_uid] = el;
+                        }}
+                        onPress={() => {
+                          const node = rowMenuButtonRefs.current[conv.other_uid];
+                          if (node && node.measureInWindow) {
+                            node.measureInWindow((x, y, width, height) => {
+                              setRowMenuAnchor({ x, y, width, height });
+                              setOpenRowMenuUid(conv.other_uid);
+                            });
+                          } else {
+                            setRowMenuAnchor(null);
+                            setOpenRowMenuUid(conv.other_uid);
+                          }
+                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={{ marginLeft: 6, paddingHorizontal: 4 }}
+                        accessibilityLabel={`Options for ${listTitle}`}
+                      >
+                        <Ionicons name='ellipsis-vertical' size={18} color={darkMode ? "#888" : "#999"} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          )}
+
+          {/* ── Who Viewed My Profile ─────────────────────────────── */}
+          <TouchableOpacity
+            style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8 }]}
+            onPress={() => {
+              const willExpand = !showProfileViewers;
+              setShowProfileViewers(willExpand);
+              if (willExpand) fetchProfileViewers(viewersSelectedAccount === "personal" ? null : viewersSelectedAccount);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Who Viewed My Profile</Text>
+            <Ionicons name={showProfileViewers ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+          </TouchableOpacity>
+          {showProfileViewers && (
+            <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
+              <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4 }}>
+                <TouchableOpacity style={styles.viewersDropdownBtn} onPress={() => setShowViewersAccountDropdown((p) => !p)} activeOpacity={0.7}>
+                  <Text style={[styles.viewersDropdownBtnText, darkMode && { color: "#e0e0e0" }]}>
+                    {viewersSelectedAccount === "personal"
+                      ? "Personal"
+                      : businesses.find((b) => (b.business_uid || b.profile_business_uid) === viewersSelectedAccount)?.business_name || "Business"}
+                  </Text>
+                  <Ionicons name={showViewersAccountDropdown ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#e0e0e0" : "#333"} />
+                </TouchableOpacity>
+                {showViewersAccountDropdown && (
+                  <View style={[styles.viewersDropdownMenu, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444" }]}>
+                    <TouchableOpacity
+                      style={styles.viewersDropdownItem}
+                      onPress={() => {
+                        setViewersSelectedAccount("personal");
+                        setShowViewersAccountDropdown(false);
+                        fetchProfileViewers(null);
+                      }}
+                    >
+                      <Text style={[styles.viewersDropdownItemText, viewersSelectedAccount === "personal" && styles.viewersDropdownItemActive, darkMode && { color: "#e0e0e0" }]}>Personal</Text>
+                    </TouchableOpacity>
+                    {businesses.map((b, idx) => {
+                      const bId = b.business_uid || b.profile_business_uid;
+                      const bName = b.business_name || b.profile_business_name || `Business ${idx + 1}`;
+                      return (
+                        <TouchableOpacity
+                          key={`viewer-biz-${bId}-${idx}`}
+                          style={styles.viewersDropdownItem}
+                          onPress={() => {
+                            setViewersSelectedAccount(bId);
+                            setShowViewersAccountDropdown(false);
+                            fetchProfileViewers(bId);
+                          }}
+                        >
+                          <Text style={[styles.viewersDropdownItemText, viewersSelectedAccount === bId && styles.viewersDropdownItemActive, darkMode && { color: "#e0e0e0" }]}>{bName}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+              {viewersLoading ? (
+                <ActivityIndicator size='small' color='#AF52DE' style={{ paddingVertical: 20 }} />
+              ) : profileViewers.length > 0 ? (
+                profileViewers.map((viewer, index) => (
+                  <TouchableOpacity
+                    key={viewer.view_viewer_id || index}
+                    activeOpacity={0.7}
+                    onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "Connect" })}
+                    style={{ paddingHorizontal: 8, marginTop: index > 0 ? 4 : 0 }}
+                  >
+                    <MiniCard
+                      user={{
+                        firstName: viewer.viewer_first_name || "",
+                        lastName: viewer.viewer_last_name || "",
+                        email: viewer.viewer_email || "",
+                        phoneNumber: viewer.viewer_phone || "",
+                        tagLine: viewer.viewer_tag_line || "",
+                        city: viewer.viewer_city || "",
+                        state: viewer.viewer_state || "",
+                        profileImage: viewer.viewer_image || "",
+                        emailIsPublic: viewer.viewer_email_is_public === 1 || viewer.viewer_email_is_public === "1",
+                        phoneIsPublic: viewer.viewer_phone_is_public === 1 || viewer.viewer_phone_is_public === "1",
+                        tagLineIsPublic: viewer.viewer_tag_line_is_public === 1 || viewer.viewer_tag_line_is_public === "1",
+                        imageIsPublic: viewer.viewer_image_is_public === 1 || viewer.viewer_image_is_public === "1",
+                        locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
+                      }}
+                    />
+                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text> : null}
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={styles.messagesEmpty}>
+                  <Ionicons name='eye-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>
+                    {viewersSelectedAccount === "personal" ? "No profile views yet" : "No business profile views yet"}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {SHOW_NETWORK_DEBUG_UI !== 0 && settingsDebugModeEnabled && (
+            <>
+              {/* QR / ABLY DEBUG Dropdown */}
+              <TouchableOpacity style={[styles.debugDropdownHeader, darkMode && styles.darkDebugDropdownHeader]} onPress={() => setShowDebugBlocks((prev) => !prev)} activeOpacity={0.7}>
+                <Text style={[styles.debugDropdownHeaderText, darkMode && styles.darkDebugDropdownHeaderText]}>QR / ABLY DEBUG</Text>
+                <Ionicons name={showDebugBlocks ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+              </TouchableOpacity>
+              {showDebugBlocks && (
+                <>
+                  {/* Display QR Code Contains Block */}
+                  {qrCodeDataObject && (
+                    <View style={[styles.qrCodeContainsContainer, darkMode && styles.darkQrCodeContainsContainer]}>
+                      <Text style={[styles.qrCodeContainsTitle, darkMode && styles.darkQrCodeContainsTitle]}>📋 QR Code Contains:</Text>
+                      <View style={[styles.qrCodeContainsContent, darkMode && styles.darkQrCodeContainsContent]}>
+                        {Object.entries(qrCodeDataObject).map(([key, value]) => (
+                          <View key={key} style={styles.qrCodeContainsRow}>
+                            <Text style={[styles.qrCodeContainsKey, darkMode && styles.darkQrCodeContainsKey]}>{key}:</Text>
+                            <Text style={[styles.qrCodeContainsValue, darkMode && styles.darkQrCodeContainsValue]}>{typeof value === "object" ? JSON.stringify(value) : String(value)}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Display Ably Messages Received Block */}
+                  <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
+                    <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📨 Ably Messages Received:</Text>
+                    <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                      {ablyMessageReceived ? (
+                        <>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.channel}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.message}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{new Date(ablyMessageReceived.timestamp).toLocaleString()}</Text>
+                          </View>
+                        </>
+                      ) : (
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
+                            No messages received yet. Listening for messages...
+                          </Text>
+                        </View>
+                      )}
+                      {qrCodeDataObject?.profile_uid && (
+                        <>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Listening on channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyListeningChannel || `/${String(qrCodeDataObject.profile_uid)}`}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection state (Ably):</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyConnectionStatus}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel state (Ably):</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyChannelStatus}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Token (obscured):</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyTokenObscured == null ? "null" : ablyTokenObscured}</Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  </View>
+                </>
+              )}
+
+              {(() => {
+                return (
+                  <View>
+                    <TouchableOpacity
+                      style={[styles.debugDropdownHeader, darkMode && styles.darkDebugDropdownHeader]}
+                      onPress={() => {
+                        const newValue = !showAsyncStorage;
+                        console.log("👁️ Toggling AsyncStorage visibility from", showAsyncStorage, "to", newValue);
+                        setShowAsyncStorage(newValue);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.debugDropdownHeaderText, darkMode && styles.darkDebugDropdownHeaderText]}>ASYNC STORAGE</Text>
+                      <Ionicons name={showAsyncStorage ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+                    </TouchableOpacity>
+                    {(() => {
+                      if (showAsyncStorage) {
+                        return (
+                          <>
+                            {sortedStorageData.length === 0 ? (
+                              <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>No data in AsyncStorage.</Text>
+                            ) : (
+                              sortedStorageData
+                                .map(([key, value]) => {
+                                  const sanitizedKey = sanitizeText(key, "Unknown");
+                                  if (!isSafeForConditional(sanitizedKey)) return null;
+                                  const formattedValue = formatAsyncStorageDisplayValue(value);
+                                  const sanitizedValue = sanitizeText(formattedValue, "N/A");
+                                  if (!isSafeForConditional(sanitizedValue)) return null;
+                                  const isExpanded = !!expandedStorageKeys[key];
+                                  return (
+                                    <View key={key} style={styles.storageKeyBlock}>
+                                      <TouchableOpacity
+                                        style={[styles.storageKeyHeader, darkMode && styles.darkStorageKeyHeader]}
+                                        onPress={() => toggleStorageKeyExpanded(key)}
+                                        activeOpacity={0.7}
+                                      >
+                                        <Text style={[styles.storageKeyHeaderText, darkMode && styles.darkStorageKeyHeaderText]} numberOfLines={1}>
+                                          {sanitizedKey}
+                                        </Text>
+                                        <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#e0e0e0" : "#333"} />
+                                      </TouchableOpacity>
+                                      {isExpanded ? (
+                                        <View style={[styles.storageKeyValueContainer, darkMode && styles.darkStorageKeyValueContainer]}>
+                                          <Text style={[styles.valueText, darkMode && styles.darkValueText, styles.storageValueText]} selectable>
+                                            {sanitizedValue}
+                                          </Text>
+                                        </View>
+                                      ) : null}
+                                    </View>
+                                  );
+                                })
+                                .filter(Boolean)
+                            )}
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </View>
+                );
+              })()}
             </>
           )}
         </ScrollView>
+
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>
+      <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Connect' instructions={networkFeedbackInstructions} questions={networkFeedbackQuestions} />
+      <ReferralSearch
+        visible={connectDirectlyVisible}
+        onClose={() => setConnectDirectlyVisible(false)}
+        onSelectUser={(user) => {
+          const uid = user.profile_personal_uid || user.profile_uid;
+          if (uid) {
+            setConnectDirectlyVisible(false);
+            navigation.navigate("Profile", { profile_uid: uid, returnTo: "Connect" });
+          }
+        }}
+        showNewUserButton={false}
+        modalTitle='Connect & Follow'
+        helperText='Connecting with someone allows you to See and Follow their recommendations. They get added to your Circle and their recommendations, offers and wishes rank higher in your search results. Connecting with someone does not add you to their Circles. They must add you independently.'
+        instructionText='Search by email, city, state, or name, then choose someone to open their profile.'
+        searchPlaceholder='Email, location, or name'
+        noResultsSubtext='Try another spelling, city, or email.'
+        searchButtonColor={getHeaderColor("network")}
+        networkData={connectDirectlyMergedNetworkData}
+        preparingNetwork={connectDirectlyPrepareLoading}
+      />
+      <ScannedProfilePopup
+        visible={showScannedProfilePopup}
+        profileData={scannedProfileData}
+        onClose={() => {
+          setShowScannedProfilePopup(false);
+          setScannedProfileData(null);
+          lastHandledScanConnectKeyRef.current = null;
+        }}
+        onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
+      />
+
+      {filterModalKind === "relationship" && (
+        <ConnectionFilterModal
+          visible
+          title='3. Relationship'
+          options={RELATIONSHIP_FILTER_OPTIONS}
+          selected={relationshipFilter}
+          onSelect={setRelationshipFilter}
+          onClose={() => setFilterModalKind(null)}
+          darkMode={darkMode}
+        />
+      )}
+      {filterModalKind === "date" && (
+        <ConnectionFilterModal visible title='4. Date(s)' options={DATE_FILTER_OPTIONS} selected={dateFilter} onSelect={setDateFilter} onClose={() => setFilterModalKind(null)} darkMode={darkMode} />
+      )}
+      {filterModalKind === "location" && (
+        <ConnectionFilterModal
+          visible
+          title='5. Location(s)'
+          options={["All", ...availableCities]}
+          selected={locationFilter}
+          onSelect={setLocationFilter}
+          onClose={() => setFilterModalKind(null)}
+          darkMode={darkMode}
+        />
+      )}
+      {filterModalKind === "event" && (
+        <ConnectionFilterModal
+          visible
+          title='6. Event(s)'
+          options={["All", ...availableEvents]}
+          selected={eventFilter}
+          onSelect={setEventFilter}
+          onClose={() => setFilterModalKind(null)}
+          darkMode={darkMode}
+        />
+      )}
+      {filterModalKind === "notes" && (
+        <ConnectionFilterModal visible title='7. Notes' options={noteOptionsForModal} selected={notesFilter} onSelect={setNotesFilter} onClose={() => setFilterModalKind(null)} darkMode={darkMode} />
+      )}
+      {filterModalKind === "introduced" && (
+        <ConnectionFilterModal
+          visible
+          title='8. Introduced by'
+          options={introducedOptionsForModal}
+          selected={introducedByFilter}
+          onSelect={setIntroducedByFilter}
+          onClose={() => setFilterModalKind(null)}
+          darkMode={darkMode}
+        />
+      )}
+      {showBlockedManager && (
+        <BlockedPeopleModal visible blockedList={blockedList} onUnblock={toggleBlock} onClose={() => setShowBlockedManager(false)} darkMode={darkMode} />
+      )}
+      {openRowMenuUid != null &&
+        (() => {
+          const conv = conversations.find((c) => c.other_uid === openRowMenuUid);
+          const name = conv?.connectListTitle || conv?.displayName || `${conv?.first_name || ""} ${conv?.last_name || ""}`.trim() || openRowMenuUid;
+          return (
+            <RowActionModal
+              visible
+              name={name}
+              isBlocked={blockedUids.has(openRowMenuUid)}
+              anchor={rowMenuAnchor}
+              onToggleBlock={() => toggleBlock(openRowMenuUid)}
+              onClose={() => setOpenRowMenuUid(null)}
+              darkMode={darkMode}
+            />
+          );
+        })()}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  darkContainer: {
-    backgroundColor: "#1a1a1a",
-  },
-  safeArea: {
-    flex: 1,
-  },
-  darkSafeArea: {
-    backgroundColor: "#1a1a1a",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 120,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
+  pageContainer: { flex: 1, backgroundColor: "#fff" },
+  scrollContainer: { flex: 1, backgroundColor: "#fff" },
+  darkScrollContainer: { backgroundColor: "#d4d4d4" },
+  pageContainer: { flex: 1, backgroundColor: "#fff" },
+  safeArea: { flex: 1 },
+  viewMyNetworkHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    backgroundColor: "rgba(36, 52, 194, 0.5)", // 50% of Connect header (#2434C2)
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 8,
   },
-  loadingText: {
-    marginTop: 10,
-    color: "#666",
+  darkViewMyNetworkHeader: {
+    backgroundColor: "rgba(28, 40, 153, 0.5)", // 50% of Connect dark mode (#1C2899)
   },
-  darkLoadingText: {
-    color: "#aaa",
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  errorText: {
-    color: "red",
+  viewMyNetworkHeaderText: {
     fontSize: 16,
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  darkErrorText: {
-    color: "#f87171",
-  },
-  title: {
-    fontSize: 24,
     fontWeight: "bold",
     color: "#333",
-    marginBottom: 8,
-    textAlign: "center",
+    letterSpacing: 0.5,
   },
-  darkTitle: {
-    color: "#fff",
+  darkViewMyNetworkHeaderText: {
+    color: "#e0e0e0",
   },
-  subtitle: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  darkSubtitle: {
-    color: "#aaa",
-  },
-  cardContainer: {
-    marginBottom: 30,
-  },
-  buttonContainer: {
-    gap: 12,
-    marginBottom: 20,
-  },
-  addButton: {
-    backgroundColor: "#AF52DE",
-    paddingVertical: 14,
-    paddingHorizontal: 20,
+  degreeLevelHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(36, 52, 194, 0.5)", // 50% of Connect header (#2434C2)
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderRadius: 8,
+    marginBottom: 4,
+  },
+  darkDegreeLevelHeader: {
+    backgroundColor: "rgba(28, 40, 153, 0.5)", // 50% of Connect dark mode (#1C2899)
+  },
+  degreeLevelHeaderText: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "#333",
+    letterSpacing: 0.5,
+  },
+  darkDegreeLevelHeaderText: {
+    color: "#e0e0e0",
+  },
+  // ── Messages accordion ───────────────────────────────────────
+  messagesAccordionBody: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginBottom: 8,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#eee",
+  },
+  messagesAccordionBodyDark: {
+    backgroundColor: "#1e1e1e",
+    borderColor: "#2a2a2a",
+  },
+  messagesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: "#fff",
+    position: "relative",
+  },
+  messagesRowDark: { backgroundColor: "#1e1e1e" },
+  messagesRowBorder: { borderTopWidth: 1, borderTopColor: "#f0f0f0" },
+  messagesRowBorderDark: { borderTopWidth: 1, borderTopColor: "#2a2a2a" },
+  messagesAvatar: { marginRight: 12 },
+  messagesAvatarImg: { width: 44, height: 44, borderRadius: 22 },
+  messagesAvatarFallback: {
+    backgroundColor: "#AF52DE",
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 48,
   },
-  addButtonSecondary: {
-    backgroundColor: "transparent",
-    borderWidth: 2,
-    borderColor: "#AF52DE",
-  },
-  addButtonDisabled: {
-    opacity: 0.6,
-  },
-  addButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  addButtonTextSecondary: {
-    color: "#AF52DE",
-  },
-  viewProfileButton: {
-    paddingVertical: 12,
+  messagesAvatarText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  messagesTextBlock: { flex: 1 },
+  messagesNameRow: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 3,
   },
-  viewProfileText: {
-    color: "#AF52DE",
+  messagesName: { fontSize: 14, fontWeight: "600", color: "#222", flex: 1, marginRight: 8 },
+  messagesNameDark: { color: "#fff" },
+  messagesTime: { fontSize: 11, color: "#999" },
+  messagesTimeDark: { color: "#666" },
+  messagesPreview: { fontSize: 12, color: "#666" },
+  messagesPreviewDark: { color: "#aaa" },
+  blockedBadge: {
+    marginLeft: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    backgroundColor: "#ffe0e0",
+  },
+  blockedBadgeText: { fontSize: 10, fontWeight: "700", color: "#c0392b" },
+  viewersDropdownBtn: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: "#f5f5f5",
+    marginBottom: 4,
+  },
+  viewersDropdownBtnText: { fontSize: 14, color: "#333" },
+  viewersDropdownMenu: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    marginBottom: 8,
+  },
+  viewersDropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  viewersDropdownItemText: { fontSize: 14, color: "#333" },
+  viewersDropdownItemActive: { color: "#AF52DE", fontWeight: "600" },
+  viewedTimestamp: { fontSize: 11, color: "#999", paddingHorizontal: 12, paddingBottom: 6 },
+  messagesEmpty: { alignItems: "center", paddingVertical: 28 },
+  messagesEmptyText: { marginTop: 10, fontSize: 14, color: "#aaa" },
+  messagesEmptyTextDark: { color: "#666" },
+
+  // ── Nearby accordion ─────────────────────────────────────────
+  nearbyMapWrap: {
+    marginBottom: 12,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  nearbyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: "#fff",
+    gap: 10,
+  },
+  nearbyRowDark: { backgroundColor: "#1e1e1e" },
+  nearbyRowIgnored: { opacity: 0.6 },
+  nearbyAvatar: { width: 40, height: 40, borderRadius: 20 },
+  nearbyAvatarFallback: {
+    backgroundColor: "#AF52DE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  nearbyAvatarText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  nearbyDist: { fontSize: 11, color: "#888", marginTop: 2 },
+  nearbyDistDark: { color: "#666" },
+  nearbyBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: "#4B2E83",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  nearbyBtnChat: { backgroundColor: "#AF52DE", borderColor: "#AF52DE" },
+  nearbyBtnIgnore: { backgroundColor: "#e57373", borderColor: "#e57373" },
+  nearbyBtnUnignore: { backgroundColor: "#66bb6a", borderColor: "#66bb6a" },
+  nearbyIgnoredHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+    backgroundColor: "#fafafa",
+  },
+  nearbyIgnoredHeaderDark: { backgroundColor: "#252525", borderTopColor: "#2a2a2a" },
+  nearbyIgnoredTitle: { fontSize: 12, color: "#aaa" },
+  nearbyIgnoredTitleDark: { color: "#666" },
+
+  debugDropdownHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(36, 52, 194, 0.5)", // 50% of Connect header (#2434C2)
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  darkDebugDropdownHeader: {
+    backgroundColor: "rgba(28, 40, 153, 0.5)", // 50% of Connect dark mode (#1C2899)
+  },
+  debugDropdownHeaderText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#333",
+    letterSpacing: 0.5,
+  },
+  darkDebugDropdownHeaderText: {
+    color: "#e0e0e0",
+  },
+  storageKeyBlock: {
+    marginBottom: 6,
+  },
+  storageKeyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#eef0fb",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#d8dcf5",
+  },
+  darkStorageKeyHeader: {
+    backgroundColor: "#2a2d3d",
+    borderColor: "#3a3f55",
+  },
+  storageKeyHeaderText: {
+    flex: 1,
     fontSize: 14,
+    fontWeight: "600",
+    color: "#2434C2",
+    marginRight: 8,
+  },
+  darkStorageKeyHeaderText: {
+    color: "#b8c0ff",
+  },
+  storageKeyValueContainer: {
+    marginTop: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#f7f8fc",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#e8eaf5",
+  },
+  darkStorageKeyValueContainer: {
+    backgroundColor: "#1e1f28",
+    borderColor: "#333",
+  },
+  storageValueText: {
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontSize: 12,
+  },
+  darkValueText: {
+    color: "#ccc",
+  },
+  darkKeyText: {
+    color: "#e0e0e0",
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#e0e0e0",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#bbb",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontWeight: "900",
+    fontSize: 15,
+    color: "#111",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  asyncStorageTitle: {
+    fontWeight: "300",
+    fontSize: 20,
+    textAlign: "center",
+    flex: 1,
+    borderRadius: 8,
+    padding: 10,
+    height: 40,
+  },
+  eyeIconButton: {
+    padding: 4,
+  },
+  keyText: { fontWeight: "bold", color: "#333" },
+  valueText: { color: "#555", fontSize: 13 },
+  inputRow: { flexDirection: "row", alignItems: "center", marginTop: 10 },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 8,
+  },
+  networkControlsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  networkControlLabel: {
+    fontSize: 14,
+    color: "#333",
+    marginRight: 8,
+  },
+  darkNetworkControlLabel: {
+    color: "#cccccc",
+  },
+  networkInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    width: 35,
+    textAlign: "center",
+    backgroundColor: "#fff",
+    ...(Platform.OS === "web" &&
+      {
+        // Web-specific styles are handled in WebTextInput component
+      }),
+  },
+  darkNetworkInput: {
+    backgroundColor: "#444",
+    color: "#fff",
+    borderColor: "#666",
+  },
+  fetchButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  fetchButtonActive: {
+    backgroundColor: "#2434C2", // Blue color like Connect header
+  },
+  fetchButtonInactive: {
+    backgroundColor: "#AF52DE", // Purple color
+  },
+  fetchButtonText: { color: "#fff", fontWeight: "600" },
+  toggleContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginVertical: 12,
+  },
+  toggleButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: "#fff",
+  },
+  toggleButtonActive: {
+    borderColor: "#2434C2",
+    backgroundColor: "#2434C2",
+  },
+  toggleButtonText: {
+    fontSize: 14,
+    color: "#333",
     fontWeight: "500",
   },
-  darkViewProfileText: {
-    color: "#a78bfa",
-  },
-  button: {
-    backgroundColor: "#AF52DE",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 10,
-  },
-  buttonText: {
+  toggleButtonTextActive: {
     color: "#fff",
-    fontSize: 16,
+  },
+  qrCodeContainer: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  qrCodeTitle: {
+    fontSize: 30,
     fontWeight: "600",
+    color: "#333",
+    marginBottom: 5,
+    fontStyle: "italic",
+  },
+  darkQrCodeTitle: {
+    color: "#ffffff",
+  },
+  qrCodeSubtitle: {
+    fontSize: 18,
+    fontWeight: "400",
+    color: "#000",
+    marginBottom: 15,
     textAlign: "center",
   },
-  cameraButton: {
-    padding: 4,
+  darkQrCodeSubtitle: {
+    color: "#aaa",
+  },
+  qrCodeSectionWrapper: {
+    alignItems: "center",
+    alignSelf: "center",
+    width: "100%",
+  },
+  qrCodeWrapper: {
+    width: 220,
+    alignSelf: "center",
+    padding: 10,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#000",
+  },
+  darkQrCodeWrapper: {
+    backgroundColor: "#1a1a1a",
+  },
+  qrCodeInfo: {
+    marginTop: 10,
+    alignItems: "center",
+  },
+  qrCodeInfoText: {
+    fontSize: 18,
+    color: "#333",
+    marginBottom: 4,
+  },
+  darkQrCodeInfoText: {
+    color: "#cccccc",
+  },
+  qrCodeMiniCardContainer: {
+    // marginTop: 15,
+    // marginBottom: 15,
+    width: "100%",
+    // borderWidth: 1,
+    // borderColor: "#000",
+    // borderRadius: 10,
+    //overflow: "hidden",
+  },
+  debugToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    width: "100%",
+  },
+  darkDebugToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: "#e0e0e0",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#bbb",
+    width: "100%",
+  },
+  debugToggleLabel: {
+    fontWeight: "300",
+    fontSize: 20,
+    textAlign: "center",
+    flex: 1,
+    borderRadius: 8,
+    padding: 10,
+  },
+  darkDebugToggleLabel: {
+    color: "#b0b0b0",
+  },
+  eyeToggleButton: {
+    padding: 8,
+  },
+  darkEyeToggleButton: {
+    padding: 8,
+  },
+  qrCodeContainsContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f0f8ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4a90e2",
+    width: "100%",
+  },
+  darkQrCodeContainsContainer: {
+    backgroundColor: "#1a2332",
+    borderColor: "#4a90e2",
+  },
+  qrCodeContainsTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2c5282",
+    marginBottom: 10,
+  },
+  darkQrCodeContainsTitle: {
+    color: "#90cdf4",
+  },
+  qrCodeContainsContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkQrCodeContainsContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  qrCodeContainsRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  qrCodeContainsKey: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4a5568",
+    marginRight: 8,
+    minWidth: 120,
+  },
+  darkQrCodeContainsKey: {
+    color: "#cbd5e0",
+  },
+  qrCodeContainsValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    flex: 1,
+  },
+  darkQrCodeContainsValue: {
+    color: "#e2e8f0",
+  },
+  ablyMessageContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#fef3c7",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#f59e0b",
+    width: "100%",
+  },
+  darkAblyMessageContainer: {
+    backgroundColor: "#2e1f0a",
+    borderColor: "#f59e0b",
+  },
+  ablyMessageTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#92400e",
+    marginBottom: 10,
+  },
+  darkAblyMessageTitle: {
+    color: "#fcd34d",
+  },
+  ablyMessageContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkAblyMessageContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  ablyMessageRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  ablyMessageKey: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4a5568",
+    marginRight: 8,
+    minWidth: 100,
+  },
+  darkAblyMessageKey: {
+    color: "#cbd5e0",
+  },
+  ablyMessageValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    flex: 1,
+  },
+  darkAblyMessageValue: {
+    color: "#e2e8f0",
+  },
+  filterContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 15,
+    marginTop: 15,
+    gap: 8,
+    zIndex: 9998,
+  },
+  filterButton: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    minWidth: 100,
+    alignItems: "center",
+  },
+  filterButtonActive: {
+    backgroundColor: "#2434C2",
+    borderColor: "#2434C2",
+  },
+  filterButtonDisabled: {
+    opacity: 0.5,
+  },
+  filterButtonText: {
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "500",
+  },
+  filterButtonTextActive: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+  filterButtonTextDisabled: {
+    color: "#999",
+  },
+  darkFilterButton: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  darkFilterButtonActive: {
+    backgroundColor: "#AF52DE",
+    borderColor: "#AF52DE",
+  },
+  darkFilterButtonDisabled: {
+    opacity: 0.5,
+  },
+  darkFilterButtonText: {
+    color: "#cccccc",
+  },
+  darkFilterButtonTextActive: {
+    color: "#fff",
+  },
+  darkFilterButtonTextDisabled: {
+    color: "#666",
+  },
+  dropdownContainer: {
+    position: "relative",
+    zIndex: 9999,
+  },
+  dropdownMenu: {
+    position: "absolute",
+    top: 40,
+    left: 0,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    minWidth: 150,
+    maxHeight: 200,
+    boxShadow: "0px 2px 4px 0px rgba(0,0,0,0.1)",
+    elevation: 10,
+    zIndex: 10000,
+  },
+  darkDropdownMenu: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  darkDropdownItem: {
+    borderBottomColor: "#404040",
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: "#333",
+  },
+  darkDropdownItemText: {
+    color: "#cccccc",
+  },
+  dropdownItemSelected: {
+    backgroundColor: "#f0f0f0",
+  },
+  darkDropdownItemSelected: {
+    backgroundColor: "#404040",
+  },
+  searchContainer: {
+    flexDirection: "row",
+    marginTop: 10,
+    alignItems: "center",
+    position: "relative",
+    minWidth: 200,
+    width: "100%",
+    flex: 1,
+  },
+  searchInputWrapper: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: "#fff",
+    overflow: "hidden",
+  },
+  searchInputInner: {
+    borderWidth: 0,
+    width: "100%",
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    fontSize: 14,
+    lineHeight: 18,
+    color: "#333",
+    backgroundColor: "transparent",
+    minWidth: 0,
+  },
+  darkSearchInputWrapper: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  clearSearchButton: {
+    position: "absolute",
+    right: 10,
+    padding: 5,
+  },
+  // Form Switch styles
+  formSwitchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#f8f9fa",
+    borderRadius: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 0,
+    height: 56,
+    marginTop: 6,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    alignSelf: "center",
+    width: 286,
+  },
+  darkFormSwitchContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  formSwitchTextContainer: {
+    flex: 1,
+    marginRight: 10,
+  },
+  formSwitchLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 4,
+  },
+  darkFormSwitchLabel: {
+    color: "#fff",
+  },
+  formSwitchDescription: {
+    fontSize: 13,
+    color: "#666",
+  },
+  darkFormSwitchDescription: {
+    color: "#aaa",
+  },
+  advancedFiltersHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(36, 52, 194, 0.12)",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  darkAdvancedFiltersHeader: {
+    backgroundColor: "rgba(28, 40, 153, 0.25)",
+  },
+  advancedFiltersHeaderText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333",
+  },
+  darkAdvancedFiltersHeaderText: {
+    color: "#e0e0e0",
+  },
+  controlRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    borderBottomWidth: 0,
+    minWidth: 150,
+  },
+  controlRowLabel: {
+    fontSize: 15,
+    color: "#333",
+    flex: 1,
+  },
+  pullDownButton: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    width: 180,
+    minWidth: 180,
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 1,
+    backgroundColor: "#fff",
   },
-  myProfileCard: {
-    marginBottom: 16,
+  pullDownButtonCompact: {
+    paddingVertical: 4,
+    paddingHorizontal: 16,
   },
-  divider: {
-    height: 1,
-    backgroundColor: "#e0e0e0",
-    marginVertical: 20,
+  pullDownButtonInputInner: {
+    borderWidth: 0,
+    width: "100%",
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    fontSize: 14,
+    height: 18,
+    lineHeight: 18,
+    color: "#333",
+    backgroundColor: "transparent",
+    minWidth: 0,
+  },
+  pullDownButtonActive: {
+    borderColor: "#2434C2",
+    backgroundColor: "#2434C2",
+  },
+  pullDownButtonText: {
+    fontSize: 14,
+    color: "#333",
+    minWidth: 150,
+  },
+  pullDownButtonTextActive: {
+    color: "#fff",
+  },
+  nearbyRadiusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#efefef",
+    backgroundColor: "#fff",
+  },
+  nearbyRadiusRowDark: {
+    backgroundColor: "#1e1e1e",
+    borderBottomColor: "#333",
+  },
+  nearbyRadiusLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#555",
+    marginRight: 10,
+    flexShrink: 0,
+  },
+  nearbyRadiusLabelDark: {
+    color: "#aaa",
+  },
+  nearbyRadiusValueWrap: {
+    marginLeft: 10,
+    minWidth: 76,
+    alignItems: "flex-end",
+    flexShrink: 0,
+  },
+  nearbyRadiusClearBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  nearbyRadiusValueActive: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#AF52DE",
+  },
+  nearbyRadiusClearIcon: {
+    fontSize: 12,
+    color: "#AF52DE",
+  },
+  nearbyRadiusValueText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#555",
   },
 });
 

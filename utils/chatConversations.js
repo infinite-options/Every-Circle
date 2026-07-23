@@ -113,7 +113,7 @@ export function normalizeConversationListItem(conv, myProfileUid) {
   };
 }
 
-/** Parse conversation last-activity time for sorting (matches NetworkScreen date display). */
+/** Parse conversation last-activity time for sorting (matches ConnectScreen date display). */
 function conversationListSortMillis(iso) {
   if (iso == null || iso === "") return 0;
   const s = String(iso).trim();

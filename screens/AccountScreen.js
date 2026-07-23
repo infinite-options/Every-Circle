@@ -22,7 +22,8 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
-import { getSessionProfile } from "../utils/sessionProfile";
+import { getSessionProfile, resolveBusinessUid } from "../utils/sessionProfile";
+import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { restockReturnedItems } from "../utils/purchaseService";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
@@ -5635,6 +5636,7 @@ function ReturnModalQtyStepper({ label, value, max, onChange, darkMode, suffix }
 
 export default function AccountScreen({ navigation, route }) {
   const { darkMode } = useDarkMode();
+  const { businesses, primaryBusinessUid, refreshFromSession } = useSessionBusinesses();
   const { width: windowWidth } = useWindowDimensions();
   const [userUID, setUserUID] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -5688,12 +5690,10 @@ export default function AccountScreen({ navigation, route }) {
   const [returnConfirmResult, setReturnConfirmResult] = useState(null);
   const [businessTransactionData, setBusinessTransactionData] = useState([]);
   const [businessTransactionLoading, setBusinessTransactionLoading] = useState(true);
-  const [businessUID, setBusinessUID] = useState(null);
   const [businessBountyData, setBusinessBountyData] = useState(null);
   const [businessBountyLoading, setBusinessBountyLoading] = useState(true);
   const [businessServices, setBusinessServices] = useState([]);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
-  const [businesses, setBusinesses] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState("personal"); // 'personal' or business UID
   const [selectedBusinessFullData, setSelectedBusinessFullData] = useState(null);
   const [expandedTransactionId, setExpandedTransactionId] = useState(null);
@@ -5764,9 +5764,9 @@ export default function AccountScreen({ navigation, route }) {
   const personalFetchGenRef = useRef(0);
   const businessFetchGenRef = useRef(0);
 
-  /** Avoid stale `selectedAccount` / `businessUID` / `businesses` inside `refreshAccountScreenBusiness` when invoked from a focus callback with `[]` deps */
+  /** Avoid stale `selectedAccount` / `primaryBusinessUid` / `businesses` inside `refreshAccountScreenBusiness` when invoked from a focus callback with `[]` deps */
   const selectedAccountRef = useRef(selectedAccount);
-  const businessUIDRef = useRef(businessUID);
+  const businessUIDRef = useRef(primaryBusinessUid);
   const businessesRef = useRef(businesses);
 
   const [receiptEnrichedItems, setReceiptEnrichedItems] = useState({});
@@ -5775,8 +5775,8 @@ export default function AccountScreen({ navigation, route }) {
     selectedAccountRef.current = selectedAccount;
   }, [selectedAccount]);
   useEffect(() => {
-    businessUIDRef.current = businessUID;
-  }, [businessUID]);
+    businessUIDRef.current = primaryBusinessUid;
+  }, [primaryBusinessUid]);
   useEffect(() => {
     businessesRef.current = businesses;
   }, [businesses]);
@@ -6099,7 +6099,7 @@ export default function AccountScreen({ navigation, route }) {
   };
 
   const resolveSellerIdForReturn = (transactionUid) => {
-    const fromAccount = selectedAccount && selectedAccount !== "personal" ? String(selectedAccount).trim() : businessUID ? String(businessUID).trim() : "";
+    const fromAccount = selectedAccount && selectedAccount !== "personal" ? String(selectedAccount).trim() : primaryBusinessUid ? String(primaryBusinessUid).trim() : "";
     if (fromAccount) return fromAccount;
     const fromDetail = String(
       returnDetailModal.orderDetail?.sale?.transaction_business_id || returnDetailModal.orderDetail?.sale?.business_id || returnDetailModal.orderDetail?.business_uid || "",
@@ -6620,7 +6620,7 @@ export default function AccountScreen({ navigation, route }) {
         );
         try {
           const ctx = {};
-          const bizUid = selectedAccount !== "personal" ? selectedAccount || businessUID : businessUID;
+          const bizUid = selectedAccount !== "personal" ? selectedAccount || primaryBusinessUid : primaryBusinessUid;
           if (bizUid) ctx.businessUid = bizUid;
           if (pending.orderUid || saleUid) {
             const refreshed = await fetchOrderDetailApi(pending.orderUid || saleUid, ctx);
@@ -6684,7 +6684,21 @@ export default function AccountScreen({ navigation, route }) {
       });
 
       // Merge: persisted checkout data takes priority over active cart
-      setReceiptEnrichedItems({ ...cartEnrichMap, ...persistedChoices });
+      const mergedReceiptEnrichments = { ...cartEnrichMap, ...persistedChoices };
+      setReceiptEnrichedItems(mergedReceiptEnrichments);
+      console.log(
+        "[AccountScreen] loadReturnRequests — receipt enrichments (checkout choices + active cart):",
+        JSON.stringify(
+          {
+            persistedChoiceKeys: Object.keys(persistedChoices),
+            activeCartKeys: Object.keys(cartEnrichMap),
+            mergedCount: Object.keys(mergedReceiptEnrichments).length,
+            merged: mergedReceiptEnrichments,
+          },
+          null,
+          2,
+        ),
+      );
     } catch {}
 
     // Also load actual return requests
@@ -6698,6 +6712,18 @@ export default function AccountScreen({ navigation, route }) {
         if (val) loaded[uid] = JSON.parse(val);
       }
       setReturnRequests(loaded);
+      console.log(
+        "[AccountScreen] loadReturnRequests — buyer return requests (return_request_*):",
+        JSON.stringify(
+          {
+            count: Object.keys(loaded).length,
+            keys: Object.keys(loaded),
+            data: loaded,
+          },
+          null,
+          2,
+        ),
+      );
     } catch (e) {
       console.error("Failed to load return requests:", e);
     }
@@ -6723,6 +6749,18 @@ export default function AccountScreen({ navigation, route }) {
         }
       }
       setReturnStatuses(loaded);
+      console.log(
+        "[AccountScreen] loadReturnStatuses — cached return/refund chips (return_status_*):",
+        JSON.stringify(
+          {
+            count: Object.keys(loaded).length,
+            keys: Object.keys(loaded),
+            data: loaded,
+          },
+          null,
+          2,
+        ),
+      );
     } catch (e) {
       console.error("Failed to load return statuses:", e);
     }
@@ -7089,95 +7127,6 @@ export default function AccountScreen({ navigation, route }) {
     }
   };
 
-  // Fetch user's businesses to get business_uid
-  const fetchUserBusinesses = async () => {
-    try {
-      const session = await getSessionProfile();
-      const profileId = session?.profileUid || (await AsyncStorage.getItem("profile_uid"));
-      if (!profileId) {
-        console.log("No profile ID found");
-        return null;
-      }
-
-      const result = session?.rawProfile;
-      if (!result) {
-        console.log("Failed to load user profile");
-        return null;
-      }
-      console.log("User businesses:", result.business_info);
-
-      // Parse business_info to get business UIDs
-      const businessList = result.business_info ? (typeof result.business_info === "string" ? JSON.parse(result.business_info) : result.business_info) : [];
-
-      // Store all businesses in state
-      setBusinesses(businessList);
-      businessesRef.current = Array.isArray(businessList) ? businessList : [];
-
-      // Get the first business UID
-      if (businessList.length > 0) {
-        const firstBusiness = businessList[0];
-        const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
-        console.log("Setting business UID:", businessId);
-        setBusinessUID(businessId);
-        businessUIDRef.current = businessId;
-        return businessId;
-      }
-
-      console.log("No businesses found for user");
-      businessUIDRef.current = null;
-      return null;
-    } catch (error) {
-      console.error("Error fetching user businesses:", error);
-      return null;
-    }
-  };
-
-  // const fetchUserBusinesses = async () => {
-  //   try {
-  //     const profileId = await AsyncStorage.getItem("profile_uid");
-  //     if (!profileId) {
-  //       console.log("No profile ID found");
-  //       return null;
-  //     }
-
-  //     const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-  //     if (!response.ok) {
-  //       console.log("Failed to fetch user profile");
-  //       return null;
-  //     }
-
-  //     const result = await response.json();
-  //     console.log("User businesses:", result.business_info);
-
-  //     // Parse business_info to get business UIDs
-  //     const businessList = result.business_info
-  //       ? (typeof result.business_info === "string"
-  //           ? JSON.parse(result.business_info)
-  //           : result.business_info
-  //         )
-  //       : [];
-
-  //     // Business details are already in the array — use them directly
-  //     console.log("Businesses:", businessList);
-  //     setBusinesses(businessList);
-
-  //     // Get the first business UID
-  //     if (businessList.length > 0) {
-  //       const firstBusiness = businessList[0];
-  //       const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
-  //       console.log("Setting business UID:", businessId);
-  //       setBusinessUID(businessId);
-  //       return businessId;
-  //     }
-
-  //     console.log("No businesses found for user");
-  //     return null;
-  //   } catch (error) {
-  //     console.error("Error fetching user businesses:", error);
-  //     return null;
-  //   }
-  // };
-
   const fetchTransactionServices = async (transactionUid) => {
     try {
       // Check if we already have this data cached
@@ -7211,7 +7160,7 @@ export default function AccountScreen({ navigation, route }) {
   const prefetchBusinessReceiptForTransaction = useCallback(
     async (txn) => {
       const uid = txn?.transaction_uid;
-      const biz = selectedAccount !== "personal" ? selectedAccount : businessUID;
+      const biz = selectedAccount !== "personal" ? selectedAccount : primaryBusinessUid;
       if (!uid || !biz || !txn?.transaction_profile_id) return;
       if (businessReceiptFetchedRef.current.has(uid)) return;
       businessReceiptFetchedRef.current.add(uid);
@@ -7230,7 +7179,7 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessReceiptCache((prev) => ({ ...prev, [uid]: [] }));
       }
     },
-    [selectedAccount, businessUID],
+    [selectedAccount, primaryBusinessUid],
   );
 
   const openProductSalesModal = useCallback((product) => {
@@ -7331,7 +7280,7 @@ export default function AccountScreen({ navigation, route }) {
       try {
         const ctx = {};
         if (isSellerView) {
-          const bizUid = selectedAccount || businessUID;
+          const bizUid = selectedAccount || primaryBusinessUid;
           if (bizUid) ctx.businessUid = bizUid;
         } else {
           const profileId = (await AsyncStorage.getItem("profile_uid")) || "";
@@ -7386,7 +7335,7 @@ export default function AccountScreen({ navigation, route }) {
         }));
       }
     },
-    [selectedAccount, businessUID, persistReturnRefundState],
+    [selectedAccount, primaryBusinessUid, persistReturnRefundState],
   );
 
   const openOrderDetail = useCallback(
@@ -7398,7 +7347,7 @@ export default function AccountScreen({ navigation, route }) {
       let sellerId = String(options.sellerId || "").trim();
       if (isSellerView && !sellerId) {
         if (selectedAccount !== "personal") {
-          sellerId = String(selectedAccount || businessUID || "").trim();
+          sellerId = String(selectedAccount || primaryBusinessUid || "").trim();
         } else {
           sellerId = String((await AsyncStorage.getItem("profile_uid")) || "").trim();
         }
@@ -7448,7 +7397,7 @@ export default function AccountScreen({ navigation, route }) {
         }));
       }
     },
-    [selectedAccount, businessUID],
+    [selectedAccount, primaryBusinessUid],
   );
 
   const saveOrderFulfillmentUpdates = useCallback(
@@ -7457,7 +7406,7 @@ export default function AccountScreen({ navigation, route }) {
         return false;
       }
       const sellerIdFromModal = String(orderDetailModal.sellerId || "").trim();
-      const sellerIdFromAccount = selectedAccount && selectedAccount !== "personal" ? String(selectedAccount).trim() : businessUID ? String(businessUID).trim() : "";
+      const sellerIdFromAccount = selectedAccount && selectedAccount !== "personal" ? String(selectedAccount).trim() : primaryBusinessUid ? String(primaryBusinessUid).trim() : "";
       const sellerIdFromOrder = String(
         orderDetailModal.orderDetail?.sale?.transaction_business_id ||
           orderDetailModal.orderDetail?.sale?.business_id ||
@@ -7622,7 +7571,7 @@ export default function AccountScreen({ navigation, route }) {
         return false;
       }
     },
-    [orderDetailModal.orderUid, orderDetailModal.isSellerView, orderDetailModal.orderDetail, orderDetailModal.sellerId, selectedAccount, businessUID],
+    [orderDetailModal.orderUid, orderDetailModal.isSellerView, orderDetailModal.orderDetail, orderDetailModal.sellerId, selectedAccount, primaryBusinessUid],
   );
 
   const openReturnNoteModalFromReceipt = useCallback(() => {
@@ -7649,7 +7598,7 @@ export default function AccountScreen({ navigation, route }) {
 
   /**
    * GET /api/v1/account-screen/business/:business_uid — product results + seller lines for grouping/receipts.
-   * @param {string} [primaryBusinessUidOverride] — optional first-business uid before `businessUID` state commits.
+   * @param {string} [primaryBusinessUidOverride] — optional first-business uid before session primaryBusinessUid is available in refs.
    */
   const refreshAccountScreenBusiness = async (primaryBusinessUidOverride) => {
     const fetchGen = businessFetchGenRef.current;
@@ -7691,7 +7640,7 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessServices([]);
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
-        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+        const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
         setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
         return;
       }
@@ -7702,7 +7651,7 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessBountyData(null);
         setBusinessServices([]);
         businessReceiptFetchedRef.current = new Set();
-        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+        const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
         setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
         return;
       }
@@ -7714,7 +7663,7 @@ export default function AccountScreen({ navigation, route }) {
       const { bountyResult, sellerLines, businessForMiniCardRaw, businessServices: servicesFromPayload } = mapAccountScreenBusinessResponse(json);
       setBusinessServices(Array.isArray(servicesFromPayload) ? servicesFromPayload : []);
 
-      const selectedBusiness = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+      const selectedBusiness = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
 
       let miniForCard = businessForMiniCardRaw ? mapRawBusinessToSelectedBusinessFullData(businessForMiniCardRaw) : null;
       if (!miniForCard) miniForCard = mapSessionBusinessRowToMiniCard(selectedBusiness);
@@ -7874,7 +7823,7 @@ export default function AccountScreen({ navigation, route }) {
       setBusinessBountyData({ error: error.message });
       setBusinessReceiptCache({});
       businessReceiptFetchedRef.current = new Set();
-      const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+      const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
       setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
     } finally {
       if (!shouldApplyBusinessResponse()) return;
@@ -7895,7 +7844,7 @@ export default function AccountScreen({ navigation, route }) {
       })();
 
       const loadBusinessData = async () => {
-        await fetchUserBusinesses();
+        await refreshFromSession({ forceRefresh: true });
         // Session cache fills the dropdown; skip account-screen/business until a business profile is selected (or tab refocus while on business).
         if (selectedAccountRef.current !== "personal") {
           await refreshAccountScreenBusiness();
@@ -8658,7 +8607,7 @@ export default function AccountScreen({ navigation, route }) {
           <Text style={styles.selectProfileLabel}>Select Profile</Text>
           <TouchableOpacity style={styles.selectProfileDropdown} onPress={() => setShowAccountDropdown(!showAccountDropdown)} activeOpacity={0.7}>
             <Text style={styles.selectProfileDropdownText}>
-              {selectedAccount === "personal" ? "Personal" : businesses.find((b) => (b.business_uid || b.profile_business_uid) === selectedAccount)?.business_name || "Business"}
+              {selectedAccount === "personal" ? "Personal" : businesses.find((b) => resolveBusinessUid(b) === selectedAccount)?.business_name || "Business"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -8670,7 +8619,7 @@ export default function AccountScreen({ navigation, route }) {
               <Text style={[styles.dropdownItemText, selectedAccount === "personal" && styles.dropdownItemTextActive]}>Personal</Text>
             </TouchableOpacity>
             {businesses.map((business, index) => {
-              const businessId = business.business_uid || business.profile_business_uid;
+              const businessId = resolveBusinessUid(business);
               const businessName = business.business_name || business.profile_business_name || `Business ${index + 1}`;
               return (
                 <TouchableOpacity key={businessId || index} style={styles.dropdownItem} onPress={() => handleProfileSelection(businessId)}>

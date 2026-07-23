@@ -29,7 +29,7 @@ export default function MenuBar() {
         <Image source={require("../assets/icons/account.png")} style={styles.icon} resizeMode='contain' />
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => navigation.navigate("Network")} style={styles.iconContainer}>
+      <TouchableOpacity onPress={() => navigation.navigate("Connect")} style={styles.iconContainer}>
         <Image source={require("../assets/icons/network.png")} style={styles.icon} resizeMode='contain' />
       </TouchableOpacity>
 

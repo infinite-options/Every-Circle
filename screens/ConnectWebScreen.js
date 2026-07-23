@@ -5,8 +5,10 @@ import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/nativ
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { USER_PROFILE_INFO_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { miniCardUserFromSession } from "../utils/connectProfileHydration";
 import MiniCard from "../components/MiniCard";
 import { sanitizeText } from "../utils/textSanitizer";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
@@ -15,6 +17,7 @@ import BottomNavBar from "../components/BottomNavBar";
 
 const ConnectWebScreen = () => {
   const { darkMode } = useDarkMode();
+  const { businesses, refreshFromSession } = useSessionBusinesses();
   const route = useRoute();
   const navigation = useNavigation();
   const [loading, setLoading] = useState(false);
@@ -26,7 +29,6 @@ const ConnectWebScreen = () => {
   // Viewer section state
   const [selectedAccount, setSelectedAccount] = useState("personal");
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
-  const [businesses, setBusinesses] = useState([]);
   const [profileViewers, setProfileViewers] = useState([]);
   const [viewersLoading, setViewersLoading] = useState(false);
   const [showViewers, setShowViewers] = useState(true);
@@ -45,10 +47,10 @@ const ConnectWebScreen = () => {
     }
   }, [profileUid]);
 
-  // Load logged-in user's profile + businesses on focus
+  // Load logged-in user's profile from session cache + refresh business list on focus
   useFocusEffect(
     React.useCallback(() => {
-      fetchMyData();
+      void hydrateMyProfileFromSession();
     }, []),
   );
 
@@ -93,38 +95,15 @@ const ConnectWebScreen = () => {
     }
   };
 
-  const fetchMyData = async () => {
+  const hydrateMyProfileFromSession = async () => {
     try {
-      const profileId = await AsyncStorage.getItem("profile_uid");
+      const session = await refreshFromSession({ forceRefresh: true });
+      const profileId = session?.profileUid || (await AsyncStorage.getItem("profile_uid"));
       if (!profileId) return;
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-      if (!response.ok) return;
-      const result = await response.json();
-      const p = result?.personal_info || {};
-      setMyProfileData({
-        profile_uid: profileId,
-        firstName: sanitizeText(p.profile_personal_first_name || ""),
-        lastName: sanitizeText(p.profile_personal_last_name || ""),
-        tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
-        city: sanitizeText(p.profile_personal_city || ""),
-        state: sanitizeText(p.profile_personal_state || ""),
-        email: sanitizeText(result?.user_email || ""),
-        phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
-        profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-        emailIsPublic: p.profile_personal_email_is_public === 1,
-        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-        locationIsPublic: p.profile_personal_location_is_public === 1,
-        imageIsPublic: p.profile_personal_image_is_public === 1,
-      });
-      const businessList = result.business_info
-        ? typeof result.business_info === "string"
-          ? JSON.parse(result.business_info)
-          : result.business_info
-        : [];
-      setBusinesses(businessList);
+      const userData = miniCardUserFromSession(session, profileId);
+      if (userData) setMyProfileData(userData);
     } catch (e) {
-      console.warn("ConnectWebScreen - Failed to fetch my data:", e);
+      console.warn("ConnectWebScreen - Failed to hydrate profile from session:", e);
     }
   };
 
@@ -301,7 +280,7 @@ const ConnectWebScreen = () => {
             <Text style={[styles.selectProfileLabel, darkMode && styles.darkText]}>Select Profile</Text>
             <TouchableOpacity style={styles.selectProfileDropdown} onPress={() => setShowAccountDropdown(!showAccountDropdown)} activeOpacity={0.7}>
               <Text style={styles.selectProfileDropdownText}>
-                {selectedAccount === "personal" ? "Personal" : businesses.find((b) => (b.business_uid || b.profile_business_uid) === selectedAccount)?.business_name || "Business"}
+                {selectedAccount === "personal" ? "Personal" : businesses.find((b) => resolveBusinessUid(b) === selectedAccount)?.business_name || "Business"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -318,7 +297,7 @@ const ConnectWebScreen = () => {
                 <Text style={[styles.dropdownItemText, selectedAccount === "personal" && styles.dropdownItemTextActive]}>Personal</Text>
               </TouchableOpacity>
               {businesses.map((business, index) => {
-                const businessId = business.business_uid || business.profile_business_uid;
+                const businessId = resolveBusinessUid(business);
                 const businessName = business.business_name || business.profile_business_name || `Business ${index + 1}`;
                 return (
                   <TouchableOpacity

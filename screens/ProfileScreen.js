@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -45,7 +45,8 @@ import config from "../config";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { reinitializeUnreadFromOutside } from "../contexts/UnreadContext";
 import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
-import { saveSessionProfilePayload, clearUserProfileCacheStorage, getSessionProfile } from "../utils/sessionProfile";
+import { saveSessionProfilePayload, clearUserProfileCacheStorage, getSessionProfile, mapSessionBusinesses, resolveBusinessUid, resolveBusinessUidFromProfileRow } from "../utils/sessionProfile";
+import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { sanitizeText } from "../utils/textSanitizer";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
@@ -53,6 +54,7 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import { recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
+import { recordWishMessageResponse } from "../utils/wishMessageResponse";
 import { buildOfferingReplyContext, buildSeekingReplyContext } from "../utils/chatReplyContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
@@ -241,7 +243,10 @@ const ProfileScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [profileUID, setProfileUID] = useState("");
-  const [businessesData, setBusinessesData] = useState([]);
+  /** Businesses for a profile being viewed (not the logged-in user). Own profile uses session hook. */
+  const [viewedProfileBusinesses, setViewedProfileBusinesses] = useState([]);
+  /** Moderation fields keyed by business uid — merged onto session businesses for own profile UI. */
+  const [businessModerationByUid, setBusinessModerationByUid] = useState({});
   const [isCurrentUserProfile, setIsCurrentUserProfile] = useState(false);
   const [offeringCartModalItem, setOfferingCartModalItem] = useState(null);
   const [flagModalOffering, setFlagModalOffering] = useState(null);
@@ -254,6 +259,26 @@ const ProfileScreen = ({ route, navigation }) => {
   const [relationshipType, setRelationshipType] = useState(null);
   const [circleUid, setCircleUid] = useState(null);
   const { darkMode } = useDarkMode();
+  const { businesses: sessionBusinesses } = useSessionBusinesses();
+  const businessesData = useMemo(() => {
+    if (!isCurrentUserProfile) {
+      return viewedProfileBusinesses;
+    }
+    return (sessionBusinesses || []).map((business) => {
+      const uid = resolveBusinessUid(business);
+      return {
+        ...business,
+        ...(businessModerationByUid[uid] || {}),
+      };
+    });
+  }, [isCurrentUserProfile, sessionBusinesses, viewedProfileBusinesses, businessModerationByUid]);
+
+  useEffect(() => {
+    if (isCurrentUserProfile) {
+      setViewedProfileBusinesses([]);
+    }
+  }, [isCurrentUserProfile]);
+
   const [showExperience, setShowExperience] = useState(true);
   const [showEducation, setShowEducation] = useState(true);
   const [showSocial, setShowSocial] = useState(true);
@@ -800,19 +825,31 @@ const ProfileScreen = ({ route, navigation }) => {
       // console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
       const rawBusinessInfo = parseProfileJsonArray(apiUser.business_info);
-      const mappedBusinesses = rawBusinessInfo.map((bus, index) => ({
-        ...mapBusinessToMiniCard(bus),
-        business_uid: bus.business_uid || "",
-        profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
-        role: bus.bu_role || "",
-        individualIsPublic: bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
-        index,
-        business_updated_at: bus.business_updated_at ?? bus.updated_at,
-        moderation: normalizeBusinessModeration(bus),
-        business_moderated: bus.business_moderated,
-      }));
-      // console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));
-      setBusinessesData(mappedBusinesses);
+      const moderationByUid = {};
+      for (const bus of rawBusinessInfo) {
+        const uid = resolveBusinessUidFromProfileRow(bus);
+        if (!uid) continue;
+        moderationByUid[uid] = {
+          moderation: normalizeBusinessModeration(bus),
+          business_moderated: bus.business_moderated,
+        };
+      }
+      setBusinessModerationByUid(moderationByUid);
+
+      const storedProfileUidForBusinesses = await AsyncStorage.getItem("profile_uid");
+      if (storedProfileUidForBusinesses && profileUID === storedProfileUidForBusinesses) {
+        setViewedProfileBusinesses([]);
+      } else {
+        setViewedProfileBusinesses(
+          mapSessionBusinesses(rawBusinessInfo, {
+            enrichEntry: (bus) => ({
+              moderation: normalizeBusinessModeration(bus),
+              business_moderated: bus.business_moderated,
+            }),
+          }),
+        );
+      }
+
       setLoading(false);
     } catch (error) {
       console.error("ProfileScreen - processProfileApiUser:", error);
@@ -839,12 +876,6 @@ const ProfileScreen = ({ route, navigation }) => {
       setLoading(false);
     }
   }
-
-  // Log businessesData changes for debugging (runs only when businessesData changes, not on every render)
-  useEffect(() => {
-    console.log("ProfileScreen - businessesData changed:", businessesData);
-    console.log("ProfileScreen - businessesData.length:", businessesData?.length);
-  }, [businessesData]);
 
   // Handle clicking outside dropdown on web
   useEffect(() => {
@@ -900,113 +931,6 @@ const ProfileScreen = ({ route, navigation }) => {
       document.removeEventListener("click", handleClickOutside, false);
     };
   }, [showRelationshipDropdown]);
-
-  const fetchBusinessesData = async (businesses) => {
-    try {
-      // console.log("ProfileScreen - fetchBusinessesData called with businesses:", JSON.stringify(businesses, null, 2));
-      // console.log("ProfileScreen - Number of businesses to fetch:", businesses.length);
-      // console.log("ProfileScreen - fetchBusinessesData called with businesses:", JSON.stringify(businesses, null, 2));
-
-      const businessPromises = businesses.map(async (bus, index) => {
-        // console.log("ProfileScreen - Processing business:", bus);
-        if (!bus.profile_business_uid) {
-          console.log("ProfileScreen - Skipping business - no profile_business_uid:", bus);
-          return null;
-        }
-
-        try {
-          const businessEndpoint = `${BUSINESS_INFO_ENDPOINT}/${bus.profile_business_uid}`;
-          // console.log("ProfileScreen - Fetching business from:", businessEndpoint);
-          const response = await fetch(businessEndpoint);
-          const result = await response.json();
-          // console.log("ProfileScreen - Business API response for", bus.profile_business_uid, ":", JSON.stringify(result, null, 2));
-
-          if (!result || !result.business) {
-            console.log("ProfileScreen - No business data in response for", bus.profile_business_uid);
-            return null;
-          }
-
-          const rawBusiness = result.business;
-
-          let businessImages = [];
-          if (rawBusiness.business_google_photos) {
-            if (typeof rawBusiness.business_google_photos === "string") {
-              try {
-                businessImages = JSON.parse(rawBusiness.business_google_photos);
-              } catch (e) {
-                businessImages = [rawBusiness.business_google_photos];
-              }
-            } else if (Array.isArray(rawBusiness.business_google_photos)) {
-              businessImages = rawBusiness.business_google_photos;
-            }
-          }
-
-          if (rawBusiness.business_images_url) {
-            let uploadedImages = [];
-            if (typeof rawBusiness.business_images_url === "string") {
-              try {
-                uploadedImages = JSON.parse(rawBusiness.business_images_url);
-              } catch (e) {
-                uploadedImages = [];
-              }
-            } else if (Array.isArray(rawBusiness.business_images_url)) {
-              uploadedImages = rawBusiness.business_images_url;
-            }
-            uploadedImages = uploadedImages
-              .map((img) => {
-                if (img && typeof img === "string") {
-                  if (img.startsWith("http://") || img.startsWith("https://")) {
-                    return img;
-                  }
-                  return `https://s3-us-west-1.amazonaws.com/every-circle/business_personal/${rawBusiness.business_uid}/${img}`;
-                }
-                return null;
-              })
-              .filter(Boolean);
-            businessImages = [...uploadedImages, ...businessImages];
-          }
-
-          // Get role and approval status from the original business_info entry
-          const originalBusiness = businesses.find((b) => b.profile_business_uid === bus.profile_business_uid);
-          // console.log("ProfileScreen - originalBusiness for", rawBusiness.business_name, ":", JSON.stringify(originalBusiness, null, 2));
-
-          // Profile image from business_profile_img; fallback to first of business_images_url for MiniCard
-          const businessProfileImg = rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
-          return {
-            ...mapBusinessToMiniCard({
-              ...rawBusiness,
-              business_profile_img: businessProfileImg,
-              images: businessImages,
-              businessGooglePhotos: businessImages,
-            }),
-            business_uid: sanitizeText(rawBusiness.business_uid, ""),
-            profile_business_uid: bus.profile_business_uid || "",
-            role: sanitizeText(originalBusiness?.role, ""),
-            isApproved: originalBusiness?.isApproved || false,
-            individualIsPublic: !!(
-              originalBusiness?.individualIsPublic ??
-              (originalBusiness?.bu_individual_business_is_public === 1 || originalBusiness?.bu_individual_business_is_public === "1" || originalBusiness?.bu_individual_business_is_public === true)
-            ),
-            index,
-          };
-        } catch (error) {
-          console.error(`Error fetching business ${bus.profile_business_uid}:`, error);
-          return null;
-        }
-      });
-      const fetchedBusinesses = await Promise.all(businessPromises);
-      // console.log("ProfileScreen - Fetched businesses (before filter):", JSON.stringify(fetchedBusinesses, null, 2));
-      const validBusinesses = fetchedBusinesses.filter(Boolean);
-      // console.log("ProfileScreen - Valid businesses (after filter):", JSON.stringify(validBusinesses, null, 2));
-      // console.log("ProfileScreen - Setting businessesData with", validBusinesses.length, "businesses");
-      setBusinessesData(validBusinesses);
-    } catch (error) {
-      // console.error("ProfileScreen - Error fetching businesses data:", error);
-      setBusinessesData([]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const fetchRelationship = async (loggedInProfileUID, viewedProfileUID) => {
     try {
@@ -1480,7 +1404,7 @@ const ProfileScreen = ({ route, navigation }) => {
           {...getHeaderColors("profileView")}
           onBackPress={() => {
             if (navigation.canGoBack()) navigation.goBack();
-            else navigation.navigate("Network");
+            else navigation.navigate("Connect");
           }}
         />
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
@@ -1592,17 +1516,17 @@ const ProfileScreen = ({ route, navigation }) => {
                   } else if (route.params?.chatParams) {
                     navigation.navigate("Chat", route.params.chatParams);
                   } else {
-                    navigation.navigate("Network");
+                    navigation.navigate("Connect");
                   }
-                } else if (returnTo === "Network") {
-                  // Navigate back to Network screen
-                  console.log("🔙 Returning to Network");
-                  navigation.navigate("Network");
+                } else if (returnTo === "Connect" || returnTo === "Network") {
+                  // Navigate back to Connect screen (Network is legacy returnTo)
+                  console.log("🔙 Returning to Connect");
+                  navigation.navigate("Connect");
                 } else if (returnTo === "Account") {
                   navigation.navigate("Account");
                 } else {
-                  // Default: Navigate to Network screen when viewing another user's profile
-                  navigation.navigate("Network");
+                  // Default: Navigate to Connect screen when viewing another user's profile
+                  navigation.navigate("Connect");
                 }
               }
             : undefined
@@ -2457,7 +2381,16 @@ const ProfileScreen = ({ route, navigation }) => {
                           <TouchableOpacity
                             style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
                             activeOpacity={0.8}
-                            onPress={() =>
+                            onPress={async () => {
+                              const wishUid = String(wish.profile_wish_uid || "").trim();
+                              const responderUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+                              if (wishUid && responderUid && routeProfileUID !== responderUid) {
+                                try {
+                                  await recordWishMessageResponse(wishUid, responderUid);
+                                } catch (e) {
+                                  console.warn("[ProfileScreen] recordWishMessageResponse failed:", e);
+                                }
+                              }
                               navigation.navigate("Chat", {
                                 other_uid: routeProfileUID || profileUID,
                                 other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
@@ -2466,8 +2399,8 @@ const ProfileScreen = ({ route, navigation }) => {
                                   label: `Seeking: ${sanitizeText(wish.helpNeeds) || "Seeking"}`,
                                   profileWishUid: wish.profile_wish_uid,
                                 }),
-                              })
-                            }
+                              });
+                            }}
                           >
                             <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
                             <Text style={styles.contextChatButtonText}>Message about this seeking</Text>

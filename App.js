@@ -19,7 +19,6 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer, getStateFromPath as parsePathToNavigationState } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { clearUserProfileCacheStorage } from "./utils/sessionProfile";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -39,6 +38,7 @@ import { GOOGLE_SOCIAL_AUTH_ENDPOINT, APPLE_AUTH_ENDPOINT, API_BASE_URL } from "
 import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
 import { UnreadProvider } from "./contexts/UnreadContext";
+import { SessionProfileProvider } from "./contexts/SessionProfileContext";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
 import LoginScreen from "./screens/LoginScreen";
 import SignUpScreen from "./screens/SignUpScreen";
@@ -51,7 +51,6 @@ import BusinessModerationScreen from "./screens/BusinessModerationScreen";
 import EditProfileScreen from "./screens/EditProfileScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import AccountScreen from "./screens/AccountScreen";
-import NetworkScreen from "./screens/NetworkScreen";
 import SearchScreen from "./screens/SearchScreen";
 import AppleSignIn from "./AppleSignIn";
 import AccountTypeScreen from "./screens/AccountTypeScreen";
@@ -72,6 +71,7 @@ import OfferingDetailScreen from "./screens/OfferingDetailScreen";
 import WishResponsesScreen from "./screens/WishResponsesScreen";
 import OfferingResponsesScreen from "./screens/OfferingResponsesScreen";
 import ConnectScreen from "./screens/ConnectScreen";
+import ConnectLinkScreen from "./screens/ConnectLinkScreen";
 import ConnectWebScreen from "./screens/ConnectWebScreen";
 import NewConnectionScreen from "./screens/NewConnectionScreen";
 import ScanLandingScreen from "./screens/ScanLandingScreen";
@@ -80,7 +80,7 @@ import InboxScreen from "./screens/InboxScreen";
 import ChatScreen from "./screens/ChatScreen";
 import AddReviewSearchScreen from "./screens/AddReviewSearchScreen";
 import EveryCircleMapScreen from "./screens/EveryCircleMapScreen";
-import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv } from "./utils/clearAppAsyncStorage";
+import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv, clearSessionAsyncStorageOnLogin } from "./utils/clearAppAsyncStorage";
 
 const Stack = createNativeStackNavigator();
 
@@ -89,15 +89,13 @@ export const googleApiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 /** Home screen: show version / last-build line (PM version, app version, last change). */
 const SHOW_HOME_BUILD_INFO = true;
 
-// Wrapper component for Connect screen to handle conditional rendering
-const ConnectScreenWrapper = (props) => {
-  // If profile_uid is present in route params or URL, use NewConnectionScreen
+// Wrapper for legacy /connect deep-link route (not the Connect tab).
+const ConnectLinkScreenWrapper = (props) => {
   const profileUid = props.route?.params?.profile_uid || (isWeb && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("profile_uid") : null);
   if (profileUid) {
     return <NewConnectionScreen {...props} />;
   }
-  // Otherwise use the original Connect screen
-  return Platform.OS === "web" ? <ConnectWebScreen {...props} /> : <ConnectScreen {...props} />;
+  return Platform.OS === "web" ? <ConnectWebScreen {...props} /> : <ConnectLinkScreen {...props} />;
 };
 
 /** Body for POST `api/v2/AppleAuth/EVERY-CIRCLE` (snake_case keys for the API). */
@@ -206,11 +204,15 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
       console.warn("App.js - AppleAuth: no user_uid in response:", result);
       throw new Error("Apple auth did not return a user id");
     }
+    const previousUserUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
     await AsyncStorage.setItem("user_uid", String(userUid));
     await AsyncStorage.setItem("user_email_id", userEmail || "");
     await AsyncStorage.setItem("isThirdPartyAuth", true);
-    await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-    await clearUserProfileCacheStorage();
+    await clearSessionAsyncStorageOnLogin({
+      userUid: String(userUid),
+      previousUserUid,
+      preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
+    });
 
     const appleUserInfoPayload = {
       email: userEmail,
@@ -294,11 +296,15 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
 
   const existingAccount = isExistingSocialAccountApiResult(result);
 
+  const previousUserUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
   await AsyncStorage.setItem("user_uid", String(userUid));
   await AsyncStorage.setItem("user_email_id", userInfo.user.email);
   await AsyncStorage.setItem("isThirdPartyAuth", true);
-  await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-  await clearUserProfileCacheStorage();
+  await clearSessionAsyncStorageOnLogin({
+    userUid: String(userUid),
+    previousUserUid,
+    preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
+  });
 
   const googleUserInfo = {
     email: userInfo.user.email,
@@ -866,7 +872,7 @@ export default function App() {
         profile_uid: (profile_uid) => profile_uid,
       },
     },
-    Connect: {
+    ConnectLink: {
       path: "connect",
       parse: {
         profile_uid: (profile_uid) => profile_uid,
@@ -880,7 +886,7 @@ export default function App() {
         profile_uid: (v) => v,
       },
     },
-    Network: "network",
+    Connect: "network",
     Search: "search",
     Settings: "settings",
     Inbox: "inbox",
@@ -998,7 +1004,8 @@ export default function App() {
   return (
     <TextNodeErrorBoundary>
       <DarkModeProvider>
-        <UnreadProvider>
+        <SessionProfileProvider>
+          <UnreadProvider>
           <View style={styles.appRoot}>
             <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
               <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
@@ -1025,7 +1032,7 @@ export default function App() {
                 <Stack.Screen name='EditProfile' component={EditProfileScreen} />
                 <Stack.Screen name='Settings' component={SettingsScreen} />
                 <Stack.Screen name='Account' component={AccountScreen} />
-                <Stack.Screen name='Network' component={NetworkScreen} />
+                <Stack.Screen name='Connect' component={ConnectScreen} />
                 <Stack.Screen name='Search' component={SearchScreen} />
                 <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
                 <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
@@ -1044,7 +1051,7 @@ export default function App() {
                 <Stack.Screen name='OfferingDetail' component={OfferingDetailScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='OfferingResponses' component={OfferingResponsesScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='Connect' component={ConnectScreenWrapper} />
+                <Stack.Screen name='ConnectLink' component={ConnectLinkScreenWrapper} />
                 <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
                 <Stack.Screen name='ScanLanding' component={ScanLandingScreen} />
                 <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
@@ -1055,7 +1062,8 @@ export default function App() {
               </Stack.Navigator>
             </NavigationContainer>
           </View>
-        </UnreadProvider>
+          </UnreadProvider>
+        </SessionProfileProvider>
       </DarkModeProvider>
     </TextNodeErrorBoundary>
   );

@@ -144,7 +144,7 @@ const ReferralSearch = ({
             <Text style={styles.noResultsSubtext}>{noResultsSubtext}</Text>
           </View>
         ) : searchResults.length > 0 ? (
-          <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item) => item.profile_personal_uid} style={styles.resultsList} />
+          <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item, index) => `${item.profile_personal_uid || "user"}-${index}`} style={styles.resultsList} />
         ) : hideEmptyState ? null : (
           <View style={styles.centerContainer}>
             <Ionicons name='people' size={48} color='#ccc' />
@@ -213,7 +213,7 @@ const ReferralSearch = ({
                 <Text style={styles.noResultsSubtext}>{noResultsSubtext}</Text>
               </View>
             ) : searchResults.length > 0 ? (
-              <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item) => item.profile_personal_uid} style={styles.resultsList} />
+              <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item, index) => `${item.profile_personal_uid || "user"}-${index}`} style={styles.resultsList} />
             ) : hideEmptyState ? null : (
               <View style={styles.centerContainer}>
                 <Ionicons name='people' size={48} color='#ccc' />
