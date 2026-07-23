@@ -1,17 +1,30 @@
 //SettingsScreen.js
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, TextInput } from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
-import { useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
-import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
+import NearbyLocationPrivacyModal from "../components/NearbyLocationPrivacyModal";
+import NearbyLocationPickerModal from "../components/NearbyLocationPickerModal";
+import { DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS, loadNearbySettings, subscribeNearbySettings, syncNearbySettingsToServer, formatNearbyPrivacySummary } from "../utils/nearbySettings";
+import { subscribeStoredNearbyCoords, formatStoredNearbyCoordsSummary, publishStoredNearbyCoords, NEARBY_LOCATION_PICKER_OPTIONS, resolveNearbyLocationOptionCoords } from "../utils/nearbyLocationUpdate";
+import { resetSharedAblyClient } from "../utils/ablyClient";
+import {
+  SHARE_LOCATION_DURATION_HOURS,
+  startLiveLocationSharing as startLiveLocationSharingSession,
+  stopLiveLocationSharing as stopLiveLocationSharingSession,
+  restoreLiveLocationSessionIfActive,
+  bindLiveLocationSharingExtras,
+  clearLiveLocationSharingExtras,
+  subscribeLiveLocationSharingStatus,
+  getLiveLocationSharingStatus,
+} from "../utils/liveLocationSharing";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
@@ -109,19 +122,6 @@ const COLORS = {
 // AsyncStorage key for ignored nearby UIDs (cleared when the sharing session ends)
 const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
 
-// AsyncStorage key for share / receive notification preferences
-const NEARBY_SETTINGS_KEY = "nearby_share_settings";
-
-// Default settings — mirrors the backend's default behaviour (all_circles for both)
-const DEFAULT_NEARBY_SETTINGS = {
-  shareWith: "all_circles", // 'everyone' | 'all_circles' | 'specific'
-  shareWithTypes: { friends: true, colleagues: true, family: true },
-  receiveFrom: "all_circles", // 'everyone' | 'all_circles' | 'specific'
-  receiveFromTypes: { friends: true, colleagues: true, family: true },
-  // TODO: Persist these settings to the DB so they can be enforced server-side
-  //       and survive across devices/sessions without relying on AsyncStorage alone.
-};
-
 // Default settings for Messages Privacy — persisted server-side on profile_personal
 // (profile_personal_messages_receive_from + profile_personal_messages_receive_types).
 // There is no sender-side restriction — everyone can always attempt to message anyone;
@@ -143,43 +143,7 @@ function parseCircleTypesCsv(csv) {
   return { friends: active.has("friends"), colleagues: active.has("colleagues"), family: active.has("family") };
 }
 
-// --- Live location sharing constants ---
-const SHARE_LOCATION_DURATION_HOURS = 1; // how long a sharing session lasts
-const SHARE_LOCATION_DISTANCE_METERS = 50; // min movement before watcher fires a callback
-const SHARE_LOCATION_MIN_PATCH_MINS = 2; // min gap between DB writes (throttle)
-
-const DUMMY_LOCATIONS = [
-  { name: "Dummy A — Salesforce Park, SF", lat: 37.7893, lng: -122.3966 },
-  { name: "Dummy B — Ferry Building, SF", lat: 37.7956, lng: -122.3935 }, // ~0.48 mi from A ✓
-  { name: "Dummy C — Golden Gate Park, SF", lat: 37.7694, lng: -122.4862 }, // ~5.1 mi from A ✗
-  { name: "Dummy D — Balboa Park, San Diego CA", lat: 32.7341, lng: -117.1442 },
-  { name: "Dummy E — Zilker Park, Austin TX", lat: 30.2669, lng: -97.7728 },
-  { name: "Dummy F — CN Tower, Toronto Canada", lat: 43.6426, lng: -79.3871 },
-];
-
-const LOCATION_PICKER_OPTIONS = [...DUMMY_LOCATIONS, { name: "Live GPS" }];
-
-/** Resolve lat/lng from a picker option (preset or Live GPS). */
-async function resolveLocationOptionCoords(option) {
-  if (option.name === "Live GPS") {
-    if (isWeb) {
-      return new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          (err) => reject(err),
-          { timeout: 10000 },
-        );
-      });
-    }
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      throw new Error("Location permission denied");
-    }
-    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    return { lat: loc.coords.latitude, lng: loc.coords.longitude };
-  }
-  return { lat: option.lat, lng: option.lng };
-}
+// --- Live location sharing duration label (logic in utils/liveLocationSharing) ---
 
 /** Two tappable labels (Edit Profile–style) instead of a Switch. */
 function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode, variant = "yesNo" }) {
@@ -230,7 +194,6 @@ export default function SettingsScreen() {
 
   // Nearby POC state
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
-  const [locationUpdating, setLocationUpdating] = useState(null); // key of option being saved
   const [storedCoords, setStoredCoords] = useState({ lat: null, lng: null, updatedAt: null });
 
   // Home address coordinates (profile_personal_latitude / profile_personal_longitude)
@@ -245,23 +208,14 @@ export default function SettingsScreen() {
   // Master "turn off all messages" switch — persisted server-side (profile_personal_messages_off)
   const [messagesOff, setMessagesOff] = useState(false);
 
-  // Live location sharing refs (stable across renders — no state needed)
-  const locationWatcherRef = useRef(null); // expo-location subscription
-  const autoOffTimerRef = useRef(null); // setTimeout handle for 1-hour auto-off
-  const lastPatchedAtRef = useRef(0); // ms timestamp of last successful PATCH
-
-  // Ably nearby-alert subscription (live while sharing is active)
-  const ablyClientRef = useRef(null);
-  const ablyChannelRef = useRef(null);
-  const nearbyAlertHandlerRef = useRef(null);
-  const notifiedUidsRef = useRef(new Set()); // UIDs already alerted this session
+  // Live location sharing — watcher/timer live in utils/liveLocationSharing (shared with Connect).
 
   // Ignored nearby UIDs — persisted in AsyncStorage for the duration of the sharing session
   const ignoredNearbyRef = useRef(new Set()); // ref for use inside callbacks
 
   // Nearby share / receive settings — ref for callbacks, state for rendering
-  const nearbySettingsRef = useRef(DEFAULT_NEARBY_SETTINGS);
-  const [nearbySettings, setNearbySettings] = useState(DEFAULT_NEARBY_SETTINGS);
+  const nearbySettingsRef = useRef(INITIAL_NEARBY_SETTINGS);
+  const [nearbySettings, setNearbySettings] = useState(INITIAL_NEARBY_SETTINGS);
 
   // In-app nearby banner
   const [nearbyAlert, setNearbyAlert] = useState(null); // { sender_uid, sender_name, sender_image, distance_miles }
@@ -389,44 +343,18 @@ export default function SettingsScreen() {
       // Restore nearby share / receive settings and push to DB immediately
       // so the server-side consent check is always up-to-date on load.
       try {
-        const storedSettings = await AsyncStorage.getItem(NEARBY_SETTINGS_KEY);
-        if (storedSettings) {
-          const parsed = JSON.parse(storedSettings);
-          nearbySettingsRef.current = parsed;
-          setNearbySettings(parsed);
-          // Push to DB (fire-and-forget)
-          const uid = await AsyncStorage.getItem("profile_uid");
-          if (uid) {
-            const { NEARBY_LOCATION_ENDPOINT } = require("../apiConfig");
-            fetch(NEARBY_LOCATION_ENDPOINT, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                profile_uid: uid,
-                share_with: parsed.shareWith,
-                share_with_types: Object.keys(parsed.shareWithTypes).filter((k) => parsed.shareWithTypes[k]),
-                receive_from: parsed.receiveFrom,
-                receive_from_types: Object.keys(parsed.receiveFromTypes).filter((k) => parsed.receiveFromTypes[k]),
-              }),
-            }).catch(() => {});
-          }
-        }
+        const parsed = await loadNearbySettings();
+        nearbySettingsRef.current = parsed;
+        setNearbySettings(parsed);
+        void syncNearbySettingsToServer(parsed);
       } catch (_) {}
 
       // Restore live location session if still within its window
-      const storedUntil = await AsyncStorage.getItem("shareLiveLocationUntil");
-      if (storedUntil) {
-        const expiresAt = parseInt(storedUntil, 10);
-        if (expiresAt > Date.now()) {
-          setShareLocationActive(true);
-          setShareLocationUntil(new Date(expiresAt));
-          const restoredProfileId = await AsyncStorage.getItem("profile_uid");
-          if (restoredProfileId) subscribeAblyNearby(restoredProfileId);
-          startWatcher(expiresAt);
-        } else {
-          await AsyncStorage.removeItem("shareLiveLocationUntil");
-        }
-      }
+      await restoreLiveLocationSessionIfActive({
+        onNearbyAlert: (alert) => setNearbyAlert(alert),
+        isNearbyIgnored: (uid) => ignoredNearbyRef.current.has(uid),
+        onStopped: () => setNearbyAlert(null),
+      });
     })();
   }, []);
   const [termsModalVisible, setTermsModalVisible] = useState(false);
@@ -661,7 +589,9 @@ export default function SettingsScreen() {
           const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
           const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
           if (nearbyLat != null && nearbyLng != null) {
-            setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
+            const coords = { lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt };
+            setStoredCoords(coords);
+            publishStoredNearbyCoords(coords);
           }
           const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
           const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
@@ -681,130 +611,55 @@ export default function SettingsScreen() {
     loadProfileFromCache();
   }, []);
 
-  // --- Live location sharing ---
-
-  // Cleanup watcher + timer when component unmounts
   useEffect(() => {
+    return subscribeNearbySettings((settings) => {
+      nearbySettingsRef.current = settings;
+      setNearbySettings(settings);
+    });
+  }, []);
+
+  useEffect(() => {
+    return subscribeStoredNearbyCoords(setStoredCoords);
+  }, []);
+
+  // Keep Settings UI in sync with the shared live-location session.
+  useEffect(() => {
+    bindLiveLocationSharingExtras({
+      onNearbyAlert: (alert) => setNearbyAlert(alert),
+      isNearbyIgnored: (uid) => ignoredNearbyRef.current.has(uid),
+      onStopped: () => setNearbyAlert(null),
+    });
+    const unsubStatus = subscribeLiveLocationSharingStatus(({ active, until }) => {
+      setShareLocationActive(active);
+      setShareLocationUntil(until);
+    });
     return () => {
-      if (locationWatcherRef.current) locationWatcherRef.current.remove();
-      if (autoOffTimerRef.current) clearTimeout(autoOffTimerRef.current);
+      unsubStatus();
+      clearLiveLocationSharingExtras();
     };
   }, []);
 
-  // Shared PATCH helper used by both manual picker and live watcher
-  const patchNearbyLocation = async (profileId, lat, lng, liveSharing = false) => {
-    const { NEARBY_LOCATION_ENDPOINT } = require("../apiConfig");
-    const settings = nearbySettingsRef.current;
-    try {
-      const response = await fetch(NEARBY_LOCATION_ENDPOINT, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          profile_uid: profileId,
-          lat,
-          lng,
-          live_sharing: liveSharing,
-          share_with: settings.shareWith,
-          share_with_types: Object.keys(settings.shareWithTypes).filter((k) => settings.shareWithTypes[k]),
-          receive_from: settings.receiveFrom,
-          receive_from_types: Object.keys(settings.receiveFromTypes).filter((k) => settings.receiveFromTypes[k]),
-        }),
+  useFocusEffect(
+    useCallback(() => {
+      void getLiveLocationSharingStatus().then(({ active, until }) => {
+        setShareLocationActive(active);
+        setShareLocationUntil(until);
       });
-      const result = await response.json();
-      if (result.code === 200) {
-        lastPatchedAtRef.current = Date.now();
-        setStoredCoords({ lat, lng, updatedAt: result.updated_at || null });
-        return true;
-      }
-    } catch (err) {
-      console.error("patchNearbyLocation error:", err);
-    }
-    return false;
+    }, []),
+  );
+
+  // Stop live sharing (manual off, auto-off, or logout)
+  const stopLiveLocationSharing = async () => {
+    await stopLiveLocationSharingSession();
+    setNearbyAlert(null);
   };
 
-  // Subscribe to the user's personal Ably channel to receive nearby-alert messages
-  const subscribeAblyNearby = async (profileId) => {
-    try {
-      // Old key-based auth (kept for reference):
-      // let Ably;
-      // if (Platform.OS === "web" && typeof window !== "undefined" && window.Ably) {
-      //   Ably = window.Ably;
-      // } else {
-      //   Ably = require("ably");
-      // }
-      // const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
-      // if (!ablyApiKey) {
-      //   console.warn("Ably API key missing — nearby alerts disabled");
-      //   return;
-      // }
-      // const client = new Ably.Realtime({ key: ablyApiKey });
-      const client = createAblyRealtimeClient(profileId);
-      const channel = client.channels.get(`/${profileId}`);
-
-      const handler = (msg) => {
-        const data = msg.data || {};
-        const uid = data.sender_uid;
-
-        // Skip if already notified or explicitly ignored this session
-        if (!uid || notifiedUidsRef.current.has(uid) || ignoredNearbyRef.current.has(uid)) return;
-
-        // Always apply the viewer's own receive_from filter regardless of source.
-        // source='share'  → server already filtered by sender's share_with, but receiver
-        //                    still has the right to gate what they see (receive_from).
-        // source='receive' → same filter applies.
-        const settings = nearbySettingsRef.current;
-        if (settings.receiveFrom !== "everyone") {
-          const inCircles = data.recipient_in_circles;
-          const rel = data.recipient_relationship;
-          if (!inCircles) return;
-          if (settings.receiveFrom === "specific") {
-            const activeTypes = Object.keys(settings.receiveFromTypes).filter((k) => settings.receiveFromTypes[k]);
-            const DB_TYPE_MAP = { friends: "friend", colleagues: "colleague", family: "family" };
-            const dbTypes = activeTypes.map((t) => DB_TYPE_MAP[t] || t);
-            if (!rel || !dbTypes.includes(rel)) return;
-          }
-        }
-
-        notifiedUidsRef.current.add(uid);
-        setNearbyAlert({
-          sender_uid: uid,
-          sender_name: data.sender_name || "Someone",
-          sender_image: data.sender_image || null,
-          distance_miles: data.distance_miles ?? "?",
-        });
-      };
-      nearbyAlertHandlerRef.current = handler;
-      channel.subscribe("nearby-alert", handler);
-
-      ablyClientRef.current = client;
-      ablyChannelRef.current = channel;
-      console.log("✅ SettingsScreen - Ably nearby-alert subscription active");
-    } catch (e) {
-      console.warn("SettingsScreen - Ably subscribe failed:", e.message);
-    }
+  // Toggle ON handler — requests permission, sets expiry, patches immediately, starts watcher
+  const startLiveLocationSharing = async () => {
+    await startLiveLocationSharingSession();
   };
 
-  // Unsubscribe and clean up Ably connection
-  const unsubscribeAblyNearby = () => {
-    try {
-      if (ablyChannelRef.current) {
-        if (nearbyAlertHandlerRef.current) {
-          ablyChannelRef.current.unsubscribe("nearby-alert", nearbyAlertHandlerRef.current);
-        } else {
-          ablyChannelRef.current.unsubscribe();
-        }
-        ablyChannelRef.current = null;
-      }
-      // Do not close shared client here; other screens reuse it.
-      ablyClientRef.current = null;
-      nearbyAlertHandlerRef.current = null;
-      notifiedUidsRef.current = new Set();
-    } catch (e) {
-      console.warn("SettingsScreen - Ably unsubscribe error:", e.message);
-    }
-  };
-
-  // Add a UID to the ignore list
+  // Connect → Who's Nearby menu can deep-link into location modals (share live toggles on Connect).
   const ignoreNearbyUser = async (uid) => {
     if (!uid) return;
     const next = new Set(ignoredNearbyRef.current);
@@ -815,35 +670,17 @@ export default function SettingsScreen() {
     } catch (_) {}
   };
 
-  // Persist updated nearby share/receive settings — also pushes to DB immediately
-  // so the server-side consent check always reflects the latest preference.
-  const updateNearbySettings = async (newSettings) => {
-    nearbySettingsRef.current = newSettings;
-    setNearbySettings(newSettings);
-    try {
-      await AsyncStorage.setItem(NEARBY_SETTINGS_KEY, JSON.stringify(newSettings));
-    } catch (_) {}
-
-    // Push to backend (prefs-only PATCH — no lat/lng required)
-    try {
-      const { NEARBY_LOCATION_ENDPOINT } = require("../apiConfig");
-      const uid = await AsyncStorage.getItem("profile_uid");
-      if (uid) {
-        await fetch(NEARBY_LOCATION_ENDPOINT, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            profile_uid: uid,
-            share_with: newSettings.shareWith,
-            share_with_types: Object.keys(newSettings.shareWithTypes).filter((k) => newSettings.shareWithTypes[k]),
-            receive_from: newSettings.receiveFrom,
-            receive_from_types: Object.keys(newSettings.receiveFromTypes).filter((k) => newSettings.receiveFromTypes[k]),
-            // no lat/lng → prefs-only update
-          }),
-        });
-      }
-    } catch (_) {}
-  };
+  // Connect → Who's Nearby menu can deep-link into location modals (share live toggles on Connect).
+  useFocusEffect(
+    useCallback(() => {
+      const action = route.params?.locationAction;
+      if (!action) return;
+      setShowSettings(true);
+      if (action === "updateLocation") setLocationPickerVisible(true);
+      else if (action === "locationPrivacy") setNearbyPrivacyModalVisible(true);
+      navigation.setParams({ locationAction: undefined });
+    }, [route.params?.locationAction, navigation]),
+  );
 
   const updateMessagesSettings = async (newSettings) => {
     setMessagesSettings(newSettings);
@@ -887,160 +724,7 @@ export default function SettingsScreen() {
     }
   };
 
-  // Stop live sharing (manual off, auto-off, or logout)
-  const stopLiveLocationSharing = async () => {
-    if (locationWatcherRef.current) {
-      try {
-        locationWatcherRef.current.remove();
-      } catch (_) {}
-      locationWatcherRef.current = null;
-    }
-    if (autoOffTimerRef.current) {
-      clearTimeout(autoOffTimerRef.current);
-      autoOffTimerRef.current = null;
-    }
-    unsubscribeAblyNearby();
-    await AsyncStorage.removeItem("shareLiveLocationUntil");
-    // Auto-cleanup of ignore list disabled — ignored users persist across sessions
-    // await AsyncStorage.removeItem(NEARBY_IGNORED_KEY);
-    // ignoredNearbyRef.current = new Set();
-    setShareLocationActive(false);
-    setShareLocationUntil(null);
-    setNearbyAlert(null);
-  };
-
-  // Start the expo-location watcher (used by both fresh start and mount restore)
-  const startWatcher = async (expiresAt) => {
-    const sub = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.Balanced,
-        distanceInterval: SHARE_LOCATION_DISTANCE_METERS,
-      },
-      async (loc) => {
-        const now = Date.now();
-        // Check if session has expired (read AsyncStorage to avoid stale closure)
-        const storedUntil = await AsyncStorage.getItem("shareLiveLocationUntil");
-        if (!storedUntil || now > parseInt(storedUntil, 10)) {
-          stopLiveLocationSharing();
-          return;
-        }
-        // Throttle: skip if last patch was too recent
-        if (now - lastPatchedAtRef.current < SHARE_LOCATION_MIN_PATCH_MINS * 60 * 1000) return;
-        const profileId = await AsyncStorage.getItem("profile_uid");
-        if (profileId) {
-          await patchNearbyLocation(profileId, loc.coords.latitude, loc.coords.longitude, true);
-        }
-      },
-    );
-    locationWatcherRef.current = sub;
-
-    // Schedule auto-off at the exact expiry time
-    const timeLeft = expiresAt - Date.now();
-    if (timeLeft > 0) {
-      autoOffTimerRef.current = setTimeout(stopLiveLocationSharing, timeLeft);
-    }
-  };
-
-  // Toggle ON handler — requests permission, sets expiry, patches immediately, starts watcher
-  const startLiveLocationSharing = async () => {
-    // Request permission (native only; web uses navigator.geolocation which needs no explicit request)
-    if (!isWeb) {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission Denied", "Location permission is required to share live location.");
-        return;
-      }
-    } else if (!navigator.geolocation) {
-      Alert.alert("Unavailable", "Geolocation is not supported in this browser.");
-      return;
-    }
-
-    const profileId = await AsyncStorage.getItem("profile_uid");
-    if (!profileId) {
-      Alert.alert("Error", "No profile found. Please log in again.");
-      return;
-    }
-
-    const expiresAt = Date.now() + SHARE_LOCATION_DURATION_HOURS * 60 * 60 * 1000;
-    await AsyncStorage.setItem("shareLiveLocationUntil", String(expiresAt));
-    setShareLocationActive(true);
-    setShareLocationUntil(new Date(expiresAt));
-
-    // Subscribe to Ably to receive nearby-alert messages
-    await subscribeAblyNearby(profileId);
-
-    // Patch the current position immediately so nearby users see you right away
-    try {
-      let lat, lng;
-      if (isWeb) {
-        await new Promise((resolve, reject) =>
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              lat = pos.coords.latitude;
-              lng = pos.coords.longitude;
-              resolve();
-            },
-            reject,
-            { timeout: 10000 },
-          ),
-        );
-      } else {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        lat = loc.coords.latitude;
-        lng = loc.coords.longitude;
-      }
-      await patchNearbyLocation(profileId, lat, lng, true);
-    } catch (e) {
-      // Location ON + permission granted still fails when there is no fix yet (common on emulator
-      // without a mock location, indoors, or slow GPS). Retry with lowest accuracy; watcher may fix later.
-      if (!isWeb) {
-        try {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Lowest,
-            maximumAge: 120000,
-          });
-          await patchNearbyLocation(profileId, loc.coords.latitude, loc.coords.longitude, true);
-        } catch (e2) {
-          const msg = (e2 && e2.message) || (e && e.message) || String(e2 || e);
-          console.warn(
-            "[Live location] No immediate GPS fix. Services can be ON and this still happens on emulators without a mock location, or before the first satellite/network fix. Watcher will keep trying.",
-            msg,
-          );
-        }
-      } else {
-        console.warn("[Live location] Initial browser position failed:", e?.message || e);
-      }
-    }
-
-    await startWatcher(expiresAt);
-  };
-
   // --- Nearby POC handlers ---
-
-  const updateLocation = async (option) => {
-    const profileId = await AsyncStorage.getItem("profile_uid");
-    if (!profileId) {
-      Alert.alert("Error", "No profile found. Please log in again.");
-      return;
-    }
-
-    setLocationUpdating(option.name);
-    try {
-      const { lat, lng } = await resolveLocationOptionCoords(option);
-      const success = await patchNearbyLocation(profileId, lat, lng, true);
-      if (success) {
-        setLocationPickerVisible(false);
-      } else {
-        Alert.alert("Error", "Failed to update location.");
-      }
-    } catch (err) {
-      console.error("updateLocation error:", err);
-      const msg = err?.message === "Location permission denied" ? "Location permission is required to use Live GPS." : "Could not update location. Please try again.";
-      Alert.alert("Error", msg);
-    } finally {
-      setLocationUpdating(null);
-    }
-  };
 
   const patchHomeAddressCoordinates = async (profileId, lat, lng) => {
     try {
@@ -1079,7 +763,7 @@ export default function SettingsScreen() {
 
     setHomeAddressUpdating(option.name);
     try {
-      const { lat, lng } = await resolveLocationOptionCoords(option);
+      const { lat, lng } = await resolveNearbyLocationOptionCoords(option);
       const success = await patchHomeAddressCoordinates(profileId, lat, lng);
       if (success) {
         setHomeAddressPickerVisible(false);
@@ -1535,27 +1219,18 @@ export default function SettingsScreen() {
               </View>
 
               {/* Location Privacy — opens modal */}
-              {(() => {
-                const PRIVACY_LABEL = { everyone: "Everyone", all_circles: "All Circles", specific: "Specific" };
-                const shareLabel = PRIVACY_LABEL[nearbySettings.shareWith] || nearbySettings.shareWith;
-                const receiveLabel = PRIVACY_LABEL[nearbySettings.receiveFrom] || nearbySettings.receiveFrom;
-                return (
-                  <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setNearbyPrivacyModalVisible(true)} activeOpacity={0.8}>
-                    <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                      <Ionicons name='shield-checkmark' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                      <View>
-                        <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                          <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Location Privacy</Text>
-                        </Text>
-                        <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                          Share: {shareLabel} · Receive: {receiveLabel}
-                        </Text>
-                      </View>
-                    </View>
-                    <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
-                  </TouchableOpacity>
-                );
-              })()}
+              <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setNearbyPrivacyModalVisible(true)} activeOpacity={0.8}>
+                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                  <Ionicons name='shield-checkmark' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                  <View>
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Location Privacy</Text>
+                    </Text>
+                    <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>{formatNearbyPrivacySummary(nearbySettings)}</Text>
+                  </View>
+                </View>
+                <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
+              </TouchableOpacity>
 
               <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setLocationPickerVisible(true)} activeOpacity={0.8}>
                 <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
@@ -2194,33 +1869,7 @@ export default function SettingsScreen() {
       </SafeAreaView>
 
       {/* Nearby location picker modal */}
-      <Modal visible={locationPickerVisible} transparent={true} animationType='slide' onRequestClose={() => setLocationPickerVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox]}>
-            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Choose Nearby Location</Text>
-            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>
-              Updates your temporary nearby location (expires in 1 hour).{"\n"}A &amp; B: SF (nearby) · C: SF ~5 mi · D: San Diego · E: Austin · F: Toronto
-            </Text>
-
-            {LOCATION_PICKER_OPTIONS.map((option) => (
-              <TouchableOpacity
-                key={option.name}
-                style={[styles.locationOptionRow, darkMode && styles.darkLocationOptionRow]}
-                onPress={() => updateLocation(option)}
-                disabled={locationUpdating !== null}
-              >
-                <MaterialIcons name={option.name === "Live GPS" ? "gps-fixed" : "location-on"} size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
-                <Text style={[styles.locationOptionText, darkMode && styles.darkItemText]}>{option.name}</Text>
-                {locationUpdating === option.name && <ActivityIndicator size='small' color={COLORS.primary} style={{ marginLeft: "auto" }} />}
-              </TouchableOpacity>
-            ))}
-
-            <TouchableOpacity onPress={() => setLocationPickerVisible(false)} style={[styles.closeModalButton, { marginTop: 16, alignSelf: "stretch" }]} disabled={locationUpdating !== null}>
-              <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <NearbyLocationPickerModal visible={locationPickerVisible} onClose={() => setLocationPickerVisible(false)} darkMode={darkMode} />
 
       {/* Offering moderation review modal */}
       <Modal visible={offeringReviewModalVisible} transparent animationType='slide' onRequestClose={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}>
@@ -2447,7 +2096,7 @@ export default function SettingsScreen() {
               Saves permanent profile coordinates used for search and distance.{"\n"}Separate from nearby live location sharing.
             </Text>
 
-            {LOCATION_PICKER_OPTIONS.map((option) => (
+            {NEARBY_LOCATION_PICKER_OPTIONS.map((option) => (
               <TouchableOpacity
                 key={`home-${option.name}`}
                 style={[styles.locationOptionRow, darkMode && styles.darkLocationOptionRow]}
@@ -2468,93 +2117,7 @@ export default function SettingsScreen() {
       </Modal>
 
       {/* Location Privacy Modal */}
-      <Modal visible={nearbyPrivacyModalVisible} transparent={true} animationType='slide' onRequestClose={() => setNearbyPrivacyModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox]}>
-            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Location Privacy</Text>
-            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>Control who can see your location and who you get notified about.</Text>
-
-            {/* ── SHARE MY LOCATION WITH ── */}
-            <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText, { marginTop: 8 }]}>Share My Location With</Text>
-            {[
-              { key: "everyone", label: "Everyone (all app users)" },
-              { key: "all_circles", label: "All Circle Members" },
-              { key: "specific", label: "Specific Circles" },
-            ].map(({ key, label }) => (
-              <TouchableOpacity key={key} style={styles.nearbyPrivacyOptionRow} onPress={() => updateNearbySettings({ ...nearbySettings, shareWith: key })} activeOpacity={0.7}>
-                <Ionicons name={nearbySettings.shareWith === key ? "radio-button-on" : "radio-button-off"} size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
-                <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
-              </TouchableOpacity>
-            ))}
-            {nearbySettings.shareWith === "specific" && (
-              <View style={styles.nearbyPrivacyCheckboxGroup}>
-                {[
-                  { key: "friends", label: "Friends" },
-                  { key: "colleagues", label: "Colleagues" },
-                  { key: "family", label: "Family" },
-                ].map(({ key, label }) => (
-                  <TouchableOpacity
-                    key={key}
-                    style={styles.nearbyPrivacyCheckboxRow}
-                    onPress={() =>
-                      updateNearbySettings({
-                        ...nearbySettings,
-                        shareWithTypes: { ...nearbySettings.shareWithTypes, [key]: !nearbySettings.shareWithTypes[key] },
-                      })
-                    }
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name={nearbySettings.shareWithTypes[key] ? "checkbox" : "square-outline"} size={17} color={COLORS.primary} style={{ marginRight: 10 }} />
-                    <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {/* ── RECEIVE NOTIFICATIONS FROM ── */}
-            <View style={[styles.nearbyPrivacyDivider, darkMode && { borderBottomColor: "#555" }]} />
-            <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText]}>Receive Notifications From</Text>
-            {[
-              { key: "everyone", label: "Everyone (all app users)" },
-              { key: "all_circles", label: "All Circle Members" },
-              { key: "specific", label: "Specific Circles" },
-            ].map(({ key, label }) => (
-              <TouchableOpacity key={key} style={styles.nearbyPrivacyOptionRow} onPress={() => updateNearbySettings({ ...nearbySettings, receiveFrom: key })} activeOpacity={0.7}>
-                <Ionicons name={nearbySettings.receiveFrom === key ? "radio-button-on" : "radio-button-off"} size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
-                <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
-              </TouchableOpacity>
-            ))}
-            {nearbySettings.receiveFrom === "specific" && (
-              <View style={styles.nearbyPrivacyCheckboxGroup}>
-                {[
-                  { key: "friends", label: "Friends" },
-                  { key: "colleagues", label: "Colleagues" },
-                  { key: "family", label: "Family" },
-                ].map(({ key, label }) => (
-                  <TouchableOpacity
-                    key={key}
-                    style={styles.nearbyPrivacyCheckboxRow}
-                    onPress={() =>
-                      updateNearbySettings({
-                        ...nearbySettings,
-                        receiveFromTypes: { ...nearbySettings.receiveFromTypes, [key]: !nearbySettings.receiveFromTypes[key] },
-                      })
-                    }
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name={nearbySettings.receiveFromTypes[key] ? "checkbox" : "square-outline"} size={17} color={COLORS.primary} style={{ marginRight: 10 }} />
-                    <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            <TouchableOpacity onPress={() => setNearbyPrivacyModalVisible(false)} style={[styles.closeModalButton, { marginTop: 20, alignSelf: "stretch" }]}>
-              <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <NearbyLocationPrivacyModal visible={nearbyPrivacyModalVisible} onClose={() => setNearbyPrivacyModalVisible(false)} darkMode={darkMode} />
 
       {/* Messages Privacy Modal */}
       <Modal visible={messagesPrivacyModalVisible} transparent={true} animationType='slide' onRequestClose={() => setMessagesPrivacyModalVisible(false)}>

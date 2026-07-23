@@ -30,7 +30,22 @@ import { miniCardUserFromSession, messagesOffFromSession } from "../utils/connec
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import NearbyPeopleMapView from "../components/NearbyPeopleMapView";
+import NearbyLocationPrivacyModal from "../components/NearbyLocationPrivacyModal";
+import NearbyLocationPickerModal from "../components/NearbyLocationPickerModal";
 import { isNearbySharingActive } from "../utils/nearbySharing";
+import {
+  startLiveLocationSharing,
+  stopLiveLocationSharing,
+  subscribeLiveLocationSharingStatus,
+  getLiveLocationSharingStatus,
+} from "../utils/liveLocationSharing";
+import {
+  DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS,
+  loadNearbySettings,
+  subscribeNearbySettings,
+  formatNearbyPrivacySummary,
+} from "../utils/nearbySettings";
+import { subscribeStoredNearbyCoords, formatStoredNearbyCoordsSummary } from "../utils/nearbyLocationUpdate";
 import { nearbyPeopleToMapMarkers } from "../utils/nearbyPeopleToMapMarkers";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
@@ -518,6 +533,8 @@ function formatAsyncStorageDisplayValue(raw) {
   }
 }
 
+const NEARBY_LOCATION_EXPIRED_MSG = "Your location has expired. Use the menu above to update your nearby location.";
+
 const ConnectScreen = ({ navigation }) => {
   const route = useRoute();
   const { darkMode } = useDarkMode();
@@ -598,6 +615,11 @@ const ConnectScreen = ({ navigation }) => {
   const rowMenuButtonRefs = useRef({});
 
   const [showNearby, setShowNearby] = useState(false);
+  const [showNearbyMenu, setShowNearbyMenu] = useState(false);
+  const [showNearbyPrivacyModal, setShowNearbyPrivacyModal] = useState(false);
+  const [showNearbyLocationPickerModal, setShowNearbyLocationPickerModal] = useState(false);
+  const [storedNearbyCoords, setStoredNearbyCoords] = useState({ lat: null, lng: null, updatedAt: null });
+  const [nearbySettings, setNearbySettings] = useState(INITIAL_NEARBY_SETTINGS);
   const [nearbyUsers, setNearbyUsers] = useState([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState(null);
@@ -607,6 +629,8 @@ const ConnectScreen = ({ navigation }) => {
   const [nearbyRadiusMiles, setNearbyRadiusMiles] = useState(null);
   const [nearbySearchQuery, setNearbySearchQuery] = useState("");
   const nearbyRadiusMilesRef = useRef(null);
+  const showNearbyRef = useRef(false);
+  const fetchNearbyUsersRef = useRef(async () => {});
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
   // Who Viewed My Profile
@@ -2243,23 +2267,31 @@ const ConnectScreen = ({ navigation }) => {
   };
 
   const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
-  const NEARBY_SETTINGS_KEY = "nearby_share_settings";
 
-  const fetchNearbyUsers = async (radiusMiles) => {
+  const showNearbyExpiredState = useCallback(() => {
+    setNearbyError(NEARBY_LOCATION_EXPIRED_MSG);
+    setNearbyUsers([]);
+    setMyNearbyLocation(null);
+    setNearbyLoading(false);
+  }, []);
+
+  const fetchNearbyUsers = useCallback(async (radiusMiles) => {
     const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
     if (!uid) return;
 
     const sharingActive = await isNearbySharingActive();
     setNearbySharingActive(sharingActive);
 
+    if (!sharingActive) {
+      if (radiusMiles == null) showNearbyExpiredState();
+      return;
+    }
+
     // Reuse the same privacy settings that SettingsScreen persists
     let mode = "all_circles";
     try {
-      const raw = await AsyncStorage.getItem(NEARBY_SETTINGS_KEY);
-      if (raw) {
-        const s = JSON.parse(raw);
-        mode = s.receiveFrom || "all_circles";
-      }
+      const s = await loadNearbySettings();
+      mode = s.receiveFrom || "all_circles";
     } catch (_) {}
 
     // Load ignored UIDs from storage
@@ -2295,7 +2327,7 @@ const ConnectScreen = ({ navigation }) => {
           setMyNearbyLocation({ lat: viewer.lat, lng: viewer.lng });
         }
       } else if (json.code === 410) {
-        if (!isRadiusRefresh) setNearbyError("Your location has expired. Update it in Settings to see who's nearby.");
+        if (!isRadiusRefresh) setNearbyError(NEARBY_LOCATION_EXPIRED_MSG);
       } else {
         if (!isRadiusRefresh) setNearbyError(json.message || "Could not fetch nearby users.");
       }
@@ -2303,7 +2335,36 @@ const ConnectScreen = ({ navigation }) => {
       if (!isRadiusRefresh) setNearbyError("Network error. Please try again.");
     }
     if (!isRadiusRefresh) setNearbyLoading(false);
-  };
+  }, [profileUid, showNearbyExpiredState]);
+
+  useEffect(() => {
+    fetchNearbyUsersRef.current = fetchNearbyUsers;
+  }, [fetchNearbyUsers]);
+
+  useEffect(() => {
+    showNearbyRef.current = showNearby;
+  }, [showNearby]);
+
+  useEffect(() => {
+    return subscribeNearbySettings(setNearbySettings);
+  }, []);
+
+  useEffect(() => {
+    return subscribeStoredNearbyCoords(setStoredNearbyCoords);
+  }, []);
+
+  useEffect(() => {
+    return subscribeLiveLocationSharingStatus(({ active }) => {
+      setNearbySharingActive(active);
+      if (!showNearbyRef.current) return;
+      if (active) {
+        setNearbyError(null);
+        void fetchNearbyUsersRef.current(nearbyRadiusMilesRef.current);
+      } else {
+        showNearbyExpiredState();
+      }
+    });
+  }, [showNearbyExpiredState]);
 
   const ignoreNearbyUser = async (uid) => {
     const next = new Set(ignoredNearbyUids);
@@ -2321,6 +2382,15 @@ const ConnectScreen = ({ navigation }) => {
     try {
       await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
     } catch (_) {}
+  };
+
+  const toggleShareLiveLocation = async () => {
+    setShowNearbyMenu(false);
+    if (nearbySharingActive) {
+      await stopLiveLocationSharing();
+    } else {
+      await startLiveLocationSharing();
+    }
   };
 
   const fetchConversations = useCallback(async () => {
@@ -2376,6 +2446,11 @@ const ConnectScreen = ({ navigation }) => {
       if (!isRetry) setTimeout(() => fetchBlockedUsers(true), 1500);
     }
   }, [profileUid]);
+
+  const fetchConversationsRef = useRef(fetchConversations);
+  const fetchBlockedUsersRef = useRef(fetchBlockedUsers);
+  fetchConversationsRef.current = fetchConversations;
+  fetchBlockedUsersRef.current = fetchBlockedUsers;
 
   const toggleMessagesOff = async () => {
     const uid = await resolveMyUid();
@@ -2433,22 +2508,26 @@ const ConnectScreen = ({ navigation }) => {
   useFocusEffect(
     useCallback(() => {
       if (showMessages) {
-        fetchConversations();
+        fetchConversationsRef.current();
         clearUnread();
       }
       // Always keep block/mute status current on focus (not gated on the accordion being open),
       // so the "Blocked" badge is correct as soon as Messages is expanded — no stale state after
       // a refresh, sign-out/sign-in, or navigating back from elsewhere in the app.
-      fetchBlockedUsers();
-    }, [showMessages, fetchConversations, fetchBlockedUsers, clearUnread]),
+      // Refs avoid re-running this effect when profileUid hydrates (which recreates the fetch callbacks).
+      fetchBlockedUsersRef.current();
+    }, [showMessages, clearUnread]),
   );
 
   useFocusEffect(
     useCallback(() => {
-      if (showNearby) {
-        fetchNearbyUsers(nearbyRadiusMilesRef.current);
-      }
-    }, [showNearby]),
+      void getLiveLocationSharingStatus().then(({ active }) => {
+        setNearbySharingActive(active);
+        if (!showNearby) return;
+        if (active) void fetchNearbyUsers(nearbyRadiusMilesRef.current);
+        else showNearbyExpiredState();
+      });
+    }, [showNearby, showNearbyExpiredState, fetchNearbyUsers]),
   );
 
   const _convRelTime = (iso) => {
@@ -2910,18 +2989,68 @@ const ConnectScreen = ({ navigation }) => {
             );
           })()}
           {/* ── Who's Nearby Accordion ───────────────────────────────── */}
-          <TouchableOpacity
-            style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8 }]}
-            onPress={() => {
-              const willExpand = !showNearby;
-              setShowNearby(willExpand);
-              if (willExpand) fetchNearbyUsers(nearbyRadiusMilesRef.current);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Who's Nearby?</Text>
-            <Ionicons name={showNearby ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
-          </TouchableOpacity>
+          <View style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8, flexDirection: "row" }]}>
+            <TouchableOpacity
+              style={{ flex: 1, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+              onPress={() => {
+                const willExpand = !showNearby;
+                setShowNearby(willExpand);
+                if (willExpand) {
+                  fetchNearbyUsers(nearbyRadiusMilesRef.current);
+                } else {
+                  setShowNearbyMenu(false);
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Who's Nearby?</Text>
+              <Ionicons name={showNearby ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+            </TouchableOpacity>
+            {showNearby && (
+              <TouchableOpacity
+                onPress={() => setShowNearbyMenu((p) => !p)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ marginLeft: 10, justifyContent: "center" }}
+                accessibilityLabel='Nearby location options'
+              >
+                <Ionicons name='ellipsis-vertical' size={20} color={darkMode ? "#e0e0e0" : "#333"} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {showNearby && showNearbyMenu && (
+            <View style={[styles.viewersDropdownMenu, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444" }]}>
+              <TouchableOpacity style={styles.viewersDropdownItem} onPress={toggleShareLiveLocation}>
+                <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>
+                  {nearbySharingActive ? "Turn off share live location" : "Turn on share live location (Share for 1hr)"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.viewersDropdownItem}
+                onPress={() => {
+                  setShowNearbyMenu(false);
+                  setShowNearbyLocationPickerModal(true);
+                }}
+              >
+                <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>Update nearby location</Text>
+                <Text style={[styles.viewersDropdownItemSubtext, darkMode && styles.viewersDropdownItemSubtextDark]}>
+                  {formatStoredNearbyCoordsSummary(storedNearbyCoords)}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.viewersDropdownItem}
+                onPress={() => {
+                  setShowNearbyMenu(false);
+                  setShowNearbyPrivacyModal(true);
+                }}
+              >
+                <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>Location privacy</Text>
+                <Text style={[styles.viewersDropdownItemSubtext, darkMode && styles.viewersDropdownItemSubtextDark]}>
+                  {formatNearbyPrivacySummary(nearbySettings)}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {showNearby && (
             <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
@@ -3579,6 +3708,25 @@ const ConnectScreen = ({ navigation }) => {
       {showBlockedManager && (
         <BlockedPeopleModal visible blockedList={blockedList} onUnblock={toggleBlock} onClose={() => setShowBlockedManager(false)} darkMode={darkMode} />
       )}
+      <NearbyLocationPrivacyModal
+        visible={showNearbyPrivacyModal}
+        onClose={() => setShowNearbyPrivacyModal(false)}
+        darkMode={darkMode}
+        onSettingsChange={() => {
+          if (showNearby && nearbySharingActive) void fetchNearbyUsers(nearbyRadiusMilesRef.current);
+        }}
+      />
+      <NearbyLocationPickerModal
+        visible={showNearbyLocationPickerModal}
+        onClose={() => setShowNearbyLocationPickerModal(false)}
+        darkMode={darkMode}
+        onLocationUpdated={(coords) => {
+          if (coords?.lat != null && coords?.lng != null) {
+            setMyNearbyLocation({ lat: coords.lat, lng: coords.lng });
+          }
+          if (showNearby) void fetchNearbyUsers(nearbyRadiusMilesRef.current);
+        }}
+      />
       {openRowMenuUid != null &&
         (() => {
           const conv = conversations.find((c) => c.other_uid === openRowMenuUid);
@@ -3729,6 +3877,8 @@ const styles = StyleSheet.create({
     borderBottomColor: "#f0f0f0",
   },
   viewersDropdownItemText: { fontSize: 14, color: "#333" },
+  viewersDropdownItemSubtext: { fontSize: 12, color: "#666", marginTop: 2 },
+  viewersDropdownItemSubtextDark: { color: "#aaa" },
   viewersDropdownItemActive: { color: "#AF52DE", fontWeight: "600" },
   viewedTimestamp: { fontSize: 11, color: "#999", paddingHorizontal: 12, paddingBottom: 6 },
   messagesEmpty: { alignItems: "center", paddingVertical: 28 },
