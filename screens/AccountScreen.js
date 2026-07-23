@@ -115,7 +115,7 @@ function navigateToPurchaseSeller(navigation, transaction) {
  * - Top-level bounty shape: data[] + total_bounties + total_bounty_earned + wallet (purchases may be in purchases / purchase_transactions)
  * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → treat as no seller lines)
  * - data.profile | user_profile: optional { user_email, personal_info, expertise_info } for MiniCard + expertise list
- * - order_list_hydration: map order_uid -> trimmed GET /orders/:uid payload (list chips; avoids N order GETs on load)
+ * - order_list_hydration: map order_uid -> trimmed order payload (list chips; replaces N order GETs on load)
  */
 /** Backend may send numeric or string success codes (e.g. 200 vs "200"). */
 function isApiSuccessCode(code) {
@@ -858,7 +858,7 @@ function mapAccountScreenPersonalResponse(json, options = {}) {
  * - data.seller_transactions | transactions_seller: seller line rows OR { code, data } (same as legacy /transactions/seller/:id)
  * - data.business | business_profile | profile (optional): same field names as GET /api/v1/businessinfo/:uid `business` object for MiniCard
  * - data.services | business_services | business_info.services: product catalog for Product Inventory
- * - order_list_hydration: map order_uid -> trimmed GET /orders/:uid payload (seller shipping/received chips)
+ * - order_list_hydration: map order_uid -> trimmed order payload (seller shipping/received chips)
  */
 /** Seller line is a business product sale (API uses purchase_type and/or bs_uid 250-*, not always ti_bs_id on the line). */
 function isBusinessProductSellerLine(item) {
@@ -1672,7 +1672,7 @@ function rowMatchesReturnStatusKeys(row, statusKeys, { scopeTrrUid = null, scope
   return statusKeys.includes(uid) || statusKeys.includes(orderUid) || (originalUid && statusKeys.includes(originalUid)) || rowTrrs.some((id) => statusKeys.includes(id));
 }
 
-/** Order UIDs that need return/refund chip hydration from GET /orders/:uid (buyer PURCHASES). */
+/** Order UIDs that need return/refund chip hydration from order_list_hydration (buyer PURCHASES). */
 function collectOrderUidsNeedingReturnStatusHydration(purchaseRows) {
   const uids = new Set();
   if (!Array.isArray(purchaseRows)) return [];
@@ -1695,7 +1695,7 @@ function collectOrderUidsNeedingReturnStatusHydration(purchaseRows) {
   return [...uids];
 }
 
-/** Personal PURCHASES: one GET /orders/:uid per order (return chips + shipping progress). */
+/** Personal PURCHASES: order UIDs needing order_list_hydration (return chips + shipping progress). */
 function collectOrderUidsNeedingPersonalPurchaseHydration(purchaseRows) {
   return [
     ...new Set([
@@ -1705,14 +1705,14 @@ function collectOrderUidsNeedingPersonalPurchaseHydration(purchaseRows) {
   ];
 }
 
-/** Top-level map from GET account-screen/personal|business (same shape as trimmed GET /orders/:uid). */
+/** Top-level map from GET account-screen/personal|business. */
 function extractOrderListHydrationMap(json) {
   const root = json && typeof json === "object" ? json : {};
   const map = root.order_list_hydration;
   return map && typeof map === "object" && !Array.isArray(map) ? map : null;
 }
 
-/** account-screen order_list_hydration entries use the same field names as GET /orders/:uid. */
+/** order_list_hydration entries use the same field names as order detail (sale, returns, pending_returns, …). */
 function normalizeListHydrationAsOrderDetail(entry, orderUid) {
   if (!entry || typeof entry !== "object") return null;
   const normalized = { ...entry };
@@ -1738,9 +1738,7 @@ function foldPersonalPurchaseHydrationResults(results) {
   const itemHydrationByOrderUid = {};
   const statusPatch = {};
   const hydratedShipping = {};
-  for (const result of results) {
-    if (result.status !== "fulfilled") continue;
-    const { orderUid, orderDetail, hydrated, itemHydration, progress } = result.value;
+  for (const { orderUid, orderDetail, hydrated, itemHydration, progress } of results) {
     if (itemHydration) itemHydrationByOrderUid[orderUid] = itemHydration;
     if (hydrated) {
       stateByOrderUid[orderUid] = hydrated;
@@ -1820,9 +1818,7 @@ function buildBusinessSellerHydrationResult(orderUid, orderDetail) {
 function foldBusinessSellerHydrationResults(results) {
   const hydratedShipping = {};
   const hydratedReceivedByOrder = {};
-  for (const result of results) {
-    if (result.status !== "fulfilled") continue;
-    const { orderUid, orderDetail, progress, receivedSummary } = result.value;
+  for (const { orderUid, orderDetail, progress, receivedSummary } of results) {
     if (progress === "complete" || progress === "partial" || progress === "none") {
       hydratedShipping[orderUid] = progress;
       const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
@@ -1868,66 +1864,60 @@ function applyBusinessSellerHydrationPatches(sellerRows, folded) {
   });
 }
 
-/**
- * Prefer account-screen order_list_hydration; fall back to GET /orders/:uid per missing order (legacy — remove after verification).
- */
-async function hydratePersonalPurchasesForAccountLoad(purchaseRows, { profileId, listHydrationByOrderUid, debugHydration = false }) {
+/** Apply order_list_hydration from account-screen/personal to purchase list rows. */
+function hydratePersonalPurchasesFromListMap(purchaseRows, listHydrationByOrderUid, { debugHydration = false } = {}) {
   const orderUidsToHydrate = collectOrderUidsNeedingPersonalPurchaseHydration(purchaseRows);
   if (!orderUidsToHydrate.length) return null;
 
   const listHydration = listHydrationByOrderUid || {};
-  const fromListCount = orderUidsToHydrate.filter((uid) => listHydration[uid]).length;
-  const fromFetchCount = orderUidsToHydrate.length - fromListCount;
+  const missing = orderUidsToHydrate.filter((uid) => !listHydration[uid]);
   if (debugHydration) {
     console.log(
-      `[AccountScreen] purchase hydration: ${orderUidsToHydrate.length} orders (${fromListCount} order_list_hydration, ${fromFetchCount} GET /orders fallback)`,
+      `[AccountScreen] purchase hydration from order_list_hydration: ${orderUidsToHydrate.length - missing.length}/${orderUidsToHydrate.length}`,
       orderUidsToHydrate,
     );
+    if (missing.length) {
+      console.warn("[AccountScreen] purchase hydration missing order_list_hydration for:", missing);
+    }
   }
 
-  const results = await Promise.allSettled(
-    orderUidsToHydrate.map(async (orderUid) => {
-      const listEntry = listHydration[orderUid];
-      if (listEntry) {
-        const orderDetail = normalizeListHydrationAsOrderDetail(listEntry, orderUid);
-        return buildPersonalPurchaseHydrationResult(orderUid, orderDetail);
-      }
-      const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
-      return buildPersonalPurchaseHydrationResult(orderUid, orderDetail);
-    }),
-  );
-
-  const folded = foldPersonalPurchaseHydrationResults(results);
-  return { folded, failedCount: results.filter((r) => r.status === "rejected").length };
+  const results = [];
+  for (const orderUid of orderUidsToHydrate) {
+    const listEntry = listHydration[orderUid];
+    if (!listEntry) continue;
+    const orderDetail = normalizeListHydrationAsOrderDetail(listEntry, orderUid);
+    results.push(buildPersonalPurchaseHydrationResult(orderUid, orderDetail));
+  }
+  if (!results.length) return missing.length ? { folded: null, missingCount: missing.length } : null;
+  return { folded: foldPersonalPurchaseHydrationResults(results), missingCount: missing.length };
 }
 
-async function hydrateBusinessSellerRowsForAccountLoad(sellerRows, { businessUid, listHydrationByOrderUid, debugHydration = false }) {
+/** Apply order_list_hydration from account-screen/business to seller list rows. */
+function hydrateBusinessSellerFromListMap(sellerRows, listHydrationByOrderUid, { debugHydration = false } = {}) {
   const orderUidsToHydrate = [...new Set([...collectOrderUidsNeedingShippingProgressHydration(sellerRows), ...collectOrderUidsNeedingReceivedHydration(sellerRows)])];
   if (!orderUidsToHydrate.length) return null;
 
   const listHydration = listHydrationByOrderUid || {};
-  const fromListCount = orderUidsToHydrate.filter((uid) => listHydration[uid]).length;
-  const fromFetchCount = orderUidsToHydrate.length - fromListCount;
+  const missing = orderUidsToHydrate.filter((uid) => !listHydration[uid]);
   if (debugHydration) {
     console.log(
-      `[AccountScreen] business hydration: ${orderUidsToHydrate.length} orders (${fromListCount} order_list_hydration, ${fromFetchCount} GET /orders fallback)`,
+      `[AccountScreen] business hydration from order_list_hydration: ${orderUidsToHydrate.length - missing.length}/${orderUidsToHydrate.length}`,
       orderUidsToHydrate,
     );
+    if (missing.length) {
+      console.warn("[AccountScreen] business hydration missing order_list_hydration for:", missing);
+    }
   }
 
-  const results = await Promise.allSettled(
-    orderUidsToHydrate.map(async (orderUid) => {
-      const listEntry = listHydration[orderUid];
-      if (listEntry) {
-        const orderDetail = normalizeListHydrationAsOrderDetail(listEntry, orderUid);
-        return buildBusinessSellerHydrationResult(orderUid, orderDetail);
-      }
-      const orderDetail = await fetchOrderDetailApi(orderUid, { businessUid });
-      return buildBusinessSellerHydrationResult(orderUid, orderDetail);
-    }),
-  );
-
-  return { folded: foldBusinessSellerHydrationResults(results), failedCount: results.filter((r) => r.status === "rejected").length };
+  const results = [];
+  for (const orderUid of orderUidsToHydrate) {
+    const listEntry = listHydration[orderUid];
+    if (!listEntry) continue;
+    const orderDetail = normalizeListHydrationAsOrderDetail(listEntry, orderUid);
+    results.push(buildBusinessSellerHydrationResult(orderUid, orderDetail));
+  }
+  if (!results.length) return missing.length ? { folded: null, missingCount: missing.length } : null;
+  return { folded: foldBusinessSellerHydrationResults(results), missingCount: missing.length };
 }
 
 /**
@@ -1969,7 +1959,7 @@ function extractReturnRefundStateFromOrderDetail(orderDetail) {
   };
 }
 
-/** Sale/return line payloads from GET /orders/:uid for Purchases item-name resolution. */
+/** Sale/return line payloads from order detail / order_list_hydration for Purchases item-name resolution. */
 function extractReturnItemHydrationFromOrderDetail(orderDetail) {
   if (!orderDetail || typeof orderDetail !== "object") return null;
   const sale = orderDetail.sale || null;
@@ -7206,23 +7196,17 @@ export default function AccountScreen({ navigation, route }) {
         let normalizedPurchases = purchaseRows.map(normalizeListRowReturnRefundFields);
 
         const listHydrationByOrderUid = extractOrderListHydrationMap(json);
-        const orderUidsNeedingHydration = collectOrderUidsNeedingPersonalPurchaseHydration(normalizedPurchases);
-        if (orderUidsNeedingHydration.length) {
-          const hydrationOutcome = await hydratePersonalPurchasesForAccountLoad(normalizedPurchases, {
-            profileId,
-            listHydrationByOrderUid,
-            debugHydration: debugPurchases,
+        const hydrationOutcome = hydratePersonalPurchasesFromListMap(normalizedPurchases, listHydrationByOrderUid, {
+          debugHydration: debugPurchases,
+        });
+        if (hydrationOutcome?.folded) {
+          normalizedPurchases = await applyPersonalPurchaseHydrationPatches(normalizedPurchases, hydrationOutcome.folded, {
+            setReturnStatuses,
+            setOrderShippingProgressByKey,
           });
-          if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
-          if (hydrationOutcome?.folded) {
-            normalizedPurchases = await applyPersonalPurchaseHydrationPatches(normalizedPurchases, hydrationOutcome.folded, {
-              setReturnStatuses,
-              setOrderShippingProgressByKey,
-            });
-          }
-          if (debugPurchases && hydrationOutcome?.failedCount) {
-            console.warn(`[AccountScreen] purchase hydration: ${hydrationOutcome.failedCount} order(s) failed`);
-          }
+        }
+        if (debugPurchases && hydrationOutcome?.missingCount) {
+          console.warn(`[AccountScreen] purchase hydration: ${hydrationOutcome.missingCount} order(s) missing order_list_hydration`);
         }
 
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
@@ -7968,35 +7952,25 @@ export default function AccountScreen({ navigation, route }) {
       setOrderShippingProgressByKey({});
 
       const listHydrationByOrderUid = extractOrderListHydrationMap(json);
-      const orderUidsToHydrate = [...new Set([...collectOrderUidsNeedingShippingProgressHydration(sellerLines), ...collectOrderUidsNeedingReceivedHydration(sellerLines)])];
-      if (orderUidsToHydrate.length) {
-        void (async () => {
-          let debugHydration = false;
-          if (SHOW_NETWORK_DEBUG_UI !== 0) {
-            try {
-              const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
-              debugHydration = nd !== null && JSON.parse(nd) === true;
-            } catch (_) {}
-          }
-          const hydrationOutcome = await hydrateBusinessSellerRowsForAccountLoad(sellerLines, {
-            businessUid: targetBusinessUID,
-            listHydrationByOrderUid,
-            debugHydration,
-          });
-          if (!shouldApplyBusinessResponse()) return;
-          if (!hydrationOutcome?.folded) return;
-          const { hydratedShipping, hydratedReceivedByOrder } = hydrationOutcome.folded;
-          if (!Object.keys(hydratedShipping).length && !Object.keys(hydratedReceivedByOrder).length) {
-            return;
-          }
+      let debugHydration = false;
+      if (SHOW_NETWORK_DEBUG_UI !== 0) {
+        try {
+          const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+          debugHydration = nd !== null && JSON.parse(nd) === true;
+        } catch (_) {}
+      }
+      const hydrationOutcome = hydrateBusinessSellerFromListMap(sellerLines, listHydrationByOrderUid, { debugHydration });
+      if (hydrationOutcome?.folded) {
+        const { hydratedShipping, hydratedReceivedByOrder } = hydrationOutcome.folded;
+        if (Object.keys(hydratedShipping).length || Object.keys(hydratedReceivedByOrder).length) {
           if (Object.keys(hydratedShipping).length) {
             setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
           }
           setBusinessSellerTransactionList((prev) => applyBusinessSellerHydrationPatches(prev, hydrationOutcome.folded));
-          if (debugHydration && hydrationOutcome.failedCount) {
-            console.warn(`[AccountScreen] business hydration: ${hydrationOutcome.failedCount} order(s) failed`);
-          }
-        })();
+        }
+      }
+      if (debugHydration && hydrationOutcome?.missingCount) {
+        console.warn(`[AccountScreen] business hydration: ${hydrationOutcome.missingCount} order(s) missing order_list_hydration`);
       }
 
       const businessTransactions = sellerLines.filter(isBusinessProductSellerLine).filter((row) => !isReturnListRow(row));
