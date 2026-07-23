@@ -115,6 +115,7 @@ function navigateToPurchaseSeller(navigation, transaction) {
  * - Top-level bounty shape: data[] + total_bounties + total_bounty_earned + wallet (purchases may be in purchases / purchase_transactions)
  * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → treat as no seller lines)
  * - data.profile | user_profile: optional { user_email, personal_info, expertise_info } for MiniCard + expertise list
+ * - order_list_hydration: map order_uid -> trimmed GET /orders/:uid payload (list chips; avoids N order GETs on load)
  */
 /** Backend may send numeric or string success codes (e.g. 200 vs "200"). */
 function isApiSuccessCode(code) {
@@ -649,7 +650,54 @@ function formatWalletUsd(val) {
   return `$${parsePrice(val).toFixed(2)}`;
 }
 
-function mapAccountScreenPersonalResponse(json) {
+/** Settings Debug Mode: log account-screen/personal purchase extraction (txRaw + duplicate txn uids). */
+function summarizeAccountScreenPurchaseRow(row, index) {
+  if (!row || typeof row !== "object") return { index, row };
+  return {
+    index,
+    transaction_uid: row.transaction_uid ?? null,
+    trr_uid: row.trr_uid ?? row.pending_return?.trr_uid ?? null,
+    trr_transaction_uid: row.trr_transaction_uid ?? null,
+    transaction_original_uid: row.transaction_original_uid ?? null,
+    order_uid: row.order_uid ?? null,
+    resolved_order_uid: resolveListRowOrderUid(row),
+    is_return: row.is_return ?? null,
+    is_pending_return: row.is_pending_return ?? null,
+    transaction_type: row.transaction_type ?? null,
+    ti_uid: row.ti_uid ?? null,
+  };
+}
+
+function logAccountScreenPersonalPurchasesDebug({ source, purchasesRawKey, txRaw, transactions }) {
+  const rows = Array.isArray(transactions) ? transactions : [];
+  const uidCounts = {};
+  for (const row of rows) {
+    const uid = String(row?.transaction_uid || "").trim();
+    if (!uid) continue;
+    uidCounts[uid] = (uidCounts[uid] || 0) + 1;
+  }
+  const duplicateTransactionUids = Object.entries(uidCounts)
+    .filter(([, count]) => count > 1)
+    .map(([transaction_uid, count]) => ({ transaction_uid, count }));
+
+  console.log(
+    `[AccountScreen] Debug — account-screen/personal purchases (${source}):`,
+    JSON.stringify(
+      {
+        purchasesRawKey,
+        txRawType: txRaw == null ? "null" : Array.isArray(txRaw) ? "array" : typeof txRaw,
+        txRaw,
+        extractedCount: rows.length,
+        duplicateTransactionUids,
+        rowSummaries: rows.map(summarizeAccountScreenPurchaseRow),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+function mapAccountScreenPersonalResponse(json, options = {}) {
   const root = json && typeof json === "object" ? json : {};
 
   if (Array.isArray(root.data)) {
@@ -658,6 +706,15 @@ function mapAccountScreenPersonalResponse(json) {
     const hasBountyTotals = root.total_bounty_earned != null || root.total_bounties != null || walletEarly != null || bountyResultsBlock != null;
     if (hasBountyTotals) {
       const purchasesRaw = root.purchases ?? root.purchase_transactions ?? root.personal_transactions ?? root.buyer_transactions;
+      const purchasesRawKey = root.purchases != null
+        ? "root.purchases"
+        : root.purchase_transactions != null
+          ? "root.purchase_transactions"
+          : root.personal_transactions != null
+            ? "root.personal_transactions"
+            : root.buyer_transactions != null
+              ? "root.buyer_transactions"
+              : null;
       let sellerTransactions = [];
       const stRaw = root.seller_transactions ?? root.seller_tx;
       if (Array.isArray(stRaw)) {
@@ -671,8 +728,17 @@ function mapAccountScreenPersonalResponse(json) {
         total_bounties: root.total_bounties,
         wallet: root.wallet,
       };
+      const transactions = extractTransactionArray(purchasesRaw);
+      if (options.debug) {
+        logAccountScreenPersonalPurchasesDebug({
+          source: "root.data + bounty aggregate",
+          purchasesRawKey,
+          txRaw: purchasesRaw,
+          transactions,
+        });
+      }
       return {
-        transactions: extractTransactionArray(purchasesRaw),
+        transactions,
         bounty: normalizePersonalBounty(bountyRaw, root, root),
         wallet: extractPersonalWallet(root, root, bountyRaw),
         sellerTransactions,
@@ -702,18 +768,49 @@ function mapAccountScreenPersonalResponse(json) {
     payload.purchase ??
     payload.purchase_list ??
     root.purchases;
+  const purchasesRawKey = payload.transactions != null
+    ? "payload.transactions"
+    : payload.purchase_transactions != null
+      ? "payload.purchase_transactions"
+      : payload.personal_transactions != null
+        ? "payload.personal_transactions"
+        : payload.buyer_transactions != null
+          ? "payload.buyer_transactions"
+          : payload.transaction_list != null
+            ? "payload.transaction_list"
+            : payload.purchases != null
+              ? "payload.purchases"
+              : payload.purchase != null
+                ? "payload.purchase"
+                : payload.purchase_list != null
+                  ? "payload.purchase_list"
+                  : root.purchases != null
+                    ? "root.purchases"
+                    : null;
   transactions = extractTransactionArray(txRaw);
+  let transactionsSource = "txRaw";
   // Nested legacy shape: { message, code: 200, data: [ rows ] } embedded under payload
   if (!transactions.length && payload && typeof payload === "object") {
     const legacyBlock = payload.transactions_legacy ?? payload.transaction_payload ?? payload.transaction_response ?? payload.buyer_transaction_response;
     if (legacyBlock && isApiSuccessCode(legacyBlock.code) && Array.isArray(legacyBlock.data)) {
       transactions = legacyBlock.data;
+      transactionsSource = "legacyBlock.data";
     } else if (isApiSuccessCode(payload.code) && Array.isArray(payload.data)) {
       const sample = payload.data[0];
       if (sample && (sample.transaction_uid != null || sample.ti_uid != null)) {
         transactions = payload.data;
+        transactionsSource = "payload.data (buyer rows)";
       }
     }
+  }
+
+  if (options.debug) {
+    logAccountScreenPersonalPurchasesDebug({
+      source: transactionsSource === "txRaw" ? "payload/root purchases" : transactionsSource,
+      purchasesRawKey: transactionsSource === "txRaw" ? purchasesRawKey : transactionsSource,
+      txRaw: transactionsSource === "txRaw" ? txRaw : null,
+      transactions,
+    });
   }
 
   /** Legacy buyer rows use transaction_business_id; aggregate may only send seller_id. */
@@ -761,6 +858,7 @@ function mapAccountScreenPersonalResponse(json) {
  * - data.seller_transactions | transactions_seller: seller line rows OR { code, data } (same as legacy /transactions/seller/:id)
  * - data.business | business_profile | profile (optional): same field names as GET /api/v1/businessinfo/:uid `business` object for MiniCard
  * - data.services | business_services | business_info.services: product catalog for Product Inventory
+ * - order_list_hydration: map order_uid -> trimmed GET /orders/:uid payload (seller shipping/received chips)
  */
 /** Seller line is a business product sale (API uses purchase_type and/or bs_uid 250-*, not always ti_bs_id on the line). */
 function isBusinessProductSellerLine(item) {
@@ -1595,6 +1693,241 @@ function collectOrderUidsNeedingReturnStatusHydration(purchaseRows) {
     if (orderUid && orderUid !== "—") uids.add(orderUid);
   }
   return [...uids];
+}
+
+/** Personal PURCHASES: one GET /orders/:uid per order (return chips + shipping progress). */
+function collectOrderUidsNeedingPersonalPurchaseHydration(purchaseRows) {
+  return [
+    ...new Set([
+      ...collectOrderUidsNeedingReturnStatusHydration(purchaseRows),
+      ...collectOrderUidsNeedingShippingProgressHydration(purchaseRows),
+    ]),
+  ];
+}
+
+/** Top-level map from GET account-screen/personal|business (same shape as trimmed GET /orders/:uid). */
+function extractOrderListHydrationMap(json) {
+  const root = json && typeof json === "object" ? json : {};
+  const map = root.order_list_hydration;
+  return map && typeof map === "object" && !Array.isArray(map) ? map : null;
+}
+
+/** account-screen order_list_hydration entries use the same field names as GET /orders/:uid. */
+function normalizeListHydrationAsOrderDetail(entry, orderUid) {
+  if (!entry || typeof entry !== "object") return null;
+  const normalized = { ...entry };
+  if (!normalized.order_uid && orderUid) normalized.order_uid = orderUid;
+  if (normalized.sale == null && (normalized.transaction_uid || normalized.lines)) {
+    normalized.sale = normalized;
+  }
+  return normalized;
+}
+
+function buildPersonalPurchaseHydrationResult(orderUid, orderDetail) {
+  return {
+    orderUid,
+    orderDetail,
+    hydrated: extractReturnRefundStateFromOrderDetail(orderDetail),
+    itemHydration: extractReturnItemHydrationFromOrderDetail(orderDetail),
+    progress: getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean)),
+  };
+}
+
+function foldPersonalPurchaseHydrationResults(results) {
+  const stateByOrderUid = {};
+  const itemHydrationByOrderUid = {};
+  const statusPatch = {};
+  const hydratedShipping = {};
+  for (const result of results) {
+    if (result.status !== "fulfilled") continue;
+    const { orderUid, orderDetail, hydrated, itemHydration, progress } = result.value;
+    if (itemHydration) itemHydrationByOrderUid[orderUid] = itemHydration;
+    if (hydrated) {
+      stateByOrderUid[orderUid] = hydrated;
+      const payload = {
+        return_status: hydrated.return_status,
+        refund_status: hydrated.refund_status,
+        display_status: hydrated.display_status,
+      };
+      statusPatch[orderUid] = payload;
+      if (hydrated.saleTxnUid && hydrated.saleTxnUid !== orderUid) {
+        statusPatch[hydrated.saleTxnUid] = payload;
+      }
+      const completedPayload =
+        hydrated.refund_status === "stripe_fail"
+          ? payload
+          : {
+              return_status: "returned",
+              refund_status: "refunded",
+              display_status: "Returned - Refunded",
+            };
+      for (const returnTxnUid of hydrated.returnTxnUids || []) {
+        if (returnTxnUid && returnTxnUid !== orderUid && returnTxnUid !== hydrated.saleTxnUid) {
+          statusPatch[returnTxnUid] = completedPayload;
+        }
+      }
+    }
+    if (progress === "complete" || progress === "partial" || progress === "none") {
+      hydratedShipping[orderUid] = progress;
+      const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
+      if (txnUid) hydratedShipping[txnUid] = progress;
+    }
+  }
+  return { stateByOrderUid, itemHydrationByOrderUid, statusPatch, hydratedShipping };
+}
+
+async function applyPersonalPurchaseHydrationPatches(normalizedPurchases, folded, { setReturnStatuses, setOrderShippingProgressByKey }) {
+  let nextRows = normalizedPurchases;
+  const { stateByOrderUid, itemHydrationByOrderUid, statusPatch, hydratedShipping } = folded;
+  if (Object.keys(stateByOrderUid).length || Object.keys(itemHydrationByOrderUid).length) {
+    nextRows = applyHydratedReturnStateToPurchaseRows(nextRows, stateByOrderUid, itemHydrationByOrderUid);
+    if (Object.keys(statusPatch).length) {
+      setReturnStatuses((prev) => ({ ...prev, ...statusPatch }));
+      await Promise.all(Object.keys(statusPatch).map((key) => AsyncStorage.setItem(`return_status_${key}`, JSON.stringify(statusPatch[key]))));
+    }
+  }
+  if (Object.keys(hydratedShipping).length) {
+    setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
+    nextRows = nextRows.map((row) => {
+      if (isReturnListRow(row)) return row;
+      const orderUid = resolveListRowOrderUid(row);
+      const txnUid = String(row.transaction_uid || "").trim();
+      const progress = hydratedShipping[orderUid] || hydratedShipping[txnUid];
+      if (progress === "complete") {
+        return { ...row, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
+      }
+      if (progress === "partial") {
+        return { ...row, fulfillment_status: "partial", all_items_shipped: 0 };
+      }
+      if (progress === "none") {
+        return { ...row, fulfillment_status: "not_shipped", all_items_shipped: 0 };
+      }
+      return row;
+    });
+  }
+  return nextRows;
+}
+
+function buildBusinessSellerHydrationResult(orderUid, orderDetail) {
+  return {
+    orderUid,
+    orderDetail,
+    progress: getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean)),
+    receivedSummary: summarizeReceivedUnitsFromOrderDetail(orderDetail),
+  };
+}
+
+function foldBusinessSellerHydrationResults(results) {
+  const hydratedShipping = {};
+  const hydratedReceivedByOrder = {};
+  for (const result of results) {
+    if (result.status !== "fulfilled") continue;
+    const { orderUid, orderDetail, progress, receivedSummary } = result.value;
+    if (progress === "complete" || progress === "partial" || progress === "none") {
+      hydratedShipping[orderUid] = progress;
+      const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
+      if (txnUid) hydratedShipping[txnUid] = progress;
+    }
+    if (receivedSummary) {
+      hydratedReceivedByOrder[orderUid] = receivedSummary;
+      const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
+      if (txnUid) hydratedReceivedByOrder[txnUid] = receivedSummary;
+    }
+  }
+  return { hydratedShipping, hydratedReceivedByOrder };
+}
+
+function applyBusinessSellerHydrationPatches(sellerRows, folded) {
+  const { hydratedShipping, hydratedReceivedByOrder } = folded;
+  if (!Object.keys(hydratedShipping).length && !Object.keys(hydratedReceivedByOrder).length) {
+    return sellerRows;
+  }
+  return (sellerRows || []).map((row) => {
+    const orderUid = resolveListRowOrderUid(row);
+    const txnUid = String(row.transaction_uid || "").trim();
+    const progress = hydratedShipping[orderUid] || hydratedShipping[txnUid];
+    const receivedSummary = hydratedReceivedByOrder[orderUid] || hydratedReceivedByOrder[txnUid];
+    let next = row;
+    if (progress === "complete") {
+      next = { ...next, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
+    } else if (progress === "partial") {
+      next = { ...next, fulfillment_status: "partial", all_items_shipped: 0 };
+    } else if (progress === "none") {
+      next = { ...next, fulfillment_status: "not_shipped", all_items_shipped: 0 };
+    }
+    if (receivedSummary) {
+      next = {
+        ...next,
+        received_units: receivedSummary.received,
+        purchased_units: receivedSummary.purchased,
+        delivered_item_count: receivedSummary.received,
+        received_item_count: receivedSummary.received,
+      };
+    }
+    return next;
+  });
+}
+
+/**
+ * Prefer account-screen order_list_hydration; fall back to GET /orders/:uid per missing order (legacy — remove after verification).
+ */
+async function hydratePersonalPurchasesForAccountLoad(purchaseRows, { profileId, listHydrationByOrderUid, debugHydration = false }) {
+  const orderUidsToHydrate = collectOrderUidsNeedingPersonalPurchaseHydration(purchaseRows);
+  if (!orderUidsToHydrate.length) return null;
+
+  const listHydration = listHydrationByOrderUid || {};
+  const fromListCount = orderUidsToHydrate.filter((uid) => listHydration[uid]).length;
+  const fromFetchCount = orderUidsToHydrate.length - fromListCount;
+  if (debugHydration) {
+    console.log(
+      `[AccountScreen] purchase hydration: ${orderUidsToHydrate.length} orders (${fromListCount} order_list_hydration, ${fromFetchCount} GET /orders fallback)`,
+      orderUidsToHydrate,
+    );
+  }
+
+  const results = await Promise.allSettled(
+    orderUidsToHydrate.map(async (orderUid) => {
+      const listEntry = listHydration[orderUid];
+      if (listEntry) {
+        const orderDetail = normalizeListHydrationAsOrderDetail(listEntry, orderUid);
+        return buildPersonalPurchaseHydrationResult(orderUid, orderDetail);
+      }
+      const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
+      return buildPersonalPurchaseHydrationResult(orderUid, orderDetail);
+    }),
+  );
+
+  const folded = foldPersonalPurchaseHydrationResults(results);
+  return { folded, failedCount: results.filter((r) => r.status === "rejected").length };
+}
+
+async function hydrateBusinessSellerRowsForAccountLoad(sellerRows, { businessUid, listHydrationByOrderUid, debugHydration = false }) {
+  const orderUidsToHydrate = [...new Set([...collectOrderUidsNeedingShippingProgressHydration(sellerRows), ...collectOrderUidsNeedingReceivedHydration(sellerRows)])];
+  if (!orderUidsToHydrate.length) return null;
+
+  const listHydration = listHydrationByOrderUid || {};
+  const fromListCount = orderUidsToHydrate.filter((uid) => listHydration[uid]).length;
+  const fromFetchCount = orderUidsToHydrate.length - fromListCount;
+  if (debugHydration) {
+    console.log(
+      `[AccountScreen] business hydration: ${orderUidsToHydrate.length} orders (${fromListCount} order_list_hydration, ${fromFetchCount} GET /orders fallback)`,
+      orderUidsToHydrate,
+    );
+  }
+
+  const results = await Promise.allSettled(
+    orderUidsToHydrate.map(async (orderUid) => {
+      const listEntry = listHydration[orderUid];
+      if (listEntry) {
+        const orderDetail = normalizeListHydrationAsOrderDetail(listEntry, orderUid);
+        return buildBusinessSellerHydrationResult(orderUid, orderDetail);
+      }
+      const orderDetail = await fetchOrderDetailApi(orderUid, { businessUid });
+      return buildBusinessSellerHydrationResult(orderUid, orderDetail);
+    }),
+  );
+
+  return { folded: foldBusinessSellerHydrationResults(results), failedCount: results.filter((r) => r.status === "rejected").length };
 }
 
 /**
@@ -6860,115 +7193,40 @@ export default function AccountScreen({ navigation, route }) {
         const json = await response.json();
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         if (!accountScreenResponseMatches(json, "personal", profileId)) return;
-        const mapped = mapAccountScreenPersonalResponse(json);
+        let debugPurchases = false;
+        if (SHOW_NETWORK_DEBUG_UI !== 0) {
+          try {
+            const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+            debugPurchases = nd !== null && JSON.parse(nd) === true;
+          } catch (_) {}
+        }
+        const mapped = mapAccountScreenPersonalResponse(json, { debug: debugPurchases });
 
         const purchaseRows = Array.isArray(mapped.transactions) ? mapped.transactions : [];
         let normalizedPurchases = purchaseRows.map(normalizeListRowReturnRefundFields);
 
-        // Buyer list rows often omit Stripe-fail; hydrate return chips from order-detail before first paint
-        // so PURCHASES matches Return Details (e.g. Returned / CC Issue instead of Returned / Pending).
-        const returnOrderUids = collectOrderUidsNeedingReturnStatusHydration(normalizedPurchases);
-        if (returnOrderUids.length) {
-          const results = await Promise.allSettled(
-            returnOrderUids.map(async (orderUid) => {
-              const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
-              const hydrated = extractReturnRefundStateFromOrderDetail(orderDetail);
-              const itemHydration = extractReturnItemHydrationFromOrderDetail(orderDetail);
-              return { orderUid, hydrated, itemHydration };
-            }),
-          );
+        const listHydrationByOrderUid = extractOrderListHydrationMap(json);
+        const orderUidsNeedingHydration = collectOrderUidsNeedingPersonalPurchaseHydration(normalizedPurchases);
+        if (orderUidsNeedingHydration.length) {
+          const hydrationOutcome = await hydratePersonalPurchasesForAccountLoad(normalizedPurchases, {
+            profileId,
+            listHydrationByOrderUid,
+            debugHydration: debugPurchases,
+          });
           if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
-
-          const stateByOrderUid = {};
-          const itemHydrationByOrderUid = {};
-          const statusPatch = {};
-          for (const result of results) {
-            if (result.status !== "fulfilled") continue;
-            const { orderUid, hydrated, itemHydration } = result.value;
-            if (itemHydration) itemHydrationByOrderUid[orderUid] = itemHydration;
-            if (!hydrated) continue;
-            stateByOrderUid[orderUid] = hydrated;
-            const payload = {
-              return_status: hydrated.return_status,
-              refund_status: hydrated.refund_status,
-              display_status: hydrated.display_status,
-            };
-            // Sale / order-level only — never stamp sale "returning/pending" onto completed reverse txns.
-            statusPatch[orderUid] = payload;
-            if (hydrated.saleTxnUid && hydrated.saleTxnUid !== orderUid) {
-              statusPatch[hydrated.saleTxnUid] = payload;
-            }
-            // Completed reverse txns are Returned / Refunded (or keep stripe_fail if that was hydrated).
-            const completedPayload =
-              hydrated.refund_status === "stripe_fail"
-                ? payload
-                : {
-                    return_status: "returned",
-                    refund_status: "refunded",
-                    display_status: "Returned - Refunded",
-                  };
-            for (const returnTxnUid of hydrated.returnTxnUids || []) {
-              if (returnTxnUid && returnTxnUid !== orderUid && returnTxnUid !== hydrated.saleTxnUid) {
-                statusPatch[returnTxnUid] = completedPayload;
-              }
-            }
+          if (hydrationOutcome?.folded) {
+            normalizedPurchases = await applyPersonalPurchaseHydrationPatches(normalizedPurchases, hydrationOutcome.folded, {
+              setReturnStatuses,
+              setOrderShippingProgressByKey,
+            });
           }
-          if (Object.keys(stateByOrderUid).length || Object.keys(itemHydrationByOrderUid).length) {
-            normalizedPurchases = applyHydratedReturnStateToPurchaseRows(normalizedPurchases, stateByOrderUid, itemHydrationByOrderUid);
-            if (Object.keys(statusPatch).length) {
-              setReturnStatuses((prev) => ({ ...prev, ...statusPatch }));
-              await Promise.all(Object.keys(statusPatch).map((key) => AsyncStorage.setItem(`return_status_${key}`, JSON.stringify(statusPatch[key]))));
-            }
+          if (debugPurchases && hydrationOutcome?.failedCount) {
+            console.warn(`[AccountScreen] purchase hydration: ${hydrationOutcome.failedCount} order(s) failed`);
           }
         }
 
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setTransactionData(normalizedPurchases);
-
-        // Buyer list rows often keep fulfillment_status=partial after a pre-ship cancel.
-        // Hydrate from order detail so Delivered becomes Shipped once remaining items are shipped.
-        const purchaseShipUids = collectOrderUidsNeedingShippingProgressHydration(normalizedPurchases);
-        if (purchaseShipUids.length) {
-          void (async () => {
-            const hydratedShipping = {};
-            const results = await Promise.allSettled(
-              purchaseShipUids.map(async (orderUid) => {
-                const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
-                const progress = getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean));
-                return { orderUid, orderDetail, progress };
-              }),
-            );
-            if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
-            for (const result of results) {
-              if (result.status !== "fulfilled") continue;
-              const { orderUid, orderDetail, progress } = result.value;
-              if (progress !== "complete" && progress !== "partial" && progress !== "none") continue;
-              hydratedShipping[orderUid] = progress;
-              const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
-              if (txnUid) hydratedShipping[txnUid] = progress;
-            }
-            if (!Object.keys(hydratedShipping).length) return;
-            setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
-            setTransactionData((prev) =>
-              (prev || []).map((row) => {
-                if (isReturnListRow(row)) return row;
-                const orderUid = resolveListRowOrderUid(row);
-                const txnUid = String(row.transaction_uid || "").trim();
-                const progress = hydratedShipping[orderUid] || hydratedShipping[txnUid];
-                if (progress === "complete") {
-                  return { ...row, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
-                }
-                if (progress === "partial") {
-                  return { ...row, fulfillment_status: "partial", all_items_shipped: 0 };
-                }
-                if (progress === "none") {
-                  return { ...row, fulfillment_status: "not_shipped", all_items_shipped: 0 };
-                }
-                return row;
-              }),
-            );
-          })();
-        }
 
         if (mapped.bounty) {
           setBountyData(mapped.bounty);
@@ -7709,68 +7967,35 @@ export default function AccountScreen({ navigation, route }) {
       // Reset hydration overrides so account-screen list fulfillment fields win on first paint.
       setOrderShippingProgressByKey({});
 
-      // List rows often omit fulfillment / received line qty; hydrate from order detail.
-      // Return Total / Bounty come from seller_transactions.pending_return — do not hydrate those via Order Detail.
+      const listHydrationByOrderUid = extractOrderListHydrationMap(json);
       const orderUidsToHydrate = [...new Set([...collectOrderUidsNeedingShippingProgressHydration(sellerLines), ...collectOrderUidsNeedingReceivedHydration(sellerLines)])];
       if (orderUidsToHydrate.length) {
         void (async () => {
-          const hydratedShipping = {};
-          const hydratedReceivedByOrder = {};
-          const results = await Promise.allSettled(
-            orderUidsToHydrate.map(async (orderUid) => {
-              const orderDetail = await fetchOrderDetailApi(orderUid, { businessUid: targetBusinessUID });
-              const progress = getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean));
-              const receivedSummary = summarizeReceivedUnitsFromOrderDetail(orderDetail);
-              return { orderUid, orderDetail, progress, receivedSummary };
-            }),
-          );
-          if (!shouldApplyBusinessResponse()) return;
-          for (const result of results) {
-            if (result.status !== "fulfilled") continue;
-            const { orderUid, orderDetail, progress, receivedSummary } = result.value;
-            if (progress === "complete" || progress === "partial" || progress === "none") {
-              hydratedShipping[orderUid] = progress;
-              const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
-              if (txnUid) hydratedShipping[txnUid] = progress;
-            }
-            if (receivedSummary) {
-              hydratedReceivedByOrder[orderUid] = receivedSummary;
-              const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
-              if (txnUid) hydratedReceivedByOrder[txnUid] = receivedSummary;
-            }
+          let debugHydration = false;
+          if (SHOW_NETWORK_DEBUG_UI !== 0) {
+            try {
+              const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+              debugHydration = nd !== null && JSON.parse(nd) === true;
+            } catch (_) {}
           }
+          const hydrationOutcome = await hydrateBusinessSellerRowsForAccountLoad(sellerLines, {
+            businessUid: targetBusinessUID,
+            listHydrationByOrderUid,
+            debugHydration,
+          });
+          if (!shouldApplyBusinessResponse()) return;
+          if (!hydrationOutcome?.folded) return;
+          const { hydratedShipping, hydratedReceivedByOrder } = hydrationOutcome.folded;
           if (!Object.keys(hydratedShipping).length && !Object.keys(hydratedReceivedByOrder).length) {
             return;
           }
           if (Object.keys(hydratedShipping).length) {
             setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
           }
-          setBusinessSellerTransactionList((prev) =>
-            (prev || []).map((row) => {
-              const orderUid = resolveListRowOrderUid(row);
-              const txnUid = String(row.transaction_uid || "").trim();
-              const progress = hydratedShipping[orderUid] || hydratedShipping[txnUid];
-              const receivedSummary = hydratedReceivedByOrder[orderUid] || hydratedReceivedByOrder[txnUid];
-              let next = row;
-              if (progress === "complete") {
-                next = { ...next, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
-              } else if (progress === "partial") {
-                next = { ...next, fulfillment_status: "partial", all_items_shipped: 0 };
-              } else if (progress === "none") {
-                next = { ...next, fulfillment_status: "not_shipped", all_items_shipped: 0 };
-              }
-              if (receivedSummary) {
-                next = {
-                  ...next,
-                  received_units: receivedSummary.received,
-                  purchased_units: receivedSummary.purchased,
-                  delivered_item_count: receivedSummary.received,
-                  received_item_count: receivedSummary.received,
-                };
-              }
-              return next;
-            }),
-          );
+          setBusinessSellerTransactionList((prev) => applyBusinessSellerHydrationPatches(prev, hydrationOutcome.folded));
+          if (debugHydration && hydrationOutcome.failedCount) {
+            console.warn(`[AccountScreen] business hydration: ${hydrationOutcome.failedCount} order(s) failed`);
+          }
         })();
       }
 
@@ -8715,7 +8940,8 @@ export default function AccountScreen({ navigation, route }) {
                         const displayAmount = isReturnRow
                           ? returnMoney?.total || parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0) || 0
                           : parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0);
-                        const rowKey = resolveTrrUid(transaction) || transaction.transaction_uid || transaction.ti_uid || `purchase-${i}`;
+                        const rowIdentity = resolveTrrUid(transaction) || transaction.transaction_uid || transaction.ti_uid || "purchase";
+                        const rowKey = `${rowIdentity}-${isReturnRow ? "return" : "sale"}-${i}`;
                         const openPurchaseRowDetail = () => {
                           if (orderUid === "—") return;
                           if (isReturnRow) {
@@ -9107,7 +9333,7 @@ export default function AccountScreen({ navigation, route }) {
                         const showReturnCompletedRow = returnRefunded || returnLogistics?.return_status === "returned";
 
                         return (
-                          <View key={transaction.transaction_uid || i}>
+                          <View key={`${transaction.transaction_uid || "biz-tx"}-${i}`}>
                             {/* Main Transaction Row */}
                             <TouchableOpacity
                               style={[

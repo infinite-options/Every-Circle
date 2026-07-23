@@ -169,12 +169,12 @@ function BlockedPeopleModal({ visible, blockedList, onUnblock, onClose, darkMode
             {blockedList.length === 0 ? (
               <Text style={{ fontSize: 14, color: textColor, padding: 16, textAlign: "center" }}>You haven't blocked anyone.</Text>
             ) : (
-              blockedList.map((person) => {
+              blockedList.map((person, blockedIdx) => {
                 const name = `${person.first_name || ""} ${person.last_name || ""}`.trim() || person.blocked_uid;
                 const initials = `${(person.first_name || "?")[0]}${(person.last_name || "?")[0]}`.toUpperCase();
                 return (
                   <View
-                    key={person.blocked_uid}
+                    key={`blocked-${person.blocked_uid || "user"}-${blockedIdx}`}
                     style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: borderColor }}
                   >
                     {person.image ? (
@@ -248,6 +248,10 @@ function groupNetworkByDegree(data) {
   (data || []).forEach((item) => {
     const deg = Number(item.degree) || 0;
     if (!grouped[deg]) grouped[deg] = [];
+    const uid = String(item.network_profile_personal_uid || item.profile_personal_uid || "").trim();
+    if (uid && grouped[deg].some((existing) => String(existing.network_profile_personal_uid || existing.profile_personal_uid || "").trim() === uid)) {
+      return;
+    }
     grouped[deg].push(item);
   });
   return grouped;
@@ -623,7 +627,16 @@ const ConnectScreen = ({ navigation }) => {
       const response = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${id}`);
       if (response.ok) {
         const data = await response.json();
-        setProfileViewers(data.viewers || []);
+        setProfileViewers(() => {
+          const raw = data.viewers || [];
+          const seen = new Set();
+          return raw.filter((viewer) => {
+            const id = String(viewer.view_viewer_id || "").trim();
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          });
+        });
       } else {
         setProfileViewers([]);
       }
@@ -2347,8 +2360,15 @@ const ConnectScreen = ({ navigation }) => {
       if (!res.ok) throw new Error(`Blocked-users fetch failed: ${res.status}`);
       const json = await res.json();
       const list = Array.isArray(json.result) ? json.result : [];
-      setBlockedList(list);
-      setBlockedUids(new Set(list.map((b) => b.blocked_uid)));
+      const seen = new Set();
+      const deduped = list.filter((entry) => {
+        const id = String(entry.blocked_uid || "").trim();
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      setBlockedList(deduped);
+      setBlockedUids(new Set(deduped.map((b) => b.blocked_uid)));
     } catch (e) {
       console.warn("fetchBlockedUsers failed", isRetry ? "(retry)" : "", e);
       // Local dev server can briefly restart on file changes — retry once after a short delay
@@ -2850,7 +2870,7 @@ const ConnectScreen = ({ navigation }) => {
                                             }
                                             return (
                                               <TouchableOpacity
-                                                key={`${deg}-${node.network_profile_personal_uid || index}`}
+                                                key={`conn-${deg}-${node.network_profile_personal_uid || "node"}-${index}`}
                                                 onPress={() =>
                                                   navigation.navigate("Profile", {
                                                     profile_uid: node.network_profile_personal_uid,
@@ -3162,7 +3182,7 @@ const ConnectScreen = ({ navigation }) => {
                   const isBlocked = blockedUids.has(conv.other_uid);
                   return (
                     <View
-                      key={conv.conversation_uid}
+                      key={`conv-${conv.conversation_uid || conv.other_uid || "chat"}-${idx}`}
                       style={[styles.messagesRow, darkMode && styles.messagesRowDark, idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder)]}
                     >
                       <TouchableOpacity
@@ -3295,7 +3315,7 @@ const ConnectScreen = ({ navigation }) => {
               ) : profileViewers.length > 0 ? (
                 profileViewers.map((viewer, index) => (
                   <TouchableOpacity
-                    key={viewer.view_viewer_id || index}
+                    key={`viewer-${viewer.view_viewer_id || "anon"}-${index}`}
                     activeOpacity={0.7}
                     onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "Connect" })}
                     style={{ paddingHorizontal: 8, marginTop: index > 0 ? 4 : 0 }}

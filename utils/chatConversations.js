@@ -133,7 +133,15 @@ function conversationActivityMillis(item) {
 export function normalizeConversationsResponse(json, myProfileUid) {
   if (!json || typeof json !== "object") return [];
   const rows = Array.isArray(json.result) ? json.result : [];
-  const list = rows.map((c) => normalizeConversationListItem(c, myProfileUid));
+  const seen = new Set();
+  const list = rows
+    .map((c) => normalizeConversationListItem(c, myProfileUid))
+    .filter((item) => {
+      const id = String(item.conversation_uid || "").trim();
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
   return list.sort((a, b) => {
     const diff = conversationActivityMillis(b) - conversationActivityMillis(a);
     if (diff !== 0) return diff;

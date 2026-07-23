@@ -1453,7 +1453,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 (businessViewers.length > 0 ? (
                   businessViewers.map((viewer, index) => (
                     <TouchableOpacity
-                      key={viewer.view_viewer_id || index}
+                      key={`viewer-${viewer.view_viewer_id || "anon"}-${index}`}
                       activeOpacity={0.7}
                       onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "BusinessProfile" })}
                       style={index > 0 ? { marginTop: 4 } : undefined}

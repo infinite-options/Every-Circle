@@ -2554,7 +2554,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       const businessTakenDown = getBusinessModeratedState(business) === MODERATED_TAKEN_DOWN;
                       return (
                       <View
-                        key={business.profile_business_uid || business.business_uid || index}
+                        key={`biz-${business.profile_business_uid || business.business_uid || "unknown"}-${index}`}
                         style={[
                           styles.sectionItemContainer,
                           darkMode && styles.darkSectionItemContainer,
