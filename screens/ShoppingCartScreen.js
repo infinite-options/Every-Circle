@@ -39,9 +39,8 @@ if (isWeb) {
 import StripePayment from "../components/StripePaymentWeb";
 import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
-import ProductOrderSummaryLines from "../components/ProductOrderSummaryLines";
 import { parsePrice } from "../utils/priceUtils";
-import { cartChoiceEnrichmentFromItem, normalizeSelectedChoiceItemsForApi } from "../utils/selectedChoiceItems";
+import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines, normalizeSelectedChoiceItemsForApi } from "../utils/selectedChoiceItems";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { recordServicePurchase } from "../utils/purchaseService";
 import { expertiseLineMerchandiseAndTax, roundCartMoney, taxRatePercentForCalculation } from "../utils/cartLineTax";
@@ -137,6 +136,101 @@ function formatCartBountyLineTotalValueStr(item) {
     num = parsePrice(item.bs_bounty) * qty;
   }
   return formatCartBountyAmountStr(item, num);
+}
+
+function formatCartMoney(item, amountNum) {
+  const n = Number(amountNum);
+  const fixed = Number.isFinite(n) ? n.toFixed(2) : "0.00";
+  if (item.itemType === "expertise") return `$${fixed}`;
+  const cur = item.bs_cost_currency;
+  if (cur === "USD" || !cur) return `$${fixed}`;
+  return `${cur} ${fixed}`;
+}
+
+/** Per-line charge breakdown shown on each cart card (matches checkout grouping math). */
+function getCartLineChargeBreakdown(item) {
+  const qty = parseInt(item.quantity, 10) || 1;
+  const { pretax, tax, taxable, ratePercentUsed } = lineMerchandiseAndTax(item);
+  const unitPrice = qty > 0 ? roundMoney(pretax / qty) : pretax;
+  const shipCharge = getCartItemBuyerShippingCharge(item);
+  let shippingAmount = 0;
+  let shippingIsActual = false;
+  let shippingApplicable = false;
+  if (shipCharge?.type === "fixed") {
+    shippingApplicable = true;
+    shippingAmount = roundMoney(shipCharge.amount);
+  } else if (shipCharge?.type === "actual") {
+    shippingApplicable = true;
+    shippingIsActual = true;
+  }
+  const buyerPaysCardFee = groupBuyerPaysCardFee([item]);
+  const subtotalWithShipping = roundMoney(pretax + tax + shippingAmount);
+  const processingFee = buyerPaysCardFee ? roundMoney(subtotalWithShipping * 0.03) : 0;
+  const totalCharge = roundMoney(subtotalWithShipping + processingFee);
+  return {
+    qty,
+    unitPrice,
+    itemSubtotal: pretax,
+    shippingAmount,
+    shippingIsActual,
+    shippingApplicable,
+    processingFee,
+    buyerPaysCardFee,
+    tax,
+    taxable,
+    taxRateLabel: ratePercentUsed != null ? `${ratePercentUsed}%` : null,
+    totalCharge,
+  };
+}
+
+function getCartLineBountyTotal(item) {
+  const qty = item.quantity || 1;
+  if (item.itemType === "expertise") {
+    return hasOfferingBounty(item) ? getOfferingBountyLineTotal(item, qty) : 0;
+  }
+  if (parsePrice(item.bs_bounty) <= 0) return 0;
+  return item.bs_bounty_type === "total" ? parsePrice(item.bs_bounty) : parsePrice(item.bs_bounty) * qty;
+}
+
+function CartBreakdownRow({ label, value, valueStyle }) {
+  return (
+    <View style={styles.cartBreakdownRow}>
+      <Text style={styles.cartBreakdownLabel}>{label}</Text>
+      <Text style={[styles.cartBreakdownValue, valueStyle]}>{value}</Text>
+    </View>
+  );
+}
+
+function CartItemCustomizationText({ item }) {
+  if (item.itemType === "expertise") {
+    const desc = String(item.description || "").trim();
+    if (!desc) return null;
+    return <Text style={styles.cartItemCustomization}>{desc}</Text>;
+  }
+  const choiceLines = getItemizedChoiceLines(item);
+  const note = String(item.specialInstructions || "").trim();
+  if (!choiceLines.length && !note) return null;
+  return (
+    <Text style={styles.cartItemCustomization}>
+      {choiceLines.map((line, idx) => {
+        const extra = parseFloat(line.extra_cost) || 0;
+        const label = String(line.label || line.groupTitle || "").trim();
+        const segment = extra > 0 ? `${label} +$${extra.toFixed(2)}` : label;
+        return (
+          <Text key={`${label}-${idx}`}>
+            {idx > 0 ? " · " : ""}
+            {segment}
+          </Text>
+        );
+      })}
+      {note ? (
+        <Text>
+          {choiceLines.length ? " · " : ""}
+          <Text style={styles.cartItemCustomizationNote}>&ldquo;{note}&rdquo;</Text>
+        </Text>
+      ) : null}
+    </Text>
+  );
 }
 
 /**
@@ -1199,145 +1293,75 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
               {cartItems.map((item, index) => {
                 const lineBusiness = resolveItemBusinessName(item);
                 const showLineBusiness = Boolean(lineBusiness) && (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
-                const lineTax = lineMerchandiseAndTax(item);
-                const rawRateLabel = lineTax.rawTaxRate === undefined || lineTax.rawTaxRate === null || String(lineTax.rawTaxRate).trim() === "" ? "—" : String(lineTax.rawTaxRate);
-                const storedRateWithPercent = rawRateLabel === "—" ? "—" : `${String(rawRateLabel).replace(/%+\s*$/, "")}%`;
                 const productName = String(item.bs_service_name || "").trim();
-                const productDesc = String(item.bs_service_desc || "").trim();
+                const itemTitle = item.itemType === "expertise" ? String(item.title || "Offering").trim() : productName || "Item";
+                const breakdown = getCartLineChargeBreakdown(item);
+                const bountyTotal = getCartLineBountyTotal(item);
+                const remainingAddQty = getCartLineRemainingAddQuantity(item);
                 return (
                   <View key={index} style={styles.cartItemContainer}>
-                    <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveItem(index)}>
-                      <Ionicons name='close-circle' size={24} color='#FF3B30' />
-                    </TouchableOpacity>
-                    <View style={styles.cartItemContent}>
-                      {item.itemType === "expertise" ? (
-                        <>
-                          <Text style={styles.itemName}>{item.title}</Text>
-                          <Text style={styles.itemDescription}>{item.description}</Text>
+                    <View style={styles.cartItemCard}>
+                      <View style={styles.cartItemTopRow}>
+                        <View style={styles.cartItemDetails}>
+                          {showLineBusiness ? <Text style={styles.cartItemSeller}>{lineBusiness}</Text> : null}
+                          <Text style={styles.cartItemTitle}>{itemTitle}</Text>
+                          <CartItemCustomizationText item={item} />
                           <CartStockBadge item={item} />
-                        </>
-                      ) : (
-                        <>
-                          {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
-                          {productName ? <Text style={styles.itemName}>{productName}</Text> : null}
-                          <CartStockBadge item={item} />
-                          <ProductOrderSummaryLines
-                            description={productDesc || (productName ? "" : "Item")}
-                            baseCost={item.bs_cost}
-                            currency={item.bs_cost_currency}
-                            choiceSource={item}
-                            specialInstructions={item.specialInstructions}
-                            containerStyle={{ marginBottom: 10 }}
-                            baseTextStyle={styles.orderSummaryBase}
-                            choiceTextStyle={styles.orderSummaryChoice}
-                            noteTextStyle={styles.orderSummaryNote}
-                          />
-                        </>
-                      )}
-                      {item.itemType === "expertise" && showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
-                      <View style={styles.priceContainer}>
-                        {item.itemType === "expertise" ? (
-                          <View style={styles.priceRow}>
-                            <Text style={styles.priceLabel}>Price:</Text>
-                            <Text style={styles.priceValue}>{formatOfferingUnitPriceLabel(item.cost)}</Text>
-                          </View>
-                        ) : null}
-                        <View style={styles.quantityContainer}>
-                          <Text style={styles.priceLabel}>Quantity:</Text>
-                          <View style={styles.quantityControls}>
-                            <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, -1)}>
-                              <Ionicons name='remove' size={20} color='#9C45F7' />
+                        </View>
+                        <View style={styles.cartItemActions}>
+                          <TouchableOpacity style={styles.cartItemRemoveButton} onPress={() => handleRemoveItem(index)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                            <Ionicons name='close' size={14} color='#fff' />
+                          </TouchableOpacity>
+                          <View style={styles.cartItemQtyPill}>
+                            <TouchableOpacity style={styles.cartItemQtyButton} onPress={() => handleQuantityChange(index, -1)}>
+                              <Ionicons name='remove' size={18} color='#9C45F7' />
                             </TouchableOpacity>
-                            <Text style={styles.quantityText}>{item.quantity || 1}</Text>
+                            <Text style={styles.cartItemQtyValue}>{breakdown.qty}</Text>
                             <TouchableOpacity
-                              style={styles.quantityButton}
+                              style={styles.cartItemQtyButton}
                               onPress={() => handleQuantityChange(index, 1)}
-                              disabled={(() => {
-                                const remaining = getCartLineRemainingAddQuantity(item);
-                                return remaining != null && remaining <= 0;
-                              })()}
+                              disabled={remainingAddQty != null && remainingAddQty <= 0}
                             >
-                              <Ionicons name='add' size={20} color='#9C45F7' />
+                              <Ionicons name='add' size={18} color='#9C45F7' />
                             </TouchableOpacity>
                           </View>
                         </View>
-                        <View style={styles.totalRow}>
-                          <Text style={styles.totalLabel}>Total Price:</Text>
-                          <Text style={styles.totalValue}>
-                            {item.itemType === "expertise"
-                              ? `$${getOfferingLinePretax(item.cost, item.quantity || 1).toFixed(2)}`
-                              : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost_with_extras || item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
-                          </Text>
-                        </View>
-                        {(() => {
-                          const shipCharge = getCartItemBuyerShippingCharge(item);
-                          if (!shipCharge) return null;
-                          if (shipCharge.type === "fixed") {
-                            return (
-                              <View style={styles.totalRow}>
-                                <Text style={styles.priceLabel}>Buyer shipping (fixed):</Text>
-                                <Text style={styles.priceValue}>${shipCharge.amount.toFixed(2)}</Text>
-                              </View>
-                            );
-                          }
-                          return (
-                            <View style={{ marginTop: 4 }}>
-                              <View style={styles.totalRow}>
-                                <Text style={styles.priceLabel}>Buyer shipping (actual):</Text>
-                                <Text style={styles.priceValue}>$0.00</Text>
-                              </View>
-                              <Text style={styles.shippingActualNote}>Seller will contact the buyer directly for actual shipping cost.</Text>
-                            </View>
-                          );
-                        })()}
-                        {item.itemType === "expertise" ? (
-                          <View style={styles.lineTaxBlock}>
-                            <View style={styles.lineTaxRow}>
-                              <Text style={styles.lineTaxMetaLeft} numberOfLines={4}>
-                                {lineTax.taxable ? (
-                                  <>
-                                    Taxable: Yes
-                                    {" · "}
-                                    <Text style={styles.lineTaxMetaEm}>Offering Tax Rate:</Text> {storedRateWithPercent}
-                                  </>
-                                ) : (
-                                  "Taxable: No"
-                                )}
-                              </Text>
-                              <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
-                            </View>
-                          </View>
-                        ) : (
-                          <View style={styles.lineTaxBlock}>
-                            <View style={styles.lineTaxRow}>
-                              <Text style={styles.lineTaxMetaLeft} numberOfLines={4}>
-                                {lineTax.taxable ? (
-                                  <>
-                                    Taxable: Yes
-                                    {" · "}
-                                    <Text style={styles.lineTaxMetaEm}>Product Tax Rate:</Text> {storedRateWithPercent}
-                                  </>
-                                ) : (
-                                  "Taxable: No"
-                                )}
-                              </Text>
-                              <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
-                            </View>
-                          </View>
-                        )}
-                        {hasOfferingBounty(item) || (item.itemType !== "expertise" && parsePrice(item.bs_bounty) > 0) ? (
-                          <View style={[styles.totalRow, styles.bountyNoteRow]}>
-                            <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
-                            <Text style={styles.bountyNoteValue}>
-                              {item.itemType === "expertise"
-                                ? `$${getOfferingBountyLineTotal(item, item.quantity || 1).toFixed(2)}`
-                                : item.bs_bounty_type === "total"
-                                  ? `$${parsePrice(item.bs_bounty).toFixed(2)}`
-                                  : `$${(parsePrice(item.bs_bounty) * (item.quantity || 1)).toFixed(2)}`}
-                            </Text>
-                          </View>
+                      </View>
+
+                      <View style={styles.cartItemDivider} />
+
+                      <View style={styles.cartBreakdownSection}>
+                        <CartBreakdownRow
+                          label={`Item (${breakdown.qty} × ${formatCartMoney(item, breakdown.unitPrice)})`}
+                          value={formatCartMoney(item, breakdown.itemSubtotal)}
+                        />
+                        {breakdown.shippingApplicable ? (
+                          <CartBreakdownRow label='Shipping' value={formatCartMoney(item, breakdown.shippingAmount)} />
+                        ) : null}
+                        {breakdown.buyerPaysCardFee ? (
+                          <CartBreakdownRow label='Card processing fee' value={formatCartMoney(item, breakdown.processingFee)} />
+                        ) : null}
+                        {breakdown.taxable && breakdown.tax > 0 ? (
+                          <CartBreakdownRow
+                            label={breakdown.taxRateLabel ? `Tax (${breakdown.taxRateLabel})` : "Tax"}
+                            value={formatCartMoney(item, breakdown.tax)}
+                          />
+                        ) : null}
+                        {breakdown.shippingIsActual ? (
+                          <Text style={styles.cartShippingActualNote}>Seller will contact the buyer directly for actual shipping cost.</Text>
                         ) : null}
                       </View>
+
+                      <View style={styles.cartItemDivider} />
+
+                      <View style={styles.cartChargeRow}>
+                        <Text style={styles.cartChargeLabel}>You&apos;ll be charged</Text>
+                        <Text style={styles.cartChargeValue}>{formatCartMoney(item, breakdown.totalCharge)}</Text>
+                      </View>
+
+                      {bountyTotal > 0 ? (
+                        <Text style={styles.cartBountyDisclosure}>Seller-paid bounty of {formatCartMoney(item, bountyTotal)} is not part of your charge.</Text>
+                      ) : null}
                     </View>
                   </View>
                 );
@@ -1644,8 +1668,131 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   cartItemContainer: {
-    position: "relative",
-    marginBottom: 15,
+    marginBottom: 16,
+  },
+  cartItemCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E8E8E8",
+    padding: 16,
+    ...(Platform.OS !== "web" && { elevation: 1 }),
+  },
+  cartItemTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+  cartItemDetails: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  cartItemSeller: {
+    fontSize: 13,
+    color: "#999",
+    marginBottom: 4,
+  },
+  cartItemTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#111",
+    marginBottom: 6,
+  },
+  cartItemCustomization: {
+    fontSize: 14,
+    color: "#666",
+    lineHeight: 20,
+    marginBottom: 6,
+  },
+  cartItemCustomizationNote: {
+    fontStyle: "italic",
+  },
+  cartItemActions: {
+    alignItems: "flex-end",
+    gap: 10,
+  },
+  cartItemRemoveButton: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#FF3B30",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cartItemQtyPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    borderRadius: 999,
+    backgroundColor: "#FAFAFA",
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  cartItemQtyButton: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cartItemQtyValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111",
+    minWidth: 24,
+    textAlign: "center",
+    marginHorizontal: 2,
+  },
+  cartItemDivider: {
+    height: 1,
+    backgroundColor: "#ECECEC",
+    marginVertical: 14,
+  },
+  cartBreakdownSection: {
+    gap: 8,
+  },
+  cartBreakdownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  cartBreakdownLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: "#666",
+    marginRight: 12,
+  },
+  cartBreakdownValue: {
+    fontSize: 14,
+    color: "#444",
+    fontWeight: "500",
+  },
+  cartShippingActualNote: {
+    fontSize: 11,
+    color: "#888",
+    fontStyle: "italic",
+    marginTop: 2,
+  },
+  cartChargeRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  cartChargeLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111",
+  },
+  cartChargeValue: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#9C45F7",
+  },
+  cartBountyDisclosure: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 10,
+    lineHeight: 17,
   },
   removeButton: {
     position: "absolute",

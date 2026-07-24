@@ -52,6 +52,7 @@ import { getBusinessSuggestions as fetchGooglePlaces, getPlaceDetails } from "..
 import { isWishEnded } from "../utils/wishUtils";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
+import ReviewImageStrip from "../components/ReviewImageStrip";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import { recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
 import { recordWishMessageResponse } from "../utils/wishMessageResponse";
@@ -1875,64 +1876,6 @@ const ProfileScreen = ({ route, navigation }) => {
               );
             })()}
 
-          {/* Social Media Links — dropdown section */}
-          {(isCurrentUserProfile || user.socialLinksIsPublic !== false) &&
-            (() => {
-              const defaults = {
-                linkedin: { label: "LinkedIn", icon: "logo-linkedin", color: "#0077B5" },
-                instagram: { label: "Instagram", icon: "logo-instagram", color: "#C13584" },
-                twitter: { label: "Twitter / X", icon: "logo-twitter", color: "#1DA1F2" },
-                facebook: { label: "Facebook", icon: "logo-facebook", color: "#1877F2" },
-                youtube: { label: "YouTube", icon: "logo-youtube", color: "#FF0000" },
-              };
-              const linksInfo = user.links_info || [];
-              const socialItems = linksInfo
-                .filter((row) => {
-                  if (!row.social_link_url) return false;
-                  if (!isCurrentUserProfile && row.social_link_is_public === 0) return false;
-                  return true;
-                })
-                .map((row) => {
-                  const name = String(row.social_link_name || "").toLowerCase();
-                  const meta = defaults[name];
-                  return {
-                    key: name,
-                    label: meta ? meta.label : row.social_link_name || name,
-                    icon: meta ? meta.icon : "link-outline",
-                    color: meta ? meta.color : "#555",
-                    url: String(row.social_link_url).trim(),
-                  };
-                });
-              if (socialItems.length === 0 && !isCurrentUserProfile) return null;
-              return (
-                <View style={styles.fieldContainer}>
-                  <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowSocial(!showSocial)}>
-                    <Text style={styles.sectionHeaderText}>SOCIAL MEDIA</Text>
-                    <Ionicons name={showSocial ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-                  </TouchableOpacity>
-                  {showSocial &&
-                    (socialItems.length > 0 ? (
-                      socialItems.map(({ key, label, icon, color, url }) => (
-                        <TouchableOpacity key={key} onPress={() => Linking.openURL(url)} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]} activeOpacity={0.7}>
-                          <View style={{ flexDirection: "row", alignItems: "center" }}>
-                            <Ionicons name={icon} size={22} color={color} style={{ marginRight: 12 }} />
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "600" }]}>{label}</Text>
-                              <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: darkMode ? "#aaa" : "#666", fontSize: 12 }]} numberOfLines={1}>
-                                {url}
-                              </Text>
-                            </View>
-                            <Ionicons name='open-outline' size={16} color={darkMode ? "#aaa" : "#999"} />
-                          </View>
-                        </TouchableOpacity>
-                      ))
-                    ) : (
-                      <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666", padding: 12 }]}>No social media links added yet</Text>
-                    ))}
-                </View>
-              );
-            })()}
-
           {/* Only show Expertise section if there are public expertise entries, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && ( */}
           {user.expertiseIsPublic && (
@@ -2445,6 +2388,64 @@ const ProfileScreen = ({ route, navigation }) => {
             </View>
           )}
 
+          {/* Social Media Links — dropdown section */}
+          {(isCurrentUserProfile || user.socialLinksIsPublic !== false) &&
+            (() => {
+              const defaults = {
+                linkedin: { label: "LinkedIn", icon: "logo-linkedin", color: "#0077B5" },
+                instagram: { label: "Instagram", icon: "logo-instagram", color: "#C13584" },
+                twitter: { label: "Twitter / X", icon: "logo-twitter", color: "#1DA1F2" },
+                facebook: { label: "Facebook", icon: "logo-facebook", color: "#1877F2" },
+                youtube: { label: "YouTube", icon: "logo-youtube", color: "#FF0000" },
+              };
+              const linksInfo = user.links_info || [];
+              const socialItems = linksInfo
+                .filter((row) => {
+                  if (!row.social_link_url) return false;
+                  if (!isCurrentUserProfile && row.social_link_is_public === 0) return false;
+                  return true;
+                })
+                .map((row) => {
+                  const name = String(row.social_link_name || "").toLowerCase();
+                  const meta = defaults[name];
+                  return {
+                    key: name,
+                    label: meta ? meta.label : row.social_link_name || name,
+                    icon: meta ? meta.icon : "link-outline",
+                    color: meta ? meta.color : "#555",
+                    url: String(row.social_link_url).trim(),
+                  };
+                });
+              if (socialItems.length === 0 && !isCurrentUserProfile) return null;
+              return (
+                <View style={styles.fieldContainer}>
+                  <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowSocial(!showSocial)}>
+                    <Text style={styles.sectionHeaderText}>SOCIAL MEDIA</Text>
+                    <Ionicons name={showSocial ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                  </TouchableOpacity>
+                  {showSocial &&
+                    (socialItems.length > 0 ? (
+                      socialItems.map(({ key, label, icon, color, url }) => (
+                        <TouchableOpacity key={key} onPress={() => Linking.openURL(url)} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]} activeOpacity={0.7}>
+                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                            <Ionicons name={icon} size={22} color={color} style={{ marginRight: 12 }} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "600" }]}>{label}</Text>
+                              <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: darkMode ? "#aaa" : "#666", fontSize: 12 }]} numberOfLines={1}>
+                                {url}
+                              </Text>
+                            </View>
+                            <Ionicons name='open-outline' size={16} color={darkMode ? "#aaa" : "#999"} />
+                          </View>
+                        </TouchableOpacity>
+                      ))
+                    ) : (
+                      <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666", padding: 12 }]}>No social media links added yet</Text>
+                    ))}
+                </View>
+              );
+            })()}
+
           {/* Only show Experience section if there are public experiences, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (user.experience && user.experience.filter((exp) => exp.isPublic).length > 0)) && ( */}
           {user.experienceIsPublic && (
@@ -2854,6 +2855,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       {"⭐".repeat(review.rating_star)} {review.rating_star}/5
                     </Text>
                     {review.rating_description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.rating_description}</Text> : null}
+                    <ReviewImageStrip review={review} darkMode={darkMode} />
                   </TouchableOpacity>
                 ))
               ) : (

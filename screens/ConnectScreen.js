@@ -76,6 +76,24 @@ function formatFilterButtonLabel(value) {
   return s.length > 28 ? `${s.slice(0, 28)}…` : s;
 }
 
+function viewerToCardUser(viewer) {
+  return {
+    firstName: viewer.viewer_first_name || "",
+    lastName: viewer.viewer_last_name || "",
+    email: viewer.viewer_email || "",
+    phoneNumber: viewer.viewer_phone || "",
+    tagLine: viewer.viewer_tag_line || "",
+    city: viewer.viewer_city || "",
+    state: viewer.viewer_state || "",
+    profileImage: viewer.viewer_image || "",
+    emailIsPublic: viewer.viewer_email_is_public === 1 || viewer.viewer_email_is_public === "1",
+    phoneIsPublic: viewer.viewer_phone_is_public === 1 || viewer.viewer_phone_is_public === "1",
+    tagLineIsPublic: viewer.viewer_tag_line_is_public === 1 || viewer.viewer_tag_line_is_public === "1",
+    imageIsPublic: viewer.viewer_image_is_public === 1 || viewer.viewer_image_is_public === "1",
+    locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
+  };
+}
+
 /** One filter field: opens its own list (replaces multi-column “Filter Connections” popup). */
 function ConnectionFilterModal({ visible, title, options, selected, onSelect, onClose, darkMode }) {
   const accent = "#535db7";
@@ -639,6 +657,8 @@ const ConnectScreen = ({ navigation }) => {
   const [showProfileViewers, setShowProfileViewers] = useState(false);
   const [viewersSelectedAccount, setViewersSelectedAccount] = useState("personal");
   const [showViewersAccountDropdown, setShowViewersAccountDropdown] = useState(false);
+  const [showProfileViewersMenu, setShowProfileViewersMenu] = useState(false);
+  const [profileViewersCardMode, setProfileViewersCardMode] = useState("mini");
   const [connectDirectlyVisible, setConnectDirectlyVisible] = useState(false);
 
   const connectDirectlyMergedNetworkData = useMemo(() => mergeNetworkNodesForReferral(connectionsNetworkCache, circlesNetworkCache), [connectionsNetworkCache, circlesNetworkCache]);
@@ -3384,18 +3404,58 @@ const ConnectScreen = ({ navigation }) => {
           )}
 
           {/* ── Who Viewed My Profile ─────────────────────────────── */}
-          <TouchableOpacity
-            style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8 }]}
-            onPress={() => {
-              const willExpand = !showProfileViewers;
-              setShowProfileViewers(willExpand);
-              if (willExpand) fetchProfileViewers(viewersSelectedAccount === "personal" ? null : viewersSelectedAccount);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Who Viewed My Profile</Text>
-            <Ionicons name={showProfileViewers ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
-          </TouchableOpacity>
+          <View style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8, flexDirection: "row" }]}>
+            <TouchableOpacity
+              style={{ flex: 1, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+              onPress={() => {
+                const willExpand = !showProfileViewers;
+                setShowProfileViewers(willExpand);
+                if (willExpand) fetchProfileViewers(viewersSelectedAccount === "personal" ? null : viewersSelectedAccount);
+                else {
+                  setShowProfileViewersMenu(false);
+                  setShowViewersAccountDropdown(false);
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Who Viewed My Profile</Text>
+              <Ionicons name={showProfileViewers ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+            </TouchableOpacity>
+            {showProfileViewers && (
+              <TouchableOpacity
+                onPress={() => setShowProfileViewersMenu((p) => !p)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ marginLeft: 10, justifyContent: "center" }}
+                accessibilityLabel='Profile viewers options'
+              >
+                <Ionicons name='ellipsis-vertical' size={20} color={darkMode ? "#e0e0e0" : "#333"} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {showProfileViewers && showProfileViewersMenu && (
+            <View style={[styles.viewersDropdownMenu, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444" }]}>
+              <TouchableOpacity
+                style={styles.viewersDropdownItem}
+                onPress={() => {
+                  setProfileViewersCardMode("mini");
+                  setShowProfileViewersMenu(false);
+                }}
+              >
+                <Text style={[styles.viewersDropdownItemText, profileViewersCardMode === "mini" && styles.viewersDropdownItemActive, darkMode && { color: "#e0e0e0" }]}>View Mini Cards</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.viewersDropdownItem}
+                onPress={() => {
+                  setProfileViewersCardMode("micro");
+                  setShowProfileViewersMenu(false);
+                }}
+              >
+                <Text style={[styles.viewersDropdownItemText, profileViewersCardMode === "micro" && styles.viewersDropdownItemActive, darkMode && { color: "#e0e0e0" }]}>View Micro Cards</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {showProfileViewers && (
             <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
               <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4 }}>
@@ -3442,33 +3502,24 @@ const ConnectScreen = ({ navigation }) => {
               {viewersLoading ? (
                 <ActivityIndicator size='small' color='#AF52DE' style={{ paddingVertical: 20 }} />
               ) : profileViewers.length > 0 ? (
-                profileViewers.map((viewer, index) => (
-                  <TouchableOpacity
-                    key={`viewer-${viewer.view_viewer_id || "anon"}-${index}`}
-                    activeOpacity={0.7}
-                    onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "Connect" })}
-                    style={{ paddingHorizontal: 8, marginTop: index > 0 ? 4 : 0 }}
-                  >
-                    <MiniCard
-                      user={{
-                        firstName: viewer.viewer_first_name || "",
-                        lastName: viewer.viewer_last_name || "",
-                        email: viewer.viewer_email || "",
-                        phoneNumber: viewer.viewer_phone || "",
-                        tagLine: viewer.viewer_tag_line || "",
-                        city: viewer.viewer_city || "",
-                        state: viewer.viewer_state || "",
-                        profileImage: viewer.viewer_image || "",
-                        emailIsPublic: viewer.viewer_email_is_public === 1 || viewer.viewer_email_is_public === "1",
-                        phoneIsPublic: viewer.viewer_phone_is_public === 1 || viewer.viewer_phone_is_public === "1",
-                        tagLineIsPublic: viewer.viewer_tag_line_is_public === 1 || viewer.viewer_tag_line_is_public === "1",
-                        imageIsPublic: viewer.viewer_image_is_public === 1 || viewer.viewer_image_is_public === "1",
-                        locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
-                      }}
-                    />
-                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text> : null}
-                  </TouchableOpacity>
-                ))
+                profileViewers.map((viewer, index) => {
+                  const cardUser = viewerToCardUser(viewer);
+                  return (
+                    <TouchableOpacity
+                      key={`viewer-${viewer.view_viewer_id || "anon"}-${index}`}
+                      activeOpacity={0.7}
+                      onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "Connect" })}
+                      style={{ paddingHorizontal: 8, marginTop: index > 0 ? 4 : 0 }}
+                    >
+                      {profileViewersCardMode === "micro" ? (
+                        <MicroCard user={cardUser} showRelationship={false} embedded />
+                      ) : (
+                        <MiniCard user={cardUser} />
+                      )}
+                      {getLatestProfileViewTimestamp(viewer.view_timestamp) ? <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text> : null}
+                    </TouchableOpacity>
+                  );
+                })
               ) : (
                 <View style={styles.messagesEmpty}>
                   <Ionicons name='eye-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
