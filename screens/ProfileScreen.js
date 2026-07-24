@@ -2327,9 +2327,14 @@ const ProfileScreen = ({ route, navigation }) => {
                             onPress={async () => {
                               const wishUid = String(wish.profile_wish_uid || "").trim();
                               const responderUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+                              const seekingLabel = sanitizeText(wish.helpNeeds) || "Seeking";
+                              let wishResponseUid = null;
                               if (wishUid && responderUid && routeProfileUID !== responderUid) {
                                 try {
-                                  await recordWishMessageResponse(wishUid, responderUid);
+                                  const recordResult = await recordWishMessageResponse(wishUid, responderUid, {
+                                    responderNote: `Message about: ${seekingLabel}`,
+                                  });
+                                  wishResponseUid = recordResult?.wish_response_uid || null;
                                 } catch (e) {
                                   console.warn("[ProfileScreen] recordWishMessageResponse failed:", e);
                                 }
@@ -2339,8 +2344,9 @@ const ProfileScreen = ({ route, navigation }) => {
                                 other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
                                 other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
                                 reply_context: buildSeekingReplyContext({
-                                  label: `Seeking: ${sanitizeText(wish.helpNeeds) || "Seeking"}`,
+                                  label: `Seeking: ${seekingLabel}`,
                                   profileWishUid: wish.profile_wish_uid,
+                                  wishResponseUid,
                                 }),
                               });
                             }}

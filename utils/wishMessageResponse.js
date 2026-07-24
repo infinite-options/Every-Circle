@@ -102,11 +102,27 @@ const extractWishResponseUid = (json) => {
   return "";
 };
 
-/** Record a seeking/wish response locally and attempt API persistence (mirrors offerings). */
-export const recordWishMessageResponse = async (profileWishId, responderId) => {
+/**
+ * Record a seeking/wish response locally and optionally persist via POST /api/profilewishresponse.
+ * @param {object} [options]
+ * @param {string} [options.responderNote] Required for API persistence (backend rejects empty).
+ * @param {string} [options.helpType] Optional — forwarded as help_type.
+ * @param {string} [options.referralProfileUid] Optional — forwarded as referral_profile_uid.
+ * @param {boolean} [options.skipApi] When true, only update local storage (e.g. after profilewishinfo POST).
+ * @param {string} [options.wishResponseUid] Known uid when skipApi is true.
+ */
+export const recordWishMessageResponse = async (profileWishId, responderId, options = {}) => {
   const wishId = String(profileWishId || "").trim();
   const uid = String(responderId || "").trim();
   if (!wishId || !uid) return null;
+
+  const {
+    responderNote = "",
+    helpType,
+    referralProfileUid,
+    skipApi = false,
+    wishResponseUid: knownWishResponseUid = "",
+  } = options;
 
   const respondedAt = nowDatetime();
   const localMap = await readLocalRespondedMap(uid);
@@ -116,18 +132,47 @@ export const recordWishMessageResponse = async (profileWishId, responderId) => {
     await writeLocalRespondedMap(uid, localMap);
   }
 
-  let wishResponseUid = "";
+  let wishResponseUid = String(knownWishResponseUid || "").trim();
+  if (skipApi) {
+    return {
+      respondedMap: localMap,
+      profile_wish_uid: wishId,
+      wish_response_uid: wishResponseUid || null,
+    };
+  }
+
+  const note = String(responderNote || "").trim();
+  if (!note) {
+    console.warn("[wishMessageResponse] record API skipped: responder_note is required");
+    return {
+      respondedMap: localMap,
+      profile_wish_uid: wishId,
+      wish_response_uid: null,
+    };
+  }
+
   try {
+    const body = {
+      profile_wish_id: wishId,
+      responder_id: uid,
+      responder_note: note,
+    };
+    const help = String(helpType || "").trim();
+    const referralUid = String(referralProfileUid || "").trim();
+    if (help) body.help_type = help;
+    if (referralUid) body.referral_profile_uid = referralUid;
+
     const res = await fetch(PROFILE_WISH_RESPONSE_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        profile_wish_id: wishId,
-        responder_id: uid,
-      }),
+      body: JSON.stringify(body),
     });
     const json = await res.json();
-    wishResponseUid = extractWishResponseUid(json);
+    if (!res.ok) {
+      console.warn("[wishMessageResponse] record API failed:", json?.message || res.status);
+    } else {
+      wishResponseUid = extractWishResponseUid(json);
+    }
   } catch (e) {
     console.warn("[wishMessageResponse] record API failed:", e);
   }

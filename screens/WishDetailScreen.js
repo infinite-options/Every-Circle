@@ -375,7 +375,10 @@ const WishDetailScreenContent = ({ route, navigation }) => {
 
       console.log("Response submitted successfully");
       try {
-        await recordWishMessageResponse(profile_wish_id, responder_id);
+        await recordWishMessageResponse(profile_wish_id, responder_id, {
+          skipApi: true,
+          wishResponseUid: result.wish_response_uid,
+        });
       } catch (e) {
         console.warn("[WishDetailScreen] recordWishMessageResponse failed:", e);
       }

@@ -114,7 +114,7 @@ export const RATINGS_ENDPOINT = `${API_BASE_URL}/ratings`;
 
 // Profile Wish Info Endpoint
 export const PROFILE_WISH_INFO_ENDPOINT = `${API_BASE_URL}/api/profilewishinfo`;
-/** GET /:profile_uid — wish responses submitted by the logged-in user; POST to record */
+/** GET /:profile_uid — wish responses submitted by the logged-in user; POST { profile_wish_id, responder_id, responder_note } to record */
 export const PROFILE_WISH_RESPONSE_ENDPOINT = `${API_BASE_URL}/api/profilewishresponse`;
 /** GET /:profile_uid — offering message clicks by the logged-in user; POST to record */
 export const PROFILE_EXPERTISE_RESPONSE_ENDPOINT = `${API_BASE_URL}/api/profileexpertiseresponse`;
