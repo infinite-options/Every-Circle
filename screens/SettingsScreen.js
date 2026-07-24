@@ -10,8 +10,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
-import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
+import { useNearbyAlert } from "../contexts/NearbyAlertContext";
 import { clearUserProfileCacheStorage, getSessionProfile, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
@@ -205,6 +205,7 @@ export default function SettingsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { user, profile_uid } = route.params || {};
+  const { setNearbyAlert, registerIgnoreHandler } = useNearbyAlert();
   const [allowNotifications, setAllowNotifications] = useState(true);
   const [shareLocationActive, setShareLocationActive] = useState(false);
   const [shareLocationUntil, setShareLocationUntil] = useState(null); // Date | null
@@ -261,9 +262,6 @@ export default function SettingsScreen() {
   // Nearby share / receive settings — ref for callbacks, state for rendering
   const nearbySettingsRef = useRef(DEFAULT_NEARBY_SETTINGS);
   const [nearbySettings, setNearbySettings] = useState(DEFAULT_NEARBY_SETTINGS);
-
-  // In-app nearby banner
-  const [nearbyAlert, setNearbyAlert] = useState(null); // { sender_uid, sender_name, sender_image, distance_miles }
 
   const settingsFeedbackInstructions = "Instructions for Settings";
 
@@ -875,6 +873,12 @@ export default function SettingsScreen() {
     } catch (_) {}
   };
 
+  // App-root banner calls this when the user taps Ignore
+  useEffect(() => {
+    registerIgnoreHandler(ignoreNearbyUser);
+    return () => registerIgnoreHandler(null);
+  }, [registerIgnoreHandler]);
+
   // Persist updated nearby share/receive settings — also pushes to DB immediately
   // so the server-side consent check always reflects the latest preference.
   const updateNearbySettings = async (newSettings) => {
@@ -1472,27 +1476,6 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
-      {/* Nearby alert banner — floats above everything */}
-      <NearbyAlertBanner
-        alert={nearbyAlert}
-        onDismiss={() => setNearbyAlert(null)}
-        onPress={(senderUid) => {
-          setNearbyAlert(null);
-          navigation.navigate("Profile", { profile_uid: senderUid });
-        }}
-        onChat={(senderUid, senderName) => {
-          setNearbyAlert(null);
-          navigation.navigate("Chat", {
-            other_uid: senderUid,
-            other_name: senderName || "Chat",
-          });
-        }}
-        onIgnore={(senderUid) => {
-          setNearbyAlert(null);
-          ignoreNearbyUser(senderUid);
-        }}
-      />
-
       <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
         <AppHeader title='SETTINGS' {...getHeaderColors("settings")} />
       </TouchableOpacity>
