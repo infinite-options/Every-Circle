@@ -1,5 +1,5 @@
 // BusinessProfileScreen.js
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Modal, Platform, Linking, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -99,6 +99,17 @@ const buildBusinessServicesList = (rawBusiness, resultServices, profileCcFeePaye
   }));
 };
 
+const normalizeWebsiteUrl = (url) => {
+  const trimmed = sanitizeText(String(url || "").trim());
+  if (!trimmed) return "";
+  return trimmed.startsWith("http://") || trimmed.startsWith("https://") ? trimmed : `https://${trimmed}`;
+};
+
+const resolveWebsiteLinkLabel = (websiteUrl, shortName) => {
+  if (isSafeForConditional(shortName)) return sanitizeText(shortName);
+  return sanitizeText(websiteUrl);
+};
+
 export default function BusinessProfileScreen({ route, navigation }) {
   const { darkMode } = useDarkMode();
   const { business_uid, returnTo, searchState } = route.params || {};
@@ -158,6 +169,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [claimSubmitting, setClaimSubmitting] = useState(false);
   const [claimStatus, setClaimStatus] = useState(null); // null | 'pending' | 'approved'
   const [claimSubmittedAt, setClaimSubmittedAt] = useState(null);
+
+  const businessInfoFetchRef = useRef(null);
 
   const [showFlagBusinessModal, setShowFlagBusinessModal] = useState(false);
   const [isAdminViewer, setIsAdminViewer] = useState(false);
@@ -360,7 +373,14 @@ export default function BusinessProfileScreen({ route, navigation }) {
   };
 
   const fetchBusinessInfo = async () => {
-    try {
+    if (!business_uid) return;
+
+    if (businessInfoFetchRef.current?.uid === business_uid && businessInfoFetchRef.current?.promise) {
+      return businessInfoFetchRef.current.promise;
+    }
+
+    const fetchPromise = (async () => {
+      try {
       setLoading(true);
       setBusinessViewers([]);
       setCanViewBusinessViewers(false);
@@ -398,6 +418,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       // Handle social_links
       let socialLinksData = {};
+      let websiteShortName = rawBusiness.bl_short_name || "";
       const socialLinksSource = result.social_links || rawBusiness.social_links;
       if (socialLinksSource) {
         if (Array.isArray(socialLinksSource)) {
@@ -406,6 +427,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
             const platformUrl = link.business_link_url || link.bl_url;
             if (platformName && platformUrl && platformUrl.trim() !== "") {
               socialLinksData[platformName] = platformUrl;
+            }
+            if (String(platformName || "").toLowerCase() === "website" && link.bl_short_name) {
+              websiteShortName = link.bl_short_name;
             }
           });
         } else if (typeof socialLinksSource === "string") {
@@ -541,6 +565,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         instagram: socialLinksData.instagram || "",
         linkedin: socialLinksData.linkedin || "",
         youtube: socialLinksData.youtube || "",
+        bl_short_name: websiteShortName || "",
         images: businessImages,
         businessGooglePhotos: googlePhotos,
         business_favorite_image: rawBusiness.business_favorite_image || null,
@@ -652,11 +677,18 @@ export default function BusinessProfileScreen({ route, navigation }) {
           console.warn("BusinessProfileScreen - error recording profile view:", e);
         }
       }
-    } catch (err) {
-      console.error("Error fetching business data:", err);
-    } finally {
-      setLoading(false);
-    }
+      } catch (err) {
+        console.error("Error fetching business data:", err);
+      } finally {
+        setLoading(false);
+        if (businessInfoFetchRef.current?.uid === business_uid) {
+          businessInfoFetchRef.current = null;
+        }
+      }
+    })();
+
+    businessInfoFetchRef.current = { uid: business_uid, promise: fetchPromise };
+    return fetchPromise;
   };
 
   useEffect(() => {
@@ -1235,8 +1267,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
               {hasSocialLinks ? (
                 <View style={styles.socialLinksBelowCard}>
                   {isSafeForConditional(business.business_website) ? (
-                    <TouchableOpacity onPress={() => Linking.openURL(business.business_website.startsWith("http") ? business.business_website : `https://${business.business_website}`)}>
-                      <Text style={[styles.socialLinkBelowCard, darkMode && styles.darkSocialLinkBelowCard]}>🌐 Website: {sanitizeText(business.business_website)}</Text>
+                    <TouchableOpacity onPress={() => Linking.openURL(normalizeWebsiteUrl(business.business_website))}>
+                      <Text style={[styles.socialLinkBelowCard, darkMode && styles.darkSocialLinkBelowCard]}>
+                        🌐 Website: {resolveWebsiteLinkLabel(business.business_website, business.bl_short_name)}
+                      </Text>
                     </TouchableOpacity>
                   ) : null}
                   {isSafeForConditional(business.facebook) ? (

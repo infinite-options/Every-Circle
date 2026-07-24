@@ -104,6 +104,7 @@ const SERVICE_DESC_EXPANDED_MAX_HEIGHT = 200;
 const QUANTITY_MAX_DIGITS = 10;
 const BUSINESS_PROFILE_ACCENT = getHeaderColor("businessProfile");
 const BUSINESS_PROFILE_ACCENT_DARK = getDarkModeHeaderColor("businessProfile");
+const BUSINESS_PROFILE_SECTION_HEADER_BG = "rgba(175, 82, 222, 0.5)";
 
 const parseInitialGalleryUploads = (business, businessUID) => buildBusinessGalleryUploads(business, businessUID);
 
@@ -875,6 +876,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     einNumber: business?.business_ein_number || "",
     businessPaysCcFee: businessPaysCcFeeFromApiPayer(business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer ?? business?.business_bs_cc_fee_payer ?? business?.cc_fee_payer),
     website: business?.business_website || "",
+    websiteShortTitle: business?.bl_short_name || "",
     // BUSINESS-SPECIFIC: customTags array (not in EditProfileScreen)
     customTags: (() => {
       // Handle custom_tags - could be array, string, or already parsed as customTags
@@ -967,6 +969,13 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const addressDebounceRef = useRef(null);
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState(null);
+  const [showBusinessInfo, setShowBusinessInfo] = useState(true);
+  const [showLocation, setShowLocation] = useState(true);
+  const [showCategories, setShowCategories] = useState(true);
+  const [showTeamAccess, setShowTeamAccess] = useState(true);
+  const [showCustomTags, setShowCustomTags] = useState(true);
+  const [showSocialLinks, setShowSocialLinks] = useState(true);
+  const [showProductsServices, setShowProductsServices] = useState(true);
 
   // BUSINESS-SPECIFIC: businessRoles constant (not in EditProfileScreen)
   const businessRoles = [
@@ -1745,6 +1754,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_ein_number", formData.einNumber);
       payload.append("business_cc_fee_payer", formData.businessPaysCcFee ? "seller" : "buyer");
       payload.append("business_website", formData.website);
+      payload.append("bl_short_name", formData.websiteShortTitle || "");
       const customTagsJson = JSON.stringify(customTagsForSave);
       payload.append("custom_tags", customTagsJson);
       payload.append("tags", customTagsJson);
@@ -2450,6 +2460,30 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   );
 
   // BUSINESS-SPECIFIC: renderSocialField function (EditProfileScreen doesn't have this - social links handled differently)
+  const renderWebsiteFields = () => (
+    <View style={styles.fieldContainer}>
+      <Text style={[styles.label, darkMode && styles.darkLabel]}>Website</Text>
+      <View style={styles.websiteInputsRow}>
+        <TextInput
+          style={[styles.input, styles.websiteShortTitleInput, darkMode && styles.darkInput]}
+          value={formData.websiteShortTitle}
+          placeholder='Enter Short Title'
+          placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+          onChangeText={(text) => handleFieldChange("websiteShortTitle", text)}
+        />
+        <TextInput
+          style={[styles.input, styles.websiteUrlInput, darkMode && styles.darkInput]}
+          value={formData.website}
+          placeholder='Enter website URL'
+          placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+          keyboardType='url'
+          autoCapitalize='none'
+          onChangeText={(text) => handleFieldChange("website", text)}
+        />
+      </View>
+    </View>
+  );
+
   const renderSocialField = (label, platform) => (
     <View style={styles.fieldContainer}>
       <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}</Text>
@@ -2470,9 +2504,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   );
 
   // BUSINESS-SPECIFIC: renderCustomTagsSection function (not in EditProfileScreen)
-  const renderCustomTagsSection = () => (
-    <View style={styles.fieldContainer}>
-      <TagSectionLabel title='Custom Tags' style={[styles.label, darkMode && styles.darkLabel]} darkMode={darkMode} />
+  const renderCustomTagsSection = (hideSectionLabel = false) => (
+    <View style={[styles.fieldContainer, hideSectionLabel && styles.fieldContainerCompact]}>
+      {!hideSectionLabel ? <TagSectionLabel title='Custom Tags' style={[styles.label, darkMode && styles.darkLabel]} darkMode={darkMode} /> : null}
       {renderTagEditor({
         inputValue: customTagInput,
         onChangeInput: (text) => {
@@ -2485,6 +2519,147 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       })}
     </View>
   );
+
+  const renderCollapsibleSection = (title, isOpen, onToggle, children, headerRight = null) => (
+    <View style={styles.collapsibleSection}>
+      <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={onToggle} activeOpacity={0.7}>
+        <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>{title}</Text>
+        <View style={styles.sectionHeaderRight}>
+          {headerRight}
+          <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+        </View>
+      </TouchableOpacity>
+      {isOpen ? <View style={[styles.sectionContent, darkMode && styles.darkSectionContent]}>{children}</View> : null}
+    </View>
+  );
+
+  const renderBusinessEditorsSection = () => (
+    <View style={[styles.fieldContainer, darkMode && styles.darkFieldContainer, styles.fieldContainerCompact]}>
+      <View style={styles.labelRow}>
+        <Text style={[styles.sublabel, darkMode && styles.darkSublabel, styles.fieldContainerCompactLabel]}>Add editors or co-owners by email</Text>
+        <TouchableOpacity onPress={addBusinessEditor}>
+          <Text style={[styles.addText, darkMode && styles.darkAddText]}>+</Text>
+        </TouchableOpacity>
+      </View>
+      {existingBusinessUsers.map((businessUser, index) => {
+        const profileImageUrl =
+          businessUser.profile_photo && String(businessUser.profile_photo).trim() !== ""
+            ? String(businessUser.profile_photo).trim()
+            : businessUser.profile_personal_image && String(businessUser.profile_personal_image).trim() !== ""
+              ? String(businessUser.profile_personal_image).trim()
+              : "";
+        const imageIsPublic =
+          businessUser.profile_photo_is_public === 1 ||
+          businessUser.profile_photo_is_public === "1" ||
+          businessUser.profile_personal_image_is_public === 1 ||
+          businessUser.profile_personal_image_is_public === "1" ||
+          businessUser.image_is_public === 1 ||
+          businessUser.image_is_public === "1";
+        const userForMiniCard = {
+          firstName: businessUser.first_name || "",
+          lastName: businessUser.last_name || "",
+          email: businessUser.user_email || "",
+          profileImage: profileImageUrl,
+          imageIsPublic: !!imageIsPublic,
+          emailIsPublic:
+            businessUser.user_email_is_public === 1 ||
+            businessUser.user_email_is_public === "1" ||
+            businessUser.profile_personal_email_is_public === 1 ||
+            businessUser.profile_personal_email_is_public === "1" ||
+            businessUser.email_is_public === 1,
+          phoneIsPublic:
+            businessUser.phone_is_public === 1 ||
+            businessUser.phone_is_public === "1" ||
+            businessUser.profile_personal_phone_number_is_public === 1 ||
+            businessUser.profile_personal_phone_number_is_public === "1",
+          phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
+          tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
+          tagLineIsPublic: businessUser.profile_personal_tag_line_is_public === 1 || businessUser.profile_personal_tag_line_is_public === "1" || false,
+          city: businessUser.city || businessUser.profile_personal_city || "",
+          state: businessUser.state || businessUser.profile_personal_state || "",
+          locationIsPublic:
+            businessUser.location_is_public === 1 ||
+            businessUser.location_is_public === "1" ||
+            businessUser.profile_personal_location_is_public === 1 ||
+            businessUser.profile_personal_location_is_public === "1" ||
+            false,
+        };
+
+        const isIndividualPublic =
+          businessUser.bu_individual_business_is_public === 1 || businessUser.bu_individual_business_is_public === "1" || businessUser.bu_individual_business_is_public === true;
+
+        return (
+          <View key={businessUser.business_user_id || index} style={[styles.existingBusinessUserCard, darkMode && styles.darkExistingBusinessUserCard]}>
+            <View style={styles.existingBusinessUserHeader}>
+              <View style={styles.existingBusinessUserInfo}>
+                <MiniCard user={userForMiniCard} />
+                <Text style={[styles.existingBusinessUserRole, darkMode && styles.darkExistingBusinessUserRole]}>Role: {businessUser.business_role || "N/A"}</Text>
+              </View>
+              <View style={styles.toggleContainer}>
+                <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.togglePill, isIndividualPublic && styles.togglePillActiveGreen]}>
+                  <Text style={[styles.togglePillText, isIndividualPublic && styles.togglePillTextActive]}>{isIndividualPublic ? "Visible" : "Show"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.togglePill, !isIndividualPublic && styles.togglePillActiveRed]}>
+                  <Text style={[styles.togglePillText, !isIndividualPublic && styles.togglePillTextActive]}>{!isIndividualPublic ? "Hidden" : "Hide"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        );
+      })}
+      {additionalBusinessUsers.map((user, index) => (
+        <View key={index} style={[styles.businessEditorCard, darkMode && styles.darkBusinessEditorCard]}>
+          <View style={styles.businessEditorHeader}>
+            <Text style={[styles.businessEditorLabel, darkMode && styles.darkBusinessEditorLabel]}>Editor #{index + 1}</Text>
+            <TouchableOpacity onPress={() => removeBusinessEditor(index)}>
+              <Text style={[styles.removeButtonText, darkMode && styles.darkRemoveButtonText]}>Remove</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Email Address</Text>
+          <TextInput
+            style={[styles.input, darkMode && styles.darkInput]}
+            value={user.email}
+            placeholder='Enter email address'
+            placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+            keyboardType='email-address'
+            autoCapitalize='none'
+            onChangeText={(text) => updateBusinessEditor(index, "email", text)}
+          />
+          <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Business Role</Text>
+          <Dropdown
+            style={[styles.input, darkMode && styles.darkInput]}
+            data={businessRoles}
+            labelField='label'
+            valueField='value'
+            placeholder='Select role'
+            placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+            value={user.role}
+            onChange={(item) => updateBusinessEditor(index, "role", item.value)}
+            containerStyle={[{ borderRadius: 10, marginTop: 5 }, darkMode && { backgroundColor: "#1a1a1a", borderColor: "#404040" }]}
+            itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
+            selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
+            activeColor={darkMode ? "#404040" : "#f0f0f0"}
+            itemContainerStyle={darkMode ? { backgroundColor: "#1a1a1a" } : {}}
+            flatListProps={{
+              nestedScrollEnabled: true,
+            }}
+          />
+        </View>
+      ))}
+    </View>
+  );
+
+  const openNewProductForm = () => {
+    setServiceForm({ ...defaultService });
+    setEditingServiceIndex(null);
+    setServiceFormTaxRateError(false);
+    setServiceFormQuantityError(false);
+    setServiceFormCostUnitError(false);
+    setProductTagInput("");
+    setShowServiceForm(true);
+    resetServiceProductImageState();
+    setShowProductsServices(true);
+  };
 
   // Business Image Visibility Toggle Handler (identical to EditProfileScreen)
   const toggleBusinessImageVisibility = () => {
@@ -4247,20 +4422,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         {/* Business Image Upload Section (identical to EditProfileScreen profile image section) */}
         {renderBusinessImageSection()}
 
-        {renderField("Business Name", formData.name, "name")}
-        {renderUpdateLocationFromGoogle()}
-        {renderField("Location", formData.location, "location", "", "locationIsPublic")}
-        {renderAddressField()}
-        {renderField("City", formData.city, "city", "", "locationIsPublic")}
-        {renderField("State", formData.state, "state", "", "locationIsPublic")}
-        {renderField("Country", formData.country, "country", "", "locationIsPublic")}
-        {renderField("Zip Code", formData.zip, "zip", "", "locationIsPublic")}
-        {renderCoordinatesField()}
-        {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
-        {renderField("Email", formData.email, "email", "", "emailIsPublic")}
-        {renderCategoryField()}
-        {renderField("Tagline", formData.tagline, "tagline", "", "taglineIsPublic")}
-
         {/* Business MiniCard Live Preview - how business appears in searches */}
         <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
           <Text style={[styles.label, darkMode && styles.darkLabel]}>Mini Card (how you'll appear in Searches):</Text>
@@ -4269,189 +4430,92 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           </View>
         </View>
 
-        {renderField("Short Bio", formData.shortBio, "shortBio", "", "shortBioIsPublic")}
-        {renderBusinessRoleField()}
-        {renderEINField()}
-        {renderBusinessCcFeeField()}
+        {renderCollapsibleSection(
+          "BUSINESS INFO",
+          showBusinessInfo,
+          () => setShowBusinessInfo((prev) => !prev),
+          <>
+            {renderField("Business Name", formData.name, "name")}
+            {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
+            {renderField("Email", formData.email, "email", "", "emailIsPublic")}
+            {renderField("Tagline", formData.tagline, "tagline", "", "taglineIsPublic")}
+            {renderField("Short Bio", formData.shortBio, "shortBio", "", "shortBioIsPublic")}
+            {renderBusinessRoleField()}
+            {renderEINField()}
+            {renderBusinessCcFeeField()}
+          </>,
+        )}
 
-        {/* MISSING: renderField calls for First Name, Last Name (EditProfileScreen has these) */}
-        {/* Note: Business profile doesn't have firstName/lastName fields */}
+        {renderCollapsibleSection(
+          "LOCATION",
+          showLocation,
+          () => setShowLocation((prev) => !prev),
+          <>
+            {renderUpdateLocationFromGoogle()}
+            {renderField("Location", formData.location, "location", "", "locationIsPublic")}
+            {renderAddressField()}
+            {renderField("City", formData.city, "city", "", "locationIsPublic")}
+            {renderField("State", formData.state, "state", "", "locationIsPublic")}
+            {renderField("Country", formData.country, "country", "", "locationIsPublic")}
+            {renderField("Zip Code", formData.zip, "zip", "", "locationIsPublic")}
+            {renderCoordinatesField()}
+          </>,
+        )}
 
-        {/* BUSINESS-SPECIFIC: Business Editors & Owners Section (not in EditProfileScreen) */}
-        <View style={[styles.fieldContainer, darkMode && styles.darkFieldContainer]}>
-          <View style={styles.labelRow}>
-            <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Editors & Owners</Text>
-            <TouchableOpacity onPress={addBusinessEditor}>
-              <Text style={[styles.addText, darkMode && styles.darkAddText]}>+</Text>
-            </TouchableOpacity>
-          </View>
-          {existingBusinessUsers.map((businessUser, index) => {
-            // Map from business_users endpoint: profile_photo, profile_photo_is_public, user_email, user_email_is_public, phone, phone_is_public, city, state, location_is_public
-            const profileImageUrl =
-              businessUser.profile_photo && String(businessUser.profile_photo).trim() !== ""
-                ? String(businessUser.profile_photo).trim()
-                : businessUser.profile_personal_image && String(businessUser.profile_personal_image).trim() !== ""
-                  ? String(businessUser.profile_personal_image).trim()
-                  : "";
-            const imageIsPublic =
-              businessUser.profile_photo_is_public === 1 ||
-              businessUser.profile_photo_is_public === "1" ||
-              businessUser.profile_personal_image_is_public === 1 ||
-              businessUser.profile_personal_image_is_public === "1" ||
-              businessUser.image_is_public === 1 ||
-              businessUser.image_is_public === "1";
-            const userForMiniCard = {
-              firstName: businessUser.first_name || "",
-              lastName: businessUser.last_name || "",
-              email: businessUser.user_email || "",
-              profileImage: profileImageUrl,
-              imageIsPublic: !!imageIsPublic,
-              emailIsPublic:
-                businessUser.user_email_is_public === 1 ||
-                businessUser.user_email_is_public === "1" ||
-                businessUser.profile_personal_email_is_public === 1 ||
-                businessUser.profile_personal_email_is_public === "1" ||
-                businessUser.email_is_public === 1,
-              phoneIsPublic:
-                businessUser.phone_is_public === 1 ||
-                businessUser.phone_is_public === "1" ||
-                businessUser.profile_personal_phone_number_is_public === 1 ||
-                businessUser.profile_personal_phone_number_is_public === "1",
-              phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
-              tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
-              tagLineIsPublic: businessUser.profile_personal_tag_line_is_public === 1 || businessUser.profile_personal_tag_line_is_public === "1" || false,
-              city: businessUser.city || businessUser.profile_personal_city || "",
-              state: businessUser.state || businessUser.profile_personal_state || "",
-              locationIsPublic:
-                businessUser.location_is_public === 1 ||
-                businessUser.location_is_public === "1" ||
-                businessUser.profile_personal_location_is_public === 1 ||
-                businessUser.profile_personal_location_is_public === "1" ||
-                false,
-            };
+        {renderCollapsibleSection("BUSINESS CATEGORIES", showCategories, () => setShowCategories((prev) => !prev), <>{renderCategoryField()}</>)}
 
-            const isIndividualPublic =
-              businessUser.bu_individual_business_is_public === 1 || businessUser.bu_individual_business_is_public === "1" || businessUser.bu_individual_business_is_public === true;
+        {renderCollapsibleSection("TEAM & ACCESS", showTeamAccess, () => setShowTeamAccess((prev) => !prev), renderBusinessEditorsSection())}
 
-            return (
-              <View key={businessUser.business_user_id || index} style={[styles.existingBusinessUserCard, darkMode && styles.darkExistingBusinessUserCard]}>
-                <View style={styles.existingBusinessUserHeader}>
-                  <View style={styles.existingBusinessUserInfo}>
-                    <MiniCard user={userForMiniCard} />
-                    <Text style={[styles.existingBusinessUserRole, darkMode && styles.darkExistingBusinessUserRole]}>Role: {businessUser.business_role || "N/A"}</Text>
-                  </View>
-                  <View style={styles.toggleContainer}>
-                    <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.togglePill, isIndividualPublic && styles.togglePillActiveGreen]}>
-                      <Text style={[styles.togglePillText, isIndividualPublic && styles.togglePillTextActive]}>{isIndividualPublic ? "Visible" : "Show"}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.togglePill, !isIndividualPublic && styles.togglePillActiveRed]}>
-                      <Text style={[styles.togglePillText, !isIndividualPublic && styles.togglePillTextActive]}>{!isIndividualPublic ? "Hidden" : "Hide"}</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
-          {additionalBusinessUsers.map((user, index) => (
-            <View key={index} style={[styles.businessEditorCard, darkMode && styles.darkBusinessEditorCard]}>
-              <View style={styles.businessEditorHeader}>
-                <Text style={[styles.businessEditorLabel, darkMode && styles.darkBusinessEditorLabel]}>Editor #{index + 1}</Text>
-                <TouchableOpacity onPress={() => removeBusinessEditor(index)}>
-                  <Text style={[styles.removeButtonText, darkMode && styles.darkRemoveButtonText]}>Remove</Text>
+        {renderCollapsibleSection("CUSTOM TAGS", showCustomTags, () => setShowCustomTags((prev) => !prev), renderCustomTagsSection(true))}
+
+        {renderCollapsibleSection(
+          "SOCIAL LINKS",
+          showSocialLinks,
+          () => setShowSocialLinks((prev) => !prev),
+          <>
+            {renderWebsiteFields()}
+            {renderSocialField("Facebook", "facebook")}
+            {renderSocialField("Instagram", "instagram")}
+            {renderSocialField("LinkedIn", "linkedin")}
+            {renderSocialField("YouTube", "youtube")}
+          </>,
+        )}
+
+        {renderCollapsibleSection(
+          "PRODUCTS & SERVICES",
+          showProductsServices,
+          () => setShowProductsServices((prev) => !prev),
+          <>
+            {!showServiceForm ? (
+              <View style={styles.productsSectionHeaderRow}>
+                <Text style={[styles.sublabel, darkMode && styles.darkSublabel, styles.fieldContainerCompactLabel]}>Add products or services for customers to browse and buy</Text>
+                <TouchableOpacity onPress={openNewProductForm} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={[styles.addText, darkMode && styles.darkAddText]}>+</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Email Address</Text>
-              <TextInput
-                style={[styles.input, darkMode && styles.darkInput]}
-                value={user.email}
-                placeholder='Enter email address'
-                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                keyboardType='email-address'
-                autoCapitalize='none'
-                onChangeText={(text) => updateBusinessEditor(index, "email", text)}
-              />
-              <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Business Role</Text>
-              <Dropdown
-                style={[styles.input, darkMode && styles.darkInput]}
-                data={businessRoles}
-                labelField='label'
-                valueField='value'
-                placeholder='Select role'
-                placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                value={user.role}
-                onChange={(item) => updateBusinessEditor(index, "role", item.value)}
-                containerStyle={[{ borderRadius: 10, marginTop: 5 }, darkMode && { backgroundColor: "#1a1a1a", borderColor: "#404040" }]}
-                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
-                selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
-                activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                itemContainerStyle={darkMode ? { backgroundColor: "#1a1a1a" } : {}}
-                flatListProps={{
-                  nestedScrollEnabled: true,
-                }}
-              />
-            </View>
-          ))}
-        </View>
-
-        {/* BUSINESS-SPECIFIC: Custom Tags Section (not in EditProfileScreen) */}
-        {/* {isOwner && renderCustomTagsSection()} */}
-        {renderCustomTagsSection()}
-
-        {/* MISSING: renderShortBioField() call (EditProfileScreen has this) */}
-        {/* Note: Business profile uses regular renderField for shortBio */}
-
-        {/* MISSING: ExperienceSection, EducationSection, ExpertiseSection, SeekingSection, BusinessSection components (EditProfileScreen has these) */}
-        {/* Note: Business profile doesn't have these sections, uses Products & Services instead */}
-
-        {/* BUSINESS-SPECIFIC: Social Links Section (EditProfileScreen doesn't have this section in edit) */}
-        <Text style={[styles.label, darkMode && styles.darkLabel]}>Social Links</Text>
-        {renderField("Website", formData.website, "website")}
-        {renderSocialField("Facebook", "facebook")}
-        {renderSocialField("Instagram", "instagram")}
-        {renderSocialField("LinkedIn", "linkedin")}
-        {renderSocialField("YouTube", "youtube")}
-
-        {/* BUSINESS-SPECIFIC: Products & Services Section (EditProfileScreen has ExperienceSection, EducationSection, etc.) */}
-        <View style={styles.fieldContainer}>
-          <View style={styles.productsSectionHeaderRow}>
-            <Text style={[styles.label, darkMode && styles.darkLabel, styles.labelInline]}>Products & Services</Text>
-            {!showServiceForm && (
-              <TouchableOpacity
-                onPress={() => {
-                  setServiceForm({ ...defaultService });
-                  setEditingServiceIndex(null);
-                  setServiceFormTaxRateError(false);
-                  setServiceFormQuantityError(false);
-                  setServiceFormCostUnitError(false);
-                  setProductTagInput("");
-                  setShowServiceForm(true);
-                  resetServiceProductImageState();
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={[styles.addText, darkMode && styles.darkAddText, styles.labelInline]}>+</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          {services.length === 0 && <Text style={[styles.noServicesText, darkMode && styles.darkNoServicesText]}>No products or services added yet.</Text>}
-          {services.map((service, idx) => (
-            <View key={service.bs_uid ? String(service.bs_uid) : `svc-${idx}`} style={styles.productCardEditWrapper}>
-              {!(showServiceForm && editingServiceIndex === idx) ? (
-                <ProductCard
-                  service={service}
-                  businessUid={businessUID}
-                  onEdit={() => handleEditService(service, idx)}
-                  onDelete={() => handleDeleteService(idx)}
-                  showEditButton={true}
-                  showTags={true}
-                  darkMode={darkMode}
-                />
-              ) : null}
-              {showServiceForm && editingServiceIndex === idx ? renderProductsServicesForm() : null}
-            </View>
-          ))}
-          {showServiceForm && editingServiceIndex === null ? renderProductsServicesForm() : null}
-        </View>
+            ) : null}
+            {services.length === 0 && !showServiceForm ? (
+              <Text style={[styles.noServicesText, darkMode && styles.darkNoServicesText]}>No products or services added yet.</Text>
+            ) : null}
+            {services.map((service, idx) => (
+              <View key={service.bs_uid ? String(service.bs_uid) : `svc-${idx}`} style={styles.productCardEditWrapper}>
+                {!(showServiceForm && editingServiceIndex === idx) ? (
+                  <ProductCard
+                    service={service}
+                    businessUid={businessUID}
+                    onEdit={() => handleEditService(service, idx)}
+                    onDelete={() => handleDeleteService(idx)}
+                    showEditButton={true}
+                    showTags={true}
+                    darkMode={darkMode}
+                  />
+                ) : null}
+                {showServiceForm && editingServiceIndex === idx ? renderProductsServicesForm() : null}
+              </View>
+            ))}
+            {showServiceForm && editingServiceIndex === null ? renderProductsServicesForm() : null}
+          </>,
+        )}
 
         <TouchableOpacity
           style={[styles.saveButton, (!isValid || !isChanged) && (darkMode ? styles.darkDisabledButton : styles.saveButtonDisabled), darkMode && styles.darkSaveButton]}
@@ -4556,6 +4620,18 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     backgroundColor: "#f0f0f0",
     color: "#000",
+  },
+  websiteInputsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  websiteShortTitleInput: {
+    flex: 0.38,
+    minWidth: 120,
+  },
+  websiteUrlInput: {
+    flex: 1,
   },
   textarea: {
     minHeight: 40,
@@ -4993,6 +5069,58 @@ const styles = StyleSheet.create({
   uploadLink: { color: "#007AFF", textDecorationLine: "underline", marginBottom: 10 },
   previewSection: { marginBottom: 20 },
   previewCard: { padding: 10, borderWidth: 1, borderColor: "#ccc", borderRadius: 5 },
+  collapsibleSection: {
+    marginBottom: 4,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: BUSINESS_PROFILE_SECTION_HEADER_BG,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  sectionHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sectionHeaderText: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#000",
+    letterSpacing: 1,
+    flex: 1,
+    paddingRight: 8,
+  },
+  darkSectionHeader: {
+    backgroundColor: BUSINESS_PROFILE_SECTION_HEADER_BG,
+  },
+  darkSectionHeaderText: {
+    color: "#000",
+  },
+  sectionContent: {
+    padding: 16,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    marginBottom: 8,
+  },
+  darkSectionContent: {
+    backgroundColor: "#1a1a1a",
+    borderBottomColor: "#333",
+  },
+  fieldContainerCompact: {
+    marginBottom: 0,
+  },
+  fieldContainerCompactLabel: {
+    marginTop: 0,
+    marginBottom: 0,
+    flex: 1,
+    paddingRight: 8,
+  },
   // BUSINESS-SPECIFIC: Additional styles for business-specific features
   tagEditorBlock: {
     marginTop: 4,
