@@ -11,7 +11,6 @@ import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyLocationPrivacyModal from "../components/NearbyLocationPrivacyModal";
 import NearbyLocationPickerModal from "../components/NearbyLocationPickerModal";
-import { useNearbyAlert } from "../contexts/NearbyAlertContext";
 import { DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS, loadNearbySettings, subscribeNearbySettings, syncNearbySettingsToServer, formatNearbyPrivacySummary } from "../utils/nearbySettings";
 import { subscribeStoredNearbyCoords, formatStoredNearbyCoordsSummary, publishStoredNearbyCoords, NEARBY_LOCATION_PICKER_OPTIONS, resolveNearbyLocationOptionCoords } from "../utils/nearbyLocationUpdate";
 import { resetSharedAblyClient } from "../utils/ablyClient";
@@ -19,9 +18,6 @@ import {
   SHARE_LOCATION_DURATION_HOURS,
   startLiveLocationSharing as startLiveLocationSharingSession,
   stopLiveLocationSharing as stopLiveLocationSharingSession,
-  restoreLiveLocationSessionIfActive,
-  bindLiveLocationSharingExtras,
-  clearLiveLocationSharingExtras,
   subscribeLiveLocationSharingStatus,
   getLiveLocationSharingStatus,
 } from "../utils/liveLocationSharing";
@@ -119,9 +115,6 @@ const COLORS = {
   cancelButtonBackground: "#ccc",
 };
 
-// AsyncStorage key for ignored nearby UIDs (cleared when the sharing session ends)
-const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
-
 // Default settings for Messages Privacy — persisted server-side on profile_personal
 // (profile_personal_messages_receive_from + profile_personal_messages_receive_types).
 // There is no sender-side restriction — everyone can always attempt to message anyone;
@@ -170,7 +163,6 @@ export default function SettingsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { user, profile_uid } = route.params || {};
-  const { setNearbyAlert, registerIgnoreHandler } = useNearbyAlert();
   const [allowNotifications, setAllowNotifications] = useState(true);
   const [shareLocationActive, setShareLocationActive] = useState(false);
   const [shareLocationUntil, setShareLocationUntil] = useState(null); // Date | null
@@ -209,10 +201,8 @@ export default function SettingsScreen() {
   // Master "turn off all messages" switch — persisted server-side (profile_personal_messages_off)
   const [messagesOff, setMessagesOff] = useState(false);
 
-  // Live location sharing — watcher/timer live in utils/liveLocationSharing (shared with Connect).
-
-  // Ignored nearby UIDs — persisted in AsyncStorage for the duration of the sharing session
-  const ignoredNearbyRef = useRef(new Set()); // ref for use inside callbacks
+  // Live location sharing — watcher/timer/Ably alerts live in utils/liveLocationSharing
+  // (shared with Connect). Banner delivery is owned by NearbyAlertProvider.
 
   // Nearby share / receive settings — ref for callbacks, state for rendering
   const nearbySettingsRef = useRef(INITIAL_NEARBY_SETTINGS);
@@ -328,16 +318,6 @@ export default function SettingsScreen() {
       const pm = await loadPrivacyMode();
       setPrivacyModeEnabled(pm);
 
-      // Restore ignored nearby UIDs (survives page refresh within a session)
-      try {
-        const storedIgnored = await AsyncStorage.getItem(NEARBY_IGNORED_KEY);
-        if (storedIgnored) {
-          const uids = JSON.parse(storedIgnored);
-          const s = new Set(uids);
-          ignoredNearbyRef.current = s;
-        }
-      } catch (_) {}
-
       // Restore nearby share / receive settings and push to DB immediately
       // so the server-side consent check is always up-to-date on load.
       try {
@@ -346,13 +326,6 @@ export default function SettingsScreen() {
         setNearbySettings(parsed);
         void syncNearbySettingsToServer(parsed);
       } catch (_) {}
-
-      // Restore live location session if still within its window
-      await restoreLiveLocationSessionIfActive({
-        onNearbyAlert: (alert) => setNearbyAlert(alert),
-        isNearbyIgnored: (uid) => ignoredNearbyRef.current.has(uid),
-        onStopped: () => setNearbyAlert(null),
-      });
     })();
   }, []);
   const [termsModalVisible, setTermsModalVisible] = useState(false);
@@ -637,18 +610,12 @@ export default function SettingsScreen() {
 
   // Keep Settings UI in sync with the shared live-location session.
   useEffect(() => {
-    bindLiveLocationSharingExtras({
-      onNearbyAlert: (alert) => setNearbyAlert(alert),
-      isNearbyIgnored: (uid) => ignoredNearbyRef.current.has(uid),
-      onStopped: () => setNearbyAlert(null),
-    });
     const unsubStatus = subscribeLiveLocationSharingStatus(({ active, until }) => {
       setShareLocationActive(active);
       setShareLocationUntil(until);
     });
     return () => {
       unsubStatus();
-      clearLiveLocationSharingExtras();
     };
   }, []);
 
@@ -664,30 +631,12 @@ export default function SettingsScreen() {
   // Stop live sharing (manual off, auto-off, or logout)
   const stopLiveLocationSharing = async () => {
     await stopLiveLocationSharingSession();
-    setNearbyAlert(null);
   };
 
   // Toggle ON handler — requests permission, sets expiry, patches immediately, starts watcher
   const startLiveLocationSharing = async () => {
     await startLiveLocationSharingSession();
   };
-
-  // Connect → Who's Nearby menu can deep-link into location modals (share live toggles on Connect).
-  const ignoreNearbyUser = async (uid) => {
-    if (!uid) return;
-    const next = new Set(ignoredNearbyRef.current);
-    next.add(uid);
-    ignoredNearbyRef.current = next;
-    try {
-      await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
-    } catch (_) {}
-  };
-
-  // App-root banner calls this when the user taps Ignore
-  useEffect(() => {
-    registerIgnoreHandler(ignoreNearbyUser);
-    return () => registerIgnoreHandler(null);
-  }, [registerIgnoreHandler]);
 
   // Connect → Who's Nearby menu can deep-link into location modals (share live toggles on Connect).
   useFocusEffect(
