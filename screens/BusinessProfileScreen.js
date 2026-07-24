@@ -47,7 +47,7 @@ import {
 import { buildBusinessMiniCardBusiness } from "../utils/mapBusinessToMiniCard";
 import { getPlaceDetails } from "../utils/googlePlaces";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
-import { getSessionProfile, getViewerProfilePersonalPath, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
+import { getSessionProfile, getViewerProfilePersonalPath, refreshSessionProfileFromNetwork, resolveBusinessUidFromProfileRow } from "../utils/sessionProfile";
 import { enrichReviewWithConnectionDegree } from "../utils/profilePathConnectionDegree";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
 import * as DocumentPicker from "expo-document-picker";
@@ -339,25 +339,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
     if (!profileUid) return false;
 
-    const parseBusinessInfoList = (raw) => {
-      if (!raw) return [];
-      if (Array.isArray(raw)) return raw;
-      if (typeof raw === "string") {
-        try {
-          const parsed = JSON.parse(raw);
-          return Array.isArray(parsed) ? parsed : [];
-        } catch {
-          return [];
-        }
-      }
-      return [];
-    };
-
     const session = await getSessionProfile();
-    const rawBiz = session?.rawProfile?.business_info ?? session?.businessInfo;
-    const businessInfo = parseBusinessInfoList(rawBiz);
+    const businessInfo = session?.businessInfo || [];
     const uidStr = String(business_uid || "");
-    let isInProfileBusinesses = businessInfo.some((biz) => String(biz?.business_uid || biz?.profile_business_uid || biz?.profile_business_business_id || "") === uidStr);
+    let isInProfileBusinesses = businessInfo.some((biz) => resolveBusinessUidFromProfileRow(biz) === uidStr);
     if (!isInProfileBusinesses && Array.isArray(session?.businessUids) && session.businessUids.length > 0) {
       isInProfileBusinesses = session.businessUids.some((id) => String(id) === uidStr);
     }
@@ -1468,7 +1453,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 (businessViewers.length > 0 ? (
                   businessViewers.map((viewer, index) => (
                     <TouchableOpacity
-                      key={viewer.view_viewer_id || index}
+                      key={`viewer-${viewer.view_viewer_id || "anon"}-${index}`}
                       activeOpacity={0.7}
                       onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "BusinessProfile" })}
                       style={index > 0 ? { marginTop: 4 } : undefined}

@@ -19,7 +19,6 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer, getStateFromPath as parsePathToNavigationState } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { clearUserProfileCacheStorage } from "./utils/sessionProfile";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -42,6 +41,7 @@ import { UnreadProvider } from "./contexts/UnreadContext";
 import { NearbyAlertProvider, useNearbyAlert } from "./contexts/NearbyAlertContext";
 import MessageNotificationBanner from "./components/MessageNotificationBanner";
 import NearbyAlertBanner from "./components/NearbyAlertBanner";
+import { SessionProfileProvider } from "./contexts/SessionProfileContext";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
 import LoginScreen from "./screens/LoginScreen";
 import SignUpScreen from "./screens/SignUpScreen";
@@ -54,7 +54,6 @@ import BusinessModerationScreen from "./screens/BusinessModerationScreen";
 import EditProfileScreen from "./screens/EditProfileScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import AccountScreen from "./screens/AccountScreen";
-import NetworkScreen from "./screens/NetworkScreen";
 import SearchScreen from "./screens/SearchScreen";
 import AppleSignIn from "./AppleSignIn";
 import AccountTypeScreen from "./screens/AccountTypeScreen";
@@ -75,6 +74,7 @@ import OfferingDetailScreen from "./screens/OfferingDetailScreen";
 import WishResponsesScreen from "./screens/WishResponsesScreen";
 import OfferingResponsesScreen from "./screens/OfferingResponsesScreen";
 import ConnectScreen from "./screens/ConnectScreen";
+import ConnectLinkScreen from "./screens/ConnectLinkScreen";
 import ConnectWebScreen from "./screens/ConnectWebScreen";
 import NewConnectionScreen from "./screens/NewConnectionScreen";
 import ScanLandingScreen from "./screens/ScanLandingScreen";
@@ -83,7 +83,7 @@ import InboxScreen from "./screens/InboxScreen";
 import ChatScreen from "./screens/ChatScreen";
 import AddReviewSearchScreen from "./screens/AddReviewSearchScreen";
 import EveryCircleMapScreen from "./screens/EveryCircleMapScreen";
-import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv } from "./utils/clearAppAsyncStorage";
+import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv, clearSessionAsyncStorageOnLogin } from "./utils/clearAppAsyncStorage";
 
 const Stack = createNativeStackNavigator();
 
@@ -92,15 +92,13 @@ export const googleApiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 /** Home screen: show version / last-build line (PM version, app version, last change). */
 const SHOW_HOME_BUILD_INFO = true;
 
-// Wrapper component for Connect screen to handle conditional rendering
-const ConnectScreenWrapper = (props) => {
-  // If profile_uid is present in route params or URL, use NewConnectionScreen
+// Wrapper for legacy /connect deep-link route (not the Connect tab).
+const ConnectLinkScreenWrapper = (props) => {
   const profileUid = props.route?.params?.profile_uid || (isWeb && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("profile_uid") : null);
   if (profileUid) {
     return <NewConnectionScreen {...props} />;
   }
-  // Otherwise use the original Connect screen
-  return Platform.OS === "web" ? <ConnectWebScreen {...props} /> : <ConnectScreen {...props} />;
+  return Platform.OS === "web" ? <ConnectWebScreen {...props} /> : <ConnectLinkScreen {...props} />;
 };
 
 /** Body for POST `api/v2/AppleAuth/EVERY-CIRCLE` (snake_case keys for the API). */
@@ -209,11 +207,15 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
       console.warn("App.js - AppleAuth: no user_uid in response:", result);
       throw new Error("Apple auth did not return a user id");
     }
+    const previousUserUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
     await AsyncStorage.setItem("user_uid", String(userUid));
     await AsyncStorage.setItem("user_email_id", userEmail || "");
     await AsyncStorage.setItem("isThirdPartyAuth", true);
-    await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-    await clearUserProfileCacheStorage();
+    await clearSessionAsyncStorageOnLogin({
+      userUid: String(userUid),
+      previousUserUid,
+      preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
+    });
 
     const appleUserInfoPayload = {
       email: userEmail,
@@ -297,11 +299,15 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
 
   const existingAccount = isExistingSocialAccountApiResult(result);
 
+  const previousUserUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
   await AsyncStorage.setItem("user_uid", String(userUid));
   await AsyncStorage.setItem("user_email_id", userInfo.user.email);
   await AsyncStorage.setItem("isThirdPartyAuth", true);
-  await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-  await clearUserProfileCacheStorage();
+  await clearSessionAsyncStorageOnLogin({
+    userUid: String(userUid),
+    previousUserUid,
+    preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
+  });
 
   const googleUserInfo = {
     email: userInfo.user.email,
@@ -895,7 +901,7 @@ export default function App() {
         profile_uid: (profile_uid) => profile_uid,
       },
     },
-    Connect: {
+    ConnectLink: {
       path: "connect",
       parse: {
         profile_uid: (profile_uid) => profile_uid,
@@ -909,7 +915,7 @@ export default function App() {
         profile_uid: (v) => v,
       },
     },
-    Network: "network",
+    Connect: "network",
     Search: "search",
     Settings: "settings",
     Inbox: "inbox",
@@ -1027,62 +1033,63 @@ export default function App() {
   return (
     <TextNodeErrorBoundary>
       <DarkModeProvider>
-        <UnreadProvider>
-          <NearbyAlertProvider>
+        <SessionProfileProvider>
+          <UnreadProvider>
+            <NearbyAlertProvider>
             <View style={styles.appRoot}>
               <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
-                <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
-                  <Stack.Screen name='Home' component={HomeScreen} />
-                  <Stack.Screen
-                    name='Login'
-                    children={(props) => (
-                      <LoginScreen {...props} onGoogleSignIn={() => signInHandler(props.navigation)} onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation)} onError={setError} />
-                    )}
-                  />
-                  <Stack.Screen
-                    name='SignUp'
-                    children={(props) => (
-                      <SignUpScreen {...props} onGoogleSignUp={() => signUpHandler(props.navigation)} onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation)} onError={setError} />
-                    )}
-                  />
-                  <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
-                  <Stack.Screen name='ContactUs' component={ContactUsScreen} />
-                  <Stack.Screen name='UserInfo' component={UserInfoScreen} />
-                  {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
-                  <Stack.Screen name='AccountType' component={AccountTypeScreen} />
-                  <Stack.Screen name='Profile' component={ProfileScreen} />
-                  <Stack.Screen name='ProfileModeration' component={ProfileModerationScreen} options={{ headerShown: false }} />
-                  <Stack.Screen name='EditProfile' component={EditProfileScreen} />
-                  <Stack.Screen name='Settings' component={SettingsScreen} />
-                  <Stack.Screen name='Account' component={AccountScreen} />
-                  <Stack.Screen name='Network' component={NetworkScreen} />
-                  <Stack.Screen name='Search' component={SearchScreen} />
-                  <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
-                  <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
-                  <Stack.Screen name='BusinessModeration' component={BusinessModerationScreen} options={{ headerShown: false }} />
-                  <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
-                  <Stack.Screen name='Filters' component={FilterScreen} />
-                  <Stack.Screen name='SearchTab' component={SearchTab} />
+              <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
+                <Stack.Screen name='Home' component={HomeScreen} />
+                <Stack.Screen
+                  name='Login'
+                  children={(props) => (
+                    <LoginScreen {...props} onGoogleSignIn={() => signInHandler(props.navigation)} onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation)} onError={setError} />
+                  )}
+                />
+                <Stack.Screen
+                  name='SignUp'
+                  children={(props) => (
+                    <SignUpScreen {...props} onGoogleSignUp={() => signUpHandler(props.navigation)} onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation)} onError={setError} />
+                  )}
+                />
+                <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
+                <Stack.Screen name='ContactUs' component={ContactUsScreen} />
+                <Stack.Screen name='UserInfo' component={UserInfoScreen} />
+                {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
+                <Stack.Screen name='AccountType' component={AccountTypeScreen} />
+                <Stack.Screen name='Profile' component={ProfileScreen} />
+                <Stack.Screen name='ProfileModeration' component={ProfileModerationScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='EditProfile' component={EditProfileScreen} />
+                <Stack.Screen name='Settings' component={SettingsScreen} />
+                <Stack.Screen name='Account' component={AccountScreen} />
+                <Stack.Screen name='Connect' component={ConnectScreen} />
+                <Stack.Screen name='Search' component={SearchScreen} />
+                <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
+                <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
+                <Stack.Screen name='BusinessModeration' component={BusinessModerationScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
+                <Stack.Screen name='Filters' component={FilterScreen} />
+                <Stack.Screen name='SearchTab' component={SearchTab} />
 
-                  <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
-                  <Stack.Screen name='PrivacyPolicy' component={PrivacyPolicyScreen} options={{ title: "Privacy Policy" }} />
-                  <Stack.Screen name='EditBusinessProfile' component={EditBusinessProfileScreen} />
-                  <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
-                  <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />
-                  <Stack.Screen name='ReviewDetail' component={ReviewDetailScreen} options={{ headerShown: false }} />
-                  <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
-                  <Stack.Screen name='OfferingDetail' component={OfferingDetailScreen} options={{ headerShown: false }} />
-                  <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
-                  <Stack.Screen name='OfferingResponses' component={OfferingResponsesScreen} options={{ headerShown: false }} />
-                  <Stack.Screen name='Connect' component={ConnectScreenWrapper} />
-                  <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
-                  <Stack.Screen name='ScanLanding' component={ScanLandingScreen} />
-                  <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
-                  <Stack.Screen name='Inbox' component={InboxScreen} />
-                  <Stack.Screen name='Chat' component={ChatScreen} />
-                  <Stack.Screen name='AddReviewSearch' component={AddReviewSearchScreen} options={{ headerShown: false }} />
-                  <Stack.Screen name='EveryCircleMap' component={EveryCircleMapScreen} options={{ headerShown: false }} />
-                </Stack.Navigator>
+                <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
+                <Stack.Screen name='PrivacyPolicy' component={PrivacyPolicyScreen} options={{ title: "Privacy Policy" }} />
+                <Stack.Screen name='EditBusinessProfile' component={EditBusinessProfileScreen} />
+                <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
+                <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='ReviewDetail' component={ReviewDetailScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='OfferingDetail' component={OfferingDetailScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='OfferingResponses' component={OfferingResponsesScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='ConnectLink' component={ConnectLinkScreenWrapper} />
+                <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
+                <Stack.Screen name='ScanLanding' component={ScanLandingScreen} />
+                <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='Inbox' component={InboxScreen} />
+                <Stack.Screen name='Chat' component={ChatScreen} />
+                <Stack.Screen name='AddReviewSearch' component={AddReviewSearchScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='EveryCircleMap' component={EveryCircleMapScreen} options={{ headerShown: false }} />
+              </Stack.Navigator>
               </NavigationContainer>
               <MessageNotificationBanner
                 onOpen={(conversationUid, senderUid, senderName, senderImage) => {
@@ -1098,8 +1105,9 @@ export default function App() {
               />
               <RootNearbyAlertBanner navigationRef={navigationRef} />
             </View>
-          </NearbyAlertProvider>
-        </UnreadProvider>
+            </NearbyAlertProvider>
+          </UnreadProvider>
+        </SessionProfileProvider>
       </DarkModeProvider>
     </TextNodeErrorBoundary>
   );

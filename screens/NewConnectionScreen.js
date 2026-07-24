@@ -265,17 +265,17 @@ const NewConnectionScreen = () => {
         if (Platform.OS === "web") {
           // On web, use window.alert and navigate immediately after
           window.alert(successMessage);
-          console.log("NewConnectionScreen - Navigating to Network page");
-          navigation.navigate("Network");
+          console.log("NewConnectionScreen - Navigating to Connect page");
+          navigation.navigate("Connect");
         } else {
           // On native, use Alert.alert with button callback
           Alert.alert("Success", successMessage, [
             {
               text: "OK",
               onPress: () => {
-                console.log("NewConnectionScreen - Navigating to Network page");
-                // Navigate to Network page (shows QR code and network)
-                navigation.navigate("Network");
+                console.log("NewConnectionScreen - Navigating to Connect page");
+                // Navigate to Connect page (shows QR code and network)
+                navigation.navigate("Connect");
               },
             },
           ]);

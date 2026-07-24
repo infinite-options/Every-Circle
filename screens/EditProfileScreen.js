@@ -1481,6 +1481,80 @@ const EditProfileScreen = ({ route, navigation }) => {
           </>
         )}
 
+        {/* BIO Section */}
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowBio(!showBio)} activeOpacity={0.7}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>BIO</Text>
+          <Ionicons name={showBio ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showBio && (
+          <>
+            {renderField("Tagline", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
+            {renderShortBioField()}
+          </>
+        )}
+
+        {/* OFFERING Section */}
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowOffering(!showOffering)} activeOpacity={0.7}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>OFFERING</Text>
+          <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showOffering && (
+          <>
+            {moderatedOfferingCount > 0 ? (
+              <Text style={[styles.moderatedOfferingNote, darkMode && styles.moderatedOfferingNoteDark]}>
+                {moderatedOfferingCount} moderated offering{moderatedOfferingCount === 1 ? "" : "s"} cannot be edited here and are shown on your profile with their status.
+              </Text>
+            ) : null}
+            <ExpertiseSection
+              expertise={formData.expertise}
+              setExpertise={(e) => {
+                setFormData((prev) => ({ ...prev, expertise: e }));
+                setIsChanged(true);
+              }}
+              toggleVisibility={() => handleToggleVisibility("expertiseIsPublic")}
+              isPublic={formData.expertiseIsPublic}
+              handleDelete={handleDeleteExpertise}
+              profileUid={profileUID.trim()}
+              darkMode={darkMode}
+              onInputFocus={(inputRef) => {
+                // Called by child after "+" render with new card ref.
+                scrollNewCardToMiddleIfNeeded(inputRef);
+              }}
+            />
+          </>
+        )}
+
+        {/* SEEKING Section */}
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowSeeking(!showSeeking)} activeOpacity={0.7}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>SEEKING</Text>
+          <Ionicons name={showSeeking ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showSeeking && (
+          <>
+            {moderatedSeekingCount > 0 ? (
+              <Text style={[styles.moderatedOfferingNote, darkMode && styles.moderatedOfferingNoteDark]}>
+                {moderatedSeekingCount} moderated seeking post{moderatedSeekingCount === 1 ? "" : "s"} cannot be edited here and are shown on your profile with their status.
+              </Text>
+            ) : null}
+            <SeekingSection
+            wishes={formData.wishes}
+            setWishes={(e) => {
+              setFormData((prev) => ({ ...prev, wishes: e }));
+              setIsChanged(true);
+            }}
+            toggleVisibility={() => handleToggleVisibility("wishesIsPublic")}
+            isPublic={formData.wishesIsPublic}
+            handleDelete={handleDeleteWish}
+            profileUid={profileUID.trim()}
+            darkMode={darkMode}
+            onInputFocus={(inputRef) => {
+              // Called by child after "+" render with new card ref.
+              scrollNewCardToMiddleIfNeeded(inputRef);
+            }}
+          />
+          </>
+        )}
+
         {/* SOCIAL MEDIA Section */}
         <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowSocial(!showSocial)} activeOpacity={0.7}>
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>SOCIAL MEDIA</Text>
@@ -1597,80 +1671,6 @@ const EditProfileScreen = ({ route, navigation }) => {
               <Text style={{ color: "#9C45F7", fontWeight: "600", fontSize: 14 }}>Add Link</Text>
             </TouchableOpacity>
           </View>
-        )}
-
-        {/* BIO Section */}
-        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowBio(!showBio)} activeOpacity={0.7}>
-          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>BIO</Text>
-          <Ionicons name={showBio ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
-        </TouchableOpacity>
-        {showBio && (
-          <>
-            {renderField("Tagline", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
-            {renderShortBioField()}
-          </>
-        )}
-
-        {/* OFFERING Section */}
-        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowOffering(!showOffering)} activeOpacity={0.7}>
-          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>OFFERING</Text>
-          <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
-        </TouchableOpacity>
-        {showOffering && (
-          <>
-            {moderatedOfferingCount > 0 ? (
-              <Text style={[styles.moderatedOfferingNote, darkMode && styles.moderatedOfferingNoteDark]}>
-                {moderatedOfferingCount} moderated offering{moderatedOfferingCount === 1 ? "" : "s"} cannot be edited here and are shown on your profile with their status.
-              </Text>
-            ) : null}
-            <ExpertiseSection
-              expertise={formData.expertise}
-              setExpertise={(e) => {
-                setFormData((prev) => ({ ...prev, expertise: e }));
-                setIsChanged(true);
-              }}
-              toggleVisibility={() => handleToggleVisibility("expertiseIsPublic")}
-              isPublic={formData.expertiseIsPublic}
-              handleDelete={handleDeleteExpertise}
-              profileUid={profileUID.trim()}
-              darkMode={darkMode}
-              onInputFocus={(inputRef) => {
-                // Called by child after "+" render with new card ref.
-                scrollNewCardToMiddleIfNeeded(inputRef);
-              }}
-            />
-          </>
-        )}
-
-        {/* SEEKING Section */}
-        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowSeeking(!showSeeking)} activeOpacity={0.7}>
-          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>SEEKING</Text>
-          <Ionicons name={showSeeking ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
-        </TouchableOpacity>
-        {showSeeking && (
-          <>
-            {moderatedSeekingCount > 0 ? (
-              <Text style={[styles.moderatedOfferingNote, darkMode && styles.moderatedOfferingNoteDark]}>
-                {moderatedSeekingCount} moderated seeking post{moderatedSeekingCount === 1 ? "" : "s"} cannot be edited here and are shown on your profile with their status.
-              </Text>
-            ) : null}
-            <SeekingSection
-            wishes={formData.wishes}
-            setWishes={(e) => {
-              setFormData((prev) => ({ ...prev, wishes: e }));
-              setIsChanged(true);
-            }}
-            toggleVisibility={() => handleToggleVisibility("wishesIsPublic")}
-            isPublic={formData.wishesIsPublic}
-            handleDelete={handleDeleteWish}
-            profileUid={profileUID.trim()}
-            darkMode={darkMode}
-            onInputFocus={(inputRef) => {
-              // Called by child after "+" render with new card ref.
-              scrollNewCardToMiddleIfNeeded(inputRef);
-            }}
-          />
-          </>
         )}
 
         {/* EXPERIENCE Section */}

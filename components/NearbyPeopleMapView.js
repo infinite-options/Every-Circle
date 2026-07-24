@@ -81,9 +81,9 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
         title="Your nearby location"
         pinColor={HOME_MARKER_COLOR}
       />
-      {people.map((person) => (
+      {people.map((person, idx) => (
         <Marker
-          key={person.uid}
+          key={`${person.uid}-${idx}`}
           coordinate={{ latitude: person.lat, longitude: person.lng }}
           title={person.name}
           anchor={{ x: 0.5, y: 0.5 }}

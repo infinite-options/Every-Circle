@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { publishNewConnectionOpened } from "./publishNewConnectionOpened";
 import { resolveScannerProfileUid } from "./ensureSessionProfileUid";
 
-/** Navigation params to open the connect modal on Network for a scanned profile. */
+/** Navigation params to open the connect modal on Connect for a scanned profile. */
 export function networkScanConnectParams(scannedProfileUid) {
   return {
     scannedProfileUid,
@@ -12,7 +12,7 @@ export function networkScanConnectParams(scannedProfileUid) {
 }
 
 /**
- * Navigate to Network for a scan connect flow and notify the QR owner (Exchange Contact Info).
+ * Navigate to Connect for a scan connect flow and notify the QR owner (Exchange Contact Info).
  * @param {import("@react-navigation/native").NavigationProp<any>} navigation
  * @param {string} scannedProfileUid - profile_uid of the QR owner to connect with
  */
@@ -26,7 +26,7 @@ export async function goToNetworkForScanConnect(navigation, scannedProfileUid) {
     return;
   }
 
-  navigation.navigate("Network", networkScanConnectParams(scannedProfileUid));
+  navigation.navigate("Connect", networkScanConnectParams(scannedProfileUid));
 
   // Notify QR owner (requires scanner profile_uid — set after UserInfo on new signup)
   if (scannerProfileUid) {

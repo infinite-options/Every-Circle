@@ -36,10 +36,10 @@ import {
   BUSINESS_INFO_ENDPOINT,
   USER_PROFILE_INFO_ENDPOINT,
   PROFILE_WISH_INFO_ENDPOINT,
-  PROFILE_WISH_RESPONSE_ENDPOINT,
 } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { fetchMyOfferingMessageResponses } from "../utils/offeringMessageResponse";
+import { fetchMyWishMessageResponses } from "../utils/wishMessageResponse";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { isOfferingModeratedBlocked } from "../utils/offeringModeration";
@@ -1160,19 +1160,7 @@ export default function SearchScreen({ route }) {
       return;
     }
     try {
-      const res = await fetch(`${PROFILE_WISH_RESPONSE_ENDPOINT}/${encodeURIComponent(uid)}`);
-      const json = await res.json();
-      const rows = Array.isArray(json?.data) ? json.data : [];
-      const byId = {};
-      for (const row of rows) {
-        const wishId = String(row.wr_profile_wish_id || "").trim();
-        if (!wishId) continue;
-        const respondedAt = row.wr_datetime || "";
-        const prev = byId[wishId];
-        if (!prev || String(respondedAt) > String(prev)) {
-          byId[wishId] = respondedAt;
-        }
-      }
+      const byId = await fetchMyWishMessageResponses(uid);
       setRespondedWishesById(byId);
     } catch (e) {
       console.warn("[SearchScreen] fetchMyWishResponses failed:", e);

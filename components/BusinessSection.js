@@ -370,9 +370,9 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
           <View style={{ backgroundColor: "#fff", borderRadius: 10, padding: 20, width: "80%", maxHeight: "70%" }}>
             <Text style={{ fontWeight: "bold", fontSize: 18, marginBottom: 10 }}>Select a Business</Text>
             <ScrollView>
-              {businessList.map((biz) => (
+              {businessList.map((biz, bizIdx) => (
                 <TouchableOpacity
-                  key={biz.business_uid}
+                  key={`${biz.business_uid || biz.profile_business_uid || "biz"}-${bizIdx}`}
                   style={{ paddingVertical: 10, borderBottomWidth: 1, borderColor: "#eee" }}
                   onPress={() => {
                     if (activeBusinessIndex !== null) {

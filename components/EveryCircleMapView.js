@@ -127,9 +127,9 @@ export default function EveryCircleMapView({
           pinColor="#2434C2"
         />
       )}
-      {businesses.map((business) => (
+      {businesses.map((business, idx) => (
         <Marker
-          key={business.business_uid}
+          key={`${business.business_uid || business.profile_business_uid || "biz"}-${idx}`}
           coordinate={{
             latitude: business.business_latitude,
             longitude: business.business_longitude,

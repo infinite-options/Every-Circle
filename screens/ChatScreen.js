@@ -242,7 +242,7 @@ export default function ChatScreen() {
   }, [other_uid]);
 
   // Check whether I've already blocked the other party, so a returning visit to this chat
-  // shows the "Blocked" indicator immediately instead of only after toggling it in NetworkScreen.
+  // shows the "Blocked" indicator immediately instead of only after toggling it in ConnectScreen.
   useEffect(() => {
     let cancelled = false;
     if (!myUid || !other_uid) {
@@ -568,7 +568,7 @@ export default function ChatScreen() {
           if (navigation.canGoBack()) {
             navigation.goBack();
           } else {
-            navigation.navigate("Network");
+            navigation.navigate("Connect");
           }
         }}
         rightButton={

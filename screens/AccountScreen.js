@@ -22,7 +22,8 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
-import { getSessionProfile } from "../utils/sessionProfile";
+import { getSessionProfile, resolveBusinessUid } from "../utils/sessionProfile";
+import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { restockReturnedItems } from "../utils/purchaseService";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
@@ -114,6 +115,7 @@ function navigateToPurchaseSeller(navigation, transaction) {
  * - Top-level bounty shape: data[] + total_bounties + total_bounty_earned + wallet (purchases may be in purchases / purchase_transactions)
  * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → treat as no seller lines)
  * - data.profile | user_profile: optional { user_email, personal_info, expertise_info } for MiniCard + expertise list
+ * - order_list_hydration: map order_uid -> trimmed order payload (list chips; replaces N order GETs on load)
  */
 /** Backend may send numeric or string success codes (e.g. 200 vs "200"). */
 function isApiSuccessCode(code) {
@@ -648,7 +650,54 @@ function formatWalletUsd(val) {
   return `$${parsePrice(val).toFixed(2)}`;
 }
 
-function mapAccountScreenPersonalResponse(json) {
+/** Settings Debug Mode: log account-screen/personal purchase extraction (txRaw + duplicate txn uids). */
+function summarizeAccountScreenPurchaseRow(row, index) {
+  if (!row || typeof row !== "object") return { index, row };
+  return {
+    index,
+    transaction_uid: row.transaction_uid ?? null,
+    trr_uid: row.trr_uid ?? row.pending_return?.trr_uid ?? null,
+    trr_transaction_uid: row.trr_transaction_uid ?? null,
+    transaction_original_uid: row.transaction_original_uid ?? null,
+    order_uid: row.order_uid ?? null,
+    resolved_order_uid: resolveListRowOrderUid(row),
+    is_return: row.is_return ?? null,
+    is_pending_return: row.is_pending_return ?? null,
+    transaction_type: row.transaction_type ?? null,
+    ti_uid: row.ti_uid ?? null,
+  };
+}
+
+function logAccountScreenPersonalPurchasesDebug({ source, purchasesRawKey, txRaw, transactions }) {
+  const rows = Array.isArray(transactions) ? transactions : [];
+  const uidCounts = {};
+  for (const row of rows) {
+    const uid = String(row?.transaction_uid || "").trim();
+    if (!uid) continue;
+    uidCounts[uid] = (uidCounts[uid] || 0) + 1;
+  }
+  const duplicateTransactionUids = Object.entries(uidCounts)
+    .filter(([, count]) => count > 1)
+    .map(([transaction_uid, count]) => ({ transaction_uid, count }));
+
+  console.log(
+    `[AccountScreen] Debug — account-screen/personal purchases (${source}):`,
+    JSON.stringify(
+      {
+        purchasesRawKey,
+        txRawType: txRaw == null ? "null" : Array.isArray(txRaw) ? "array" : typeof txRaw,
+        txRaw,
+        extractedCount: rows.length,
+        duplicateTransactionUids,
+        rowSummaries: rows.map(summarizeAccountScreenPurchaseRow),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+function mapAccountScreenPersonalResponse(json, options = {}) {
   const root = json && typeof json === "object" ? json : {};
 
   if (Array.isArray(root.data)) {
@@ -657,6 +706,15 @@ function mapAccountScreenPersonalResponse(json) {
     const hasBountyTotals = root.total_bounty_earned != null || root.total_bounties != null || walletEarly != null || bountyResultsBlock != null;
     if (hasBountyTotals) {
       const purchasesRaw = root.purchases ?? root.purchase_transactions ?? root.personal_transactions ?? root.buyer_transactions;
+      const purchasesRawKey = root.purchases != null
+        ? "root.purchases"
+        : root.purchase_transactions != null
+          ? "root.purchase_transactions"
+          : root.personal_transactions != null
+            ? "root.personal_transactions"
+            : root.buyer_transactions != null
+              ? "root.buyer_transactions"
+              : null;
       let sellerTransactions = [];
       const stRaw = root.seller_transactions ?? root.seller_tx;
       if (Array.isArray(stRaw)) {
@@ -670,8 +728,17 @@ function mapAccountScreenPersonalResponse(json) {
         total_bounties: root.total_bounties,
         wallet: root.wallet,
       };
+      const transactions = extractTransactionArray(purchasesRaw);
+      if (options.debug) {
+        logAccountScreenPersonalPurchasesDebug({
+          source: "root.data + bounty aggregate",
+          purchasesRawKey,
+          txRaw: purchasesRaw,
+          transactions,
+        });
+      }
       return {
-        transactions: extractTransactionArray(purchasesRaw),
+        transactions,
         bounty: normalizePersonalBounty(bountyRaw, root, root),
         wallet: extractPersonalWallet(root, root, bountyRaw),
         sellerTransactions,
@@ -701,18 +768,49 @@ function mapAccountScreenPersonalResponse(json) {
     payload.purchase ??
     payload.purchase_list ??
     root.purchases;
+  const purchasesRawKey = payload.transactions != null
+    ? "payload.transactions"
+    : payload.purchase_transactions != null
+      ? "payload.purchase_transactions"
+      : payload.personal_transactions != null
+        ? "payload.personal_transactions"
+        : payload.buyer_transactions != null
+          ? "payload.buyer_transactions"
+          : payload.transaction_list != null
+            ? "payload.transaction_list"
+            : payload.purchases != null
+              ? "payload.purchases"
+              : payload.purchase != null
+                ? "payload.purchase"
+                : payload.purchase_list != null
+                  ? "payload.purchase_list"
+                  : root.purchases != null
+                    ? "root.purchases"
+                    : null;
   transactions = extractTransactionArray(txRaw);
+  let transactionsSource = "txRaw";
   // Nested legacy shape: { message, code: 200, data: [ rows ] } embedded under payload
   if (!transactions.length && payload && typeof payload === "object") {
     const legacyBlock = payload.transactions_legacy ?? payload.transaction_payload ?? payload.transaction_response ?? payload.buyer_transaction_response;
     if (legacyBlock && isApiSuccessCode(legacyBlock.code) && Array.isArray(legacyBlock.data)) {
       transactions = legacyBlock.data;
+      transactionsSource = "legacyBlock.data";
     } else if (isApiSuccessCode(payload.code) && Array.isArray(payload.data)) {
       const sample = payload.data[0];
       if (sample && (sample.transaction_uid != null || sample.ti_uid != null)) {
         transactions = payload.data;
+        transactionsSource = "payload.data (buyer rows)";
       }
     }
+  }
+
+  if (options.debug) {
+    logAccountScreenPersonalPurchasesDebug({
+      source: transactionsSource === "txRaw" ? "payload/root purchases" : transactionsSource,
+      purchasesRawKey: transactionsSource === "txRaw" ? purchasesRawKey : transactionsSource,
+      txRaw: transactionsSource === "txRaw" ? txRaw : null,
+      transactions,
+    });
   }
 
   /** Legacy buyer rows use transaction_business_id; aggregate may only send seller_id. */
@@ -760,6 +858,7 @@ function mapAccountScreenPersonalResponse(json) {
  * - data.seller_transactions | transactions_seller: seller line rows OR { code, data } (same as legacy /transactions/seller/:id)
  * - data.business | business_profile | profile (optional): same field names as GET /api/v1/businessinfo/:uid `business` object for MiniCard
  * - data.services | business_services | business_info.services: product catalog for Product Inventory
+ * - order_list_hydration: map order_uid -> trimmed order payload (seller shipping/received chips)
  */
 /** Seller line is a business product sale (API uses purchase_type and/or bs_uid 250-*, not always ti_bs_id on the line). */
 function isBusinessProductSellerLine(item) {
@@ -1573,7 +1672,7 @@ function rowMatchesReturnStatusKeys(row, statusKeys, { scopeTrrUid = null, scope
   return statusKeys.includes(uid) || statusKeys.includes(orderUid) || (originalUid && statusKeys.includes(originalUid)) || rowTrrs.some((id) => statusKeys.includes(id));
 }
 
-/** Order UIDs that need return/refund chip hydration from GET /orders/:uid (buyer PURCHASES). */
+/** Order UIDs that need return/refund chip hydration from order_list_hydration (buyer PURCHASES). */
 function collectOrderUidsNeedingReturnStatusHydration(purchaseRows) {
   const uids = new Set();
   if (!Array.isArray(purchaseRows)) return [];
@@ -1594,6 +1693,231 @@ function collectOrderUidsNeedingReturnStatusHydration(purchaseRows) {
     if (orderUid && orderUid !== "—") uids.add(orderUid);
   }
   return [...uids];
+}
+
+/** Personal PURCHASES: order UIDs needing order_list_hydration (return chips + shipping progress). */
+function collectOrderUidsNeedingPersonalPurchaseHydration(purchaseRows) {
+  return [
+    ...new Set([
+      ...collectOrderUidsNeedingReturnStatusHydration(purchaseRows),
+      ...collectOrderUidsNeedingShippingProgressHydration(purchaseRows),
+    ]),
+  ];
+}
+
+/** Top-level map from GET account-screen/personal|business. */
+function extractOrderListHydrationMap(json) {
+  const root = json && typeof json === "object" ? json : {};
+  const map = root.order_list_hydration;
+  return map && typeof map === "object" && !Array.isArray(map) ? map : null;
+}
+
+/** order_list_hydration entries use the same field names as order detail (sale, returns, pending_returns, …). */
+function normalizeListHydrationAsOrderDetail(entry, orderUid) {
+  if (!entry || typeof entry !== "object") return null;
+  const normalized = { ...entry };
+  if (!normalized.order_uid && orderUid) normalized.order_uid = orderUid;
+  if (normalized.sale == null && (normalized.transaction_uid || normalized.lines)) {
+    normalized.sale = normalized;
+  }
+  return normalized;
+}
+
+function buildPersonalPurchaseHydrationResult(orderUid, orderDetail) {
+  return {
+    orderUid,
+    orderDetail,
+    hydrated: extractReturnRefundStateFromOrderDetail(orderDetail),
+    itemHydration: extractReturnItemHydrationFromOrderDetail(orderDetail),
+    progress: getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean)),
+  };
+}
+
+function foldPersonalPurchaseHydrationResults(results) {
+  const stateByOrderUid = {};
+  const itemHydrationByOrderUid = {};
+  const statusPatch = {};
+  const hydratedShipping = {};
+  for (const { orderUid, orderDetail, hydrated, itemHydration, progress } of results) {
+    if (itemHydration) itemHydrationByOrderUid[orderUid] = itemHydration;
+    if (hydrated) {
+      stateByOrderUid[orderUid] = hydrated;
+      const payload = {
+        return_status: hydrated.return_status,
+        refund_status: hydrated.refund_status,
+        display_status: hydrated.display_status,
+      };
+      statusPatch[orderUid] = payload;
+      if (hydrated.saleTxnUid && hydrated.saleTxnUid !== orderUid) {
+        statusPatch[hydrated.saleTxnUid] = payload;
+      }
+      const completedPayload =
+        hydrated.refund_status === "stripe_fail"
+          ? payload
+          : {
+              return_status: "returned",
+              refund_status: "refunded",
+              display_status: "Returned - Refunded",
+            };
+      for (const returnTxnUid of hydrated.returnTxnUids || []) {
+        if (returnTxnUid && returnTxnUid !== orderUid && returnTxnUid !== hydrated.saleTxnUid) {
+          statusPatch[returnTxnUid] = completedPayload;
+        }
+      }
+    }
+    if (progress === "complete" || progress === "partial" || progress === "none") {
+      hydratedShipping[orderUid] = progress;
+      const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
+      if (txnUid) hydratedShipping[txnUid] = progress;
+    }
+  }
+  return { stateByOrderUid, itemHydrationByOrderUid, statusPatch, hydratedShipping };
+}
+
+async function applyPersonalPurchaseHydrationPatches(normalizedPurchases, folded, { setReturnStatuses, setOrderShippingProgressByKey }) {
+  let nextRows = normalizedPurchases;
+  const { stateByOrderUid, itemHydrationByOrderUid, statusPatch, hydratedShipping } = folded;
+  if (Object.keys(stateByOrderUid).length || Object.keys(itemHydrationByOrderUid).length) {
+    nextRows = applyHydratedReturnStateToPurchaseRows(nextRows, stateByOrderUid, itemHydrationByOrderUid);
+    if (Object.keys(statusPatch).length) {
+      setReturnStatuses((prev) => ({ ...prev, ...statusPatch }));
+      await Promise.all(Object.keys(statusPatch).map((key) => AsyncStorage.setItem(`return_status_${key}`, JSON.stringify(statusPatch[key]))));
+    }
+  }
+  if (Object.keys(hydratedShipping).length) {
+    setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
+    nextRows = nextRows.map((row) => {
+      if (isReturnListRow(row)) return row;
+      const orderUid = resolveListRowOrderUid(row);
+      const txnUid = String(row.transaction_uid || "").trim();
+      const progress = hydratedShipping[orderUid] || hydratedShipping[txnUid];
+      if (progress === "complete") {
+        return { ...row, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
+      }
+      if (progress === "partial") {
+        return { ...row, fulfillment_status: "partial", all_items_shipped: 0 };
+      }
+      if (progress === "none") {
+        return { ...row, fulfillment_status: "not_shipped", all_items_shipped: 0 };
+      }
+      return row;
+    });
+  }
+  return nextRows;
+}
+
+function buildBusinessSellerHydrationResult(orderUid, orderDetail) {
+  return {
+    orderUid,
+    orderDetail,
+    progress: getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean)),
+    receivedSummary: summarizeReceivedUnitsFromOrderDetail(orderDetail),
+  };
+}
+
+function foldBusinessSellerHydrationResults(results) {
+  const hydratedShipping = {};
+  const hydratedReceivedByOrder = {};
+  for (const { orderUid, orderDetail, progress, receivedSummary } of results) {
+    if (progress === "complete" || progress === "partial" || progress === "none") {
+      hydratedShipping[orderUid] = progress;
+      const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
+      if (txnUid) hydratedShipping[txnUid] = progress;
+    }
+    if (receivedSummary) {
+      hydratedReceivedByOrder[orderUid] = receivedSummary;
+      const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
+      if (txnUid) hydratedReceivedByOrder[txnUid] = receivedSummary;
+    }
+  }
+  return { hydratedShipping, hydratedReceivedByOrder };
+}
+
+function applyBusinessSellerHydrationPatches(sellerRows, folded) {
+  const { hydratedShipping, hydratedReceivedByOrder } = folded;
+  if (!Object.keys(hydratedShipping).length && !Object.keys(hydratedReceivedByOrder).length) {
+    return sellerRows;
+  }
+  return (sellerRows || []).map((row) => {
+    const orderUid = resolveListRowOrderUid(row);
+    const txnUid = String(row.transaction_uid || "").trim();
+    const progress = hydratedShipping[orderUid] || hydratedShipping[txnUid];
+    const receivedSummary = hydratedReceivedByOrder[orderUid] || hydratedReceivedByOrder[txnUid];
+    let next = row;
+    if (progress === "complete") {
+      next = { ...next, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
+    } else if (progress === "partial") {
+      next = { ...next, fulfillment_status: "partial", all_items_shipped: 0 };
+    } else if (progress === "none") {
+      next = { ...next, fulfillment_status: "not_shipped", all_items_shipped: 0 };
+    }
+    if (receivedSummary) {
+      next = {
+        ...next,
+        received_units: receivedSummary.received,
+        purchased_units: receivedSummary.purchased,
+        delivered_item_count: receivedSummary.received,
+        received_item_count: receivedSummary.received,
+      };
+    }
+    return next;
+  });
+}
+
+/** Apply order_list_hydration from account-screen/personal to purchase list rows. */
+function hydratePersonalPurchasesFromListMap(purchaseRows, listHydrationByOrderUid, { debugHydration = false } = {}) {
+  const orderUidsToHydrate = collectOrderUidsNeedingPersonalPurchaseHydration(purchaseRows);
+  if (!orderUidsToHydrate.length) return null;
+
+  const listHydration = listHydrationByOrderUid || {};
+  const missing = orderUidsToHydrate.filter((uid) => !listHydration[uid]);
+  if (debugHydration) {
+    console.log(
+      `[AccountScreen] purchase hydration from order_list_hydration: ${orderUidsToHydrate.length - missing.length}/${orderUidsToHydrate.length}`,
+      orderUidsToHydrate,
+    );
+    if (missing.length) {
+      console.warn("[AccountScreen] purchase hydration missing order_list_hydration for:", missing);
+    }
+  }
+
+  const results = [];
+  for (const orderUid of orderUidsToHydrate) {
+    const listEntry = listHydration[orderUid];
+    if (!listEntry) continue;
+    const orderDetail = normalizeListHydrationAsOrderDetail(listEntry, orderUid);
+    results.push(buildPersonalPurchaseHydrationResult(orderUid, orderDetail));
+  }
+  if (!results.length) return missing.length ? { folded: null, missingCount: missing.length } : null;
+  return { folded: foldPersonalPurchaseHydrationResults(results), missingCount: missing.length };
+}
+
+/** Apply order_list_hydration from account-screen/business to seller list rows. */
+function hydrateBusinessSellerFromListMap(sellerRows, listHydrationByOrderUid, { debugHydration = false } = {}) {
+  const orderUidsToHydrate = [...new Set([...collectOrderUidsNeedingShippingProgressHydration(sellerRows), ...collectOrderUidsNeedingReceivedHydration(sellerRows)])];
+  if (!orderUidsToHydrate.length) return null;
+
+  const listHydration = listHydrationByOrderUid || {};
+  const missing = orderUidsToHydrate.filter((uid) => !listHydration[uid]);
+  if (debugHydration) {
+    console.log(
+      `[AccountScreen] business hydration from order_list_hydration: ${orderUidsToHydrate.length - missing.length}/${orderUidsToHydrate.length}`,
+      orderUidsToHydrate,
+    );
+    if (missing.length) {
+      console.warn("[AccountScreen] business hydration missing order_list_hydration for:", missing);
+    }
+  }
+
+  const results = [];
+  for (const orderUid of orderUidsToHydrate) {
+    const listEntry = listHydration[orderUid];
+    if (!listEntry) continue;
+    const orderDetail = normalizeListHydrationAsOrderDetail(listEntry, orderUid);
+    results.push(buildBusinessSellerHydrationResult(orderUid, orderDetail));
+  }
+  if (!results.length) return missing.length ? { folded: null, missingCount: missing.length } : null;
+  return { folded: foldBusinessSellerHydrationResults(results), missingCount: missing.length };
 }
 
 /**
@@ -1635,7 +1959,7 @@ function extractReturnRefundStateFromOrderDetail(orderDetail) {
   };
 }
 
-/** Sale/return line payloads from GET /orders/:uid for Purchases item-name resolution. */
+/** Sale/return line payloads from order detail / order_list_hydration for Purchases item-name resolution. */
 function extractReturnItemHydrationFromOrderDetail(orderDetail) {
   if (!orderDetail || typeof orderDetail !== "object") return null;
   const sale = orderDetail.sale || null;
@@ -5635,6 +5959,7 @@ function ReturnModalQtyStepper({ label, value, max, onChange, darkMode, suffix }
 
 export default function AccountScreen({ navigation, route }) {
   const { darkMode } = useDarkMode();
+  const { businesses, primaryBusinessUid, refreshFromSession } = useSessionBusinesses();
   const { width: windowWidth } = useWindowDimensions();
   const [userUID, setUserUID] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -5688,12 +6013,10 @@ export default function AccountScreen({ navigation, route }) {
   const [returnConfirmResult, setReturnConfirmResult] = useState(null);
   const [businessTransactionData, setBusinessTransactionData] = useState([]);
   const [businessTransactionLoading, setBusinessTransactionLoading] = useState(true);
-  const [businessUID, setBusinessUID] = useState(null);
   const [businessBountyData, setBusinessBountyData] = useState(null);
   const [businessBountyLoading, setBusinessBountyLoading] = useState(true);
   const [businessServices, setBusinessServices] = useState([]);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
-  const [businesses, setBusinesses] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState("personal"); // 'personal' or business UID
   const [selectedBusinessFullData, setSelectedBusinessFullData] = useState(null);
   const [expandedTransactionId, setExpandedTransactionId] = useState(null);
@@ -5764,9 +6087,9 @@ export default function AccountScreen({ navigation, route }) {
   const personalFetchGenRef = useRef(0);
   const businessFetchGenRef = useRef(0);
 
-  /** Avoid stale `selectedAccount` / `businessUID` / `businesses` inside `refreshAccountScreenBusiness` when invoked from a focus callback with `[]` deps */
+  /** Avoid stale `selectedAccount` / `primaryBusinessUid` / `businesses` inside `refreshAccountScreenBusiness` when invoked from a focus callback with `[]` deps */
   const selectedAccountRef = useRef(selectedAccount);
-  const businessUIDRef = useRef(businessUID);
+  const businessUIDRef = useRef(primaryBusinessUid);
   const businessesRef = useRef(businesses);
 
   const [receiptEnrichedItems, setReceiptEnrichedItems] = useState({});
@@ -5775,8 +6098,8 @@ export default function AccountScreen({ navigation, route }) {
     selectedAccountRef.current = selectedAccount;
   }, [selectedAccount]);
   useEffect(() => {
-    businessUIDRef.current = businessUID;
-  }, [businessUID]);
+    businessUIDRef.current = primaryBusinessUid;
+  }, [primaryBusinessUid]);
   useEffect(() => {
     businessesRef.current = businesses;
   }, [businesses]);
@@ -6099,7 +6422,7 @@ export default function AccountScreen({ navigation, route }) {
   };
 
   const resolveSellerIdForReturn = (transactionUid) => {
-    const fromAccount = selectedAccount && selectedAccount !== "personal" ? String(selectedAccount).trim() : businessUID ? String(businessUID).trim() : "";
+    const fromAccount = selectedAccount && selectedAccount !== "personal" ? String(selectedAccount).trim() : primaryBusinessUid ? String(primaryBusinessUid).trim() : "";
     if (fromAccount) return fromAccount;
     const fromDetail = String(
       returnDetailModal.orderDetail?.sale?.transaction_business_id || returnDetailModal.orderDetail?.sale?.business_id || returnDetailModal.orderDetail?.business_uid || "",
@@ -6620,7 +6943,7 @@ export default function AccountScreen({ navigation, route }) {
         );
         try {
           const ctx = {};
-          const bizUid = selectedAccount !== "personal" ? selectedAccount || businessUID : businessUID;
+          const bizUid = selectedAccount !== "personal" ? selectedAccount || primaryBusinessUid : primaryBusinessUid;
           if (bizUid) ctx.businessUid = bizUid;
           if (pending.orderUid || saleUid) {
             const refreshed = await fetchOrderDetailApi(pending.orderUid || saleUid, ctx);
@@ -6684,7 +7007,21 @@ export default function AccountScreen({ navigation, route }) {
       });
 
       // Merge: persisted checkout data takes priority over active cart
-      setReceiptEnrichedItems({ ...cartEnrichMap, ...persistedChoices });
+      const mergedReceiptEnrichments = { ...cartEnrichMap, ...persistedChoices };
+      setReceiptEnrichedItems(mergedReceiptEnrichments);
+      console.log(
+        "[AccountScreen] loadReturnRequests — receipt enrichments (checkout choices + active cart):",
+        JSON.stringify(
+          {
+            persistedChoiceKeys: Object.keys(persistedChoices),
+            activeCartKeys: Object.keys(cartEnrichMap),
+            mergedCount: Object.keys(mergedReceiptEnrichments).length,
+            merged: mergedReceiptEnrichments,
+          },
+          null,
+          2,
+        ),
+      );
     } catch {}
 
     // Also load actual return requests
@@ -6698,6 +7035,18 @@ export default function AccountScreen({ navigation, route }) {
         if (val) loaded[uid] = JSON.parse(val);
       }
       setReturnRequests(loaded);
+      console.log(
+        "[AccountScreen] loadReturnRequests — buyer return requests (return_request_*):",
+        JSON.stringify(
+          {
+            count: Object.keys(loaded).length,
+            keys: Object.keys(loaded),
+            data: loaded,
+          },
+          null,
+          2,
+        ),
+      );
     } catch (e) {
       console.error("Failed to load return requests:", e);
     }
@@ -6723,6 +7072,18 @@ export default function AccountScreen({ navigation, route }) {
         }
       }
       setReturnStatuses(loaded);
+      console.log(
+        "[AccountScreen] loadReturnStatuses — cached return/refund chips (return_status_*):",
+        JSON.stringify(
+          {
+            count: Object.keys(loaded).length,
+            keys: Object.keys(loaded),
+            data: loaded,
+          },
+          null,
+          2,
+        ),
+      );
     } catch (e) {
       console.error("Failed to load return statuses:", e);
     }
@@ -6822,115 +7183,34 @@ export default function AccountScreen({ navigation, route }) {
         const json = await response.json();
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         if (!accountScreenResponseMatches(json, "personal", profileId)) return;
-        const mapped = mapAccountScreenPersonalResponse(json);
+        let debugPurchases = false;
+        if (SHOW_NETWORK_DEBUG_UI !== 0) {
+          try {
+            const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+            debugPurchases = nd !== null && JSON.parse(nd) === true;
+          } catch (_) {}
+        }
+        const mapped = mapAccountScreenPersonalResponse(json, { debug: debugPurchases });
 
         const purchaseRows = Array.isArray(mapped.transactions) ? mapped.transactions : [];
         let normalizedPurchases = purchaseRows.map(normalizeListRowReturnRefundFields);
 
-        // Buyer list rows often omit Stripe-fail; hydrate return chips from order-detail before first paint
-        // so PURCHASES matches Return Details (e.g. Returned / CC Issue instead of Returned / Pending).
-        const returnOrderUids = collectOrderUidsNeedingReturnStatusHydration(normalizedPurchases);
-        if (returnOrderUids.length) {
-          const results = await Promise.allSettled(
-            returnOrderUids.map(async (orderUid) => {
-              const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
-              const hydrated = extractReturnRefundStateFromOrderDetail(orderDetail);
-              const itemHydration = extractReturnItemHydrationFromOrderDetail(orderDetail);
-              return { orderUid, hydrated, itemHydration };
-            }),
-          );
-          if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
-
-          const stateByOrderUid = {};
-          const itemHydrationByOrderUid = {};
-          const statusPatch = {};
-          for (const result of results) {
-            if (result.status !== "fulfilled") continue;
-            const { orderUid, hydrated, itemHydration } = result.value;
-            if (itemHydration) itemHydrationByOrderUid[orderUid] = itemHydration;
-            if (!hydrated) continue;
-            stateByOrderUid[orderUid] = hydrated;
-            const payload = {
-              return_status: hydrated.return_status,
-              refund_status: hydrated.refund_status,
-              display_status: hydrated.display_status,
-            };
-            // Sale / order-level only — never stamp sale "returning/pending" onto completed reverse txns.
-            statusPatch[orderUid] = payload;
-            if (hydrated.saleTxnUid && hydrated.saleTxnUid !== orderUid) {
-              statusPatch[hydrated.saleTxnUid] = payload;
-            }
-            // Completed reverse txns are Returned / Refunded (or keep stripe_fail if that was hydrated).
-            const completedPayload =
-              hydrated.refund_status === "stripe_fail"
-                ? payload
-                : {
-                    return_status: "returned",
-                    refund_status: "refunded",
-                    display_status: "Returned - Refunded",
-                  };
-            for (const returnTxnUid of hydrated.returnTxnUids || []) {
-              if (returnTxnUid && returnTxnUid !== orderUid && returnTxnUid !== hydrated.saleTxnUid) {
-                statusPatch[returnTxnUid] = completedPayload;
-              }
-            }
-          }
-          if (Object.keys(stateByOrderUid).length || Object.keys(itemHydrationByOrderUid).length) {
-            normalizedPurchases = applyHydratedReturnStateToPurchaseRows(normalizedPurchases, stateByOrderUid, itemHydrationByOrderUid);
-            if (Object.keys(statusPatch).length) {
-              setReturnStatuses((prev) => ({ ...prev, ...statusPatch }));
-              await Promise.all(Object.keys(statusPatch).map((key) => AsyncStorage.setItem(`return_status_${key}`, JSON.stringify(statusPatch[key]))));
-            }
-          }
+        const listHydrationByOrderUid = extractOrderListHydrationMap(json);
+        const hydrationOutcome = hydratePersonalPurchasesFromListMap(normalizedPurchases, listHydrationByOrderUid, {
+          debugHydration: debugPurchases,
+        });
+        if (hydrationOutcome?.folded) {
+          normalizedPurchases = await applyPersonalPurchaseHydrationPatches(normalizedPurchases, hydrationOutcome.folded, {
+            setReturnStatuses,
+            setOrderShippingProgressByKey,
+          });
+        }
+        if (debugPurchases && hydrationOutcome?.missingCount) {
+          console.warn(`[AccountScreen] purchase hydration: ${hydrationOutcome.missingCount} order(s) missing order_list_hydration`);
         }
 
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setTransactionData(normalizedPurchases);
-
-        // Buyer list rows often keep fulfillment_status=partial after a pre-ship cancel.
-        // Hydrate from order detail so Delivered becomes Shipped once remaining items are shipped.
-        const purchaseShipUids = collectOrderUidsNeedingShippingProgressHydration(normalizedPurchases);
-        if (purchaseShipUids.length) {
-          void (async () => {
-            const hydratedShipping = {};
-            const results = await Promise.allSettled(
-              purchaseShipUids.map(async (orderUid) => {
-                const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
-                const progress = getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean));
-                return { orderUid, orderDetail, progress };
-              }),
-            );
-            if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
-            for (const result of results) {
-              if (result.status !== "fulfilled") continue;
-              const { orderUid, orderDetail, progress } = result.value;
-              if (progress !== "complete" && progress !== "partial" && progress !== "none") continue;
-              hydratedShipping[orderUid] = progress;
-              const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
-              if (txnUid) hydratedShipping[txnUid] = progress;
-            }
-            if (!Object.keys(hydratedShipping).length) return;
-            setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
-            setTransactionData((prev) =>
-              (prev || []).map((row) => {
-                if (isReturnListRow(row)) return row;
-                const orderUid = resolveListRowOrderUid(row);
-                const txnUid = String(row.transaction_uid || "").trim();
-                const progress = hydratedShipping[orderUid] || hydratedShipping[txnUid];
-                if (progress === "complete") {
-                  return { ...row, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
-                }
-                if (progress === "partial") {
-                  return { ...row, fulfillment_status: "partial", all_items_shipped: 0 };
-                }
-                if (progress === "none") {
-                  return { ...row, fulfillment_status: "not_shipped", all_items_shipped: 0 };
-                }
-                return row;
-              }),
-            );
-          })();
-        }
 
         if (mapped.bounty) {
           setBountyData(mapped.bounty);
@@ -7089,95 +7369,6 @@ export default function AccountScreen({ navigation, route }) {
     }
   };
 
-  // Fetch user's businesses to get business_uid
-  const fetchUserBusinesses = async () => {
-    try {
-      const session = await getSessionProfile();
-      const profileId = session?.profileUid || (await AsyncStorage.getItem("profile_uid"));
-      if (!profileId) {
-        console.log("No profile ID found");
-        return null;
-      }
-
-      const result = session?.rawProfile;
-      if (!result) {
-        console.log("Failed to load user profile");
-        return null;
-      }
-      console.log("User businesses:", result.business_info);
-
-      // Parse business_info to get business UIDs
-      const businessList = result.business_info ? (typeof result.business_info === "string" ? JSON.parse(result.business_info) : result.business_info) : [];
-
-      // Store all businesses in state
-      setBusinesses(businessList);
-      businessesRef.current = Array.isArray(businessList) ? businessList : [];
-
-      // Get the first business UID
-      if (businessList.length > 0) {
-        const firstBusiness = businessList[0];
-        const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
-        console.log("Setting business UID:", businessId);
-        setBusinessUID(businessId);
-        businessUIDRef.current = businessId;
-        return businessId;
-      }
-
-      console.log("No businesses found for user");
-      businessUIDRef.current = null;
-      return null;
-    } catch (error) {
-      console.error("Error fetching user businesses:", error);
-      return null;
-    }
-  };
-
-  // const fetchUserBusinesses = async () => {
-  //   try {
-  //     const profileId = await AsyncStorage.getItem("profile_uid");
-  //     if (!profileId) {
-  //       console.log("No profile ID found");
-  //       return null;
-  //     }
-
-  //     const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-  //     if (!response.ok) {
-  //       console.log("Failed to fetch user profile");
-  //       return null;
-  //     }
-
-  //     const result = await response.json();
-  //     console.log("User businesses:", result.business_info);
-
-  //     // Parse business_info to get business UIDs
-  //     const businessList = result.business_info
-  //       ? (typeof result.business_info === "string"
-  //           ? JSON.parse(result.business_info)
-  //           : result.business_info
-  //         )
-  //       : [];
-
-  //     // Business details are already in the array — use them directly
-  //     console.log("Businesses:", businessList);
-  //     setBusinesses(businessList);
-
-  //     // Get the first business UID
-  //     if (businessList.length > 0) {
-  //       const firstBusiness = businessList[0];
-  //       const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
-  //       console.log("Setting business UID:", businessId);
-  //       setBusinessUID(businessId);
-  //       return businessId;
-  //     }
-
-  //     console.log("No businesses found for user");
-  //     return null;
-  //   } catch (error) {
-  //     console.error("Error fetching user businesses:", error);
-  //     return null;
-  //   }
-  // };
-
   const fetchTransactionServices = async (transactionUid) => {
     try {
       // Check if we already have this data cached
@@ -7211,7 +7402,7 @@ export default function AccountScreen({ navigation, route }) {
   const prefetchBusinessReceiptForTransaction = useCallback(
     async (txn) => {
       const uid = txn?.transaction_uid;
-      const biz = selectedAccount !== "personal" ? selectedAccount : businessUID;
+      const biz = selectedAccount !== "personal" ? selectedAccount : primaryBusinessUid;
       if (!uid || !biz || !txn?.transaction_profile_id) return;
       if (businessReceiptFetchedRef.current.has(uid)) return;
       businessReceiptFetchedRef.current.add(uid);
@@ -7230,7 +7421,7 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessReceiptCache((prev) => ({ ...prev, [uid]: [] }));
       }
     },
-    [selectedAccount, businessUID],
+    [selectedAccount, primaryBusinessUid],
   );
 
   const openProductSalesModal = useCallback((product) => {
@@ -7331,7 +7522,7 @@ export default function AccountScreen({ navigation, route }) {
       try {
         const ctx = {};
         if (isSellerView) {
-          const bizUid = selectedAccount || businessUID;
+          const bizUid = selectedAccount || primaryBusinessUid;
           if (bizUid) ctx.businessUid = bizUid;
         } else {
           const profileId = (await AsyncStorage.getItem("profile_uid")) || "";
@@ -7386,7 +7577,7 @@ export default function AccountScreen({ navigation, route }) {
         }));
       }
     },
-    [selectedAccount, businessUID, persistReturnRefundState],
+    [selectedAccount, primaryBusinessUid, persistReturnRefundState],
   );
 
   const openOrderDetail = useCallback(
@@ -7398,7 +7589,7 @@ export default function AccountScreen({ navigation, route }) {
       let sellerId = String(options.sellerId || "").trim();
       if (isSellerView && !sellerId) {
         if (selectedAccount !== "personal") {
-          sellerId = String(selectedAccount || businessUID || "").trim();
+          sellerId = String(selectedAccount || primaryBusinessUid || "").trim();
         } else {
           sellerId = String((await AsyncStorage.getItem("profile_uid")) || "").trim();
         }
@@ -7448,7 +7639,7 @@ export default function AccountScreen({ navigation, route }) {
         }));
       }
     },
-    [selectedAccount, businessUID],
+    [selectedAccount, primaryBusinessUid],
   );
 
   const saveOrderFulfillmentUpdates = useCallback(
@@ -7457,7 +7648,7 @@ export default function AccountScreen({ navigation, route }) {
         return false;
       }
       const sellerIdFromModal = String(orderDetailModal.sellerId || "").trim();
-      const sellerIdFromAccount = selectedAccount && selectedAccount !== "personal" ? String(selectedAccount).trim() : businessUID ? String(businessUID).trim() : "";
+      const sellerIdFromAccount = selectedAccount && selectedAccount !== "personal" ? String(selectedAccount).trim() : primaryBusinessUid ? String(primaryBusinessUid).trim() : "";
       const sellerIdFromOrder = String(
         orderDetailModal.orderDetail?.sale?.transaction_business_id ||
           orderDetailModal.orderDetail?.sale?.business_id ||
@@ -7622,7 +7813,7 @@ export default function AccountScreen({ navigation, route }) {
         return false;
       }
     },
-    [orderDetailModal.orderUid, orderDetailModal.isSellerView, orderDetailModal.orderDetail, orderDetailModal.sellerId, selectedAccount, businessUID],
+    [orderDetailModal.orderUid, orderDetailModal.isSellerView, orderDetailModal.orderDetail, orderDetailModal.sellerId, selectedAccount, primaryBusinessUid],
   );
 
   const openReturnNoteModalFromReceipt = useCallback(() => {
@@ -7649,7 +7840,7 @@ export default function AccountScreen({ navigation, route }) {
 
   /**
    * GET /api/v1/account-screen/business/:business_uid — product results + seller lines for grouping/receipts.
-   * @param {string} [primaryBusinessUidOverride] — optional first-business uid before `businessUID` state commits.
+   * @param {string} [primaryBusinessUidOverride] — optional first-business uid before session primaryBusinessUid is available in refs.
    */
   const refreshAccountScreenBusiness = async (primaryBusinessUidOverride) => {
     const fetchGen = businessFetchGenRef.current;
@@ -7691,7 +7882,7 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessServices([]);
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
-        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+        const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
         setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
         return;
       }
@@ -7702,7 +7893,7 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessBountyData(null);
         setBusinessServices([]);
         businessReceiptFetchedRef.current = new Set();
-        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+        const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
         setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
         return;
       }
@@ -7714,7 +7905,7 @@ export default function AccountScreen({ navigation, route }) {
       const { bountyResult, sellerLines, businessForMiniCardRaw, businessServices: servicesFromPayload } = mapAccountScreenBusinessResponse(json);
       setBusinessServices(Array.isArray(servicesFromPayload) ? servicesFromPayload : []);
 
-      const selectedBusiness = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+      const selectedBusiness = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
 
       let miniForCard = businessForMiniCardRaw ? mapRawBusinessToSelectedBusinessFullData(businessForMiniCardRaw) : null;
       if (!miniForCard) miniForCard = mapSessionBusinessRowToMiniCard(selectedBusiness);
@@ -7760,69 +7951,26 @@ export default function AccountScreen({ navigation, route }) {
       // Reset hydration overrides so account-screen list fulfillment fields win on first paint.
       setOrderShippingProgressByKey({});
 
-      // List rows often omit fulfillment / received line qty; hydrate from order detail.
-      // Return Total / Bounty come from seller_transactions.pending_return — do not hydrate those via Order Detail.
-      const orderUidsToHydrate = [...new Set([...collectOrderUidsNeedingShippingProgressHydration(sellerLines), ...collectOrderUidsNeedingReceivedHydration(sellerLines)])];
-      if (orderUidsToHydrate.length) {
-        void (async () => {
-          const hydratedShipping = {};
-          const hydratedReceivedByOrder = {};
-          const results = await Promise.allSettled(
-            orderUidsToHydrate.map(async (orderUid) => {
-              const orderDetail = await fetchOrderDetailApi(orderUid, { businessUid: targetBusinessUID });
-              const progress = getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean));
-              const receivedSummary = summarizeReceivedUnitsFromOrderDetail(orderDetail);
-              return { orderUid, orderDetail, progress, receivedSummary };
-            }),
-          );
-          if (!shouldApplyBusinessResponse()) return;
-          for (const result of results) {
-            if (result.status !== "fulfilled") continue;
-            const { orderUid, orderDetail, progress, receivedSummary } = result.value;
-            if (progress === "complete" || progress === "partial" || progress === "none") {
-              hydratedShipping[orderUid] = progress;
-              const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
-              if (txnUid) hydratedShipping[txnUid] = progress;
-            }
-            if (receivedSummary) {
-              hydratedReceivedByOrder[orderUid] = receivedSummary;
-              const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
-              if (txnUid) hydratedReceivedByOrder[txnUid] = receivedSummary;
-            }
-          }
-          if (!Object.keys(hydratedShipping).length && !Object.keys(hydratedReceivedByOrder).length) {
-            return;
-          }
+      const listHydrationByOrderUid = extractOrderListHydrationMap(json);
+      let debugHydration = false;
+      if (SHOW_NETWORK_DEBUG_UI !== 0) {
+        try {
+          const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+          debugHydration = nd !== null && JSON.parse(nd) === true;
+        } catch (_) {}
+      }
+      const hydrationOutcome = hydrateBusinessSellerFromListMap(sellerLines, listHydrationByOrderUid, { debugHydration });
+      if (hydrationOutcome?.folded) {
+        const { hydratedShipping, hydratedReceivedByOrder } = hydrationOutcome.folded;
+        if (Object.keys(hydratedShipping).length || Object.keys(hydratedReceivedByOrder).length) {
           if (Object.keys(hydratedShipping).length) {
             setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
           }
-          setBusinessSellerTransactionList((prev) =>
-            (prev || []).map((row) => {
-              const orderUid = resolveListRowOrderUid(row);
-              const txnUid = String(row.transaction_uid || "").trim();
-              const progress = hydratedShipping[orderUid] || hydratedShipping[txnUid];
-              const receivedSummary = hydratedReceivedByOrder[orderUid] || hydratedReceivedByOrder[txnUid];
-              let next = row;
-              if (progress === "complete") {
-                next = { ...next, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
-              } else if (progress === "partial") {
-                next = { ...next, fulfillment_status: "partial", all_items_shipped: 0 };
-              } else if (progress === "none") {
-                next = { ...next, fulfillment_status: "not_shipped", all_items_shipped: 0 };
-              }
-              if (receivedSummary) {
-                next = {
-                  ...next,
-                  received_units: receivedSummary.received,
-                  purchased_units: receivedSummary.purchased,
-                  delivered_item_count: receivedSummary.received,
-                  received_item_count: receivedSummary.received,
-                };
-              }
-              return next;
-            }),
-          );
-        })();
+          setBusinessSellerTransactionList((prev) => applyBusinessSellerHydrationPatches(prev, hydrationOutcome.folded));
+        }
+      }
+      if (debugHydration && hydrationOutcome?.missingCount) {
+        console.warn(`[AccountScreen] business hydration: ${hydrationOutcome.missingCount} order(s) missing order_list_hydration`);
       }
 
       const businessTransactions = sellerLines.filter(isBusinessProductSellerLine).filter((row) => !isReturnListRow(row));
@@ -7874,7 +8022,7 @@ export default function AccountScreen({ navigation, route }) {
       setBusinessBountyData({ error: error.message });
       setBusinessReceiptCache({});
       businessReceiptFetchedRef.current = new Set();
-      const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+      const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
       setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
     } finally {
       if (!shouldApplyBusinessResponse()) return;
@@ -7895,7 +8043,7 @@ export default function AccountScreen({ navigation, route }) {
       })();
 
       const loadBusinessData = async () => {
-        await fetchUserBusinesses();
+        await refreshFromSession({ forceRefresh: true });
         // Session cache fills the dropdown; skip account-screen/business until a business profile is selected (or tab refocus while on business).
         if (selectedAccountRef.current !== "personal") {
           await refreshAccountScreenBusiness();
@@ -8658,7 +8806,7 @@ export default function AccountScreen({ navigation, route }) {
           <Text style={styles.selectProfileLabel}>Select Profile</Text>
           <TouchableOpacity style={styles.selectProfileDropdown} onPress={() => setShowAccountDropdown(!showAccountDropdown)} activeOpacity={0.7}>
             <Text style={styles.selectProfileDropdownText}>
-              {selectedAccount === "personal" ? "Personal" : businesses.find((b) => (b.business_uid || b.profile_business_uid) === selectedAccount)?.business_name || "Business"}
+              {selectedAccount === "personal" ? "Personal" : businesses.find((b) => resolveBusinessUid(b) === selectedAccount)?.business_name || "Business"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -8670,7 +8818,7 @@ export default function AccountScreen({ navigation, route }) {
               <Text style={[styles.dropdownItemText, selectedAccount === "personal" && styles.dropdownItemTextActive]}>Personal</Text>
             </TouchableOpacity>
             {businesses.map((business, index) => {
-              const businessId = business.business_uid || business.profile_business_uid;
+              const businessId = resolveBusinessUid(business);
               const businessName = business.business_name || business.profile_business_name || `Business ${index + 1}`;
               return (
                 <TouchableOpacity key={businessId || index} style={styles.dropdownItem} onPress={() => handleProfileSelection(businessId)}>
@@ -8766,7 +8914,8 @@ export default function AccountScreen({ navigation, route }) {
                         const displayAmount = isReturnRow
                           ? returnMoney?.total || parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0) || 0
                           : parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0);
-                        const rowKey = resolveTrrUid(transaction) || transaction.transaction_uid || transaction.ti_uid || `purchase-${i}`;
+                        const rowIdentity = resolveTrrUid(transaction) || transaction.transaction_uid || transaction.ti_uid || "purchase";
+                        const rowKey = `${rowIdentity}-${isReturnRow ? "return" : "sale"}-${i}`;
                         const openPurchaseRowDetail = () => {
                           if (orderUid === "—") return;
                           if (isReturnRow) {
@@ -9158,7 +9307,7 @@ export default function AccountScreen({ navigation, route }) {
                         const showReturnCompletedRow = returnRefunded || returnLogistics?.return_status === "returned";
 
                         return (
-                          <View key={transaction.transaction_uid || i}>
+                          <View key={`${transaction.transaction_uid || "biz-tx"}-${i}`}>
                             {/* Main Transaction Row */}
                             <TouchableOpacity
                               style={[

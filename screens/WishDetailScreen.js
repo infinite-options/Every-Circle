@@ -19,6 +19,7 @@ import DetailFlagButton, { detailActionRowStyle } from "../components/DetailFlag
 import FlagSeekingModal from "../components/FlagSeekingModal";
 import SeekingModerationBanner from "../components/SeekingModerationBanner";
 import { useHeaderCart } from "../components/HeaderCartButton";
+import { recordWishMessageResponse } from "../utils/wishMessageResponse";
 import {
   acknowledgeSeekingModeration,
   canAcknowledgeTakenDownSeeking,
@@ -373,6 +374,11 @@ const WishDetailScreenContent = ({ route, navigation }) => {
       }
 
       console.log("Response submitted successfully");
+      try {
+        await recordWishMessageResponse(profile_wish_id, responder_id);
+      } catch (e) {
+        console.warn("[WishDetailScreen] recordWishMessageResponse failed:", e);
+      }
       Alert.alert("Success", "Your response has been submitted!");
 
       // Navigate back to Profile if that's where we came from

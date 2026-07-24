@@ -58,7 +58,7 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
               style={styles.navButton}
               onPress={() => {
                 if (onSharePress) onSharePress();
-                handleNavigate("Network");
+                handleNavigate("Connect");
               }}
             >
               <View style={styles.iconWrap}>

@@ -12,6 +12,7 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
+import { clearSessionAsyncStorage, clearSessionAsyncStorageOnLogin } from "../utils/clearAppAsyncStorage";
 import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import AppHeader from "../components/AppHeader";
@@ -116,20 +117,20 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
 
       const user_uid = loginObject.result.user_uid;
       const user_email = loginObject.result.user_email_id;
+      const previousUserUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
 
       // Store user_uid and user_email_id in AsyncStorage
       await AsyncStorage.setItem("user_uid", user_uid);
       await AsyncStorage.setItem("user_email_id", user_email);
 
       console.log("LoginScreen - user_uid", user_uid);
-      // console.log("LoginScreen - User Email", user_email);
 
       // Handle case where no use_uid is returned
       if (!user_uid) {
         console.log("LoginScreen - No user data returned, redirecting to sign up");
 
         // Clear all user-related data from AsyncStorage
-        await AsyncStorage.multiRemove(["user_uid", "user_email_id", "profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+        await clearSessionAsyncStorage();
         await clearUserProfileCacheStorage();
         console.log("LoginScreen - Cleared AsyncStorage for no user_uid case");
 
@@ -154,10 +155,11 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
 
       // Profile and Ably business channels load in ProfileScreen (single GET /userprofileinfo by user_uid).
       // Clear stale profile keys from any previous session so we never fetch the wrong profile_uid.
-      await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-      await clearUserProfileCacheStorage();
-
-      console.log("LoginScreen - user_uid", user_uid);
+      await clearSessionAsyncStorageOnLogin({
+        userUid: user_uid,
+        previousUserUid,
+        preserveKeys: ["user_uid", "user_email_id"],
+      });
 
       const scanProfileUid = route?.params?.returnToScanLanding ? route?.params?.profile_uid : null;
       if (scanProfileUid) {
