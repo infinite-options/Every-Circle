@@ -23,6 +23,18 @@ import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expert
 import { rejectNativeImageAsset, rejectWebImageFile } from "../utils/imageUploadLimits";
 import OfferingModerationBanner from "./OfferingModerationBanner";
 import { isOfferingVisibilityBlocked } from "../utils/offeringModeration";
+import { profileItemCardFormStyles as formStyles } from "../utils/profileItemCardFormStyles";
+import {
+  PROFILE_COST_UNIT_OPTIONS,
+  PROFILE_TAX_OPTIONS,
+  PROFILE_BOUNTY_TYPE_OPTIONS,
+  PROFILE_CONDITION_OPTIONS,
+  PROFILE_OFFERING_SHIPPING_OPTIONS,
+  PROFILE_RETURNABLE_OPTIONS,
+  getOfferingShippingDropdownValue,
+  applyOfferingShippingDropdownValue,
+  getOfferingReturnableDropdownValue,
+} from "../utils/profileItemFormOptions";
 
 const CONDITION_DETAIL_MAX_CHARS = 250;
 
@@ -78,18 +90,6 @@ const ExpertiseSection = ({
   const [addressSuggestionsByIndex, setAddressSuggestionsByIndex] = useState({});
   const [addressLoadingIndex, setAddressLoadingIndex] = useState(null);
   const addressDebounceRefs = useRef({});
-  // Cost unit options for dropdown
-  const costUnitOptions = [
-    { label: "total", value: "total" },
-    { label: "/each", value: "each" },
-    { label: "/hr", value: "hr" },
-    { label: "/day", value: "day" },
-    { label: "/week", value: "week" },
-    { label: "/2 weeks", value: "2 weeks" },
-    { label: "/month", value: "month" },
-    { label: "/quarter", value: "quarter" },
-    { label: "/year", value: "year" },
-  ];
 
   const addExpertise = () => {
     // Mark the next card index before state update, then notify parent after render.
@@ -174,6 +174,58 @@ const ExpertiseSection = ({
     }
   };
 
+  const handleOfferingTaxDropdownChange = (index, selected) => {
+    if (selected.value === "taxable") {
+      handleOfferingTaxableSelect(index);
+    } else {
+      handleInputChange(index, "profile_expertise_is_taxable", 0);
+      handleInputChange(index, "profile_expertise_tax_rate", "");
+    }
+  };
+
+  const handleOfferingBountyTypeChange = (index, selected) => {
+    if (selected.value === "none") {
+      handleInputChange(index, "profile_expertise_bounty_type", "none");
+      handleInputChange(index, "bounty", "");
+    } else {
+      handleInputChange(index, "profile_expertise_bounty_type", selected.value);
+    }
+  };
+
+  const handleOfferingConditionChange = (index, selected) => {
+    const updated = [...expertise];
+    updated[index] = {
+      ...updated[index],
+      profile_expertise_condition_type: selected.value,
+      profile_expertise_condition_detail: selected.value === "used" ? updated[index].profile_expertise_condition_detail : "",
+    };
+    setExpertise(updated);
+  };
+
+  const handleOfferingShippingChange = (index, selected) => {
+    const updated = [...expertise];
+    updated[index] = { ...updated[index], ...applyOfferingShippingDropdownValue(selected.value) };
+    setExpertise(updated);
+  };
+
+  const handleOfferingReturnableChange = (index, selected) => {
+    const updated = [...expertise];
+    if (selected.value === "no") {
+      updated[index] = {
+        ...updated[index],
+        profile_expertise_is_returnable: 0,
+        profile_expertise_return_window_days: "",
+      };
+    } else {
+      updated[index] = {
+        ...updated[index],
+        profile_expertise_is_returnable: 1,
+        profile_expertise_return_window_days: updated[index].profile_expertise_return_window_days || "30",
+      };
+    }
+    setExpertise(updated);
+  };
+
   const onOfferingAddressChange = (index, text) => {
     const updated = expertise.map((e, i) => {
       if (i !== index) return e;
@@ -252,9 +304,9 @@ const ExpertiseSection = ({
     const suggestions = addressSuggestionsByIndex[index] || [];
 
     return (
-      <View style={styles.offeringAddressContainer}>
+      <View style={formStyles.addressContainer}>
         <TextInput
-          style={[styles.locationInput, darkMode && styles.locationInputDark]}
+          style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
           placeholder={addressPlaceholder}
           placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
           value={item.profile_expertise_location || ""}
@@ -263,21 +315,21 @@ const ExpertiseSection = ({
           autoCapitalize='words'
           autoCorrect={false}
         />
-        {addressLoadingIndex === index ? <ActivityIndicator size='small' color='#4B2E83' style={{ marginTop: 8 }} /> : null}
+        {addressLoadingIndex === index ? <ActivityIndicator size='small' color='#800000' style={{ marginTop: 8 }} /> : null}
         {suggestions.length > 0 ? (
-          <View style={[styles.placesSuggestionsList, darkMode && styles.placesSuggestionsListDark]}>
+          <View style={[formStyles.placesSuggestionsList, darkMode && formStyles.darkPlacesSuggestionsList]}>
             {suggestions.map((suggestion) => (
               <TouchableOpacity
                 key={suggestion.place_id}
-                style={[styles.placesSuggestionRow, darkMode && styles.placesSuggestionRowDark]}
+                style={[formStyles.placesSuggestionRow, darkMode && formStyles.darkPlacesSuggestionRow]}
                 onPress={() => handleOfferingAddressSelect(index, suggestion)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.placesSuggestionMain, darkMode && styles.placesSuggestionMainDark]}>
+                <Text style={[formStyles.placesSuggestionMain, darkMode && formStyles.darkPlacesSuggestionMain]}>
                   {suggestion.structured_formatting?.main_text || suggestion.description}
                 </Text>
                 {suggestion.structured_formatting?.secondary_text ? (
-                  <Text style={[styles.placesSuggestionSub, darkMode && styles.placesSuggestionSubDark]}>{suggestion.structured_formatting.secondary_text}</Text>
+                  <Text style={[formStyles.placesSuggestionSub, darkMode && formStyles.darkPlacesSuggestionSub]}>{suggestion.structured_formatting.secondary_text}</Text>
                 ) : null}
               </TouchableOpacity>
             ))}
@@ -628,33 +680,34 @@ const ExpertiseSection = ({
             // Capture each card ref for new-card scroll targeting.
             if (ref) cardRefs.current[index] = ref;
           }}
-          style={[styles.card, index > 0 && styles.cardSpacing]}
+          style={[formStyles.container, darkMode && formStyles.darkContainer, index > 0 && formStyles.cardSpacing]}
         >
-          {!singleItemMode ? <OfferingModerationBanner item={item} darkMode={darkMode} compact /> : null}
           {!hideItemVisibilityToggle || !disableDelete ? (
-            <View style={styles.rowHeader}>
-              <View style={styles.labelRow}>
-                <Text style={styles.label}>Offering #{index + 1}</Text>
+            <View style={[formStyles.titleBar, darkMode && formStyles.darkTitleBar]}>
+              <Text style={[formStyles.titleText, darkMode && formStyles.darkTitleText]}>Offering #{index + 1}</Text>
+              <View style={styles.titleBarActions}>
                 {!disableDelete ? (
                   <TouchableOpacity onPress={() => deleteExpertise(index)}>
-                    <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+                    <Image source={require("../assets/delete.png")} style={formStyles.deleteIcon} />
                   </TouchableOpacity>
                 ) : null}
+                {!hideItemVisibilityToggle ? (
+                  <View style={styles.toggleContainer}>
+                    <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
+                      <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
+                      <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
               </View>
-              {!hideItemVisibilityToggle ? (
-              <View style={styles.toggleContainer}>
-                <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
-                  <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
-                  <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
-                </TouchableOpacity>
-              </View>
-              ) : null}
             </View>
           ) : null}
 
-          <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
+          {!singleItemMode ? <OfferingModerationBanner item={item} darkMode={darkMode} compact /> : null}
+
+          <View style={formStyles.topRow}>
             <ProfileItemImageColumn
               darkMode={darkMode}
               defaultSection='offering'
@@ -669,16 +722,29 @@ const ExpertiseSection = ({
               onRemoveImage={() => removeExpertiseImage(index)}
               showRemove={!!getExpertiseDisplayUri(item)}
             />
-            <View style={styles.miniCardFields}>
+            <View style={formStyles.detailsColumn}>
+              <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Name</Text>
               <TextInput
-                style={[styles.input, !String(item.name || "").trim() && styles.requiredInput]}
+                style={[
+                  formStyles.fieldInput,
+                  darkMode && formStyles.darkFieldInput,
+                  !String(item.name || "").trim() && formStyles.fieldInputError,
+                ]}
                 placeholder='Expertise Name *'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
                 value={item.name}
                 onChangeText={(text) => handleInputChange(index, "name", text)}
               />
+              <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel, { marginTop: 10 }]}>Description</Text>
               <TextInput
-                style={[styles.descriptionInput, !String(item.description || "").trim() && styles.requiredInput]}
+                style={[
+                  formStyles.fieldInput,
+                  formStyles.descriptionInput,
+                  darkMode && formStyles.darkFieldInput,
+                  !String(item.description || "").trim() && formStyles.fieldInputError,
+                ]}
                 placeholder='Description *'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
                 value={item.description}
                 onChangeText={(text) => handleInputChange(index, "description", text)}
                 multiline={true}
@@ -688,466 +754,461 @@ const ExpertiseSection = ({
             </View>
           </View>
 
-          <View style={styles.dateTimeSection}>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>Start Date and Time</Text>
-              {DateTimePicker ? (
-                <>
-                  <TouchableOpacity style={styles.dateTimeButton} onPress={() => setActivePicker({ index, field: "start", mode: "date" })}>
-                    <Text style={styles.dateTimeButtonText}>
-                      {(() => {
-                        const { date } = parseDateTime(item.profile_expertise_start || "");
-                        return date ? formatDateForDisplay(date) : "Date";
-                      })()}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.dateTimeButton}
-                    onPress={() => {
-                      const { date, time } = parseDateTime(item.profile_expertise_start || "");
-                      if (!date) setActivePicker({ index, field: "start", mode: "date" });
-                      else setActivePicker({ index, field: "start", mode: "time" });
-                    }}
-                  >
-                    <Text style={styles.dateTimeButtonText}>
-                      {(() => {
-                        const { time } = parseDateTime(item.profile_expertise_start || "");
-                        return time ? formatTimeForDisplay(time) : "Time";
-                      })()}
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              ) : Platform.OS === "web" ? (
-                <View style={styles.webDateTimeInputWrapper}>
-                  <input
-                    type='datetime-local'
-                    style={styles.webDateTimeInput}
-                    value={toDateTimeLocalValue(item.profile_expertise_start || "")}
-                    onChange={(e) => handleDateTimeInputChange(index, "start", fromDateTimeLocalValue(e.target.value))}
-                  />
+          <View style={[formStyles.sectionDivider, darkMode && formStyles.darkSectionDivider]} />
+
+          <View style={formStyles.section}>
+            <Text style={[formStyles.sectionTitle, darkMode && formStyles.darkSectionTitle]}>Schedule & Location</Text>
+            <View style={formStyles.fieldRow}>
+              <View style={formStyles.fieldHalf}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Start Date and Time</Text>
+                <View style={formStyles.inlineControls}>
+                  {DateTimePicker ? (
+                    <>
+                      <TouchableOpacity style={[formStyles.dateTimeButton, darkMode && formStyles.darkDateTimeButton]} onPress={() => setActivePicker({ index, field: "start", mode: "date" })}>
+                        <Text style={[formStyles.dateTimeButtonText, darkMode && formStyles.darkDateTimeButtonText]}>
+                          {(() => {
+                            const { date } = parseDateTime(item.profile_expertise_start || "");
+                            return date ? formatDateForDisplay(date) : "Date";
+                          })()}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[formStyles.dateTimeButton, darkMode && formStyles.darkDateTimeButton]}
+                        onPress={() => {
+                          const { date, time } = parseDateTime(item.profile_expertise_start || "");
+                          if (!date) setActivePicker({ index, field: "start", mode: "date" });
+                          else setActivePicker({ index, field: "start", mode: "time" });
+                        }}
+                      >
+                        <Text style={[formStyles.dateTimeButtonText, darkMode && formStyles.darkDateTimeButtonText]}>
+                          {(() => {
+                            const { time } = parseDateTime(item.profile_expertise_start || "");
+                            return time ? formatTimeForDisplay(time) : "Time";
+                          })()}
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : Platform.OS === "web" ? (
+                    <View style={formStyles.webDateTimeInputWrapper}>
+                      <input
+                        type='datetime-local'
+                        style={formStyles.webDateTimeInput}
+                        value={toDateTimeLocalValue(item.profile_expertise_start || "")}
+                        onChange={(e) => handleDateTimeInputChange(index, "start", fromDateTimeLocalValue(e.target.value))}
+                      />
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput, { flex: 1 }]}
+                      placeholder='mm-dd-yyyy hh:mm'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      value={item.profile_expertise_start ? formatDateTimeForDisplay(item.profile_expertise_start) : ""}
+                      onChangeText={(text) => handleInputChange(index, "profile_expertise_start", text)}
+                    />
+                  )}
                 </View>
-              ) : (
-                <TextInput
-                  style={styles.dateTimeTextInput}
-                  placeholder='mm-dd-yyyy hh:mm'
-                  value={item.profile_expertise_start ? formatDateTimeForDisplay(item.profile_expertise_start) : ""}
-                  onChangeText={(text) => handleInputChange(index, "profile_expertise_start", text)}
-                />
-              )}
-            </View>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>End Date and Time</Text>
-              {DateTimePicker ? (
-                <>
-                  <TouchableOpacity style={styles.dateTimeButton} onPress={() => setActivePicker({ index, field: "end", mode: "date" })}>
-                    <Text style={styles.dateTimeButtonText}>
-                      {(() => {
-                        const { date } = parseDateTime(item.profile_expertise_end || "");
-                        return date ? formatDateForDisplay(date) : "Date";
-                      })()}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.dateTimeButton}
-                    onPress={() => {
-                      const { date, time } = parseDateTime(item.profile_expertise_end || "");
-                      if (!date) setActivePicker({ index, field: "end", mode: "date" });
-                      else setActivePicker({ index, field: "end", mode: "time" });
-                    }}
-                  >
-                    <Text style={styles.dateTimeButtonText}>
-                      {(() => {
-                        const { time } = parseDateTime(item.profile_expertise_end || "");
-                        return time ? formatTimeForDisplay(time) : "Time";
-                      })()}
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              ) : Platform.OS === "web" ? (
-                <View style={styles.webDateTimeInputWrapper}>
-                  <input
-                    type='datetime-local'
-                    style={styles.webDateTimeInput}
-                    value={toDateTimeLocalValue(item.profile_expertise_end || "")}
-                    onChange={(e) => handleDateTimeInputChange(index, "end", fromDateTimeLocalValue(e.target.value))}
-                  />
+              </View>
+              <View style={formStyles.fieldHalf}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>End Date and Time</Text>
+                <View style={formStyles.inlineControls}>
+                  {DateTimePicker ? (
+                    <>
+                      <TouchableOpacity style={[formStyles.dateTimeButton, darkMode && formStyles.darkDateTimeButton]} onPress={() => setActivePicker({ index, field: "end", mode: "date" })}>
+                        <Text style={[formStyles.dateTimeButtonText, darkMode && formStyles.darkDateTimeButtonText]}>
+                          {(() => {
+                            const { date } = parseDateTime(item.profile_expertise_end || "");
+                            return date ? formatDateForDisplay(date) : "Date";
+                          })()}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[formStyles.dateTimeButton, darkMode && formStyles.darkDateTimeButton]}
+                        onPress={() => {
+                          const { date, time } = parseDateTime(item.profile_expertise_end || "");
+                          if (!date) setActivePicker({ index, field: "end", mode: "date" });
+                          else setActivePicker({ index, field: "end", mode: "time" });
+                        }}
+                      >
+                        <Text style={[formStyles.dateTimeButtonText, darkMode && formStyles.darkDateTimeButtonText]}>
+                          {(() => {
+                            const { time } = parseDateTime(item.profile_expertise_end || "");
+                            return time ? formatTimeForDisplay(time) : "Time";
+                          })()}
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : Platform.OS === "web" ? (
+                    <View style={formStyles.webDateTimeInputWrapper}>
+                      <input
+                        type='datetime-local'
+                        style={formStyles.webDateTimeInput}
+                        value={toDateTimeLocalValue(item.profile_expertise_end || "")}
+                        onChange={(e) => handleDateTimeInputChange(index, "end", fromDateTimeLocalValue(e.target.value))}
+                      />
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput, { flex: 1 }]}
+                      placeholder='mm-dd-yyyy hh:mm'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      value={item.profile_expertise_end ? formatDateTimeForDisplay(item.profile_expertise_end) : ""}
+                      onChangeText={(text) => handleInputChange(index, "profile_expertise_end", text)}
+                    />
+                  )}
                 </View>
-              ) : (
-                <TextInput
-                  style={styles.dateTimeTextInput}
-                  placeholder='mm-dd-yyyy hh:mm'
-                  value={item.profile_expertise_end ? formatDateTimeForDisplay(item.profile_expertise_end) : ""}
-                  onChangeText={(text) => handleInputChange(index, "profile_expertise_end", text)}
-                />
-              )}
+              </View>
             </View>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>Address</Text>
-              {renderOfferingAddressField(index, item)}
-            </View>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>City</Text>
-              <TextInput
-                style={[styles.locationInput, darkMode && styles.locationInputDark]}
-                placeholder='City'
-                placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
-                value={item.profile_expertise_city || ""}
-                onChangeText={(text) => handleInputChange(index, "profile_expertise_city", text)}
-                autoCapitalize='words'
-              />
-            </View>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>State</Text>
-              <TextInput
-                style={[styles.locationInput, darkMode && styles.locationInputDark]}
-                placeholder='State'
-                placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
-                value={item.profile_expertise_state || ""}
-                onChangeText={(text) => handleInputChange(index, "profile_expertise_state", text)}
-                autoCapitalize='characters'
-              />
-            </View>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>Mode</Text>
-              <View style={styles.modeCheckboxRow}>
+            <View style={formStyles.fieldStack}>
+              <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Mode</Text>
+              <View style={formStyles.modeRow}>
                 {(() => {
                   const { virtual, inPerson } = parseExpertiseModeFlags(item.profile_expertise_mode);
                   return (
                     <>
-                      <TouchableOpacity style={[styles.modeCheckbox, virtual && styles.modeCheckboxSelected]} onPress={() => toggleExpertiseMode(index, "virtual")}>
-                        <Text style={[styles.modeCheckboxText, virtual && styles.modeCheckboxTextSelected]}>Virtual</Text>
+                      <TouchableOpacity
+                        style={[
+                          formStyles.choiceBtn,
+                          formStyles.modeBtn,
+                          darkMode && formStyles.darkChoiceBtn,
+                          virtual && formStyles.choiceBtnActive,
+                          darkMode && virtual && formStyles.darkChoiceBtnActive,
+                        ]}
+                        onPress={() => toggleExpertiseMode(index, "virtual")}
+                      >
+                        <Text
+                          style={[
+                            formStyles.choiceBtnText,
+                            darkMode && formStyles.darkChoiceBtnText,
+                            virtual && formStyles.choiceBtnTextActive,
+                            darkMode && virtual && formStyles.darkChoiceBtnTextActive,
+                          ]}
+                        >
+                          Virtual
+                        </Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={[styles.modeCheckbox, inPerson && styles.modeCheckboxSelected]} onPress={() => toggleExpertiseMode(index, "inPerson")}>
-                        <Text style={[styles.modeCheckboxText, inPerson && styles.modeCheckboxTextSelected]}>In-Person</Text>
+                      <TouchableOpacity
+                        style={[
+                          formStyles.choiceBtn,
+                          formStyles.modeBtn,
+                          darkMode && formStyles.darkChoiceBtn,
+                          inPerson && formStyles.choiceBtnActive,
+                          darkMode && inPerson && formStyles.darkChoiceBtnActive,
+                        ]}
+                        onPress={() => toggleExpertiseMode(index, "inPerson")}
+                      >
+                        <Text
+                          style={[
+                            formStyles.choiceBtnText,
+                            darkMode && formStyles.darkChoiceBtnText,
+                            inPerson && formStyles.choiceBtnTextActive,
+                            darkMode && inPerson && formStyles.darkChoiceBtnTextActive,
+                          ]}
+                        >
+                          In-Person
+                        </Text>
                       </TouchableOpacity>
                     </>
                   );
                 })()}
               </View>
             </View>
-          </View>
-
-          {DateTimePicker && activePicker && activePicker.index === index && (
-            <DateTimePicker
-              value={getPickerValue(activePicker.index, activePicker.field)}
-              mode={activePicker.mode}
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              onChange={(_, selectedDate) => {
-                if (selectedDate) {
-                  handleDateTimeChange(activePicker.index, activePicker.field, activePicker.mode, selectedDate);
-                } else {
-                  setActivePicker(null);
-                }
-              }}
-            />
-          )}
-
-          {/* Sales Tax Row */}
-          <View style={styles.optionRow}>
-            <Text style={styles.dateTimeLabel}>Sales tax</Text>
-            <View style={styles.optionRowControls}>
-            <TouchableOpacity
-              style={[styles.taxBtn, !(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnActive]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_is_taxable", 0);
-                handleInputChange(index, "profile_expertise_tax_rate", "");
-              }}
-            >
-              <Text style={[styles.taxBtnText, !(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnTextActive]}>
-                No tax
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.taxBtn, (item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnActive]}
-              onPress={() => handleOfferingTaxableSelect(index)}
-            >
-              <Text style={[styles.taxBtnText, (item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnTextActive]}>
-                Taxable
-              </Text>
-            </TouchableOpacity>
-            {(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") ? (
-              <View style={styles.taxRateInputWithSuffix}>
-                <TextInput
-                  style={[
-                    styles.taxRateInput,
-                    styles.taxRateInputCompact,
-                    (!item.profile_expertise_tax_rate || !isValidTaxRate(item.profile_expertise_tax_rate)) && styles.requiredInput,
-                  ]}
-                  value={String(item.profile_expertise_tax_rate ?? "")}
-                  onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
-                  onBlur={() => handleOfferingTaxRateBlur(index)}
-                  placeholder='Required'
-                  keyboardType='decimal-pad'
-                />
-                <Text style={styles.taxRateInputSuffix}>%</Text>
-              </View>
-            ) : null}
-            </View>
-          </View>
-
-          {/* Cost Row */}
-          <View style={styles.optionRow}>
-            <Text style={styles.dateTimeLabel}>Cost</Text>
-            <View style={styles.optionRowControls}>
-            <TextInput
-              ref={(ref) => {
-                if (ref) costInputRefs.current[index] = ref;
-              }}
-              style={styles.costAmountInput}
-              keyboardType={(() => {
-                const parsed = parseCost(item.cost);
-                const amount = parsed.amount;
-                return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "decimal-pad";
-              })()}
-              value={(() => {
-                const parsed = parseCost(item.cost);
-                const amount = parsed.amount;
-                if (!amount) return "";
-                if (amount.toLowerCase() === "free") return "Free";
-                return `$${amount}`;
-              })()}
-              onChangeText={(text) => {
-                const cleanedText = text.replace(/\$/g, "");
-                handleCostAmountChange(index, cleanedText);
-              }}
-              // Format cost only after editing is finished. This allows fluid typing of decimals without forcing formatting mid-edit.
-              onBlur={() => handleCostAmountBlur(index)}
-            />
-            <Dropdown
-              style={[styles.costUnitDropdown, !parseCost(item.cost).unit && styles.requiredDropdown]}
-              data={costUnitOptions}
-              labelField='label'
-              valueField='value'
-              placeholder='Unit *'
-              placeholderStyle={{ color: "#f44336" }}
-              value={parseCost(item.cost).unit || null}
-              onChange={(item) => handleCostUnitChange(index, item)}
-              containerStyle={styles.dropdownContainer}
-              itemTextStyle={styles.dropdownItemText}
-              selectedTextStyle={styles.dropdownSelectedText}
-              activeColor='#f0f0f0'
-            />
-            <Text style={[styles.costLabel, styles.quantityInlineLabel]}>Quantity</Text>
-            <TextInput
-              style={styles.bountyInput}
-              placeholder='Count'
-              keyboardType='numeric'
-              value={item.quantity || ""}
-              onChangeText={(text) => handleInputChange(index, "quantity", text)}
-            />
-            </View>
-          </View>
-
-          {/* Bounty Row */}
-          <View style={styles.optionRow}>
-            <Text style={styles.dateTimeLabel}>Bounty</Text>
-            <View style={styles.optionRowControls}>
-            <TouchableOpacity
-              style={[styles.taxBtn, item.profile_expertise_bounty_type === "none" && styles.taxBtnActive]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_bounty_type", "none");
-                handleInputChange(index, "bounty", "");
-              }}
-            >
-              <Text style={[styles.taxBtnText, item.profile_expertise_bounty_type === "none" && styles.taxBtnTextActive]}>No Bounty</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.taxBtn, styles.taxBtnWide, item.profile_expertise_bounty_type === "per_item" && styles.taxBtnActive]}
-              onPress={() => handleInputChange(index, "profile_expertise_bounty_type", "per_item")}
-            >
-              <Text style={[styles.taxBtnText, styles.taxBtnWideText, item.profile_expertise_bounty_type === "per_item" && styles.taxBtnTextActive]}>Per Item</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.taxBtn, styles.taxBtnWide, item.profile_expertise_bounty_type === "total" && styles.taxBtnActive]}
-              onPress={() => handleInputChange(index, "profile_expertise_bounty_type", "total")}
-            >
-              <Text style={[styles.taxBtnText, styles.taxBtnWideText, item.profile_expertise_bounty_type === "total" && styles.taxBtnTextActive]}>Single Bounty</Text>
-            </TouchableOpacity>
-            {item.profile_expertise_bounty_type !== "none" ? (
-              <TextInput
-                style={styles.taxRateInput}
-                value={(() => {
-                  const parsed = parseBounty(item.bounty);
-                  const amount = parsed.amount;
-                  if (!amount) return "";
-                  return `$${amount}`;
-                })()}
-                onChangeText={(text) => handleBountyAmountChange(index, text.replace(/\$/g, ""))}
-                onBlur={() => handleBountyAmountBlur(index)}
-                placeholder='$0.00'
-                keyboardType='decimal-pad'
-              />
-            ) : null}
-            </View>
-          </View>
-          {offeringBountyExceedsCost(item) ? (
-            <Text style={[styles.bountyCostWarning, darkMode && styles.bountyCostWarningDark]}>
-              Warning: Bounty is greater than the item cost. You may pay referrers more than you charge per item.
-            </Text>
-          ) : null}
-
-          {/* Condition Row */}
-          <View style={styles.optionRow}>
-            <Text style={styles.dateTimeLabel}>Condition</Text>
-            <View style={styles.optionRowControls}>
-            <TouchableOpacity
-              style={[styles.taxBtn, item.profile_expertise_condition_type === "na" && styles.taxBtnActive]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_condition_type", "na");
-                handleInputChange(index, "profile_expertise_condition_detail", "");
-              }}
-            >
-              <Text style={[styles.taxBtnText, item.profile_expertise_condition_type === "na" && styles.taxBtnTextActive]}>N/A</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.taxBtn, item.profile_expertise_condition_type === "new" && styles.taxBtnActive]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_condition_type", "new");
-                handleInputChange(index, "profile_expertise_condition_detail", "");
-              }}
-            >
-              <Text style={[styles.taxBtnText, item.profile_expertise_condition_type === "new" && styles.taxBtnTextActive]}>New</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.taxBtn, item.profile_expertise_condition_type === "used" && styles.taxBtnActive]}
-              onPress={() => handleInputChange(index, "profile_expertise_condition_type", "used")}
-            >
-              <Text style={[styles.taxBtnText, item.profile_expertise_condition_type === "used" && styles.taxBtnTextActive]}>Used</Text>
-            </TouchableOpacity>
-            {item.profile_expertise_condition_type === "used" ? (
-              <TextInput
-                style={[styles.taxRateInput, styles.conditionDetailInput]}
-                value={item.profile_expertise_condition_detail || ""}
-                onChangeText={(t) => handleInputChange(index, "profile_expertise_condition_detail", t.slice(0, CONDITION_DETAIL_MAX_CHARS))}
-                placeholder='Description (250 characters max)'
-                maxLength={CONDITION_DETAIL_MAX_CHARS}
-              />
-            ) : null}
-            </View>
-          </View>
-
-          {/* Shippable Row */}
-          <View style={styles.optionRow}>
-            <Text style={styles.dateTimeLabel}>Shipping</Text>
-            <View style={styles.optionRowControls}>
-            <TouchableOpacity
-              style={[
-                styles.taxBtn,
-                !(item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) &&
-                  !(item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
-                  styles.taxBtnActive,
-              ]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_free_shipping", 0);
-                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 0);
-              }}
-            >
-              <Text
-                style={[
-                  styles.taxBtnText,
-                  !(item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) &&
-                    !(item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
-                    styles.taxBtnTextActive,
-                ]}
-              >
-                N/A
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.taxBtn,
-                (item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) && styles.taxBtnActive,
-              ]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_free_shipping", 1);
-                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 0);
-              }}
-            >
-              <Text
-                style={[
-                  styles.taxBtnText,
-                  (item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) && styles.taxBtnTextActive,
-                ]}
-              >
-                Free
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.taxBtn,
-                styles.taxBtnWide,
-                (item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
-                  styles.taxBtnActive,
-              ]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 1);
-                handleInputChange(index, "profile_expertise_free_shipping", 0);
-              }}
-            >
-              <Text
-                style={[
-                  styles.taxBtnText,
-                  styles.taxBtnWideText,
-                  (item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
-                    styles.taxBtnTextActive,
-                ]}
-              >
-                Buyer pays
-              </Text>
-            </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Returnable Row */}
-          <View style={styles.optionRow}>
-            <Text style={styles.dateTimeLabel}>Returnable</Text>
-            <View style={styles.optionRowControls}>
-            <TouchableOpacity
-              style={[styles.taxBtn, !(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnActive]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_is_returnable", 0);
-                handleInputChange(index, "profile_expertise_return_window_days", "");
-              }}
-            >
-              <Text style={[styles.taxBtnText, !(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnTextActive]}>No</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.taxBtn, (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnActive]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_is_returnable", 1);
-                if (!item.profile_expertise_return_window_days) {
-                  handleInputChange(index, "profile_expertise_return_window_days", "30");
-                }
-              }}
-            >
-              <Text style={[styles.taxBtnText, (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnTextActive]}>Yes</Text>
-            </TouchableOpacity>
-            {(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") ? (
+            {parseExpertiseModeFlags(item.profile_expertise_mode).inPerson ? (
               <>
-                <TextInput
-                  style={[styles.taxRateInput, { width: 56 }]}
-                  value={String(item.profile_expertise_return_window_days ?? "")}
-                  onChangeText={(t) => handleInputChange(index, "profile_expertise_return_window_days", t.replace(/\D/g, ""))}
-                  placeholder='30'
-                  keyboardType='number-pad'
-                />
-                <Text style={styles.taxBtnText}>days</Text>
+                <View style={formStyles.fieldStack}>
+                  <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Address</Text>
+                  {renderOfferingAddressField(index, item)}
+                </View>
+                <View style={formStyles.fieldRow}>
+                  <View style={formStyles.fieldHalf}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>City</Text>
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                      placeholder='City'
+                      placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                      value={item.profile_expertise_city || ""}
+                      onChangeText={(text) => handleInputChange(index, "profile_expertise_city", text)}
+                      autoCapitalize='words'
+                    />
+                  </View>
+                  <View style={formStyles.fieldHalf}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>State</Text>
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                      placeholder='State'
+                      placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                      value={item.profile_expertise_state || ""}
+                      onChangeText={(text) => handleInputChange(index, "profile_expertise_state", text)}
+                      autoCapitalize='characters'
+                    />
+                  </View>
+                </View>
               </>
             ) : null}
-            </View>
+            {DateTimePicker && activePicker && activePicker.index === index && (
+              <DateTimePicker
+                value={getPickerValue(activePicker.index, activePicker.field)}
+                mode={activePicker.mode}
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={(_, selectedDate) => {
+                  if (selectedDate) {
+                    handleDateTimeChange(activePicker.index, activePicker.field, activePicker.mode, selectedDate);
+                  } else {
+                    setActivePicker(null);
+                  }
+                }}
+              />
+            )}
           </View>
 
-          {/* Refund Policy Row */}
-          <View style={styles.optionRow}>
-            <Text style={styles.dateTimeLabel}>Refund Policy</Text>
-            <TextInput
-              style={[styles.locationInput, darkMode && styles.locationInputDark]}
-              value={item.profile_expertise_refund_policy || ""}
-              onChangeText={(t) => handleInputChange(index, "profile_expertise_refund_policy", t.slice(0, 45))}
-              placeholder='Describe your refund policy (max 45 characters)'
-              placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
-              maxLength={45}
-            />
+          <View style={[formStyles.sectionDivider, darkMode && formStyles.darkSectionDivider]} />
+
+          <View style={formStyles.section}>
+            <Text style={[formStyles.sectionTitle, darkMode && formStyles.darkSectionTitle]}>Pricing</Text>
+            <View style={formStyles.pricingGrid}>
+              <View style={formStyles.pricingCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Cost</Text>
+                <View style={formStyles.inlineControls}>
+                  <TextInput
+                    ref={(ref) => {
+                      if (ref) costInputRefs.current[index] = ref;
+                    }}
+                    style={[formStyles.fieldInput, formStyles.inlineAmountInput, darkMode && formStyles.darkFieldInput]}
+                    keyboardType={(() => {
+                      const parsed = parseCost(item.cost);
+                      const amount = parsed.amount;
+                      return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "decimal-pad";
+                    })()}
+                    value={(() => {
+                      const parsed = parseCost(item.cost);
+                      const amount = parsed.amount;
+                      if (!amount) return "";
+                      if (amount.toLowerCase() === "free") return "Free";
+                      return `$${amount}`;
+                    })()}
+                    onChangeText={(text) => {
+                      const cleanedText = text.replace(/\$/g, "");
+                      handleCostAmountChange(index, cleanedText);
+                    }}
+                    onBlur={() => handleCostAmountBlur(index)}
+                    placeholder='0.00'
+                    placeholderTextColor={darkMode ? "#888" : "#999"}
+                  />
+                  <Dropdown
+                    style={[
+                      formStyles.dropdown,
+                      formStyles.costUnitDropdown,
+                      darkMode && formStyles.darkDropdown,
+                      !parseCost(item.cost).unit && formStyles.fieldInputError,
+                    ]}
+                    data={PROFILE_COST_UNIT_OPTIONS}
+                    labelField='label'
+                    valueField='value'
+                    placeholder='Unit *'
+                    placeholderStyle={{ color: !parseCost(item.cost).unit ? "#FF3B30" : darkMode ? "#999" : "#666" }}
+                    value={parseCost(item.cost).unit || null}
+                    onChange={(selected) => handleCostUnitChange(index, selected)}
+                    containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                    itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                    maxHeight={220}
+                    flatListProps={{ nestedScrollEnabled: true }}
+                  />
+                </View>
+              </View>
+
+              <View style={formStyles.pricingCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Sales tax</Text>
+                <View style={formStyles.inlineControls}>
+                  <Dropdown
+                    style={[formStyles.dropdown, formStyles.taxDropdown, darkMode && formStyles.darkDropdown]}
+                    data={PROFILE_TAX_OPTIONS}
+                    labelField='label'
+                    valueField='value'
+                    value={isTruthyTaxableFlag(item.profile_expertise_is_taxable) ? "taxable" : "no_tax"}
+                    onChange={(selected) => handleOfferingTaxDropdownChange(index, selected)}
+                    containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                    itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                    maxHeight={120}
+                    flatListProps={{ nestedScrollEnabled: true }}
+                  />
+                  {isTruthyTaxableFlag(item.profile_expertise_is_taxable) ? (
+                    <View style={formStyles.taxRateInputWithSuffix}>
+                      <TextInput
+                        style={[
+                          formStyles.fieldInput,
+                          formStyles.taxRateInput,
+                          darkMode && formStyles.darkFieldInput,
+                          (!item.profile_expertise_tax_rate || !isValidTaxRate(item.profile_expertise_tax_rate)) && formStyles.fieldInputError,
+                        ]}
+                        value={String(item.profile_expertise_tax_rate ?? "")}
+                        onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
+                        onBlur={() => handleOfferingTaxRateBlur(index)}
+                        placeholder='9.00'
+                        placeholderTextColor={darkMode ? "#888" : "#999"}
+                        keyboardType='decimal-pad'
+                      />
+                      <Text style={[formStyles.inputSuffix, darkMode && formStyles.darkInputSuffix]}>%</Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+
+              <View style={formStyles.pricingCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Bounty</Text>
+                <View style={formStyles.inlineControls}>
+                  <Dropdown
+                    style={[formStyles.dropdown, formStyles.bountyTypeDropdown, darkMode && formStyles.darkDropdown]}
+                    data={PROFILE_BOUNTY_TYPE_OPTIONS}
+                    labelField='label'
+                    valueField='value'
+                    value={item.profile_expertise_bounty_type || "none"}
+                    onChange={(selected) => handleOfferingBountyTypeChange(index, selected)}
+                    containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                    itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                    maxHeight={160}
+                    flatListProps={{ nestedScrollEnabled: true }}
+                  />
+                  {item.profile_expertise_bounty_type !== "none" ? (
+                    <TextInput
+                      style={[formStyles.fieldInput, formStyles.inlineAmountInput, darkMode && formStyles.darkFieldInput]}
+                      value={(() => {
+                        const parsed = parseBounty(item.bounty);
+                        const amount = parsed.amount;
+                        if (!amount) return "";
+                        return `$${amount}`;
+                      })()}
+                      onChangeText={(text) => handleBountyAmountChange(index, text.replace(/\$/g, ""))}
+                      onBlur={() => handleBountyAmountBlur(index)}
+                      placeholder='$0.00'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      keyboardType='decimal-pad'
+                    />
+                  ) : null}
+                </View>
+              </View>
+            </View>
+            {offeringBountyExceedsCost(item) ? (
+              <Text style={[formStyles.warningText, darkMode && formStyles.darkWarningText]}>
+                Warning: Bounty is greater than the item cost. You may pay referrers more than you charge per item.
+              </Text>
+            ) : null}
+          </View>
+
+          <View style={[formStyles.sectionDivider, darkMode && formStyles.darkSectionDivider]} />
+
+          <View style={formStyles.section}>
+            <Text style={[formStyles.sectionTitle, darkMode && formStyles.darkSectionTitle]}>Fulfillment</Text>
+            <View style={formStyles.fulfillmentGrid}>
+              <View style={formStyles.fulfillmentCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Condition</Text>
+                <Dropdown
+                  style={[formStyles.dropdown, formStyles.fulfillmentDropdown, darkMode && formStyles.darkDropdown]}
+                  data={PROFILE_CONDITION_OPTIONS}
+                  labelField='label'
+                  valueField='value'
+                  value={item.profile_expertise_condition_type || "na"}
+                  onChange={(selected) => handleOfferingConditionChange(index, selected)}
+                  containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  maxHeight={160}
+                  flatListProps={{ nestedScrollEnabled: true }}
+                />
+                {item.profile_expertise_condition_type === "used" ? (
+                  <View style={formStyles.fulfillmentExtra}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Condition details</Text>
+                    <TextInput
+                      style={[formStyles.fieldInput, formStyles.descriptionInput, darkMode && formStyles.darkFieldInput]}
+                      value={item.profile_expertise_condition_detail || ""}
+                      onChangeText={(t) => handleInputChange(index, "profile_expertise_condition_detail", t.slice(0, CONDITION_DETAIL_MAX_CHARS))}
+                      placeholder='Description (250 characters max)'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      maxLength={CONDITION_DETAIL_MAX_CHARS}
+                      multiline
+                      textAlignVertical='top'
+                    />
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={formStyles.fulfillmentCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Shipping/delivery</Text>
+                <Dropdown
+                  style={[formStyles.dropdown, formStyles.fulfillmentDropdown, darkMode && formStyles.darkDropdown]}
+                  data={PROFILE_OFFERING_SHIPPING_OPTIONS}
+                  labelField='label'
+                  valueField='value'
+                  value={getOfferingShippingDropdownValue(item)}
+                  onChange={(selected) => handleOfferingShippingChange(index, selected)}
+                  containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  maxHeight={220}
+                  flatListProps={{ nestedScrollEnabled: true }}
+                />
+              </View>
+
+              <View style={formStyles.fulfillmentCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Returnable</Text>
+                <Dropdown
+                  style={[formStyles.dropdown, formStyles.fulfillmentDropdown, darkMode && formStyles.darkDropdown]}
+                  data={PROFILE_RETURNABLE_OPTIONS}
+                  labelField='label'
+                  valueField='value'
+                  value={getOfferingReturnableDropdownValue(item)}
+                  onChange={(selected) => handleOfferingReturnableChange(index, selected)}
+                  containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  maxHeight={120}
+                  flatListProps={{ nestedScrollEnabled: true }}
+                />
+                {getOfferingReturnableDropdownValue(item) === "yes" ? (
+                  <View style={[formStyles.inlineControls, formStyles.fulfillmentExtra]}>
+                    <TextInput
+                      style={[formStyles.fieldInput, formStyles.quantityInput, darkMode && formStyles.darkFieldInput]}
+                      value={String(item.profile_expertise_return_window_days ?? "")}
+                      onChangeText={(t) => handleInputChange(index, "profile_expertise_return_window_days", t.replace(/\D/g, ""))}
+                      placeholder='30'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      keyboardType='number-pad'
+                    />
+                    <Text style={[formStyles.choiceBtnText, darkMode && formStyles.darkChoiceBtnText]}>days</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={formStyles.fulfillmentCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Quantity</Text>
+                <TextInput
+                  style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                  placeholder='Count'
+                  placeholderTextColor={darkMode ? "#888" : "#999"}
+                  keyboardType='numeric'
+                  value={item.quantity || ""}
+                  onChangeText={(text) => handleInputChange(index, "quantity", text.replace(/\D/g, ""))}
+                />
+              </View>
+            </View>
+            <View style={formStyles.fulfillmentExtra}>
+              <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Refund Policy</Text>
+              <TextInput
+                style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                value={item.profile_expertise_refund_policy || ""}
+                onChangeText={(t) => handleInputChange(index, "profile_expertise_refund_policy", t.slice(0, 45))}
+                placeholder='Describe your refund policy (max 45 characters)'
+                placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                maxLength={45}
+              />
+            </View>
           </View>
         </View>
       ))}
@@ -1170,383 +1231,10 @@ const styles = StyleSheet.create({
   },
   label: { fontSize: 18, fontWeight: "bold" },
   addText: { fontSize: 24, fontWeight: "bold", color: "#000" },
-  toggleText: { fontWeight: "bold" },
-  card: {
-    backgroundColor: "#F5F5F5",
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 0,
-    borderWidth: 1,
-    borderColor: "#ccc",
-  },
-  rowHeader: {
+  titleBarActions: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  miniCard: {
-    flexDirection: "row",
-    alignItems: "stretch",
     gap: 12,
-    marginBottom: 8,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-    backgroundColor: "#fff",
-  },
-  miniCardDark: {
-    borderColor: "#404040",
-    backgroundColor: "#2d2d2d",
-  },
-  miniCardFields: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "column",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    marginBottom: 5,
-  },
-  descriptionInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    minHeight: 40,
-  },
-  dateTimeSection: {
-    marginBottom: 10,
-  },
-  dateTimeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-    gap: 8,
-  },
-  optionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-    gap: 8,
-  },
-  optionRowControls: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  dateTimeLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    width: 140,
-    minWidth: 140,
-  },
-  dateTimeButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    minHeight: 40,
-    justifyContent: "center",
-  },
-  dateTimeButtonText: {
-    fontSize: 14,
-    color: "#333",
-  },
-  dateTimeTextInput: {
-    flex: 2,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    minHeight: 40,
-    fontSize: 14,
-  },
-  webDateTimeInputWrapper: {
-    flex: 2,
-    minWidth: 0,
-  },
-  webDateTimeInput: {
-    width: "100%",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    minHeight: 40,
-    fontSize: 14,
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-    boxSizing: "border-box",
-  },
-  locationInput: {
-    flex: 1,
-    minWidth: 0,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    minHeight: 40,
-    fontSize: 14,
-  },
-  locationInputDark: {
-    borderColor: "#555",
-    backgroundColor: "#2d2d2d",
-    color: "#fff",
-  },
-  offeringAddressContainer: {
-    flex: 2,
-    minWidth: 0,
-  },
-  placesSuggestionsList: {
-    marginTop: 6,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    overflow: "hidden",
-  },
-  placesSuggestionsListDark: {
-    borderColor: "#555",
-    backgroundColor: "#2d2d2d",
-  },
-  placesSuggestionRow: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  placesSuggestionRowDark: {
-    borderBottomColor: "#444",
-  },
-  placesSuggestionMain: {
-    fontSize: 14,
-    color: "#222",
-    fontWeight: "500",
-  },
-  placesSuggestionMainDark: {
-    color: "#f5f5f5",
-  },
-  placesSuggestionSub: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 2,
-  },
-  placesSuggestionSubDark: {
-    color: "#aaa",
-  },
-  modeCheckboxRow: {
-    flex: 2,
-    flexDirection: "row",
-    gap: 12,
-  },
-  modeCheckbox: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 10,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modeCheckboxSelected: {
-    borderColor: "#007AFF",
-    backgroundColor: "#E8F4FD",
-  },
-  modeCheckboxText: {
-    fontSize: 14,
-    color: "#666",
-  },
-  modeCheckboxTextSelected: {
-    color: "#007AFF",
-    fontWeight: "600",
-  },
-  requiredInput: {
-    borderColor: "#f44336",
-  },
-  requiredDropdown: {
-    borderColor: "#f44336",
-  },
-  amountRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 5,
-  },
-  costLabel: {
-    fontWeight: "bold",
-    marginRight: 5,
-  },
-  quantityInlineLabel: {
-    fontWeight: "bold",
-    marginLeft: 2,
-  },
-  amountInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: "45%",
-  },
-  costAmountInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: 68,
-    height: 36,
-    flexShrink: 0,
-    fontSize: 13,
-    textAlignVertical: "center",
-  },
-  costUnitInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: "15%",
-    marginLeft: 5,
-  },
-  costUnitDropdown: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: 92,
-    height: 36,
-    flexShrink: 0,
-    paddingHorizontal: 6,
-    paddingVertical: 0,
-  },
-  dropdownContainer: {
-    borderRadius: 5,
-    marginTop: 5,
-    ...(Platform.OS === "web"
-      ? {
-          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.1)",
-        }
-      : {}),
-  },
-  dropdownItemText: {
-    color: "#000",
-    fontSize: 14,
-  },
-  dropdownSelectedText: {
-    color: "#000",
-    fontSize: 13,
-  },
-  bountyInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: 52,
-    height: 36,
-    flexShrink: 0,
-    fontSize: 13,
-    textAlignVertical: "center",
-  },
-  dollar: { fontSize: 20, marginHorizontal: 5 },
-  deleteIcon: { width: 20, height: 20 },
-  taxRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 5,
-    marginBottom: 8,
-    gap: 6,
-  },
-  bountyCostWarning: {
-    fontSize: 13,
-    color: "#FF9500",
-    marginTop: -4,
-    marginBottom: 8,
-    lineHeight: 18,
-  },
-  bountyCostWarningDark: {
-    color: "#FFB340",
-  },
-  taxBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    backgroundColor: "#fff",
-  },
-  taxBtnActive: {
-    borderColor: "#007AFF",
-    backgroundColor: "#E8F4FD",
-  },
-  taxBtnText: {
-    fontSize: 13,
-    color: "#555",
-  },
-  taxBtnTextActive: {
-    color: "#007AFF",
-    fontWeight: "600",
-  },
-  taxBtnWide: {
-    minWidth: 80,
-    alignItems: "center",
-  },
-  taxBtnWideText: {
-    fontSize: 12,
-    textAlign: "center",
-  },
-  taxRateInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: 100,
-    height: 36,
-    fontSize: 13,
-  },
-  taxRateInputCompact: {
-    width: 108,
-    minWidth: 108,
-    maxWidth: 108,
-  },
-  taxRateInputWithSuffix: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    flexShrink: 0,
-  },
-  taxRateInputSuffix: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#555",
-  },
-  conditionDetailInput: {
-    flex: 1,
-    minWidth: 0,
-    width: undefined,
-  },
-  cardSpacing: {
-    marginTop: 16,
   },
   toggleContainer: { flexDirection: "row", gap: 4 },
   togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },

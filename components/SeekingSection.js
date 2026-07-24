@@ -20,6 +20,8 @@ import {
 } from "../utils/profileDateTime";
 import SeekingModerationBanner from "./SeekingModerationBanner";
 import { isSeekingVisibilityBlocked } from "../utils/seekingModeration";
+import { profileItemCardFormStyles as formStyles } from "../utils/profileItemCardFormStyles";
+import { PROFILE_COST_UNIT_OPTIONS, PROFILE_BOUNTY_TYPE_OPTIONS } from "../utils/profileItemFormOptions";
 
 // DateTimePicker only works on native (not web)
 let DateTimePicker = null;
@@ -41,18 +43,6 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   const [addressSuggestionsByIndex, setAddressSuggestionsByIndex] = useState({});
   const [addressLoadingIndex, setAddressLoadingIndex] = useState(null);
   const addressDebounceRefs = useRef({});
-  // Bounty unit options for dropdown
-  const bountyUnitOptions = [
-    { label: "total", value: "total" },
-    { label: "/each", value: "each" },
-    { label: "/hr", value: "hr" },
-    { label: "/day", value: "day" },
-    { label: "/week", value: "week" },
-    { label: "/2 weeks", value: "2 weeks" },
-    { label: "/month", value: "month" },
-    { label: "/quarter", value: "quarter" },
-    { label: "/year", value: "year" },
-  ];
 
   const addWish = () => {
     // Mark the next card index before state update, then notify parent after render.
@@ -104,6 +94,15 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     const updated = [...wishes];
     updated[index][field] = value;
     setWishes(updated);
+  };
+
+  const handleSeekingBountyTypeChange = (index, selected) => {
+    if (selected.value === "none") {
+      handleInputChange(index, "profile_wish_bounty_type", "none");
+      handleInputChange(index, "amount", "");
+    } else {
+      handleInputChange(index, "profile_wish_bounty_type", selected.value);
+    }
   };
 
   const onWishAddressChange = (index, text) => {
@@ -193,9 +192,9 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     const suggestions = addressSuggestionsByIndex[index] || [];
 
     return (
-      <View style={styles.addressContainer}>
+      <View style={formStyles.addressContainer}>
         <TextInput
-          style={[styles.locationInput, darkMode && styles.locationInputDark]}
+          style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
           placeholder={addressPlaceholder}
           placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
           value={item.profile_wish_location || ""}
@@ -204,21 +203,21 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
           autoCapitalize='words'
           autoCorrect={false}
         />
-        {addressLoadingIndex === index ? <ActivityIndicator size='small' color='#4B2E83' style={{ marginTop: 8 }} /> : null}
+        {addressLoadingIndex === index ? <ActivityIndicator size='small' color='#800000' style={{ marginTop: 8 }} /> : null}
         {suggestions.length > 0 ? (
-          <View style={[styles.placesSuggestionsList, darkMode && styles.placesSuggestionsListDark]}>
+          <View style={[formStyles.placesSuggestionsList, darkMode && formStyles.darkPlacesSuggestionsList]}>
             {suggestions.map((suggestion) => (
               <TouchableOpacity
                 key={suggestion.place_id}
-                style={[styles.placesSuggestionRow, darkMode && styles.placesSuggestionRowDark]}
+                style={[formStyles.placesSuggestionRow, darkMode && formStyles.darkPlacesSuggestionRow]}
                 onPress={() => handleWishAddressSelect(index, suggestion)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.placesSuggestionMain, darkMode && styles.placesSuggestionMainDark]}>
+                <Text style={[formStyles.placesSuggestionMain, darkMode && formStyles.darkPlacesSuggestionMain]}>
                   {suggestion.structured_formatting?.main_text || suggestion.description}
                 </Text>
                 {suggestion.structured_formatting?.secondary_text ? (
-                  <Text style={[styles.placesSuggestionSub, darkMode && styles.placesSuggestionSubDark]}>
+                  <Text style={[formStyles.placesSuggestionSub, darkMode && formStyles.darkPlacesSuggestionSub]}>
                     {suggestion.structured_formatting.secondary_text}
                   </Text>
                 ) : null}
@@ -638,27 +637,28 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             // Capture each card ref for new-card scroll targeting.
             if (ref) cardRefs.current[index] = ref;
           }}
-          style={[styles.card, index > 0 && styles.cardSpacing]}
+          style={[formStyles.container, darkMode && formStyles.darkContainer, index > 0 && formStyles.cardSpacing]}
         >
-          <SeekingModerationBanner item={item} darkMode={darkMode} compact />
-          <View style={styles.rowHeader}>
-            <View style={styles.labelRow}>
-              <Text style={styles.label}>Seeking #{index + 1}</Text>
+          <View style={[formStyles.titleBar, darkMode && formStyles.darkTitleBar]}>
+            <Text style={[formStyles.titleText, darkMode && formStyles.darkTitleText]}>Seeking #{index + 1}</Text>
+            <View style={styles.titleBarActions}>
               <TouchableOpacity onPress={() => deleteWish(index)}>
-                <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+                <Image source={require("../assets/delete.png")} style={formStyles.deleteIcon} />
               </TouchableOpacity>
-            </View>
-            <View style={styles.toggleContainer}>
-              <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
-                <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
-                <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
-              </TouchableOpacity>
+              <View style={styles.toggleContainer}>
+                <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
+                  <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
+                  <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
-          <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
+          <SeekingModerationBanner item={item} darkMode={darkMode} compact />
+
+          <View style={formStyles.topRow}>
             <ProfileItemImageColumn
               darkMode={darkMode}
               defaultSection='seeking'
@@ -673,16 +673,29 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               onRemoveImage={() => removeWishImage(index)}
               showRemove={!!getWishDisplayUri(item)}
             />
-            <View style={styles.miniCardFields}>
+            <View style={formStyles.detailsColumn}>
+              <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Title</Text>
               <TextInput
-                style={[styles.input, !String(item.helpNeeds || "").trim() && styles.requiredInput]}
+                style={[
+                  formStyles.fieldInput,
+                  darkMode && formStyles.darkFieldInput,
+                  !String(item.helpNeeds || "").trim() && formStyles.fieldInputError,
+                ]}
                 placeholder='Seeking Title *'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
                 value={item.helpNeeds}
                 onChangeText={(text) => handleInputChange(index, "helpNeeds", text)}
               />
+              <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel, { marginTop: 10 }]}>Description</Text>
               <TextInput
-                style={[styles.descriptionInput, !String(item.details || "").trim() && styles.requiredInput]}
+                style={[
+                  formStyles.fieldInput,
+                  formStyles.descriptionInput,
+                  darkMode && formStyles.darkFieldInput,
+                  !String(item.details || "").trim() && formStyles.fieldInputError,
+                ]}
                 placeholder='Description *'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
                 value={item.details}
                 onChangeText={(text) => handleInputChange(index, "details", text)}
                 multiline={true}
@@ -692,144 +705,189 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             </View>
           </View>
 
-          {/* Start Date/Time, End Date/Time, Address */}
-          <View style={styles.dateTimeSection}>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>Start Date and Time</Text>
-              {DateTimePicker ? (
-                <>
-                  <TouchableOpacity style={styles.dateTimeButton} onPress={() => setActivePicker({ index, field: "start", mode: "date" })}>
-                    <Text style={styles.dateTimeButtonText}>
-                      {(() => {
-                        const { date } = parseDateTime(item.profile_wish_start || "");
-                        return date ? formatDateForDisplay(date) : "Date";
-                      })()}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.dateTimeButton}
-                    onPress={() => {
-                      const { date, time } = parseDateTime(item.profile_wish_start || "");
-                      if (!date) setActivePicker({ index, field: "start", mode: "date" });
-                      else setActivePicker({ index, field: "start", mode: "time" });
-                    }}
-                  >
-                    <Text style={styles.dateTimeButtonText}>
-                      {(() => {
-                        const { time } = parseDateTime(item.profile_wish_start || "");
-                        return time ? formatTimeForDisplay(time) : "Time";
-                      })()}
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              ) : Platform.OS === "web" ? (
-                <View style={styles.webDateTimeInputWrapper}>
-                  <input
-                    type='datetime-local'
-                    style={styles.webDateTimeInput}
-                    value={toDateTimeLocalValue(item.profile_wish_start || "")}
-                    onChange={(e) => handleDateTimeInputChange(index, "start", fromDateTimeLocalValue(e.target.value))}
-                  />
+          <View style={[formStyles.sectionDivider, darkMode && formStyles.darkSectionDivider]} />
+
+          <View style={formStyles.section}>
+            <Text style={[formStyles.sectionTitle, darkMode && formStyles.darkSectionTitle]}>Schedule & Location</Text>
+            <View style={formStyles.fieldRow}>
+              <View style={formStyles.fieldHalf}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Start Date and Time</Text>
+                <View style={formStyles.inlineControls}>
+                  {DateTimePicker ? (
+                    <>
+                      <TouchableOpacity style={[formStyles.dateTimeButton, darkMode && formStyles.darkDateTimeButton]} onPress={() => setActivePicker({ index, field: "start", mode: "date" })}>
+                        <Text style={[formStyles.dateTimeButtonText, darkMode && formStyles.darkDateTimeButtonText]}>
+                          {(() => {
+                            const { date } = parseDateTime(item.profile_wish_start || "");
+                            return date ? formatDateForDisplay(date) : "Date";
+                          })()}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[formStyles.dateTimeButton, darkMode && formStyles.darkDateTimeButton]}
+                        onPress={() => {
+                          const { date, time } = parseDateTime(item.profile_wish_start || "");
+                          if (!date) setActivePicker({ index, field: "start", mode: "date" });
+                          else setActivePicker({ index, field: "start", mode: "time" });
+                        }}
+                      >
+                        <Text style={[formStyles.dateTimeButtonText, darkMode && formStyles.darkDateTimeButtonText]}>
+                          {(() => {
+                            const { time } = parseDateTime(item.profile_wish_start || "");
+                            return time ? formatTimeForDisplay(time) : "Time";
+                          })()}
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : Platform.OS === "web" ? (
+                    <View style={formStyles.webDateTimeInputWrapper}>
+                      <input
+                        type='datetime-local'
+                        style={formStyles.webDateTimeInput}
+                        value={toDateTimeLocalValue(item.profile_wish_start || "")}
+                        onChange={(e) => handleDateTimeInputChange(index, "start", fromDateTimeLocalValue(e.target.value))}
+                      />
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput, { flex: 1 }]}
+                      placeholder='mm-dd-yyyy hh:mm'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      value={item.profile_wish_start ? formatDateTimeForDisplay(item.profile_wish_start) : ""}
+                      onChangeText={(text) => handleInputChange(index, "profile_wish_start", text)}
+                    />
+                  )}
                 </View>
-              ) : (
-                <TextInput
-                  style={styles.dateTimeTextInput}
-                  placeholder='mm-dd-yyyy hh:mm'
-                  value={item.profile_wish_start ? formatDateTimeForDisplay(item.profile_wish_start) : ""}
-                  onChangeText={(text) => handleInputChange(index, "profile_wish_start", text)}
-                />
-              )}
-            </View>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>End Date and Time</Text>
-              {DateTimePicker ? (
-                <>
-                  <TouchableOpacity style={styles.dateTimeButton} onPress={() => setActivePicker({ index, field: "end", mode: "date" })}>
-                    <Text style={styles.dateTimeButtonText}>
-                      {(() => {
-                        const { date } = parseDateTime(item.profile_wish_end || "");
-                        return date ? formatDateForDisplay(date) : "Date";
-                      })()}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.dateTimeButton}
-                    onPress={() => {
-                      const { date, time } = parseDateTime(item.profile_wish_end || "");
-                      if (!date) setActivePicker({ index, field: "end", mode: "date" });
-                      else setActivePicker({ index, field: "end", mode: "time" });
-                    }}
-                  >
-                    <Text style={styles.dateTimeButtonText}>
-                      {(() => {
-                        const { time } = parseDateTime(item.profile_wish_end || "");
-                        return time ? formatTimeForDisplay(time) : "Time";
-                      })()}
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              ) : Platform.OS === "web" ? (
-                <View style={styles.webDateTimeInputWrapper}>
-                  <input
-                    type='datetime-local'
-                    style={styles.webDateTimeInput}
-                    value={toDateTimeLocalValue(item.profile_wish_end || "")}
-                    onChange={(e) => handleDateTimeInputChange(index, "end", fromDateTimeLocalValue(e.target.value))}
-                  />
+              </View>
+              <View style={formStyles.fieldHalf}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>End Date and Time</Text>
+                <View style={formStyles.inlineControls}>
+                  {DateTimePicker ? (
+                    <>
+                      <TouchableOpacity style={[formStyles.dateTimeButton, darkMode && formStyles.darkDateTimeButton]} onPress={() => setActivePicker({ index, field: "end", mode: "date" })}>
+                        <Text style={[formStyles.dateTimeButtonText, darkMode && formStyles.darkDateTimeButtonText]}>
+                          {(() => {
+                            const { date } = parseDateTime(item.profile_wish_end || "");
+                            return date ? formatDateForDisplay(date) : "Date";
+                          })()}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[formStyles.dateTimeButton, darkMode && formStyles.darkDateTimeButton]}
+                        onPress={() => {
+                          const { date, time } = parseDateTime(item.profile_wish_end || "");
+                          if (!date) setActivePicker({ index, field: "end", mode: "date" });
+                          else setActivePicker({ index, field: "end", mode: "time" });
+                        }}
+                      >
+                        <Text style={[formStyles.dateTimeButtonText, darkMode && formStyles.darkDateTimeButtonText]}>
+                          {(() => {
+                            const { time } = parseDateTime(item.profile_wish_end || "");
+                            return time ? formatTimeForDisplay(time) : "Time";
+                          })()}
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : Platform.OS === "web" ? (
+                    <View style={formStyles.webDateTimeInputWrapper}>
+                      <input
+                        type='datetime-local'
+                        style={formStyles.webDateTimeInput}
+                        value={toDateTimeLocalValue(item.profile_wish_end || "")}
+                        onChange={(e) => handleDateTimeInputChange(index, "end", fromDateTimeLocalValue(e.target.value))}
+                      />
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput, { flex: 1 }]}
+                      placeholder='mm-dd-yyyy hh:mm'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      value={item.profile_wish_end ? formatDateTimeForDisplay(item.profile_wish_end) : ""}
+                      onChangeText={(text) => handleInputChange(index, "profile_wish_end", text)}
+                    />
+                  )}
                 </View>
-              ) : (
-                <TextInput
-                  style={styles.dateTimeTextInput}
-                  placeholder='mm-dd-yyyy hh:mm'
-                  value={item.profile_wish_end ? formatDateTimeForDisplay(item.profile_wish_end) : ""}
-                  onChangeText={(text) => handleInputChange(index, "profile_wish_end", text)}
-                />
-              )}
+              </View>
             </View>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>Address</Text>
-              {renderWishAddressField(index, item)}
-            </View>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>City</Text>
-              <TextInput
-                style={[styles.locationInput, darkMode && styles.locationInputDark]}
-                placeholder='City'
-                placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
-                value={item.profile_wish_city || ""}
-                onChangeText={(text) => handleInputChange(index, "profile_wish_city", text)}
-              />
-            </View>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>State</Text>
-              <TextInput
-                style={[styles.locationInput, darkMode && styles.locationInputDark]}
-                placeholder='State'
-                placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
-                value={item.profile_wish_state || ""}
-                onChangeText={(text) => handleInputChange(index, "profile_wish_state", text)}
-              />
-            </View>
-            <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>Mode</Text>
-              <View style={styles.modeCheckboxRow}>
+            <View style={formStyles.fieldStack}>
+              <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Mode</Text>
+              <View style={formStyles.modeRow}>
                 <TouchableOpacity
-                  style={[styles.modeCheckbox, (item.profile_wish_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxSelected]}
+                  style={[
+                    formStyles.choiceBtn,
+                    formStyles.modeBtn,
+                    darkMode && formStyles.darkChoiceBtn,
+                    (item.profile_wish_mode || "").toLowerCase() === "virtual" && formStyles.choiceBtnActive,
+                    darkMode && (item.profile_wish_mode || "").toLowerCase() === "virtual" && formStyles.darkChoiceBtnActive,
+                  ]}
                   onPress={() => handleInputChange(index, "profile_wish_mode", item.profile_wish_mode === "Virtual" ? "" : "Virtual")}
                 >
-                  <Text style={[styles.modeCheckboxText, (item.profile_wish_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxTextSelected]}>Virtual</Text>
+                  <Text
+                    style={[
+                      formStyles.choiceBtnText,
+                      darkMode && formStyles.darkChoiceBtnText,
+                      (item.profile_wish_mode || "").toLowerCase() === "virtual" && formStyles.choiceBtnTextActive,
+                      darkMode && (item.profile_wish_mode || "").toLowerCase() === "virtual" && formStyles.darkChoiceBtnTextActive,
+                    ]}
+                  >
+                    Virtual
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.modeCheckbox, (item.profile_wish_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxSelected]}
+                  style={[
+                    formStyles.choiceBtn,
+                    formStyles.modeBtn,
+                    darkMode && formStyles.darkChoiceBtn,
+                    (item.profile_wish_mode || "").toLowerCase() === "in-person" && formStyles.choiceBtnActive,
+                    darkMode && (item.profile_wish_mode || "").toLowerCase() === "in-person" && formStyles.darkChoiceBtnActive,
+                  ]}
                   onPress={() => handleInputChange(index, "profile_wish_mode", item.profile_wish_mode === "In-Person" ? "" : "In-Person")}
                 >
-                  <Text style={[styles.modeCheckboxText, (item.profile_wish_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxTextSelected]}>In-Person</Text>
+                  <Text
+                    style={[
+                      formStyles.choiceBtnText,
+                      darkMode && formStyles.darkChoiceBtnText,
+                      (item.profile_wish_mode || "").toLowerCase() === "in-person" && formStyles.choiceBtnTextActive,
+                      darkMode && (item.profile_wish_mode || "").toLowerCase() === "in-person" && formStyles.darkChoiceBtnTextActive,
+                    ]}
+                  >
+                    In-Person
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
+            {(item.profile_wish_mode || "").toLowerCase() === "in-person" ? (
+              <>
+                <View style={formStyles.fieldStack}>
+                  <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Address</Text>
+                  {renderWishAddressField(index, item)}
+                </View>
+                <View style={formStyles.fieldRow}>
+                  <View style={formStyles.fieldHalf}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>City</Text>
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                      placeholder='City'
+                      placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                      value={item.profile_wish_city || ""}
+                      onChangeText={(text) => handleInputChange(index, "profile_wish_city", text)}
+                    />
+                  </View>
+                  <View style={formStyles.fieldHalf}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>State</Text>
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                      placeholder='State'
+                      placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                      value={item.profile_wish_state || ""}
+                      onChangeText={(text) => handleInputChange(index, "profile_wish_state", text)}
+                    />
+                  </View>
+                </View>
+              </>
+            ) : null}
           </View>
 
-          {/* DateTimePicker - only render when this wish's picker is active */}
           {DateTimePicker && activePicker && activePicker.index === index && (
             <DateTimePicker
               value={getPickerValue(activePicker.index, activePicker.field)}
@@ -845,95 +903,105 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             />
           )}
 
-          {/*Cost Row*/}
-          <View style={styles.optionRow}>
-            <Text style={styles.dateTimeLabel}>Cost</Text>
-            <View style={styles.optionRowControls}>
-            <TextInput
-              style={styles.costAmountInput}
-              keyboardType={(() => {
-                const parsed = parseCost(item.cost);
-                const amount = parsed.amount;
-                return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "decimal-pad";
-              })()}
-              value={(() => {
-                const parsed = parseCost(item.cost);
-                const amount = parsed.amount;
-                if (!amount) return "";
-                if (amount.toLowerCase() === "free") return "Free";
-                return `$${amount}`;
-              })()}
-              onChangeText={(text) => {
-                const cleanedText = text.replace(/\$/g, "");
-                handleCostAmountChange(index, cleanedText);
-              }}
-              onBlur={() => handleCostAmountBlur(index)}
-            />
-            <Dropdown
-              style={[styles.costUnitDropdown, !parseCost(item.cost).unit && styles.requiredDropdown]}
-              data={bountyUnitOptions}
-              labelField='label'
-              valueField='value'
-              placeholder='Unit *'
-              placeholderStyle={{ color: "#f44336", fontSize: 14 }}
-              value={parseCost(item.cost).unit || null}
-              onChange={(item) => handleCostUnitChange(index, item)}
-              containerStyle={styles.dropdownContainer}
-              itemTextStyle={styles.dropdownItemText}
-              selectedTextStyle={styles.dropdownSelectedText}
-              activeColor='#f0f0f0'
-            />
-            <Text style={[styles.costLabel, styles.quantityInlineLabel]}>Quantity</Text>
-            <TextInput
-              style={styles.bountyInput}
-              placeholder='Count'
-              keyboardType='numeric'
-              value={item.profile_wish_quantity || ""}
-              onChangeText={(text) => handleInputChange(index, "profile_wish_quantity", text)}
-            />
-            </View>
-          </View>
+          <View style={[formStyles.sectionDivider, darkMode && formStyles.darkSectionDivider]} />
 
-          {/* Bounty Row */}
-          <View style={styles.optionRow}>
-            <Text style={styles.dateTimeLabel}>Bounty</Text>
-            <View style={styles.optionRowControls}>
-            <TouchableOpacity
-              style={[styles.bountyTypeBtn, item.profile_wish_bounty_type === "none" && styles.bountyTypeBtnActive]}
-              onPress={() => {
-                handleInputChange(index, "profile_wish_bounty_type", "none");
-                handleInputChange(index, "amount", "");
-              }}
-            >
-              <Text style={[styles.bountyTypeBtnText, item.profile_wish_bounty_type === "none" && styles.bountyTypeBtnTextActive]}>No Bounty</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.bountyTypeBtn, item.profile_wish_bounty_type === "per_item" && styles.bountyTypeBtnActive]}
-              onPress={() => handleInputChange(index, "profile_wish_bounty_type", "per_item")}
-            >
-              <Text style={[styles.bountyTypeBtnText, item.profile_wish_bounty_type === "per_item" && styles.bountyTypeBtnTextActive]}>Per Item</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.bountyTypeBtn, item.profile_wish_bounty_type === "total" && styles.bountyTypeBtnActive]}
-              onPress={() => handleInputChange(index, "profile_wish_bounty_type", "total")}
-            >
-              <Text style={[styles.bountyTypeBtnText, item.profile_wish_bounty_type === "total" && styles.bountyTypeBtnTextActive]}>Single Bounty</Text>
-            </TouchableOpacity>
-            {item.profile_wish_bounty_type !== "none" ? (
-              <TextInput
-                style={styles.bountyTypeInput}
-                value={(() => {
-                  const parsed = parseBounty(item.amount);
-                  const amount = parsed.amount;
-                  if (!amount) return "";
-                  return `$${amount}`;
-                })()}
-                onChangeText={(text) => handleBountyAmountChange(index, text.replace(/\$/g, ""))}
-                onBlur={() => handleBountyAmountBlur(index)}
-                placeholder='$0.00'
-                keyboardType='decimal-pad'
-              />
-            ) : null}
+          <View style={formStyles.section}>
+            <Text style={[formStyles.sectionTitle, darkMode && formStyles.darkSectionTitle]}>Pricing</Text>
+            <View style={formStyles.pricingGrid}>
+              <View style={formStyles.pricingCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Cost</Text>
+                <View style={formStyles.inlineControls}>
+                  <TextInput
+                    style={[formStyles.fieldInput, formStyles.inlineAmountInput, darkMode && formStyles.darkFieldInput]}
+                    keyboardType={(() => {
+                      const parsed = parseCost(item.cost);
+                      const amount = parsed.amount;
+                      return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "decimal-pad";
+                    })()}
+                    value={(() => {
+                      const parsed = parseCost(item.cost);
+                      const amount = parsed.amount;
+                      if (!amount) return "";
+                      if (amount.toLowerCase() === "free") return "Free";
+                      return `$${amount}`;
+                    })()}
+                    onChangeText={(text) => {
+                      const cleanedText = text.replace(/\$/g, "");
+                      handleCostAmountChange(index, cleanedText);
+                    }}
+                    onBlur={() => handleCostAmountBlur(index)}
+                    placeholder='0.00'
+                    placeholderTextColor={darkMode ? "#888" : "#999"}
+                  />
+                  <Dropdown
+                    style={[
+                      formStyles.dropdown,
+                      formStyles.costUnitDropdown,
+                      darkMode && formStyles.darkDropdown,
+                      !parseCost(item.cost).unit && formStyles.fieldInputError,
+                    ]}
+                    data={PROFILE_COST_UNIT_OPTIONS}
+                    labelField='label'
+                    valueField='value'
+                    placeholder='Unit *'
+                    placeholderStyle={{ color: !parseCost(item.cost).unit ? "#FF3B30" : darkMode ? "#999" : "#666" }}
+                    value={parseCost(item.cost).unit || null}
+                    onChange={(selected) => handleCostUnitChange(index, selected)}
+                    containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                    itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  />
+                </View>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel, { marginTop: 10 }]}>Quantity</Text>
+                <TextInput
+                  style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                  placeholder='Count'
+                  placeholderTextColor={darkMode ? "#888" : "#999"}
+                  keyboardType='numeric'
+                  value={item.profile_wish_quantity || ""}
+                  onChangeText={(text) => handleInputChange(index, "profile_wish_quantity", text.replace(/\D/g, ""))}
+                />
+              </View>
+
+              <View style={formStyles.pricingCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Bounty</Text>
+                <View style={formStyles.inlineControls}>
+                  <Dropdown
+                    style={[formStyles.dropdown, formStyles.bountyTypeDropdown, darkMode && formStyles.darkDropdown]}
+                    data={PROFILE_BOUNTY_TYPE_OPTIONS}
+                    labelField='label'
+                    valueField='value'
+                    value={item.profile_wish_bounty_type || "none"}
+                    onChange={(selected) => handleSeekingBountyTypeChange(index, selected)}
+                    containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                    itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                    maxHeight={160}
+                    flatListProps={{ nestedScrollEnabled: true }}
+                  />
+                  {item.profile_wish_bounty_type !== "none" ? (
+                    <TextInput
+                      ref={(ref) => {
+                        if (ref) bountyInputRefs.current[index] = ref;
+                      }}
+                      style={[formStyles.fieldInput, formStyles.inlineAmountInput, darkMode && formStyles.darkFieldInput]}
+                      value={(() => {
+                        const parsed = parseBounty(item.amount);
+                        const amount = parsed.amount;
+                        if (!amount) return "";
+                        return `$${amount}`;
+                      })()}
+                      onChangeText={(text) => handleBountyAmountChange(index, text.replace(/\$/g, ""))}
+                      onBlur={() => handleBountyAmountBlur(index)}
+                      placeholder='$0.00'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      keyboardType='decimal-pad'
+                    />
+                  ) : null}
+                </View>
+              </View>
             </View>
           </View>
         </View>
@@ -955,372 +1023,12 @@ const styles = StyleSheet.create({
   labelRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10, // spacing between label and +
+    gap: 10,
   },
-  toggleText: { fontWeight: "bold" },
-  card: {
-    backgroundColor: "#F5F5F5",
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 0,
-    borderWidth: 1,
-    borderColor: "#ccc",
-  },
-  rowHeader: {
+  titleBarActions: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
-  },
-  miniCard: {
-    flexDirection: "row",
-    alignItems: "stretch",
     gap: 12,
-    marginBottom: 8,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-    backgroundColor: "#fff",
-  },
-  miniCardDark: {
-    borderColor: "#404040",
-    backgroundColor: "#2d2d2d",
-  },
-  miniCardFields: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "column",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    marginBottom: 5,
-  },
-  descriptionInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    minHeight: 40,
-  },
-  dateTimeSection: {
-    marginBottom: 10,
-  },
-  dateTimeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-    gap: 8,
-  },
-  optionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-    gap: 8,
-  },
-  optionRowControls: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  dateTimeLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    width: 140,
-    minWidth: 140,
-  },
-  dateTimeButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    minHeight: 40,
-    justifyContent: "center",
-  },
-  dateTimeButtonText: {
-    fontSize: 14,
-    color: "#333",
-  },
-  dateTimeTextInput: {
-    flex: 2,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    minHeight: 40,
-    fontSize: 14,
-  },
-  webDateTimeInputWrapper: {
-    flex: 2,
-    minWidth: 0,
-  },
-  webDateTimeInput: {
-    width: "100%",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    minHeight: 40,
-    fontSize: 14,
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-    boxSizing: "border-box",
-  },
-  locationInput: {
-    flex: 1,
-    minWidth: 0,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    minHeight: 40,
-    fontSize: 14,
-  },
-  locationInputDark: {
-    borderColor: "#555",
-    backgroundColor: "#2d2d2d",
-    color: "#eee",
-  },
-  addressContainer: {
-    flex: 2,
-    minWidth: 0,
-  },
-  placesSuggestionsList: {
-    marginTop: 6,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    overflow: "hidden",
-  },
-  placesSuggestionsListDark: {
-    backgroundColor: "#2d2d2d",
-    borderColor: "#555",
-  },
-  placesSuggestionRow: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  placesSuggestionRowDark: {
-    borderBottomColor: "#444",
-  },
-  placesSuggestionMain: {
-    fontSize: 14,
-    color: "#222",
-    fontWeight: "500",
-  },
-  placesSuggestionMainDark: {
-    color: "#eee",
-  },
-  placesSuggestionSub: {
-    fontSize: 12,
-    color: "#777",
-    marginTop: 2,
-  },
-  placesSuggestionSubDark: {
-    color: "#aaa",
-  },
-  modeCheckboxRow: {
-    flex: 2,
-    flexDirection: "row",
-    gap: 12,
-  },
-  modeCheckbox: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 10,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modeCheckboxSelected: {
-    borderColor: "#007AFF",
-    backgroundColor: "#E8F4FD",
-  },
-  modeCheckboxText: {
-    fontSize: 14,
-    color: "#666",
-  },
-  modeCheckboxTextSelected: {
-    color: "#007AFF",
-    fontWeight: "600",
-  },
-  amountRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 5,
-  },
-  dollar: { fontSize: 20, marginRight: 8 },
-  amountInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: "70%",
-  },
-  bountyAmountInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: "40%",
-    height: 40,
-    textAlignVertical: "center",
-  },
-  bountyUnitDropdown: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: "25%",
-    marginLeft: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minHeight: 40,
-  },
-  dropdownContainer: {
-    borderRadius: 5,
-    marginTop: 5,
-    ...(Platform.OS === "web"
-      ? {
-          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.1)",
-        }
-      : {}),
-  },
-  dropdownItemText: {
-    color: "#000",
-    fontSize: 14,
-  },
-  dropdownSelectedText: {
-    color: "#000",
-    fontSize: 13,
-  },
-  deleteIcon: { width: 20, height: 20 },
-  cardSpacing: {
-    marginTop: 16,
-  },
-
-  costInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    flex: 1,
-    marginRight: 12,
-    height: 40,
-  },
-  bountyLabel: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-
-  costLabel: {
-    fontWeight: "bold",
-    marginRight: 5,
-  },
-  quantityInlineLabel: {
-    fontWeight: "bold",
-    marginLeft: 2,
-  },
-  costAmountInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: 68,
-    height: 36,
-    flexShrink: 0,
-    fontSize: 13,
-    textAlignVertical: "center",
-  },
-  costUnitDropdown: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: 92,
-    height: 36,
-    flexShrink: 0,
-    paddingHorizontal: 6,
-    paddingVertical: 0,
-  },
-  dollar: {
-    fontSize: 20,
-    marginHorizontal: 5,
-  },
-  bountyInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: 52,
-    height: 36,
-    flexShrink: 0,
-    fontSize: 13,
-    textAlignVertical: "center",
-  },
-  requiredInput: {
-    borderColor: "#f44336",
-  },
-  requiredDropdown: {
-    borderColor: "#f44336",
-  },
-  bountyTypeBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    backgroundColor: "#f5f5f5",
-  },
-  bountyTypeBtnActive: {
-    backgroundColor: "#4B2E83",
-    borderColor: "#4B2E83",
-  },
-  bountyTypeBtnText: {
-    fontSize: 13,
-    color: "#444",
-  },
-  bountyTypeBtnTextActive: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  bountyTypeInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 8,
-    borderRadius: 5,
-    backgroundColor: "#fff",
-    width: 90,
-    height: 36,
-    fontSize: 14,
-    textAlignVertical: "center",
   },
   toggleContainer: { flexDirection: "row", gap: 4 },
   togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },
