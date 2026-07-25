@@ -37,6 +37,17 @@ function businessEntryVisibilityFromApi(biz) {
   return isPublicFlag(biz?.bu_individual_business_is_public);
 }
 
+/** Resolve a View ref to a DOM node on web (for scrollIntoView). */
+function resolveScrollTargetNode(targetRef) {
+  if (!targetRef) return null;
+  if (Platform.OS !== "web") return findNodeHandle(targetRef);
+  if (targetRef.nodeType === 1) return targetRef;
+  const handle = findNodeHandle(targetRef);
+  if (handle?.nodeType === 1) return handle;
+  if (targetRef._nativeNode?.nodeType === 1) return targetRef._nativeNode;
+  return null;
+}
+
 function mapBusinessEntryForEdit(biz) {
   const visible = businessEntryVisibilityFromApi(biz);
   return {
@@ -1313,13 +1324,18 @@ const EditProfileScreen = ({ route, navigation }) => {
     }, 200);
   };
 
-  // Center a newly added section card if it appears below current viewport.
-  const scrollNewCardToMiddleIfNeeded = (targetRef) => {
-    // targetRef is the newly added card view passed up from child sections.
+  // Scroll a section target into view (centered for new cards, start for section headers).
+  const scrollNewCardToMiddleIfNeeded = (targetRef, { block = "center" } = {}) => {
     if (!targetRef || !scrollViewRef.current) return;
 
     setTimeout(() => {
       try {
+        if (Platform.OS === "web") {
+          const el = resolveScrollTargetNode(targetRef);
+          el?.scrollIntoView?.({ behavior: "smooth", block, inline: "nearest" });
+          return;
+        }
+
         const targetHandle = findNodeHandle(targetRef);
         const scrollHandle = findNodeHandle(scrollViewRef.current);
         if (!targetHandle || !scrollHandle) return;
@@ -1327,34 +1343,25 @@ const EditProfileScreen = ({ route, navigation }) => {
         UIManager.measureLayout(
           targetHandle,
           scrollHandle,
-          () => {},
+          () => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+          },
           (x, y, width, height) => {
-            // y/height are relative to current viewport origin (current scroll position).
             const viewportHeight = scrollViewportHeightRef.current;
-            const currentScrollY = scrollOffsetYRef.current;
             if (!viewportHeight) return;
 
-            // If card is already in viewport, do not scroll.
-            const elementBottomInViewport = y + height;
-            if (elementBottomInViewport <= viewportHeight) return;
-
-            // Scroll just enough to place the new card near viewport center.
-            const centerOffset = viewportHeight / 2 - height / 2;
-            const targetScrollY = Math.max(0, currentScrollY + (y - centerOffset));
+            const targetScrollY =
+              block === "start"
+                ? Math.max(0, y - 12)
+                : Math.max(0, y - (viewportHeight / 2 - height / 2));
             scrollViewRef.current?.scrollTo({ y: targetScrollY, animated: true });
           },
         );
-      } catch (error) {}
+      } catch (error) {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }
     }, 100);
   };
-
-  // To get the new card’s exact on-screen position relative to the ScrollView.
-
-  // We need that y + height to decide:
-
-  // Is the card already visible?
-  // If not, how far should we scroll so it lands near center?
-  // Without UIManager.measureLayout, scrollTo would be guesswork.
   // Handle keyboard show/hide to scroll to focused input
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener("keyboardDidShow", (e) => {
@@ -1516,9 +1523,8 @@ const EditProfileScreen = ({ route, navigation }) => {
               handleDelete={handleDeleteExpertise}
               profileUid={profileUID.trim()}
               darkMode={darkMode}
-              onInputFocus={(inputRef) => {
-                // Called by child after "+" render with new card ref.
-                scrollNewCardToMiddleIfNeeded(inputRef);
+              onInputFocus={(inputRef, options) => {
+                scrollNewCardToMiddleIfNeeded(inputRef, options);
               }}
             />
           </>
@@ -1547,9 +1553,8 @@ const EditProfileScreen = ({ route, navigation }) => {
             handleDelete={handleDeleteWish}
             profileUid={profileUID.trim()}
             darkMode={darkMode}
-            onInputFocus={(inputRef) => {
-              // Called by child after "+" render with new card ref.
-              scrollNewCardToMiddleIfNeeded(inputRef);
+            onInputFocus={(inputRef, options) => {
+              scrollNewCardToMiddleIfNeeded(inputRef, options);
             }}
           />
           </>

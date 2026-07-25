@@ -18,9 +18,11 @@ import {
   isStartDateValid,
   isEndDateValid,
 } from "../utils/profileDateTime";
+import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expertiseMode";
 import SeekingModerationBanner from "./SeekingModerationBanner";
+import ProfileSeekingListCard from "./ProfileSeekingListCard";
 import { isSeekingVisibilityBlocked } from "../utils/seekingModeration";
-import { profileItemCardFormStyles as formStyles } from "../utils/profileItemCardFormStyles";
+import { seekingProfileItemCardFormStyles as formStyles, SEEKING_FORM_ACCENT, SEEKING_FORM_ACCENT_DARK } from "../utils/profileItemCardFormStyles";
 import { PROFILE_COST_UNIT_OPTIONS, PROFILE_BOUNTY_TYPE_OPTIONS } from "../utils/profileItemFormOptions";
 
 // DateTimePicker only works on native (not web)
@@ -36,17 +38,70 @@ if (Platform.OS !== "web") {
 const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", darkMode = false }) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
+  const sectionHeaderRef = useRef(null);
   // Tracks which index was just added via "+".
   const pendingNewIndexRef = useRef(null);
+  const editSnapshotRef = useRef(null);
+  const [showForm, setShowForm] = useState(false);
+  const [editingIndex, setEditingIndex] = useState(null);
   const bountyInputRefs = useRef({});
   const [activePicker, setActivePicker] = useState(null); // { index, field: 'start'|'end', mode: 'date'|'time' }
   const [addressSuggestionsByIndex, setAddressSuggestionsByIndex] = useState({});
   const [addressLoadingIndex, setAddressLoadingIndex] = useState(null);
   const addressDebounceRefs = useRef({});
 
+  const isSeekingEmpty = (item) =>
+    !String(item?.helpNeeds || "").trim() && !String(item?.details || "").trim() && !String(item?.cost || "").trim();
+
+  const closeSeekingForm = () => {
+    editSnapshotRef.current = null;
+    setShowForm(false);
+    setEditingIndex(null);
+  };
+
+  const scrollToCard = (index) => {
+    setTimeout(() => {
+      const ref = cardRefs.current[index];
+      if (ref) onInputFocus?.(ref);
+    }, 100);
+  };
+
+  const scrollToSectionHeader = () => {
+    setTimeout(() => {
+      if (sectionHeaderRef.current) onInputFocus?.(sectionHeaderRef.current, { block: "start" });
+    }, 150);
+  };
+
+  const startEditSeeking = (index) => {
+    editSnapshotRef.current = JSON.parse(JSON.stringify(wishes[index] || {}));
+    setEditingIndex(index);
+    setShowForm(true);
+    scrollToCard(index);
+  };
+
+  const doneEditSeeking = () => {
+    closeSeekingForm();
+    scrollToSectionHeader();
+  };
+
+  const cancelEditSeeking = () => {
+    if (editingIndex !== null) {
+      if (editSnapshotRef.current) {
+        const updated = [...wishes];
+        updated[editingIndex] = editSnapshotRef.current;
+        setWishes(updated);
+      } else if (isSeekingEmpty(wishes[editingIndex])) {
+        handleDelete(editingIndex);
+      }
+    }
+    closeSeekingForm();
+    scrollToSectionHeader();
+  };
+
   const addWish = () => {
-    // Mark the next card index before state update, then notify parent after render.
-    pendingNewIndexRef.current = wishes.length;
+    const newIndex = wishes.length;
+    pendingNewIndexRef.current = newIndex;
+    editSnapshotRef.current = null;
     const newEntry = {
       helpNeeds: "",
       details: "",
@@ -72,21 +127,40 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       _wishImageError: false,
     };
     setWishes([...wishes, newEntry]);
+    setEditingIndex(newIndex);
+    setShowForm(true);
   };
 
   useEffect(() => {
     // After add + render, pass the new card ref up so parent can auto-scroll.
     const index = pendingNewIndexRef.current;
     if (index === null || index === undefined) return;
-    const newCardRef = cardRefs.current[index];
-    if (!newCardRef) return;
-    setTimeout(() => {
-      onInputFocus?.(newCardRef);
-      pendingNewIndexRef.current = null;
-    }, 100);
+
+    const attemptScroll = (retriesLeft) => {
+      const newCardRef = cardRefs.current[index];
+      if (newCardRef) {
+        onInputFocus?.(newCardRef);
+        pendingNewIndexRef.current = null;
+        return;
+      }
+      if (retriesLeft > 0) {
+        setTimeout(() => attemptScroll(retriesLeft - 1), 50);
+      } else {
+        pendingNewIndexRef.current = null;
+      }
+    };
+
+    setTimeout(() => attemptScroll(8), 50);
   }, [wishes.length, onInputFocus]);
 
   const deleteWish = (index) => {
+    if (showForm) {
+      if (editingIndex === index) {
+        closeSeekingForm();
+      } else if (editingIndex !== null && editingIndex > index) {
+        setEditingIndex(editingIndex - 1);
+      }
+    }
     handleDelete(index);
   };
 
@@ -94,6 +168,14 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     const updated = [...wishes];
     updated[index][field] = value;
     setWishes(updated);
+  };
+
+  const toggleWishMode = (index, key) => {
+    const item = wishes[index];
+    const prev = parseExpertiseModeFlags(item?.profile_wish_mode);
+    const flags = { virtual: !!prev.virtual, inPerson: !!prev.inPerson };
+    flags[key] = !flags[key];
+    handleInputChange(index, "profile_wish_mode", serializeExpertiseMode(flags));
   };
 
   const handleSeekingBountyTypeChange = (index, selected) => {
@@ -203,7 +285,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
           autoCapitalize='words'
           autoCorrect={false}
         />
-        {addressLoadingIndex === index ? <ActivityIndicator size='small' color='#800000' style={{ marginTop: 8 }} /> : null}
+        {addressLoadingIndex === index ? <ActivityIndicator size='small' color={SEEKING_FORM_ACCENT} style={{ marginTop: 8 }} /> : null}
         {suggestions.length > 0 ? (
           <View style={[formStyles.placesSuggestionsList, darkMode && formStyles.darkPlacesSuggestionsList]}>
             {suggestions.map((suggestion) => (
@@ -613,12 +695,14 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
 
   return (
     <View style={styles.sectionContainer}>
-      <View style={styles.headerRow}>
+      <View ref={sectionHeaderRef} collapsable={false} style={styles.headerRow}>
         <View style={styles.labelRow}>
-          <Text style={styles.label}>Seeking</Text>
-          <TouchableOpacity onPress={addWish}>
-            <Text style={styles.addText}>+</Text>
-          </TouchableOpacity>
+          <Text style={[styles.label, darkMode && styles.labelDark]}>Seeking</Text>
+          {!showForm ? (
+            <TouchableOpacity onPress={addWish} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.addText, darkMode && styles.addTextDark]}>+</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
         <View style={styles.toggleContainer}>
           <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
@@ -630,21 +714,43 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
         </View>
       </View>
 
-      {wishes.map((item, index) => (
+      {wishes.length === 0 && !showForm ? (
+        <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>No seeking posts added yet.</Text>
+      ) : null}
+
+      {wishes.map((item, index) => {
+        const isEditing = showForm && editingIndex === index;
+        return (
         <View
-          key={index}
+          key={item.profile_wish_uid || `seeking-${index}`}
           ref={(ref) => {
-            // Capture each card ref for new-card scroll targeting.
             if (ref) cardRefs.current[index] = ref;
           }}
-          style={[formStyles.container, darkMode && formStyles.darkContainer, index > 0 && formStyles.cardSpacing]}
+          style={[styles.listItemWrapper, index > 0 && styles.listItemSpacing]}
         >
+          {!isEditing ? (
+            <ProfileSeekingListCard
+              item={item}
+              profileUid={profileUid}
+              darkMode={darkMode}
+              onEdit={() => startEditSeeking(index)}
+              onDelete={() => deleteWish(index)}
+            />
+          ) : null}
+
+          {isEditing ? (
+          <View style={styles.livePreviewBlock}>
+          <View style={styles.previewSection}>
+            <Text style={[styles.previewLabel, darkMode && styles.previewLabelDark]}>Customer preview</Text>
+            <ProfileSeekingListCard item={item} profileUid={profileUid} darkMode={darkMode} showActions={false} showModerationBanner={false} />
+          </View>
+
+          <View style={[formStyles.container, formStyles.containerAfterPreview, darkMode && formStyles.darkContainer]}>
           <View style={[formStyles.titleBar, darkMode && formStyles.darkTitleBar]}>
-            <Text style={[formStyles.titleText, darkMode && formStyles.darkTitleText]}>Seeking #{index + 1}</Text>
+            <Text style={[formStyles.titleText, darkMode && formStyles.darkTitleText]}>
+              {editSnapshotRef.current ? `Edit Seeking #${index + 1}` : "Add New Seeking"}
+            </Text>
             <View style={styles.titleBarActions}>
-              <TouchableOpacity onPress={() => deleteWish(index)}>
-                <Image source={require("../assets/delete.png")} style={formStyles.deleteIcon} />
-              </TouchableOpacity>
               <View style={styles.toggleContainer}>
                 <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
                   <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
@@ -662,6 +768,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             <ProfileItemImageColumn
               darkMode={darkMode}
               defaultSection='seeking'
+              accentColor={SEEKING_FORM_ACCENT}
               displayUri={getWishDisplayUri(item)}
               imageError={!!item._wishImageError}
               onImageError={() => handleInputChange(index, "_wishImageError", true)}
@@ -812,51 +919,58 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             <View style={formStyles.fieldStack}>
               <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Mode</Text>
               <View style={formStyles.modeRow}>
-                <TouchableOpacity
-                  style={[
-                    formStyles.choiceBtn,
-                    formStyles.modeBtn,
-                    darkMode && formStyles.darkChoiceBtn,
-                    (item.profile_wish_mode || "").toLowerCase() === "virtual" && formStyles.choiceBtnActive,
-                    darkMode && (item.profile_wish_mode || "").toLowerCase() === "virtual" && formStyles.darkChoiceBtnActive,
-                  ]}
-                  onPress={() => handleInputChange(index, "profile_wish_mode", item.profile_wish_mode === "Virtual" ? "" : "Virtual")}
-                >
-                  <Text
-                    style={[
-                      formStyles.choiceBtnText,
-                      darkMode && formStyles.darkChoiceBtnText,
-                      (item.profile_wish_mode || "").toLowerCase() === "virtual" && formStyles.choiceBtnTextActive,
-                      darkMode && (item.profile_wish_mode || "").toLowerCase() === "virtual" && formStyles.darkChoiceBtnTextActive,
-                    ]}
-                  >
-                    Virtual
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    formStyles.choiceBtn,
-                    formStyles.modeBtn,
-                    darkMode && formStyles.darkChoiceBtn,
-                    (item.profile_wish_mode || "").toLowerCase() === "in-person" && formStyles.choiceBtnActive,
-                    darkMode && (item.profile_wish_mode || "").toLowerCase() === "in-person" && formStyles.darkChoiceBtnActive,
-                  ]}
-                  onPress={() => handleInputChange(index, "profile_wish_mode", item.profile_wish_mode === "In-Person" ? "" : "In-Person")}
-                >
-                  <Text
-                    style={[
-                      formStyles.choiceBtnText,
-                      darkMode && formStyles.darkChoiceBtnText,
-                      (item.profile_wish_mode || "").toLowerCase() === "in-person" && formStyles.choiceBtnTextActive,
-                      darkMode && (item.profile_wish_mode || "").toLowerCase() === "in-person" && formStyles.darkChoiceBtnTextActive,
-                    ]}
-                  >
-                    In-Person
-                  </Text>
-                </TouchableOpacity>
+                {(() => {
+                  const { virtual, inPerson } = parseExpertiseModeFlags(item.profile_wish_mode);
+                  return (
+                    <>
+                      <TouchableOpacity
+                        style={[
+                          formStyles.choiceBtn,
+                          formStyles.modeBtn,
+                          darkMode && formStyles.darkChoiceBtn,
+                          virtual && formStyles.choiceBtnActive,
+                          darkMode && virtual && formStyles.darkChoiceBtnActive,
+                        ]}
+                        onPress={() => toggleWishMode(index, "virtual")}
+                      >
+                        <Text
+                          style={[
+                            formStyles.choiceBtnText,
+                            darkMode && formStyles.darkChoiceBtnText,
+                            virtual && formStyles.choiceBtnTextActive,
+                            darkMode && virtual && formStyles.darkChoiceBtnTextActive,
+                          ]}
+                        >
+                          Virtual
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          formStyles.choiceBtn,
+                          formStyles.modeBtn,
+                          darkMode && formStyles.darkChoiceBtn,
+                          inPerson && formStyles.choiceBtnActive,
+                          darkMode && inPerson && formStyles.darkChoiceBtnActive,
+                        ]}
+                        onPress={() => toggleWishMode(index, "inPerson")}
+                      >
+                        <Text
+                          style={[
+                            formStyles.choiceBtnText,
+                            darkMode && formStyles.darkChoiceBtnText,
+                            inPerson && formStyles.choiceBtnTextActive,
+                            darkMode && inPerson && formStyles.darkChoiceBtnTextActive,
+                          ]}
+                        >
+                          In-Person
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  );
+                })()}
               </View>
             </View>
-            {(item.profile_wish_mode || "").toLowerCase() === "in-person" ? (
+            {parseExpertiseModeFlags(item.profile_wish_mode).inPerson ? (
               <>
                 <View style={formStyles.fieldStack}>
                   <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Address</Text>
@@ -1004,8 +1118,21 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               </View>
             </View>
           </View>
+
+          <View style={styles.formFooterButtons}>
+            <TouchableOpacity style={[styles.formCancelButton, darkMode && styles.formCancelButtonDark]} onPress={cancelEditSeeking} activeOpacity={0.8}>
+              <Text style={[styles.formCancelButtonText, darkMode && styles.formCancelButtonTextDark]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.formDoneButton, darkMode && styles.formDoneButtonDark]} onPress={doneEditSeeking} activeOpacity={0.8}>
+              <Text style={[styles.formDoneButtonText, darkMode && styles.formDoneButtonTextDark]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          </View>
+          </View>
+          ) : null}
         </View>
-      ))}
+        );
+      })}
     </View>
   );
 };
@@ -1019,7 +1146,58 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   label: { fontSize: 18, fontWeight: "bold" },
+  labelDark: { color: "#fff" },
   addText: { color: "#000000", fontWeight: "bold", fontSize: 24 },
+  addTextDark: { color: "#fff" },
+  emptyText: { fontSize: 14, color: "#666", marginBottom: 8 },
+  emptyTextDark: { color: "#aaa" },
+  listItemWrapper: { marginBottom: 0 },
+  listItemSpacing: { marginTop: 10 },
+  livePreviewBlock: { marginBottom: 10 },
+  previewSection: { marginBottom: 12 },
+  previewLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6b7280",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  previewLabelDark: { color: "#9ca3af" },
+  formFooterButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+  },
+  formCancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#fff",
+  },
+  formCancelButtonDark: {
+    borderColor: "#555",
+    backgroundColor: "#3a3a3a",
+  },
+  formCancelButtonText: { fontSize: 14, fontWeight: "600", color: "#374151" },
+  formCancelButtonTextDark: { color: "#e5e7eb" },
+  formDoneButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: SEEKING_FORM_ACCENT,
+  },
+  formDoneButtonDark: {
+    backgroundColor: SEEKING_FORM_ACCENT_DARK,
+  },
+  formDoneButtonText: { fontSize: 14, fontWeight: "600", color: "#111827" },
+  formDoneButtonTextDark: { color: "#fff" },
   labelRow: {
     flexDirection: "row",
     alignItems: "center",

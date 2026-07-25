@@ -5,17 +5,7 @@ import { formatDateTimeForDisplay } from "../utils/profileDateTime";
 import { formatExpertiseModeForDisplay } from "../utils/expertiseMode";
 import { getOfferingCardLayout, getOfferingListMetricColumns } from "../utils/offeringDisplayLines";
 import NoBountyIcon from "./NoBountyIcon";
-
-function FulfillmentRow({ label, value, rowTextStyle }) {
-  return (
-    <View style={styles.fulfillmentRow}>
-      <Text style={[styles.fulfillmentLabel, rowTextStyle]}>{label}</Text>
-      <Text style={[styles.fulfillmentValue, rowTextStyle]} numberOfLines={2}>
-        {value}
-      </Text>
-    </View>
-  );
-}
+import ProfileItemAttributeBadges from "./ProfileItemAttributeBadges";
 
 function MetricBox({ columnLabel, value, subtext, darkMode, align = "left" }) {
   const showNoBounty = columnLabel === "Bounty" && !value && !subtext;
@@ -47,11 +37,32 @@ export default function OfferingCardDetails({ offering, darkMode = false, style,
   const layout = getOfferingCardLayout(offering);
   const metricColumns = getOfferingListMetricColumns(offering);
   const hasMetrics = metricColumns.length > 0;
-  const hasListContent = variant === "list" && (hasMetrics || layout.whenWhere.hasContent);
-  const hasDetailContent = variant === "detail" && (hasMetrics || layout.whenWhere.hasContent || layout.fulfillmentRows.length > 0);
+  const hasFulfillment = !!(layout.attributeBadges?.length || layout.conditionLine || layout.refundPolicyLine);
+  const hasListContent = variant === "list" && (hasMetrics || layout.whenWhere.hasContent || hasFulfillment);
+  const hasDetailContent = variant === "detail" && (hasMetrics || layout.whenWhere.hasContent || hasFulfillment);
   if (!hasListContent && !hasDetailContent) return null;
 
   const rowTextStyle = [styles.metaRowText, darkMode && styles.metaRowTextDark, metaTextStyle];
+
+  const fulfillmentBlock = hasFulfillment ? (
+    <View style={[styles.fulfillmentSection, variant === "list" && styles.listFulfillmentSection, variant === "list" && darkMode && styles.listFulfillmentSectionDark]}>
+      {variant === "detail" && (layout.conditionLine || layout.attributeBadges?.length || layout.refundPolicyLine) ? (
+        <Text style={[styles.sectionHeader, styles.fulfillmentSectionHeader, darkMode && styles.sectionHeaderDark]}>FULFILLMENT</Text>
+      ) : null}
+      {layout.conditionLine ? (
+        <Text style={[styles.conditionLine, rowTextStyle, darkMode && styles.conditionLineDark]} numberOfLines={2}>
+          Condition: <Text style={[styles.conditionKind, darkMode && styles.conditionKindDark]}>{layout.conditionLine}</Text>
+        </Text>
+      ) : null}
+      {layout.attributeBadges?.length ? <ProfileItemAttributeBadges badges={layout.attributeBadges} darkMode={darkMode} /> : null}
+      {layout.refundPolicyLine ? (
+        <Text style={[styles.refundPolicyLine, rowTextStyle]} numberOfLines={3}>
+          Refund policy: {layout.refundPolicyLine}
+        </Text>
+      ) : null}
+    </View>
+  ) : null;
+
   const modeLabel = formatExpertiseModeForDisplay(layout.whenWhere.mode);
   const scheduleText = [
     layout.whenWhere.start ? formatDateTimeForDisplay(layout.whenWhere.start) : "—",
@@ -101,6 +112,7 @@ export default function OfferingCardDetails({ offering, darkMode = false, style,
       <View style={[styles.container, style]}>
         {metricsRow}
         {whenWhereBlock}
+        {fulfillmentBlock}
       </View>
     );
   }
@@ -109,14 +121,7 @@ export default function OfferingCardDetails({ offering, darkMode = false, style,
     <View style={[styles.container, style]}>
       {metricsRow}
       {whenWhereBlock}
-      {layout.fulfillmentRows.length > 0 ? (
-        <View style={styles.fulfillmentSection}>
-          <Text style={[styles.sectionHeader, styles.fulfillmentSectionHeader, darkMode && styles.sectionHeaderDark]}>FULFILLMENT</Text>
-          {layout.fulfillmentRows.map((row) => (
-            <FulfillmentRow key={row.label} label={row.label} value={row.value} rowTextStyle={rowTextStyle} />
-          ))}
-        </View>
-      ) : null}
+      {fulfillmentBlock}
     </View>
   );
 }
@@ -186,8 +191,17 @@ const styles = StyleSheet.create({
   listWhenWhereSectionDark: {
     borderTopColor: "#404040",
   },
+  listFulfillmentSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e0e0e0",
+  },
+  listFulfillmentSectionDark: {
+    borderTopColor: "#404040",
+  },
   fulfillmentSection: {
-    gap: 0,
+    gap: 8,
   },
   fulfillmentSectionHeader: {
     marginBottom: 4,
@@ -249,20 +263,22 @@ const styles = StyleSheet.create({
   metaRowTextDark: {
     color: "#999",
   },
-  fulfillmentRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingVertical: 1,
+  conditionLine: {
+    fontSize: 13,
+    color: "#666",
   },
-  fulfillmentLabel: {
-    flex: 1,
-    minWidth: 0,
+  conditionLineDark: {
+    color: "#999",
   },
-  fulfillmentValue: {
-    flex: 1,
-    minWidth: 0,
-    textAlign: "right",
+  conditionKind: {
+    fontWeight: "700",
+    color: "#111827",
+  },
+  conditionKindDark: {
+    color: "#f9fafb",
+  },
+  refundPolicyLine: {
+    fontSize: 13,
+    color: "#666",
   },
 });

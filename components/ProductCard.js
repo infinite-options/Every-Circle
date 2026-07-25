@@ -14,6 +14,7 @@ import {
   parseBsShippingAmount,
 } from "../utils/businessServiceShipping";
 import { normServiceShippingRefundable } from "../utils/buildBusinessServiceForApi";
+import ProfileItemEditIcon from "./ProfileItemEditIcon";
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
 
@@ -393,7 +394,7 @@ function renderProductCardBody({
             <View style={styles.footerActions}>
               {showEditButton && onEdit ? (
                 <TouchableOpacity onPress={() => onEdit(service)} style={[styles.footerActionButton, styles.footerEditButton, darkMode && styles.footerEditButtonDark]} activeOpacity={0.8}>
-                  <Ionicons name='pencil' size={16} color={darkMode ? "#C98AEF" : "#7B35C7"} />
+                  <ProfileItemEditIcon size={18} tintColor={darkMode ? "#C98AEF" : "#7B35C7"} />
                 </TouchableOpacity>
               ) : null}
               {onDelete ? (

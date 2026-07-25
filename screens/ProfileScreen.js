@@ -70,6 +70,7 @@ import { expertiseCartPersistedFields } from "../utils/offeringCartUtils";
 import { upsertExpertiseCartItem } from "../utils/expertiseCartStorage";
 import { getHeaderColors } from "../config/headerColors";
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED, MODERATED_TAKEN_DOWN, normalizeOfferingModeration } from "../utils/offeringModeration";
+import { buildOfferingCardModel } from "../utils/offeringResubmission";
 import { getSeekingModeratedState, isSeekingModeratedBlocked, normalizeSeekingModeration } from "../utils/seekingModeration";
 import {
   buildProfileModerationItem,
@@ -739,38 +740,10 @@ const ProfileScreen = ({ route, navigation }) => {
       // console.log("ProfileScreen - userData.businesses.length:", userData.businesses.length);
 
       userData.expertise = parseProfileJsonArray(apiUser.expertise_info).map((exp) => ({
-        profile_expertise_uid: exp.profile_expertise_uid || "",
-        name: exp.profile_expertise_title || "",
-        description: exp.profile_expertise_description || "",
-        quantity: exp.profile_expertise_quantity || exp.quantity || "",
-        cost: exp.profile_expertise_cost || "",
-        bounty: exp.profile_expertise_bounty || "",
-        profile_expertise_image: exp.profile_expertise_image || "",
-        profile_expertise_image_is_public: exp.profile_expertise_image_is_public === 0 || exp.profile_expertise_image_is_public === "0" ? 0 : 1,
-        profile_expertise_start: exp.profile_expertise_start || "",
-        profile_expertise_end: exp.profile_expertise_end || "",
-        profile_expertise_location: exp.profile_expertise_location || "",
-        profile_expertise_latitude: exp.profile_expertise_latitude != null ? parseFloat(exp.profile_expertise_latitude) : null,
-        profile_expertise_longitude: exp.profile_expertise_longitude != null ? parseFloat(exp.profile_expertise_longitude) : null,
-        profile_expertise_city: exp.profile_expertise_city || "",
-        profile_expertise_state: exp.profile_expertise_state || "",
-        profile_expertise_mode: exp.profile_expertise_mode || "",
-        profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
+        ...buildOfferingCardModel(exp, profileUID),
+        moderation: normalizeOfferingModeration(exp),
         expertise_responses: Number(exp.expertise_responses) || 0,
         expertise_sales: Number(exp.expertise_sales) || 0,
-        isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
-        profile_expertise_is_taxable: exp.profile_expertise_is_taxable ?? 0,
-        profile_expertise_tax_rate: exp.profile_expertise_tax_rate || "",
-        profile_expertise_condition_type: exp.profile_expertise_condition_type || "na",
-        profile_expertise_condition_detail: exp.profile_expertise_condition_detail || "",
-        profile_expertise_bounty_type: exp.profile_expertise_bounty_type || "none",
-        profile_expertise_is_returnable: exp.profile_expertise_is_returnable ?? 0,
-        profile_expertise_return_window_days: exp.profile_expertise_return_window_days || "",
-        profile_expertise_free_shipping: exp.profile_expertise_free_shipping ?? 0,
-        profile_expertise_buyer_pays_shipping: exp.profile_expertise_buyer_pays_shipping ?? 0,
-        profile_expertise_refund_policy: exp.profile_expertise_refund_policy || "",
-        moderation: normalizeOfferingModeration(exp),
-        profile_expertise_moderated: exp.profile_expertise_moderated,
       }));
       userData.wishes = parseProfileJsonArray(apiUser.wishes_info).map((wish) => ({
         profile_wish_uid: wish.profile_wish_uid || "",

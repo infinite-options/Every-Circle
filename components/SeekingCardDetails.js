@@ -5,10 +5,12 @@ import { formatDateTimeForDisplay } from "../utils/profileDateTime";
 import { formatExpertiseModeForDisplay } from "../utils/expertiseMode";
 import { getSeekingCardLayout, seekingCardHasDetails } from "../utils/seekingDisplayLines";
 import NoBountyIcon from "./NoBountyIcon";
+import ProfileItemAttributeBadges from "./ProfileItemAttributeBadges";
 
-function MetricBox({ columnLabel, value, darkMode, align = "left" }) {
+function MetricBox({ columnLabel, value, subtext, darkMode, align = "left" }) {
   const alignStyle = align === "center" ? styles.metricAlignCenter : align === "right" ? styles.metricAlignRight : null;
-  const showNoBounty = columnLabel === "Bounty" && !value;
+  const showNoBounty = columnLabel === "Bounty" && !value && !subtext;
+  if (!value && !subtext && !showNoBounty) return null;
   return (
     <View style={[styles.metricBox, darkMode && styles.metricBoxDark, alignStyle]}>
       <Text style={[styles.metricLabel, darkMode && styles.metricLabelDark, alignStyle]}>{columnLabel}</Text>
@@ -19,6 +21,7 @@ function MetricBox({ columnLabel, value, darkMode, align = "left" }) {
           {value}
         </Text>
       ) : null}
+      {subtext ? <Text style={[styles.metricSubtext, darkMode && styles.metricSubtextDark, alignStyle]}>{subtext}</Text> : null}
     </View>
   );
 }
@@ -47,7 +50,7 @@ export default function SeekingCardDetails({ seeking, darkMode = false, style, m
       {layout.metrics.length > 0 ? (
         <View style={styles.metricsRow}>
           {layout.metrics.map((col) => (
-            <MetricBox key={col.label} columnLabel={col.label} value={col.value} darkMode={darkMode} align={METRIC_ALIGN[col.label] || "left"} />
+            <MetricBox key={col.label} columnLabel={col.label} value={col.value} subtext={col.subtext} darkMode={darkMode} align={METRIC_ALIGN[col.label] || "left"} />
           ))}
         </View>
       ) : null}
@@ -76,6 +79,17 @@ export default function SeekingCardDetails({ seeking, darkMode = false, style, m
                 </View>
               ) : null}
             </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {layout.attributeBadges?.length || layout.refundPolicyLine ? (
+        <View style={[styles.fulfillmentSection, darkMode && styles.fulfillmentSectionDark]}>
+          {layout.attributeBadges?.length ? <ProfileItemAttributeBadges badges={layout.attributeBadges} darkMode={darkMode} /> : null}
+          {layout.refundPolicyLine ? (
+            <Text style={[styles.refundPolicyLine, rowTextStyle]} numberOfLines={3}>
+              Refund policy: {layout.refundPolicyLine}
+            </Text>
           ) : null}
         </View>
       ) : null}
@@ -120,6 +134,14 @@ const styles = StyleSheet.create({
   },
   metricValueDark: {
     color: "#f5f5f5",
+  },
+  metricSubtext: {
+    fontSize: 12,
+    color: "#888",
+    marginTop: 4,
+  },
+  metricSubtextDark: {
+    color: "#aaa",
   },
   metricAlignCenter: {
     alignItems: "center",
@@ -185,5 +207,19 @@ const styles = StyleSheet.create({
   },
   metaRowTextDark: {
     color: "#999",
+  },
+  fulfillmentSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e0e0e0",
+    gap: 8,
+  },
+  fulfillmentSectionDark: {
+    borderTopColor: "#404040",
+  },
+  refundPolicyLine: {
+    fontSize: 13,
+    color: "#666",
   },
 });

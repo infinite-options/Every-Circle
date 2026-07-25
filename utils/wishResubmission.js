@@ -22,6 +22,11 @@ export function mapProfileWishToFormItem(wish, profileUid) {
     profile_wish_city: wish.profile_wish_city || "",
     profile_wish_state: wish.profile_wish_state || "",
     profile_wish_mode: wish.profile_wish_mode || "",
+    profile_wish_is_taxable: wish.profile_wish_is_taxable ?? 0,
+    profile_wish_tax_rate: wish.profile_wish_tax_rate ?? "",
+    profile_wish_is_returnable: wish.profile_wish_is_returnable ?? 0,
+    profile_wish_return_window_days: wish.profile_wish_return_window_days ?? "",
+    profile_wish_refund_policy: wish.profile_wish_refund_policy || "",
     profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
     profile_wish_moderated: wish.profile_wish_moderated,
     moderation: wish.moderation,
@@ -57,6 +62,11 @@ export function mapWishFormToPayload(w) {
     profile_wish_city: w.profile_wish_city || "",
     profile_wish_state: w.profile_wish_state || "",
     profile_wish_mode: w.profile_wish_mode || "",
+    profile_wish_is_taxable: w.profile_wish_is_taxable === 1 || w.profile_wish_is_taxable === "1" ? 1 : 0,
+    profile_wish_tax_rate: w.profile_wish_tax_rate || "",
+    profile_wish_is_returnable: w.profile_wish_is_returnable === 1 || w.profile_wish_is_returnable === "1" ? 1 : 0,
+    profile_wish_return_window_days: w.profile_wish_return_window_days || "",
+    profile_wish_refund_policy: w.profile_wish_refund_policy || "",
     ...(w.profile_wish_uid && (w.profile_wish_updated_at != null || w.updated_at != null)
       ? { profile_wish_updated_at: w.profile_wish_updated_at ?? w.updated_at }
       : {}),

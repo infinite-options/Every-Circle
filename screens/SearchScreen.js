@@ -55,6 +55,7 @@ import MicroCard from "../components/MicroCard";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import SeekingCardDetails from "../components/SeekingCardDetails";
 import OfferingCardDetails from "../components/OfferingCardDetails";
+import { buildOfferingCardModel } from "../utils/offeringResubmission";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { mapBusinessToMiniCard, mapBusinessToMicroCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
@@ -3132,8 +3133,9 @@ export default function SearchScreen({ route }) {
   };
 
   const renderExpertiseItem = (item, idx) => {
-    const profile = item.profileData || {};
-    const expertise = item.expertiseData || {};
+  const profile = item.profileData || {};
+  const expertise = item.expertiseData || {};
+  const offeringForCard = buildOfferingCardModel(expertise, item.profile_uid);
 
     const isOwnExpertise = currentProfileUid && item.profile_uid === currentProfileUid;
     const offeringImageUri = resolveProfileItemImageUri(expertise.profile_expertise_image, item.profile_uid);
@@ -3242,7 +3244,7 @@ export default function SearchScreen({ route }) {
           </View>
           {renderOfferingSearchDistance(item)}
           <OfferingCardDetails
-            offering={expertise}
+            offering={offeringForCard}
             darkMode={darkMode}
             variant='list'
             metaTextStyle={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}

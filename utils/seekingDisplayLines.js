@@ -1,5 +1,57 @@
 import { parsePrice } from "./priceUtils";
 
+function isTruthyFlag(v) {
+  return v === 1 || v === "1" || v === true;
+}
+
+function getSeekingTaxSubtext(seeking) {
+  if (!isTruthyFlag(seeking?.profile_wish_is_taxable)) return null;
+  const rateStr = String(seeking?.profile_wish_tax_rate ?? "").trim();
+  if (rateStr) {
+    const n = parsePrice(rateStr);
+    if (Number.isFinite(n) && n > 0) {
+      const pct = Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+      return `plus ${pct}% sales tax`;
+    }
+  }
+  return "plus sales tax";
+}
+
+function getSeekingTaxBadgeValue(seeking) {
+  if (!isTruthyFlag(seeking?.profile_wish_is_taxable)) return null;
+  const rateStr = String(seeking?.profile_wish_tax_rate ?? "").trim();
+  if (rateStr) {
+    const n = parsePrice(rateStr);
+    if (Number.isFinite(n) && n > 0) {
+      const pct = Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+      return `${pct}%`;
+    }
+  }
+  return null;
+}
+
+function getSeekingReturnableBadgeValue(seeking) {
+  if (!isTruthyFlag(seeking?.profile_wish_is_returnable)) return null;
+  const days = String(seeking?.profile_wish_return_window_days ?? "").trim();
+  const daysLabel = days && days !== "0" ? days : "30";
+  return `Yes, ${daysLabel}d`;
+}
+
+/** Pill badges for Seeking cards — Tax, Returnable (same pattern as ProductCard). */
+export function getSeekingAttributeBadges(seeking) {
+  const badges = [];
+  const tax = getSeekingTaxBadgeValue(seeking);
+  if (tax) badges.push({ key: "tax", label: "Tax", value: tax });
+  const returnable = getSeekingReturnableBadgeValue(seeking);
+  if (returnable) badges.push({ key: "returnable", label: "Returnable", value: returnable });
+  return badges;
+}
+
+function getSeekingRefundPolicyValue(seeking) {
+  const policy = String(seeking?.profile_wish_refund_policy ?? "").trim();
+  return policy || null;
+}
+
 function parseSeekingRateValue(cost) {
   const raw = String(cost ?? "").trim();
   if (!raw || raw === "0" || raw.toLowerCase() === "free") return null;
@@ -73,17 +125,27 @@ export function getSeekingLocationLabel(seeking) {
 /** Metric columns for Seeking cards — Rate, Desired Qty, Bounty (Bounty always shown). */
 export function getSeekingMetricColumns(seeking) {
   const cost = seeking?.cost ?? seeking?.profile_wish_cost ?? "";
+  const taxSubtext = parseSeekingRateValue(cost) ? getSeekingTaxSubtext(seeking) : null;
   return [
-    { label: "Rate", value: parseSeekingRateValue(cost) },
+    { label: "Rate", value: parseSeekingRateValue(cost), subtext: taxSubtext || undefined },
     { label: "Desired Qty", value: getSeekingQtyValue(seeking) },
     { label: "Bounty", value: getSeekingRewardValue(seeking) },
-  ].filter((col) => col.label === "Bounty" || col.value);
+  ].filter((col) => col.label === "Bounty" || col.value || (col.label === "Rate" && col.subtext));
 }
 
 export function getSeekingCardLayout(seeking) {
   const metrics = getSeekingMetricColumns(seeking);
   const location = getSeekingLocationLabel(seeking);
   const hasSchedule = !!(seeking?.profile_wish_start || seeking?.profile_wish_end);
+
+  const attributeBadges = getSeekingAttributeBadges(seeking);
+  const refundPolicyLine = getSeekingRefundPolicyValue(seeking);
+
+  const fulfillmentRows = [
+    { label: "Tax", value: getSeekingTaxBadgeValue(seeking) },
+    { label: "Returnable", value: getSeekingReturnableBadgeValue(seeking) },
+    { label: "Refund policy", value: refundPolicyLine },
+  ].filter((row) => row.value);
 
   return {
     metrics,
@@ -94,9 +156,12 @@ export function getSeekingCardLayout(seeking) {
       location,
       mode: seeking?.profile_wish_mode || "",
     },
+    attributeBadges,
+    refundPolicyLine,
+    fulfillmentRows,
   };
 }
 
 export function seekingCardHasDetails(layout) {
-  return !!(layout.metrics.length || layout.whenWhere.hasContent);
+  return !!(layout.metrics.length || layout.whenWhere.hasContent || layout.attributeBadges?.length || layout.refundPolicyLine);
 }

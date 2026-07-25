@@ -1,5 +1,13 @@
 import { parsePrice } from "./priceUtils";
 
+import {
+  BS_SHIPPING_BUYER_ACTUAL,
+  BS_SHIPPING_BUYER_FIXED,
+  BS_SHIPPING_FREE,
+  parseBsShippingAmount,
+} from "./businessServiceShipping";
+import { isBuyerPaysOfferingShipping, isOfferingQtyUnlimited, normOfferingShippingRefundable, parseOfferingShipping } from "./profileOfferingShipping";
+
 function isTruthyFlag(v) {
   return v === 1 || v === "1" || v === true;
 }
@@ -88,10 +96,20 @@ function getOfferingCostMetricValue(offering) {
 }
 
 function getOfferingQtyMetricValue(offering) {
+  if (isOfferingQtyUnlimited(offering)) return null;
   const qty = offering?.quantity ?? offering?.profile_expertise_quantity ?? "";
   const raw = String(qty).trim();
-  if (!raw || raw === "0") return null;
+  if (!raw || raw === "0" || raw.toLowerCase() === "unlimited") return null;
   return raw;
+}
+
+function formatOfferingQtyBadgeValue(offering) {
+  if (isOfferingQtyUnlimited(offering)) return null;
+  const raw = String(offering?.quantity ?? offering?.profile_expertise_quantity ?? "").trim();
+  if (!raw || raw === "0" || raw.toLowerCase() === "unlimited") {
+    return null;
+  }
+  return `Limited, ${raw} left`;
 }
 
 /** Three-column metrics — Cost (+ tax subtext), Qty, Bounty (Bounty always shown). */
@@ -128,16 +146,60 @@ function getOfferingConditionValue(offering) {
 }
 
 function getOfferingShippingValue(offering) {
-  if (isTruthyFlag(offering?.profile_expertise_free_shipping)) return "Free";
-  if (isTruthyFlag(offering?.profile_expertise_buyer_pays_shipping)) return "Buyer pays";
+  if (!parseOfferingShipping(offering)) {
+    if (isTruthyFlag(offering?.profile_expertise_free_shipping)) return "Free";
+    if (isTruthyFlag(offering?.profile_expertise_buyer_pays_shipping)) return "Buyer pays (actual)";
+    return null;
+  }
+  const shipping = parseOfferingShipping(offering);
+  if (shipping === BS_SHIPPING_FREE) return "Free";
+  if (shipping === BS_SHIPPING_BUYER_ACTUAL) return "Buyer pays (actual)";
+  if (shipping === BS_SHIPPING_BUYER_FIXED) {
+    const amount = parseBsShippingAmount(offering?.profile_expertise_shipping_amount);
+    if (amount == null && (offering?.profile_expertise_shipping_amount === 0 || offering?.profile_expertise_shipping_amount === "0")) {
+      return "Buyer pays $0.00";
+    }
+    if (amount == null) return "Buyer pays (fixed)";
+    return `Buyer pays $${Number(amount).toFixed(2)}`;
+  }
   return null;
 }
 
-function getOfferingReturnsValue(offering) {
-  if (!isTruthyFlag(offering?.profile_expertise_is_returnable)) return "No";
+function getOfferingTaxBadgeValue(offering) {
+  if (!isTruthyFlag(offering?.profile_expertise_is_taxable)) return null;
+  const rateStr = String(offering?.profile_expertise_tax_rate ?? "").trim();
+  if (rateStr) {
+    const n = parsePrice(rateStr);
+    if (Number.isFinite(n) && n > 0) {
+      const pct = Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+      return `${pct}%`;
+    }
+  }
+  return null;
+}
+
+function getOfferingReturnableBadgeValue(offering) {
+  if (!isTruthyFlag(offering?.profile_expertise_is_returnable)) return null;
   const days = String(offering?.profile_expertise_return_window_days ?? "").trim();
   const daysLabel = days && days !== "0" ? days : "30";
-  return `Yes, within ${daysLabel} days`;
+  if (isBuyerPaysOfferingShipping(offering) && normOfferingShippingRefundable(offering) !== 1) {
+    return `Yes, ${daysLabel}d   (Shipping not refundable)`;
+  }
+  return `Yes, ${daysLabel}d`;
+}
+
+/** Pill badges for Offering cards — Tax, Ship, Returnable, Qty (same pattern as ProductCard). */
+export function getOfferingAttributeBadges(offering) {
+  const badges = [];
+  const tax = getOfferingTaxBadgeValue(offering);
+  if (tax) badges.push({ key: "tax", label: "Tax", value: tax });
+  const ship = getOfferingShippingValue(offering);
+  if (ship) badges.push({ key: "ship", label: "Ship", value: ship });
+  const returnable = getOfferingReturnableBadgeValue(offering);
+  if (returnable) badges.push({ key: "returnable", label: "Returnable", value: returnable });
+  const qty = formatOfferingQtyBadgeValue(offering);
+  if (qty) badges.push({ key: "qty", label: "Qty", value: qty });
+  return badges;
 }
 
 function getOfferingRefundPolicyValue(offering) {
@@ -151,7 +213,8 @@ export function getOfferingCardLayout(offering) {
   const qty = offering?.quantity ?? offering?.profile_expertise_quantity ?? "";
   const costCol = parseOfferingCost(cost);
   const taxSubtext = costCol ? getOfferingTaxSubtext(offering) : null;
-  const qtyRaw = qty != null ? String(qty).trim() : "";
+  const qtyBadge = formatOfferingQtyBadgeValue(offering);
+  const qtyRaw = qtyBadge || (qty != null ? String(qty).trim() : "");
   const bountySubtext = getOfferingBountySubtext(offering);
 
   const metrics = {
@@ -159,7 +222,7 @@ export function getOfferingCardLayout(offering) {
     costColumnLabel: costCol?.columnLabel || "Total cost",
     costValue: costCol?.value || null,
     costSubtext: taxSubtext,
-    availabilityValue: qtyRaw ? `${qtyRaw} qty` : null,
+    availabilityValue: qtyBadge || (qtyRaw ? `${qtyRaw} qty` : null),
     availabilitySubtext: bountySubtext,
   };
 
@@ -173,18 +236,29 @@ export function getOfferingCardLayout(offering) {
     mode: offering?.profile_expertise_mode || "",
   };
 
+  const attributeBadges = getOfferingAttributeBadges(offering);
+  const conditionLine = getOfferingConditionValue(offering);
+  const refundPolicyLine = getOfferingRefundPolicyValue(offering);
+
   const fulfillmentRows = [
-    { label: "Condition", value: getOfferingConditionValue(offering) },
+    { label: "Condition", value: conditionLine },
     { label: "Shipping", value: getOfferingShippingValue(offering) },
-    { label: "Returns", value: getOfferingReturnsValue(offering) },
-    { label: "Refund policy", value: getOfferingRefundPolicyValue(offering) },
+    { label: "Tax", value: getOfferingTaxBadgeValue(offering) },
+    { label: "Returnable", value: getOfferingReturnableBadgeValue(offering) },
+    { label: "Refund policy", value: refundPolicyLine },
   ].filter((row) => row.value);
 
-  return { metrics, whenWhere, fulfillmentRows };
+  return { metrics, whenWhere, attributeBadges, conditionLine, refundPolicyLine, fulfillmentRows };
 }
 
 export function offeringCardHasDetails(layout) {
-  return !!(layout.metrics.hasContent || layout.whenWhere.hasContent || layout.fulfillmentRows.length);
+  return !!(
+    layout.metrics.hasContent ||
+    layout.whenWhere.hasContent ||
+    layout.attributeBadges?.length ||
+    layout.conditionLine ||
+    layout.refundPolicyLine
+  );
 }
 
 /** @deprecated Use getOfferingCardLayout */
@@ -197,7 +271,7 @@ export function getOfferingCommerceGrid(offering) {
     taxLine: layout.metrics.costSubtext,
     conditionLine: layout.fulfillmentRows.find((r) => r.label === "Condition")?.value || null,
     shippingLine: layout.fulfillmentRows.find((r) => r.label === "Shipping")?.value || null,
-    returnableLine: layout.fulfillmentRows.find((r) => r.label === "Returns")?.value || null,
+    returnableLine: layout.fulfillmentRows.find((r) => r.label === "Returnable")?.value || null,
     refundLine: layout.fulfillmentRows.find((r) => r.label === "Refund policy")?.value || null,
   };
 }

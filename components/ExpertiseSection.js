@@ -22,21 +22,32 @@ import {
 import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expertiseMode";
 import { rejectNativeImageAsset, rejectWebImageFile } from "../utils/imageUploadLimits";
 import OfferingModerationBanner from "./OfferingModerationBanner";
+import ProfileOfferingListCard from "./ProfileOfferingListCard";
 import { isOfferingVisibilityBlocked } from "../utils/offeringModeration";
-import { profileItemCardFormStyles as formStyles } from "../utils/profileItemCardFormStyles";
+import { seekingProfileItemCardFormStyles as formStyles, SEEKING_FORM_ACCENT, SEEKING_FORM_ACCENT_DARK } from "../utils/profileItemCardFormStyles";
 import {
   PROFILE_COST_UNIT_OPTIONS,
   PROFILE_TAX_OPTIONS,
   PROFILE_BOUNTY_TYPE_OPTIONS,
   PROFILE_CONDITION_OPTIONS,
   PROFILE_OFFERING_SHIPPING_OPTIONS,
+  PROFILE_QUANTITY_OPTIONS,
   PROFILE_RETURNABLE_OPTIONS,
   getOfferingShippingDropdownValue,
   applyOfferingShippingDropdownValue,
   getOfferingReturnableDropdownValue,
 } from "../utils/profileItemFormOptions";
+import {
+  isBuyerPaysOfferingShipping,
+  isFixedOfferingShipping,
+  isOfferingQtyUnlimited,
+  offeringShippingAmountDisplay,
+} from "../utils/profileOfferingShipping";
+import { BS_SHIPPING_BUYER_FIXED, parseBsShippingAmount } from "../utils/businessServiceShipping";
 
 const CONDITION_DETAIL_MAX_CHARS = 250;
+const QUANTITY_MAX_DIGITS = 10;
+const RETURN_WINDOW_MAX_DIGITS = 3;
 
 /** Numeric cost amount from an offering cost string (ignores unit suffix). */
 export const getOfferingCostAmount = (cost) => {
@@ -83,17 +94,71 @@ const ExpertiseSection = ({
 }) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
+  const sectionHeaderRef = useRef(null);
   // Tracks which index was just added via "+".
   const pendingNewIndexRef = useRef(null);
+  const editSnapshotRef = useRef(null);
+  const [showForm, setShowForm] = useState(false);
+  const [editingIndex, setEditingIndex] = useState(null);
   const costInputRefs = useRef({});
   const [activePicker, setActivePicker] = useState(null); // { index, field: 'start'|'end', mode: 'date'|'time' }
   const [addressSuggestionsByIndex, setAddressSuggestionsByIndex] = useState({});
   const [addressLoadingIndex, setAddressLoadingIndex] = useState(null);
   const addressDebounceRefs = useRef({});
 
+  const isOfferingEmpty = (item) =>
+    !String(item?.name || "").trim() && !String(item?.description || "").trim() && !String(item?.cost || "").trim();
+
+  const closeOfferingForm = () => {
+    editSnapshotRef.current = null;
+    setShowForm(false);
+    setEditingIndex(null);
+  };
+
+  const scrollToCard = (index) => {
+    setTimeout(() => {
+      const ref = cardRefs.current[index];
+      if (ref) onInputFocus?.(ref);
+    }, 100);
+  };
+
+  const scrollToSectionHeader = () => {
+    setTimeout(() => {
+      if (sectionHeaderRef.current) onInputFocus?.(sectionHeaderRef.current, { block: "start" });
+    }, 150);
+  };
+
+  const startEditOffering = (index) => {
+    editSnapshotRef.current = JSON.parse(JSON.stringify(expertise[index] || {}));
+    setEditingIndex(index);
+    setShowForm(true);
+    scrollToCard(index);
+  };
+
+  const doneEditOffering = () => {
+    closeOfferingForm();
+    scrollToSectionHeader();
+  };
+
+  const cancelEditOffering = () => {
+    if (editingIndex !== null) {
+      if (editSnapshotRef.current) {
+        const updated = [...expertise];
+        updated[editingIndex] = editSnapshotRef.current;
+        setExpertise(updated);
+      } else if (isOfferingEmpty(expertise[editingIndex])) {
+        handleDelete(editingIndex);
+      }
+    }
+    closeOfferingForm();
+    scrollToSectionHeader();
+  };
+
   const addExpertise = () => {
     // Mark the next card index before state update, then notify parent after render.
-    pendingNewIndexRef.current = expertise.length;
+    const newIndex = expertise.length;
+    pendingNewIndexRef.current = newIndex;
+    editSnapshotRef.current = null;
     const newEntry = {
       name: "",
       description: "",
@@ -117,8 +182,13 @@ const ExpertiseSection = ({
       profile_expertise_bounty_type: "none",
       profile_expertise_is_returnable: 0,
       profile_expertise_return_window_days: "",
+      profile_expertise_shipping: null,
+      profile_expertise_shipping_amount: "",
+      profile_expertise_shipping_refundable: 0,
       profile_expertise_free_shipping: 0,
       profile_expertise_buyer_pays_shipping: 0,
+      profile_expertise_shipping_cost_type: "",
+      profile_expertise_qty_unlimited: 1,
       profile_expertise_refund_policy: "",
       isPublic: true,
       _expNewImageUri: "",
@@ -128,21 +198,40 @@ const ExpertiseSection = ({
       _expImageError: false,
     };
     setExpertise([...expertise, newEntry]);
+    setEditingIndex(newIndex);
+    setShowForm(true);
   };
 
   useEffect(() => {
     // After add + render, pass the new card ref up so parent can auto-scroll.
     const index = pendingNewIndexRef.current;
     if (index === null || index === undefined) return;
-    const newCardRef = cardRefs.current[index];
-    if (!newCardRef) return;
-    setTimeout(() => {
-      onInputFocus?.(newCardRef);
-      pendingNewIndexRef.current = null;
-    }, 100);
+
+    const attemptScroll = (retriesLeft) => {
+      const newCardRef = cardRefs.current[index];
+      if (newCardRef) {
+        onInputFocus?.(newCardRef);
+        pendingNewIndexRef.current = null;
+        return;
+      }
+      if (retriesLeft > 0) {
+        setTimeout(() => attemptScroll(retriesLeft - 1), 50);
+      } else {
+        pendingNewIndexRef.current = null;
+      }
+    };
+
+    setTimeout(() => attemptScroll(8), 50);
   }, [expertise.length, onInputFocus]);
 
   const deleteExpertise = (index) => {
+    if (showForm) {
+      if (editingIndex === index) {
+        closeOfferingForm();
+      } else if (editingIndex !== null && editingIndex > index) {
+        setEditingIndex(editingIndex - 1);
+      }
+    }
     handleDelete(index);
   };
 
@@ -215,12 +304,30 @@ const ExpertiseSection = ({
         ...updated[index],
         profile_expertise_is_returnable: 0,
         profile_expertise_return_window_days: "",
+        profile_expertise_shipping_refundable: 0,
       };
     } else {
       updated[index] = {
         ...updated[index],
         profile_expertise_is_returnable: 1,
         profile_expertise_return_window_days: updated[index].profile_expertise_return_window_days || "30",
+      };
+    }
+    setExpertise(updated);
+  };
+
+  const handleOfferingQtyLimitChange = (index, selected) => {
+    const updated = [...expertise];
+    if (selected.value === "unlimited") {
+      updated[index] = {
+        ...updated[index],
+        profile_expertise_qty_unlimited: 1,
+        quantity: "",
+      };
+    } else {
+      updated[index] = {
+        ...updated[index],
+        profile_expertise_qty_unlimited: 0,
       };
     }
     setExpertise(updated);
@@ -315,7 +422,7 @@ const ExpertiseSection = ({
           autoCapitalize='words'
           autoCorrect={false}
         />
-        {addressLoadingIndex === index ? <ActivityIndicator size='small' color='#800000' style={{ marginTop: 8 }} /> : null}
+        {addressLoadingIndex === index ? <ActivityIndicator size='small' color={SEEKING_FORM_ACCENT} style={{ marginTop: 8 }} /> : null}
         {suggestions.length > 0 ? (
           <View style={[formStyles.placesSuggestionsList, darkMode && formStyles.darkPlacesSuggestionsList]}>
             {suggestions.map((suggestion) => (
@@ -655,12 +762,14 @@ const ExpertiseSection = ({
   return (
     <View style={styles.sectionContainer}>
       {!singleItemMode ? (
-        <View style={styles.headerRow}>
+        <View ref={sectionHeaderRef} collapsable={false} style={styles.headerRow}>
           <View style={styles.labelRow}>
-            <Text style={styles.label}>Offering</Text>
-            <TouchableOpacity onPress={addExpertise}>
-              <Text style={styles.addText}>+</Text>
-            </TouchableOpacity>
+            <Text style={[styles.label, darkMode && styles.labelDark]}>Offering</Text>
+            {!showForm ? (
+              <TouchableOpacity onPress={addExpertise} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={[styles.addText, darkMode && styles.addTextDark]}>+</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
           <View style={styles.toggleContainer}>
             <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
@@ -673,24 +782,44 @@ const ExpertiseSection = ({
         </View>
       ) : null}
 
-      {expertise.map((item, index) => (
+      {!singleItemMode && expertise.length === 0 && !showForm ? (
+        <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>No offerings added yet.</Text>
+      ) : null}
+
+      {expertise.map((item, index) => {
+        const isEditing = showForm && editingIndex === index;
+        return (
         <View
-          key={index}
+          key={item.profile_expertise_uid || `offering-${index}`}
           ref={(ref) => {
-            // Capture each card ref for new-card scroll targeting.
             if (ref) cardRefs.current[index] = ref;
           }}
-          style={[formStyles.container, darkMode && formStyles.darkContainer, index > 0 && formStyles.cardSpacing]}
+          style={[styles.listItemWrapper, index > 0 && styles.listItemSpacing]}
         >
+          {!isEditing ? (
+            <ProfileOfferingListCard
+              item={item}
+              profileUid={profileUid}
+              darkMode={darkMode}
+              onEdit={() => startEditOffering(index)}
+              onDelete={() => deleteExpertise(index)}
+            />
+          ) : null}
+
+          {isEditing ? (
+          <View style={styles.livePreviewBlock}>
+          <View style={styles.previewSection}>
+            <Text style={[styles.previewLabel, darkMode && styles.previewLabelDark]}>Customer preview</Text>
+            <ProfileOfferingListCard item={item} profileUid={profileUid} darkMode={darkMode} showActions={false} showModerationBanner={false} />
+          </View>
+
+          <View style={[formStyles.container, formStyles.containerAfterPreview, darkMode && formStyles.darkContainer]}>
           {!hideItemVisibilityToggle || !disableDelete ? (
             <View style={[formStyles.titleBar, darkMode && formStyles.darkTitleBar]}>
-              <Text style={[formStyles.titleText, darkMode && formStyles.darkTitleText]}>Offering #{index + 1}</Text>
+              <Text style={[formStyles.titleText, darkMode && formStyles.darkTitleText]}>
+                {editSnapshotRef.current ? `Edit Offering #${index + 1}` : "Add New Offering"}
+              </Text>
               <View style={styles.titleBarActions}>
-                {!disableDelete ? (
-                  <TouchableOpacity onPress={() => deleteExpertise(index)}>
-                    <Image source={require("../assets/delete.png")} style={formStyles.deleteIcon} />
-                  </TouchableOpacity>
-                ) : null}
                 {!hideItemVisibilityToggle ? (
                   <View style={styles.toggleContainer}>
                     <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
@@ -711,6 +840,7 @@ const ExpertiseSection = ({
             <ProfileItemImageColumn
               darkMode={darkMode}
               defaultSection='offering'
+              accentColor={SEEKING_FORM_ACCENT}
               displayUri={getExpertiseDisplayUri(item)}
               imageError={!!item._expImageError}
               onImageError={() => handleInputChange(index, "_expImageError", true)}
@@ -1153,6 +1283,47 @@ const ExpertiseSection = ({
                   maxHeight={220}
                   flatListProps={{ nestedScrollEnabled: true }}
                 />
+                {isFixedOfferingShipping(item) ? (
+                  <View style={formStyles.fulfillmentExtra}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Fixed shipping amount</Text>
+                    <View style={[formStyles.fixedShippingRow, darkMode && formStyles.darkFixedShippingRow]}>
+                      <Text style={[formStyles.fixedShippingPrefix, darkMode && formStyles.darkFixedShippingPrefix]}>$</Text>
+                      <TextInput
+                        style={[formStyles.fixedShippingInput, darkMode && formStyles.darkFixedShippingInput]}
+                        value={offeringShippingAmountDisplay(item)}
+                        onChangeText={(text) => {
+                          const cleaned = String(text).replace(/[^0-9.]/g, "");
+                          const parts = cleaned.split(".");
+                          const normalized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join("")}` : cleaned;
+                          const updated = [...expertise];
+                          updated[index] = {
+                            ...updated[index],
+                            profile_expertise_shipping: BS_SHIPPING_BUYER_FIXED,
+                            profile_expertise_shipping_amount: normalized === "" ? "" : normalized,
+                            profile_expertise_free_shipping: 0,
+                            profile_expertise_buyer_pays_shipping: 1,
+                            profile_expertise_shipping_cost_type: "fixed",
+                          };
+                          setExpertise(updated);
+                        }}
+                        onBlur={() => {
+                          if (!isFixedOfferingShipping(item)) return;
+                          const raw = String(item.profile_expertise_shipping_amount ?? "").trim();
+                          if (!raw || raw === ".") {
+                            handleInputChange(index, "profile_expertise_shipping_amount", "");
+                            return;
+                          }
+                          const amount = parseBsShippingAmount(raw);
+                          if (amount == null && !(raw === "0" || raw === "0." || raw === "0.0" || raw === "0.00")) return;
+                          handleInputChange(index, "profile_expertise_shipping_amount", amount == null ? "0" : String(amount));
+                        }}
+                        placeholder='Fixed shipping amount'
+                        keyboardType='decimal-pad'
+                        placeholderTextColor={darkMode ? "#888" : "#999"}
+                      />
+                    </View>
+                  </View>
+                ) : null}
               </View>
 
               <View style={formStyles.fulfillmentCol}>
@@ -1172,30 +1343,71 @@ const ExpertiseSection = ({
                   flatListProps={{ nestedScrollEnabled: true }}
                 />
                 {getOfferingReturnableDropdownValue(item) === "yes" ? (
-                  <View style={[formStyles.inlineControls, formStyles.fulfillmentExtra]}>
-                    <TextInput
-                      style={[formStyles.fieldInput, formStyles.quantityInput, darkMode && formStyles.darkFieldInput]}
-                      value={String(item.profile_expertise_return_window_days ?? "")}
-                      onChangeText={(t) => handleInputChange(index, "profile_expertise_return_window_days", t.replace(/\D/g, ""))}
-                      placeholder='30'
-                      placeholderTextColor={darkMode ? "#888" : "#999"}
-                      keyboardType='number-pad'
-                    />
-                    <Text style={[formStyles.choiceBtnText, darkMode && formStyles.darkChoiceBtnText]}>days</Text>
+                  <View style={formStyles.fulfillmentExtra}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Return window</Text>
+                    <View style={formStyles.fulfillmentInlineRow}>
+                      <TextInput
+                        style={[formStyles.fieldInput, formStyles.quantityInput, darkMode && formStyles.darkFieldInput]}
+                        value={String(item.profile_expertise_return_window_days ?? "30")}
+                        onChangeText={(t) => handleInputChange(index, "profile_expertise_return_window_days", t.replace(/\D/g, "").slice(0, RETURN_WINDOW_MAX_DIGITS))}
+                        placeholder='30'
+                        placeholderTextColor={darkMode ? "#888" : "#999"}
+                        keyboardType='number-pad'
+                        maxLength={RETURN_WINDOW_MAX_DIGITS}
+                      />
+                      <Text style={[formStyles.checkboxLabelCompact, darkMode && formStyles.darkCheckboxLabelCompact]}>days</Text>
+                      {isBuyerPaysOfferingShipping(item) ? (
+                        <TouchableOpacity
+                          style={formStyles.checkboxRowInline}
+                          onPress={() => {
+                            const checked = item.profile_expertise_shipping_refundable === 1 || item.profile_expertise_shipping_refundable === "1";
+                            handleInputChange(index, "profile_expertise_shipping_refundable", checked ? 0 : 1);
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons
+                            name={item.profile_expertise_shipping_refundable === 1 || item.profile_expertise_shipping_refundable === "1" ? "checkbox" : "square-outline"}
+                            size={18}
+                            color={item.profile_expertise_shipping_refundable === 1 || item.profile_expertise_shipping_refundable === "1" ? "#111" : darkMode ? "#aaa" : "#666"}
+                          />
+                          <Text style={[formStyles.checkboxLabelCompact, darkMode && formStyles.darkCheckboxLabelCompact]}>Shipping is refundable</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
                   </View>
                 ) : null}
               </View>
 
               <View style={formStyles.fulfillmentCol}>
                 <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Quantity</Text>
-                <TextInput
-                  style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
-                  placeholder='Count'
-                  placeholderTextColor={darkMode ? "#888" : "#999"}
-                  keyboardType='numeric'
-                  value={item.quantity || ""}
-                  onChangeText={(text) => handleInputChange(index, "quantity", text.replace(/\D/g, ""))}
+                <Dropdown
+                  style={[formStyles.dropdown, formStyles.fulfillmentDropdown, darkMode && formStyles.darkDropdown]}
+                  data={PROFILE_QUANTITY_OPTIONS}
+                  labelField='label'
+                  valueField='value'
+                  value={isOfferingQtyUnlimited(item) ? "unlimited" : "limited"}
+                  onChange={(selected) => handleOfferingQtyLimitChange(index, selected)}
+                  containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  maxHeight={120}
+                  flatListProps={{ nestedScrollEnabled: true }}
                 />
+                {!isOfferingQtyUnlimited(item) ? (
+                  <View style={formStyles.fulfillmentExtra}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Available quantity</Text>
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                      placeholder='Count'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      keyboardType='number-pad'
+                      maxLength={QUANTITY_MAX_DIGITS}
+                      value={item.quantity || ""}
+                      onChangeText={(text) => handleInputChange(index, "quantity", text.replace(/\D/g, "").slice(0, QUANTITY_MAX_DIGITS))}
+                    />
+                  </View>
+                ) : null}
               </View>
             </View>
             <View style={formStyles.fulfillmentExtra}>
@@ -1210,8 +1422,21 @@ const ExpertiseSection = ({
               />
             </View>
           </View>
+
+          <View style={styles.formFooterButtons}>
+            <TouchableOpacity style={[styles.formCancelButton, darkMode && styles.formCancelButtonDark]} onPress={cancelEditOffering} activeOpacity={0.8}>
+              <Text style={[styles.formCancelButtonText, darkMode && styles.formCancelButtonTextDark]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.formDoneButton, darkMode && styles.formDoneButtonDark]} onPress={doneEditOffering} activeOpacity={0.8}>
+              <Text style={[styles.formDoneButtonText, darkMode && styles.formDoneButtonTextDark]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          </View>
+          </View>
+          ) : null}
         </View>
-      ))}
+        );
+      })}
     </View>
   );
 };
@@ -1230,7 +1455,58 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   label: { fontSize: 18, fontWeight: "bold" },
+  labelDark: { color: "#fff" },
   addText: { fontSize: 24, fontWeight: "bold", color: "#000" },
+  addTextDark: { color: "#fff" },
+  emptyText: { fontSize: 14, color: "#666", marginBottom: 8 },
+  emptyTextDark: { color: "#aaa" },
+  listItemWrapper: { marginBottom: 0 },
+  listItemSpacing: { marginTop: 10 },
+  livePreviewBlock: { marginBottom: 10 },
+  previewSection: { marginBottom: 12 },
+  previewLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6b7280",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  previewLabelDark: { color: "#9ca3af" },
+  formFooterButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+  },
+  formCancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#fff",
+  },
+  formCancelButtonDark: {
+    borderColor: "#555",
+    backgroundColor: "#3a3a3a",
+  },
+  formCancelButtonText: { fontSize: 14, fontWeight: "600", color: "#374151" },
+  formCancelButtonTextDark: { color: "#e5e7eb" },
+  formDoneButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: SEEKING_FORM_ACCENT,
+  },
+  formDoneButtonDark: {
+    backgroundColor: SEEKING_FORM_ACCENT_DARK,
+  },
+  formDoneButtonText: { fontSize: 14, fontWeight: "600", color: "#111827" },
+  formDoneButtonTextDark: { color: "#fff" },
   titleBarActions: {
     flexDirection: "row",
     alignItems: "center",

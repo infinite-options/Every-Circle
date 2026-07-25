@@ -10,6 +10,7 @@ import AppHeader from "../components/AppHeader";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { buildSeekingReplyContext } from "../utils/chatReplyContext";
+import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 
 // Only import Stripe on native platforms (not web)
 let useStripe = null;
@@ -641,13 +642,18 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
                     )}
                     {wishData?.profile_wish_mode ? (
                       <View style={styles.seekingMetaLine}>
-                        <Ionicons
-                          name={wishData.profile_wish_mode.toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
-                          size={14}
-                          color={darkMode ? "#999" : "#666"}
-                          style={{ marginRight: 6 }}
-                        />
-                        <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{wishData.profile_wish_mode}</Text>
+                        {getExpertiseModeIoniconNames(wishData.profile_wish_mode).map((iconName, iconIdx) => (
+                          <Ionicons
+                            key={`${iconName}-${iconIdx}`}
+                            name={iconName}
+                            size={14}
+                            color={darkMode ? "#999" : "#666"}
+                            style={{ marginRight: 6 }}
+                          />
+                        ))}
+                        <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
+                          {formatExpertiseModeForDisplay(wishData.profile_wish_mode)}
+                        </Text>
                       </View>
                     ) : null}
                   </View>

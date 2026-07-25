@@ -1,14 +1,17 @@
 import { isOfferingVisibilityBlocked } from "./offeringModeration";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "./resolveProfileItemImageUri";
+import { applyOfferingQuantityFromApi, applyOfferingShippingFromApi, buildOfferingShippingForApi, isOfferingQtyUnlimited } from "./profileOfferingShipping";
 
 export function mapProfileOfferingToFormItem(exp, profileUid) {
   const rawImg = exp.profile_expertise_image || "";
   const resolved = resolveProfileItemImageUri(rawImg, profileUid);
+  const shippingFields = applyOfferingShippingFromApi(exp);
+  const quantityFields = applyOfferingQuantityFromApi(exp);
   return {
     profile_expertise_uid: exp.profile_expertise_uid || "",
     name: exp.name || exp.profile_expertise_title || "",
     description: exp.description || exp.profile_expertise_description || "",
-    quantity: exp.quantity || exp.profile_expertise_quantity || "",
+    ...quantityFields,
     cost: exp.cost || exp.profile_expertise_cost || "",
     bounty: exp.bounty || exp.profile_expertise_bounty || "",
     profile_expertise_image: rawImg,
@@ -28,8 +31,8 @@ export function mapProfileOfferingToFormItem(exp, profileUid) {
     profile_expertise_bounty_type: exp.profile_expertise_bounty_type || "none",
     profile_expertise_is_returnable: exp.profile_expertise_is_returnable ?? 0,
     profile_expertise_return_window_days: exp.profile_expertise_return_window_days ?? "",
-    profile_expertise_free_shipping: exp.profile_expertise_free_shipping ?? 0,
-    profile_expertise_buyer_pays_shipping: exp.profile_expertise_buyer_pays_shipping ?? 0,
+    ...shippingFields,
+    profile_expertise_shipping_refundable: exp.profile_expertise_shipping_refundable ?? 0,
     profile_expertise_refund_policy: exp.profile_expertise_refund_policy || "",
     profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
     profile_expertise_moderated: exp.profile_expertise_moderated,
@@ -43,15 +46,49 @@ export function mapProfileOfferingToFormItem(exp, profileUid) {
   };
 }
 
+/** Normalize offering data for OfferingCardDetails (profile, search, edit list). */
+export function buildOfferingCardModel(source, profileUid = "") {
+  if (!source || typeof source !== "object") return source;
+  return mapProfileOfferingToFormItem(
+    {
+      ...source,
+      name: source.name || source.title || source.profile_expertise_title || "",
+      profile_expertise_title: source.profile_expertise_title || source.title || source.name || "",
+      description: source.description || source.profile_expertise_description || source.details || "",
+      profile_expertise_description: source.profile_expertise_description || source.description || source.details || "",
+      quantity: source.quantity ?? source.profile_expertise_quantity ?? "",
+      profile_expertise_quantity: source.profile_expertise_quantity ?? source.quantity ?? "",
+      cost: source.cost ?? source.profile_expertise_cost ?? "",
+      profile_expertise_cost: source.profile_expertise_cost ?? source.cost ?? "",
+      bounty: source.bounty ?? source.profile_expertise_bounty ?? "",
+      profile_expertise_bounty: source.profile_expertise_bounty ?? source.bounty ?? "",
+    },
+    profileUid
+  );
+}
+
+function buildOfferingConditionForApi(e) {
+  const condRaw = e?.profile_expertise_condition_type;
+  const condLow = condRaw == null ? "" : String(condRaw).trim().toLowerCase();
+  const condType = condLow === "used" ? "used" : condLow === "new" ? "new" : "na";
+  return {
+    profile_expertise_condition_type: condType,
+    profile_expertise_condition_detail: condType === "used" ? String(e.profile_expertise_condition_detail || "").trim() : "",
+  };
+}
+
 export function mapOfferingFormToPayload(e) {
   const wantsPublic = !!e.isPublic;
   const publicBlocked = isOfferingVisibilityBlocked(e);
   const isPublicValue = publicBlocked && wantsPublic ? 0 : wantsPublic ? 1 : 0;
+  const unlimited = isOfferingQtyUnlimited(e);
+  const shippingFields = buildOfferingShippingForApi(e);
   return {
     profile_expertise_uid: e.profile_expertise_uid || "",
     profile_expertise_title: e.name || "",
     profile_expertise_description: e.description || "",
-    profile_expertise_quantity: e.quantity != null && e.quantity !== "" ? String(e.quantity) : "",
+    // Unlimited stock: omit quantity or send "" — backend has no qty_unlimited column.
+    profile_expertise_quantity: unlimited ? "" : e.quantity != null && e.quantity !== "" ? String(e.quantity) : "",
     profile_expertise_cost: e.cost || "",
     profile_expertise_bounty: e.bounty || "",
     profile_expertise_is_public: isPublicValue,
@@ -67,20 +104,18 @@ export function mapOfferingFormToPayload(e) {
     profile_expertise_mode: e.profile_expertise_mode || "",
     profile_expertise_is_taxable: e.profile_expertise_is_taxable === 1 || e.profile_expertise_is_taxable === "1" ? 1 : 0,
     profile_expertise_tax_rate: e.profile_expertise_tax_rate || "",
-    profile_expertise_condition_type: e.profile_expertise_condition_type || "na",
-    profile_expertise_condition_detail: e.profile_expertise_condition_detail || "",
+    ...buildOfferingConditionForApi(e),
     profile_expertise_bounty_type: e.profile_expertise_bounty_type || "none",
     profile_expertise_is_returnable: e.profile_expertise_is_returnable === 1 || e.profile_expertise_is_returnable === "1" ? 1 : 0,
     profile_expertise_return_window_days: e.profile_expertise_return_window_days || "",
-    profile_expertise_free_shipping: e.profile_expertise_free_shipping ? 1 : 0,
-    profile_expertise_buyer_pays_shipping: e.profile_expertise_buyer_pays_shipping ? 1 : 0,
     profile_expertise_refund_policy: e.profile_expertise_refund_policy || "",
+    ...shippingFields,
     ...(e.profile_expertise_uid && (e.profile_expertise_updated_at != null || e.updated_at != null)
       ? { profile_expertise_updated_at: e.profile_expertise_updated_at ?? e.updated_at }
       : {}),
     name: e.name || "",
     description: e.description || "",
-    quantity: e.quantity || "",
+    quantity: unlimited ? "" : e.quantity || "",
     cost: e.cost || "",
     bounty: e.bounty || "",
     isPublic: isPublicValue === 1,

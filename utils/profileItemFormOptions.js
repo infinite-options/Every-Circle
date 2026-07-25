@@ -32,7 +32,13 @@ export const PROFILE_CONDITION_OPTIONS = [
 export const PROFILE_OFFERING_SHIPPING_OPTIONS = [
   { label: "Not applicable", value: "na" },
   { label: "Free shipping", value: "free" },
-  { label: "Buyer pays", value: "buyer_pays" },
+  { label: "Buyer pays (fixed)", value: "buyer_fixed" },
+  { label: "Buyer pays (actual)", value: "buyer_actual" },
+];
+
+export const PROFILE_QUANTITY_OPTIONS = [
+  { label: "No limit", value: "unlimited" },
+  { label: "Limited", value: "limited" },
 ];
 
 export const PROFILE_RETURNABLE_OPTIONS = [
@@ -40,25 +46,7 @@ export const PROFILE_RETURNABLE_OPTIONS = [
   { label: "Yes", value: "yes" },
 ];
 
-export const getOfferingShippingDropdownValue = (item) => {
-  if (item?.profile_expertise_free_shipping === 1 || item?.profile_expertise_free_shipping === "1" || item?.profile_expertise_free_shipping === true) {
-    return "free";
-  }
-  if (item?.profile_expertise_buyer_pays_shipping === 1 || item?.profile_expertise_buyer_pays_shipping === "1" || item?.profile_expertise_buyer_pays_shipping === true) {
-    return "buyer_pays";
-  }
-  return "na";
-};
-
-export const applyOfferingShippingDropdownValue = (value) => {
-  if (value === "free") {
-    return { profile_expertise_free_shipping: 1, profile_expertise_buyer_pays_shipping: 0 };
-  }
-  if (value === "buyer_pays") {
-    return { profile_expertise_free_shipping: 0, profile_expertise_buyer_pays_shipping: 1 };
-  }
-  return { profile_expertise_free_shipping: 0, profile_expertise_buyer_pays_shipping: 0 };
-};
+export { getOfferingShippingDropdownValue, applyOfferingShippingDropdownValue } from "./profileOfferingShipping";
 
 export const getOfferingReturnableDropdownValue = (item) => {
   if (item?.profile_expertise_is_returnable === 1 || item?.profile_expertise_is_returnable === "1") {

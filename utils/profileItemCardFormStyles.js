@@ -4,6 +4,10 @@ import { getDarkModeHeaderColor, getHeaderColor } from "../config/headerColors";
 export const PROFILE_ITEM_FORM_ACCENT = getHeaderColor("profile");
 export const PROFILE_ITEM_FORM_ACCENT_DARK = getDarkModeHeaderColor("profile");
 
+/** Edit Profile SEEKING / OFFERING section header bar — used for inline edit cards. */
+export const SEEKING_FORM_ACCENT = "#F3A5A5";
+export const SEEKING_FORM_ACCENT_DARK = "#B46464";
+
 function hexToRgb(hex) {
   const normalized = String(hex || "").replace("#", "");
   const expanded =
@@ -36,6 +40,9 @@ export function createProfileItemCardFormStyles(accent = PROFILE_ITEM_FORM_ACCEN
       borderWidth: 2,
       borderColor: accent,
       overflow: "hidden",
+    },
+    containerAfterPreview: {
+      marginTop: 0,
     },
     darkContainer: {
       backgroundColor: `rgba(${rgb}, 0.12)`,
@@ -240,6 +247,60 @@ export function createProfileItemCardFormStyles(accent = PROFILE_ITEM_FORM_ACCEN
       width: 72,
       flexGrow: 0,
     },
+    fixedShippingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: "#d1d5db",
+      backgroundColor: "#fff",
+      minHeight: 40,
+    },
+    darkFixedShippingRow: {
+      borderColor: "#555",
+      backgroundColor: "#2d2d2d",
+    },
+    fixedShippingPrefix: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: "#555",
+    },
+    darkFixedShippingPrefix: {
+      color: "#ccc",
+    },
+    fixedShippingInput: {
+      flex: 1,
+      minWidth: 72,
+      fontSize: 14,
+      paddingVertical: Platform.OS === "ios" ? 4 : 2,
+      color: "#111",
+    },
+    darkFixedShippingInput: {
+      color: "#fff",
+    },
+    fulfillmentInlineRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    checkboxRowInline: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingVertical: 2,
+    },
+    checkboxLabelCompact: {
+      fontSize: 12,
+      color: "#333",
+      flexShrink: 1,
+    },
+    darkCheckboxLabelCompact: {
+      color: "#ddd",
+    },
     choiceBtn: {
       paddingHorizontal: 12,
       paddingVertical: 8,
@@ -385,3 +446,7 @@ export function createProfileItemCardFormStyles(accent = PROFILE_ITEM_FORM_ACCEN
 }
 
 export const profileItemCardFormStyles = createProfileItemCardFormStyles();
+export const seekingProfileItemCardFormStyles = createProfileItemCardFormStyles(
+  SEEKING_FORM_ACCENT,
+  SEEKING_FORM_ACCENT_DARK,
+);
