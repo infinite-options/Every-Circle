@@ -48,6 +48,7 @@ import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import { saveSessionProfilePayload, clearUserProfileCacheStorage, getSessionProfile, mapSessionBusinesses, resolveBusinessUid, resolveBusinessUidFromProfileRow } from "../utils/sessionProfile";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { sanitizeText } from "../utils/textSanitizer";
+import { upsertReferralNetworkRelationship } from "../utils/searchReferralProfiles";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
@@ -1072,6 +1073,8 @@ const ProfileScreen = ({ route, navigation }) => {
           // Clear both relationship and circleUid — the row no longer exists
           setRelationshipType(null);
           setCircleUid(null);
+          setExistingRelationship(null);
+          await upsertReferralNetworkRelationship(viewedProfileUID, null);
           Alert.alert("Success", "Connection removed");
           return; // skip the refresh below — there is no circle row to re-fetch
         }
@@ -1167,6 +1170,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
       // Refresh the relationship data to ensure consistency
       if (loggedInProfileUID && viewedProfileUID) {
+        await upsertReferralNetworkRelationship(viewedProfileUID, relationship);
         await fetchRelationship(loggedInProfileUID, viewedProfileUID);
         // console.log("ProfileScreen - Relationship refreshed after save/update");
         // console.log("ProfileScreen - Updated relationshipType:", relationshipType);
@@ -1275,6 +1279,7 @@ const ProfileScreen = ({ route, navigation }) => {
       }
 
       setRelationshipType(selectedRelationship);
+      await upsertReferralNetworkRelationship(viewedProfileUID, selectedRelationship);
       await fetchRelationship(loggedInProfileUID, viewedProfileUID);
       Alert.alert("Success", "Connection details saved.");
     } catch (error) {
@@ -1785,6 +1790,7 @@ const ProfileScreen = ({ route, navigation }) => {
               showRelationship={!!routeProfileUID && !isCurrentUserProfile}
               user={{
                 ...user,
+                relationship: relationshipType || existingRelationship?.circle_relationship || null,
                 imageIsPublic: user.imageIsPublic,
                 profileImage: isCurrentUserProfile || user.imageIsPublic ? user.profileImage : "",
               }}

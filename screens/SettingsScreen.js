@@ -9,7 +9,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
-import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import NearbyLocationPrivacyModal from "../components/NearbyLocationPrivacyModal";
 import NearbyLocationPickerModal from "../components/NearbyLocationPickerModal";
 import { DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS, loadNearbySettings, subscribeNearbySettings, syncNearbySettingsToServer, formatNearbyPrivacySummary } from "../utils/nearbySettings";
@@ -19,13 +18,10 @@ import {
   SHARE_LOCATION_DURATION_HOURS,
   startLiveLocationSharing as startLiveLocationSharingSession,
   stopLiveLocationSharing as stopLiveLocationSharingSession,
-  restoreLiveLocationSessionIfActive,
-  bindLiveLocationSharingExtras,
-  clearLiveLocationSharingExtras,
   subscribeLiveLocationSharingStatus,
   getLiveLocationSharingStatus,
 } from "../utils/liveLocationSharing";
-import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
+import { clearUserProfileCacheStorage, getSessionProfile, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
@@ -119,9 +115,6 @@ const COLORS = {
   cancelButtonBackground: "#ccc",
 };
 
-// AsyncStorage key for ignored nearby UIDs (cleared when the sharing session ends)
-const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
-
 // Default settings for Messages Privacy — persisted server-side on profile_personal
 // (profile_personal_messages_receive_from + profile_personal_messages_receive_types).
 // There is no sender-side restriction — everyone can always attempt to message anyone;
@@ -208,17 +201,12 @@ export default function SettingsScreen() {
   // Master "turn off all messages" switch — persisted server-side (profile_personal_messages_off)
   const [messagesOff, setMessagesOff] = useState(false);
 
-  // Live location sharing — watcher/timer live in utils/liveLocationSharing (shared with Connect).
-
-  // Ignored nearby UIDs — persisted in AsyncStorage for the duration of the sharing session
-  const ignoredNearbyRef = useRef(new Set()); // ref for use inside callbacks
+  // Live location sharing — watcher/timer/Ably alerts live in utils/liveLocationSharing
+  // (shared with Connect). Banner delivery is owned by NearbyAlertProvider.
 
   // Nearby share / receive settings — ref for callbacks, state for rendering
   const nearbySettingsRef = useRef(INITIAL_NEARBY_SETTINGS);
   const [nearbySettings, setNearbySettings] = useState(INITIAL_NEARBY_SETTINGS);
-
-  // In-app nearby banner
-  const [nearbyAlert, setNearbyAlert] = useState(null); // { sender_uid, sender_name, sender_image, distance_miles }
 
   const settingsFeedbackInstructions = "Instructions for Settings";
 
@@ -330,16 +318,6 @@ export default function SettingsScreen() {
       const pm = await loadPrivacyMode();
       setPrivacyModeEnabled(pm);
 
-      // Restore ignored nearby UIDs (survives page refresh within a session)
-      try {
-        const storedIgnored = await AsyncStorage.getItem(NEARBY_IGNORED_KEY);
-        if (storedIgnored) {
-          const uids = JSON.parse(storedIgnored);
-          const s = new Set(uids);
-          ignoredNearbyRef.current = s;
-        }
-      } catch (_) {}
-
       // Restore nearby share / receive settings and push to DB immediately
       // so the server-side consent check is always up-to-date on load.
       try {
@@ -348,13 +326,6 @@ export default function SettingsScreen() {
         setNearbySettings(parsed);
         void syncNearbySettingsToServer(parsed);
       } catch (_) {}
-
-      // Restore live location session if still within its window
-      await restoreLiveLocationSessionIfActive({
-        onNearbyAlert: (alert) => setNearbyAlert(alert),
-        isNearbyIgnored: (uid) => ignoredNearbyRef.current.has(uid),
-        onStopped: () => setNearbyAlert(null),
-      });
     })();
   }, []);
   const [termsModalVisible, setTermsModalVisible] = useState(false);
@@ -564,51 +535,66 @@ export default function SettingsScreen() {
   };
 
   useEffect(() => {
-    const loadProfileFromCache = async () => {
+    const applyProfileToSettings = (result) => {
+      if (!result?.personal_info) return;
+      setPersonalProfileData({
+        firstName: result.personal_info.profile_personal_first_name || "",
+        lastName: result.personal_info.profile_personal_last_name || "",
+        email: result.user_email || "",
+        phoneNumber: result.personal_info.profile_personal_phone_number || "",
+        tagLine: result.personal_info.profile_personal_tag_line || "",
+        city: result.personal_info.profile_personal_city || "",
+        state: result.personal_info.profile_personal_state || "",
+        profileImage: result.personal_info.profile_personal_image || "",
+        emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
+        phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
+        tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
+        locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
+        imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+      });
+      const nearbyLat = parseCoordinateValue(result.personal_info.profile_personal_nearby_lat);
+      const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
+      const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
+      if (nearbyLat != null && nearbyLng != null) {
+        setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
+      }
+      const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
+      const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
+      if (homeLat != null && homeLng != null) {
+        setHomeAddressCoords({ lat: homeLat, lng: homeLng });
+      }
+      setMessagesSettings({
+        receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
+        receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
+      });
+      setMessagesOff(
+        result.personal_info.profile_personal_messages_off === 1 ||
+          result.personal_info.profile_personal_messages_off === "1" ||
+          result.personal_info.profile_personal_messages_off === true,
+      );
+    };
+
+    const loadProfileForSettings = async () => {
       try {
-        const { getSessionProfile } = require("../utils/sessionProfile");
-        const session = await getSessionProfile({ forceRefresh: true });
-        const result = session?.rawProfile;
-        if (result && result.personal_info) {
-          setPersonalProfileData({
-            firstName: result.personal_info.profile_personal_first_name || "",
-            lastName: result.personal_info.profile_personal_last_name || "",
-            email: result.user_email || "",
-            phoneNumber: result.personal_info.profile_personal_phone_number || "",
-            tagLine: result.personal_info.profile_personal_tag_line || "",
-            city: result.personal_info.profile_personal_city || "",
-            state: result.personal_info.profile_personal_state || "",
-            profileImage: result.personal_info.profile_personal_image || "",
-            emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
-            phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
-            tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
-            locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
-            imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
-          });
-          const nearbyLat = parseCoordinateValue(result.personal_info.profile_personal_nearby_lat);
-          const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
-          const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
-          if (nearbyLat != null && nearbyLng != null) {
-            const coords = { lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt };
-            setStoredCoords(coords);
-            publishStoredNearbyCoords(coords);
-          }
-          const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
-          const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
-          if (homeLat != null && homeLng != null) {
-            setHomeAddressCoords({ lat: homeLat, lng: homeLng });
-          }
-          setMessagesSettings({
-            receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
-            receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
-          });
-          setMessagesOff(result.personal_info.profile_personal_messages_off === 1);
+        let session = null;
+        try {
+          session = await refreshSessionProfileFromNetwork();
+        } catch (networkErr) {
+          console.warn("SettingsScreen - network profile refresh failed, using cache:", networkErr);
         }
+        if (!session?.rawProfile) {
+          session = await getSessionProfile({ forceRefresh: true });
+        }
+        applyProfileToSettings(session?.rawProfile);
+        if (!session?.rawProfile) {
+          session = await getSessionProfile({ forceRefresh: true });
+        }
+        applyProfileToSettings(session?.rawProfile);
       } catch (e) {
-        console.error("Error loading cached profile for settings:", e);
+        console.error("Error loading profile for settings:", e);
       }
     };
-    loadProfileFromCache();
+    loadProfileForSettings();
   }, []);
 
   useEffect(() => {
@@ -624,18 +610,12 @@ export default function SettingsScreen() {
 
   // Keep Settings UI in sync with the shared live-location session.
   useEffect(() => {
-    bindLiveLocationSharingExtras({
-      onNearbyAlert: (alert) => setNearbyAlert(alert),
-      isNearbyIgnored: (uid) => ignoredNearbyRef.current.has(uid),
-      onStopped: () => setNearbyAlert(null),
-    });
     const unsubStatus = subscribeLiveLocationSharingStatus(({ active, until }) => {
       setShareLocationActive(active);
       setShareLocationUntil(until);
     });
     return () => {
       unsubStatus();
-      clearLiveLocationSharingExtras();
     };
   }, []);
 
@@ -651,23 +631,11 @@ export default function SettingsScreen() {
   // Stop live sharing (manual off, auto-off, or logout)
   const stopLiveLocationSharing = async () => {
     await stopLiveLocationSharingSession();
-    setNearbyAlert(null);
   };
 
   // Toggle ON handler — requests permission, sets expiry, patches immediately, starts watcher
   const startLiveLocationSharing = async () => {
     await startLiveLocationSharingSession();
-  };
-
-  // Connect → Who's Nearby menu can deep-link into location modals (share live toggles on Connect).
-  const ignoreNearbyUser = async (uid) => {
-    if (!uid) return;
-    const next = new Set(ignoredNearbyRef.current);
-    next.add(uid);
-    ignoredNearbyRef.current = next;
-    try {
-      await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
-    } catch (_) {}
   };
 
   // Connect → Who's Nearby menu can deep-link into location modals (share live toggles on Connect).
@@ -683,10 +651,11 @@ export default function SettingsScreen() {
   );
 
   const updateMessagesSettings = async (newSettings) => {
+    const previous = messagesSettings;
     setMessagesSettings(newSettings);
     try {
-      const uid = await AsyncStorage.getItem("profile_uid");
-      if (!uid) return;
+      const uid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (!uid) throw new Error("Not logged in");
       const formData = new FormData();
       formData.append("profile_uid", uid);
       formData.append("profile_personal_messages_receive_from", newSettings.receiveFrom);
@@ -696,20 +665,28 @@ export default function SettingsScreen() {
           .filter((k) => newSettings.receiveFromTypes[k])
           .join(","),
       );
-      await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
+      const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
         method: "PUT",
         body: formData,
       });
-    } catch (_) {
-      /* keep local state on failure — next load will resync from the server */
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || (result.code != null && result.code !== 200)) {
+        throw new Error(result.message || `Failed to update: ${res.status}`);
+      }
+      // Keep session cache in sync so reopening Settings shows the saved values.
+      await refreshSessionProfileFromNetwork(uid);
+    } catch (e) {
+      console.error("updateMessagesSettings failed:", e);
+      setMessagesSettings(previous);
+      Alert.alert("Error", e?.message || "Could not update your messages privacy setting.");
     }
   };
 
   const toggleMessagesOff = async (value) => {
     setMessagesOff(value);
     try {
-      const uid = await AsyncStorage.getItem("profile_uid");
-      if (!uid) return;
+      const uid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (!uid) throw new Error("Not logged in");
       const formData = new FormData();
       formData.append("profile_uid", uid);
       formData.append("profile_personal_messages_off", value ? "1" : "0");
@@ -717,10 +694,15 @@ export default function SettingsScreen() {
         method: "PUT",
         body: formData,
       });
-      if (!res.ok) throw new Error(`Failed to update: ${res.status}`);
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || (result.code != null && result.code !== 200)) {
+        throw new Error(result.message || `Failed to update: ${res.status}`);
+      }
+      await refreshSessionProfileFromNetwork(uid);
     } catch (e) {
+      console.error("toggleMessagesOff failed:", e);
       setMessagesOff(!value);
-      Alert.alert("Error", "Could not update your messages setting.");
+      Alert.alert("Error", e?.message || "Could not update your messages setting.");
     }
   };
 
@@ -1082,27 +1064,6 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
-      {/* Nearby alert banner — floats above everything */}
-      <NearbyAlertBanner
-        alert={nearbyAlert}
-        onDismiss={() => setNearbyAlert(null)}
-        onPress={(senderUid) => {
-          setNearbyAlert(null);
-          navigation.navigate("Profile", { profile_uid: senderUid });
-        }}
-        onChat={(senderUid, senderName) => {
-          setNearbyAlert(null);
-          navigation.navigate("Chat", {
-            other_uid: senderUid,
-            other_name: senderName || "Chat",
-          });
-        }}
-        onIgnore={(senderUid) => {
-          setNearbyAlert(null);
-          ignoreNearbyUser(senderUid);
-        }}
-      />
-
       <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
         <AppHeader title='SETTINGS' {...getHeaderColors("settings")} />
       </TouchableOpacity>

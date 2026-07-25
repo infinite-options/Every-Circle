@@ -38,6 +38,9 @@ import { GOOGLE_SOCIAL_AUTH_ENDPOINT, APPLE_AUTH_ENDPOINT, API_BASE_URL } from "
 import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
 import { UnreadProvider } from "./contexts/UnreadContext";
+import { NearbyAlertProvider, useNearbyAlert } from "./contexts/NearbyAlertContext";
+import MessageNotificationBanner from "./components/MessageNotificationBanner";
+import NearbyAlertBanner from "./components/NearbyAlertBanner";
 import { SessionProfileProvider } from "./contexts/SessionProfileContext";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
 import LoginScreen from "./screens/LoginScreen";
@@ -327,6 +330,32 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
       googleUserInfo,
     });
   }
+}
+
+/** Nearby banner at app root so alerts show on any screen while sharing is active. */
+function RootNearbyAlertBanner({ navigationRef }) {
+  const { nearbyAlert, dismissNearbyAlert, ignoreNearbyUser } = useNearbyAlert();
+  return (
+    <NearbyAlertBanner
+      alert={nearbyAlert}
+      onDismiss={dismissNearbyAlert}
+      onPress={(senderUid) => {
+        dismissNearbyAlert();
+        navigationRef.current?.navigate("Profile", { profile_uid: senderUid });
+      }}
+      onChat={(senderUid, senderName) => {
+        dismissNearbyAlert();
+        navigationRef.current?.navigate("Chat", {
+          other_uid: senderUid,
+          other_name: senderName || "Chat",
+        });
+      }}
+      onIgnore={(senderUid) => {
+        dismissNearbyAlert();
+        ignoreNearbyUser(senderUid);
+      }}
+    />
+  );
 }
 
 export default function App() {
@@ -1006,8 +1035,9 @@ export default function App() {
       <DarkModeProvider>
         <SessionProfileProvider>
           <UnreadProvider>
-          <View style={styles.appRoot}>
-            <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
+            <NearbyAlertProvider>
+            <View style={styles.appRoot}>
+              <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
               <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
                 <Stack.Screen name='Home' component={HomeScreen} />
                 <Stack.Screen
@@ -1060,8 +1090,22 @@ export default function App() {
                 <Stack.Screen name='AddReviewSearch' component={AddReviewSearchScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='EveryCircleMap' component={EveryCircleMapScreen} options={{ headerShown: false }} />
               </Stack.Navigator>
-            </NavigationContainer>
-          </View>
+              </NavigationContainer>
+              <MessageNotificationBanner
+                onOpen={(conversationUid, senderUid, senderName, senderImage) => {
+                  if (navigationRef.current) {
+                    navigationRef.current.navigate("Chat", {
+                      conversation_uid: conversationUid,
+                      other_uid: senderUid,
+                      other_name: senderName,
+                      other_image: senderImage || null,
+                    });
+                  }
+                }}
+              />
+              <RootNearbyAlertBanner navigationRef={navigationRef} />
+            </View>
+            </NearbyAlertProvider>
           </UnreadProvider>
         </SessionProfileProvider>
       </DarkModeProvider>

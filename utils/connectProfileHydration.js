@@ -29,5 +29,6 @@ export function miniCardUserFromSession(session, profileUidOptional, userUidOpti
 
 export function messagesOffFromSession(session) {
   const p = session?.personalInfo || session?.rawProfile?.personal_info || {};
-  return p.profile_personal_messages_off === 1;
+  const off = p.profile_personal_messages_off;
+  return off === 1 || off === "1" || off === true;
 }

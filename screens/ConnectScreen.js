@@ -2486,7 +2486,10 @@ const ConnectScreen = ({ navigation }) => {
         method: "PUT",
         body: formData,
       });
-      if (!res.ok) throw new Error("Failed to update");
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || (result.code != null && result.code !== 200)) {
+        throw new Error(result.message || "Failed to update");
+      }
       await patchSessionPersonalInfoField("profile_personal_messages_off", next ? 1 : 0);
     } catch (e) {
       setMessagesOff(!next);

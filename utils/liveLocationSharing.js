@@ -273,9 +273,20 @@ export function bindLiveLocationSharingExtras(callbacks = {}) {
   sessionExtras = { ...sessionExtras, ...callbacks };
 }
 
-/** Clear Settings-only callbacks when Settings unmounts. Sharing session keeps running. */
+/** Clear Settings-only callbacks when Settings unmounts. Sharing session keeps running.
+ *  Alert delivery (onNearbyAlert / isNearbyIgnored / onStopped) is owned by NearbyAlertProvider
+ *  and is preserved so banners still work after leaving Settings. */
 export function clearLiveLocationSharingExtras() {
+  if (!sessionExtras) return;
+  const { onNearbyAlert, isNearbyIgnored, onStopped } = sessionExtras;
   sessionExtras = null;
+  if (onNearbyAlert || isNearbyIgnored || onStopped) {
+    sessionExtras = {
+      ...(onNearbyAlert ? { onNearbyAlert } : {}),
+      ...(isNearbyIgnored ? { isNearbyIgnored } : {}),
+      ...(onStopped ? { onStopped } : {}),
+    };
+  }
 }
 
 /** @deprecated Use bindLiveLocationSharingExtras + subscribeLiveLocationSharingStatus. */
