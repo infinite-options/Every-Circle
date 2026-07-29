@@ -8,6 +8,7 @@ import {
   mergeBountyEligibleReviews,
   sortReviewsForBountyPicker,
 } from "../utils/bountyRecipientUtils";
+import BountyInfoTooltip from "./BountyInfoTooltip";
 
 /**
  * "Who referred you?" picker shown in the add-to-cart quantity modal when a product has a bounty.
@@ -52,9 +53,12 @@ export default function BountyRecipientPicker({
 
   return (
     <View style={{ marginTop: 16, marginBottom: 8, width: "100%", alignSelf: "stretch" }}>
-      <Text style={{ fontSize: 16, fontWeight: "bold", marginBottom: 4, textAlign: "center" }}>
-        💰 Who referred you? <Text style={{ color: "#FF3B30" }}>*</Text>
-      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 4 }}>
+        <Text style={{ fontSize: 16, fontWeight: "bold", textAlign: "center" }}>
+          💰 Who referred you? <Text style={{ color: "#FF3B30" }}>*</Text>
+        </Text>
+        <BountyInfoTooltip perspective='referrer' darkMode={false} />
+      </View>
       <Text style={{ fontSize: 11, color: "#FF3B30", textAlign: "center", marginBottom: 4 }}>Required — select a reviewer to assign the bounty</Text>
       <Text style={{ fontSize: 12, color: "#888", marginBottom: 10, textAlign: "center" }}>Assign the bounty to a verified reviewer</Text>
 

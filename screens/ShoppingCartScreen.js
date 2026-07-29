@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
+import BountyInfoTooltip from "../components/BountyInfoTooltip";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -1360,7 +1361,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       </View>
 
                       {bountyTotal > 0 ? (
-                        <Text style={styles.cartBountyDisclosure}>Seller-paid bounty of {formatCartMoney(item, bountyTotal)} is not part of your charge.</Text>
+                        <View style={styles.cartBountyDisclosureRow}>
+                          <Text style={styles.cartBountyDisclosure}>Seller-paid bounty of {formatCartMoney(item, bountyTotal)} is not part of your charge.</Text>
+                          <BountyInfoTooltip perspective='referrer' darkMode={false} placement='left' />
+                        </View>
                       ) : null}
                     </View>
                   </View>
@@ -1791,8 +1795,16 @@ const styles = StyleSheet.create({
   cartBountyDisclosure: {
     fontSize: 12,
     color: "#999",
-    marginTop: 10,
     lineHeight: 17,
+    flex: 1,
+    flexShrink: 1,
+  },
+  cartBountyDisclosureRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginTop: 10,
+    zIndex: 2,
   },
   removeButton: {
     position: "absolute",

@@ -5,6 +5,7 @@ import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import BountyInfoTooltip from "../components/BountyInfoTooltip";
 
 const defaultService = {
   bs_service_name: "",
@@ -126,7 +127,10 @@ export default function BusinessStep4({ formData, setFormData, navigation }) {
             placeholderTextColor={darkMode ? "#ffffff" : "#666"}
           />
 
-          <Text style={[styles.label, darkMode && styles.darkLabel]}>Bounty</Text>
+          <View style={styles.bountyFieldLabelRow}>
+            <Text style={[styles.label, styles.bountyFieldLabelInRow, darkMode && styles.darkLabel]}>Bounty</Text>
+            <BountyInfoTooltip perspective='seller' darkMode={darkMode} />
+          </View>
           <TextInput
             style={[styles.input, darkMode && styles.darkInput]}
             value={serviceForm.bs_bounty}
@@ -336,6 +340,17 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 5,
     alignSelf: "flex-start",
+  },
+  bountyFieldLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 5,
+    alignSelf: "flex-start",
+    zIndex: 2,
+  },
+  bountyFieldLabelInRow: {
+    marginBottom: 0,
   },
   input: {
     backgroundColor: "#fff",

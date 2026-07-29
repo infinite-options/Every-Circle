@@ -5,6 +5,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, TextInput } 
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
+import BountyInfoTooltip from "./BountyInfoTooltip";
 import {
   formatOfferingAddToCartStockHint,
   formatOfferingCostLineLabel,
@@ -240,7 +241,10 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
             </View>
             {bountyLineTotal > 0 && (
               <View style={[styles.summaryRow, styles.bountyNoteRow, darkMode && styles.darkBountyNoteRow]}>
-                <Text style={[styles.bountyNoteLabel, darkMode && styles.darkBountyNoteLabel]}>Bounty (paid by Seller)</Text>
+                <View style={styles.bountyNoteLabelRow}>
+                  <Text style={[styles.bountyNoteLabel, darkMode && styles.darkBountyNoteLabel]}>Bounty (paid by Seller)</Text>
+                  <BountyInfoTooltip perspective='referrer' darkMode={darkMode} />
+                </View>
                 <Text style={[styles.bountyNoteValue, darkMode && styles.darkBountyNoteValue]}>${bountyLineTotal.toFixed(2)}</Text>
               </View>
             )}
@@ -492,6 +496,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#888",
     fontStyle: "italic",
+  },
+  bountyNoteLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flex: 1,
+    flexShrink: 1,
+    zIndex: 2,
   },
   darkBountyNoteLabel: {
     color: "#999",

@@ -21,6 +21,7 @@ import {
 import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expertiseMode";
 import SeekingModerationBanner from "./SeekingModerationBanner";
 import ProfileSeekingListCard from "./ProfileSeekingListCard";
+import BountyInfoTooltip from "./BountyInfoTooltip";
 import { isSeekingVisibilityBlocked } from "../utils/seekingModeration";
 import { seekingProfileItemCardFormStyles as formStyles, SEEKING_FORM_ACCENT, SEEKING_FORM_ACCENT_DARK } from "../utils/profileItemCardFormStyles";
 import { PROFILE_COST_UNIT_OPTIONS, PROFILE_BOUNTY_TYPE_OPTIONS } from "../utils/profileItemFormOptions";
@@ -1079,7 +1080,10 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               </View>
 
               <View style={formStyles.pricingCol}>
-                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Bounty</Text>
+                <View style={styles.bountyFieldLabelRow}>
+                  <Text style={[formStyles.fieldLabel, styles.bountyFieldLabelInRow, darkMode && formStyles.darkFieldLabel]}>Bounty</Text>
+                  <BountyInfoTooltip perspective='seller' darkMode={darkMode} />
+                </View>
                 <View style={formStyles.inlineControls}>
                   <Dropdown
                     style={[formStyles.dropdown, formStyles.bountyTypeDropdown, darkMode && formStyles.darkDropdown]}
@@ -1144,6 +1148,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 10,
+  },
+  bountyFieldLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 6,
+    zIndex: 2,
+  },
+  bountyFieldLabelInRow: {
+    marginBottom: 0,
   },
   label: { fontSize: 18, fontWeight: "bold" },
   labelDark: { color: "#fff" },

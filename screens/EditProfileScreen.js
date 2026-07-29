@@ -184,9 +184,9 @@ const EditProfileScreen = ({ route, navigation }) => {
     businessIsPublic: user?.businessIsPublic || false,
     socialLinksIsPublic: user?.socialLinksIsPublic ?? true,
     imageIsPublic: user?.imageIsPublic || false,
-    businesses: user?.businesses?.map(mapBusinessEntryForEdit) || [
-      { name: "", role: "", isPublic: true, individualIsPublic: true, isApproved: 0, isNew: false },
-    ],
+    businesses: Array.isArray(user?.businesses)
+      ? user.businesses.map(mapBusinessEntryForEdit)
+      : [{ name: "", role: "", isPublic: true, individualIsPublic: true, isApproved: 0, isNew: false }],
     experience: (() => {
       const uid = initialFormProfileUid;
       return (

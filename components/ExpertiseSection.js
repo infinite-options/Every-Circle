@@ -23,6 +23,7 @@ import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expert
 import { rejectNativeImageAsset, rejectWebImageFile } from "../utils/imageUploadLimits";
 import OfferingModerationBanner from "./OfferingModerationBanner";
 import ProfileOfferingListCard from "./ProfileOfferingListCard";
+import BountyInfoTooltip from "./BountyInfoTooltip";
 import { isOfferingVisibilityBlocked } from "../utils/offeringModeration";
 import { seekingProfileItemCardFormStyles as formStyles, SEEKING_FORM_ACCENT, SEEKING_FORM_ACCENT_DARK } from "../utils/profileItemCardFormStyles";
 import {
@@ -1187,7 +1188,10 @@ const ExpertiseSection = ({
               </View>
 
               <View style={formStyles.pricingCol}>
-                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Bounty</Text>
+                <View style={styles.fieldLabelRow}>
+                  <Text style={[formStyles.fieldLabel, styles.fieldLabelInRow, darkMode && formStyles.darkFieldLabel]}>Bounty</Text>
+                  <BountyInfoTooltip perspective='seller' darkMode={darkMode} />
+                </View>
                 <View style={formStyles.inlineControls}>
                   <Dropdown
                     style={[formStyles.dropdown, formStyles.bountyTypeDropdown, darkMode && formStyles.darkDropdown]}
@@ -1453,6 +1457,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+  },
+  fieldLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 6,
+    zIndex: 2,
+  },
+  fieldLabelInRow: {
+    marginBottom: 0,
   },
   label: { fontSize: 18, fontWeight: "bold" },
   labelDark: { color: "#fff" },
