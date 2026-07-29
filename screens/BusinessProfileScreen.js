@@ -35,6 +35,7 @@ import {
   isBusinessVisibilityBlocked,
 } from "../utils/businessModeration";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
+import { fetchServiceChoiceGroups, parseServiceOptionsResponse } from "../utils/parseServiceOptionsResponse";
 import {
   parseBusinessGooglePhotos,
   resolveBusinessProfileImage,
@@ -65,16 +66,6 @@ const SHOW_BUSINESS_PROFILE_CONTACT_SECTION = false;
 let _categoryListCache = null;
 
 const getServiceUid = (service) => String(service?.bs_uid ?? "").trim();
-
-/** Normalize GET /api/business_service_options/{bs_uid} into choice-group array. */
-const parseServiceOptionsResponse = (data) => {
-  if (Array.isArray(data?.result)) return data.result;
-  if (Array.isArray(data?.choice_groups)) return data.choice_groups;
-  if (Array.isArray(data?.data?.result)) return data.data.result;
-  if (Array.isArray(data?.data?.choice_groups)) return data.data.choice_groups;
-  if (Array.isArray(data)) return data;
-  return [];
-};
 
 const buildBusinessServicesList = (rawBusiness, resultServices, profileCcFeePayer) => {
   let list = [];
@@ -714,6 +705,50 @@ export default function BusinessProfileScreen({ route, navigation }) {
       checkBusinessOwnership();
     }
   }, [business_uid, business, businessUsers]);
+
+  const serviceUidsKey = useMemo(() => {
+    const list = business?.business_services;
+    if (!Array.isArray(list)) return "";
+    return list
+      .map((s) => getServiceUid(s))
+      .filter(Boolean)
+      .join("|");
+  }, [business?.business_services]);
+
+  // Product cards read bs_choice_groups; options are stored via business_service_options API.
+  useEffect(() => {
+    if (!serviceUidsKey || !Array.isArray(business?.business_services)) return;
+
+    let cancelled = false;
+    Promise.all(
+      business.business_services.map((service, index) => {
+        const uid = getServiceUid(service);
+        if (!uid) return Promise.resolve(null);
+        if (Array.isArray(service.bs_choice_groups) && service.bs_choice_groups.length > 0) {
+          return Promise.resolve(null);
+        }
+        return fetchServiceChoiceGroups(API_BASE_URL, uid).then((groups) => ({ index, groups }));
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      setBusiness((prev) => {
+        if (!prev || !Array.isArray(prev.business_services)) return prev;
+        let changed = false;
+        const nextServices = [...prev.business_services];
+        results.forEach((r) => {
+          if (!r || !r.groups.length) return;
+          if (Array.isArray(nextServices[r.index]?.bs_choice_groups) && nextServices[r.index].bs_choice_groups.length > 0) return;
+          nextServices[r.index] = { ...nextServices[r.index], bs_choice_groups: r.groups };
+          changed = true;
+        });
+        return changed ? { ...prev, business_services: nextServices } : prev;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [serviceUidsKey]);
 
   // Use useFocusEffect like ProfileScreen
   useFocusEffect(

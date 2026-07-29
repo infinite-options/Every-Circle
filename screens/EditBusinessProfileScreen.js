@@ -43,6 +43,7 @@ import { parsePrice, formatCostValue } from "../utils/priceUtils";
 import { offeringBountyExceedsCost } from "../components/ExpertiseSection";
 import { isTruthyTaxableFlag, isValidTaxRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagListUtils";
+import { fetchServiceChoiceGroups } from "../utils/parseServiceOptionsResponse";
 import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceShippingRefundable, normServiceTags, productImageFileFieldName, productImageUploadKey } from "../utils/buildBusinessServiceForApi";
 import {
   BS_SHIPPING_BUYER_ACTUAL,
@@ -1668,6 +1669,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         if (pendingRow) {
           servicesForPayload = [...services];
           servicesForPayload[editingServiceIndex] = pendingRow;
+          // Apply open-form edits (including customer choices) to the list cards before save.
+          setServices(servicesForPayload);
+          setShowServiceForm(false);
+          setEditingServiceIndex(null);
+          setServiceForm({ ...defaultService });
+          setServiceFormTaxRateError(false);
+          setServiceFormQuantityError(false);
+          setServiceFormCostUnitError(false);
+          setProductTagInput("");
+          resetServiceProductImageState();
         } else {
           const isUnlimitedSave = serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1" || serviceForm.bs_qty_unlimited === true;
           if (!isUnlimitedSave) {
@@ -2979,11 +2990,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         if (Array.isArray(service.bs_choice_groups) && service.bs_choice_groups.length > 0) {
           return Promise.resolve(null);
         }
-        return fetch(`${API_BASE_URL}/api/business_service_options/${encodeURIComponent(uid)}`)
-          .then((res) => res.json())
-          .then((data) => ({
+        return fetchServiceChoiceGroups(API_BASE_URL, uid)
+          .then((groups) => ({
             index,
-            groups: Array.isArray(data?.result) ? data.result : [],
+            groups,
           }))
           .catch((e) => {
             console.warn(`Failed to hydrate service options for ${uid}:`, e);
@@ -3417,10 +3427,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     if (service.bs_uid && service.bs_uid.trim() !== "") {
       const localGroups = service.bs_choice_groups || [];
       if (localGroups.length === 0) {
-        fetch(`${API_BASE_URL}/api/business_service_options/${encodeURIComponent(service.bs_uid)}`)
-          .then((res) => res.json())
-          .then((data) => {
-            const groups = Array.isArray(data?.result) ? data.result : [];
+        fetchServiceChoiceGroups(API_BASE_URL, service.bs_uid)
+          .then((groups) => {
             if (groups.length > 0) {
               handleServiceChange("bs_choice_groups", groups);
               setServices((prev) => prev.map((s, i) => (i === index ? { ...s, bs_choice_groups: groups } : s)));

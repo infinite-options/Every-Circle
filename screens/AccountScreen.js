@@ -2917,6 +2917,83 @@ function parseOptionalBoolean(value) {
   return null;
 }
 
+/** Snapshotted return-policy fields from order-detail or receipt line items. */
+const RETURN_POLICY_LINE_FIELD_KEYS = [
+  "return_eligible",
+  "is_return_eligible",
+  "return_ineligible_reason",
+  "return_eligibility_reason",
+  "returnable",
+  "is_returnable",
+  "bs_is_returnable",
+  "ti_bs_is_returnable",
+  "return_window_days",
+  "bs_return_window_days",
+  "ti_bs_return_window_days",
+  "return_window_expired",
+  "is_return_window_expired",
+  "return_window_expires_at",
+  "return_eligible_until",
+  "return_deadline",
+  "profile_expertise_is_returnable",
+  "profile_expertise_return_window_days",
+  "returned_qty",
+  "remaining_qty",
+];
+
+function pickReturnPolicyFields(line) {
+  if (!line || typeof line !== "object") return {};
+  const out = {};
+  for (const key of RETURN_POLICY_LINE_FIELD_KEYS) {
+    const val = line[key];
+    if (val === undefined || val === null) continue;
+    if (typeof val === "string" && val.trim() === "") continue;
+    out[key] = val;
+  }
+  return out;
+}
+
+function mergeReceiptLineWithOrderDetail(receiptLine, orderLine) {
+  if (!orderLine) return receiptLine;
+  return {
+    ...receiptLine,
+    ...pickReturnPolicyFields(orderLine),
+    ti_uid: receiptLine?.ti_uid || orderLine.ti_uid || orderLine.transaction_item_uid,
+    ti_bs_id: receiptLine?.ti_bs_id || orderLine.ti_bs_id || orderLine.bs_uid,
+    bs_uid: receiptLine?.bs_uid || orderLine.bs_uid || orderLine.ti_bs_id,
+    bs_service_name: receiptLine?.bs_service_name || orderLine.item_name || orderLine.bs_service_name,
+    ti_bs_cost: receiptLine?.ti_bs_cost ?? orderLine.ti_bs_cost,
+    ti_bs_qty: receiptLine?.ti_bs_qty ?? orderLine.ti_bs_qty,
+    returned_qty: orderLine.returned_qty ?? receiptLine?.returned_qty,
+    remaining_qty: orderLine.remaining_qty ?? receiptLine?.remaining_qty,
+  };
+}
+
+/**
+ * Prefer GET /orders/:uid sale.lines (snapshotted return policy + fulfillment qty).
+ * Receipt API omits those fields; merge from order detail when both exist.
+ */
+function resolveReturnModalOrderLines(receiptOrderDetail, receiptLines) {
+  const orderLines = Array.isArray(receiptOrderDetail?.sale?.lines) ? receiptOrderDetail.sale.lines : [];
+  const receipt = Array.isArray(receiptLines) ? receiptLines : [];
+
+  if (orderLines.length > 0) {
+    if (receipt.length === 0) return orderLines;
+    return orderLines.map((orderLine) => {
+      const tiUid = String(orderLine?.ti_uid || orderLine?.transaction_item_uid || "").trim();
+      const bsId = String(orderLine?.ti_bs_id || orderLine?.bs_uid || "").trim();
+      const receiptMatch = receipt.find((row) => {
+        const rowTiUid = String(row?.ti_uid || row?.transaction_item_uid || "").trim();
+        const rowBsId = String(row?.ti_bs_id || row?.bs_uid || "").trim();
+        return (tiUid && rowTiUid === tiUid) || (bsId && rowBsId === bsId);
+      });
+      return receiptMatch ? mergeReceiptLineWithOrderDetail(receiptMatch, orderLine) : orderLine;
+    });
+  }
+
+  return receipt.map((line) => ({ ...line, ...pickReturnPolicyFields(line) }));
+}
+
 /**
  * Prefer the backend's authoritative per-line eligibility. Older payloads may
  * only include the snapshotted returnable/window fields; unknown stays eligible
@@ -2927,15 +3004,19 @@ function resolveLineReturnEligibility(line) {
 
   const backendEligible = parseOptionalBoolean(line.return_eligible ?? line.is_return_eligible);
   const backendReason = String(line.return_ineligible_reason ?? line.return_eligibility_reason ?? "").trim();
+  const snapshottedReturnable = parseOptionalBoolean(
+    line.returnable ?? line.is_returnable ?? line.bs_is_returnable ?? line.ti_bs_is_returnable ?? line.profile_expertise_is_returnable,
+  );
   if (backendEligible === false) {
     return {
       eligible: false,
-      reason: backendReason || (parseOptionalBoolean(line.returnable ?? line.is_returnable ?? line.bs_is_returnable ?? line.ti_bs_is_returnable) === false ? "Not returnable" : "Outside return window"),
+      reason: backendReason || (snapshottedReturnable === false ? "Not returnable" : "Outside return window"),
     };
   }
 
-  const returnable = parseOptionalBoolean(line.returnable ?? line.is_returnable ?? line.bs_is_returnable ?? line.ti_bs_is_returnable);
-  const windowDaysRaw = line.return_window_days ?? line.bs_return_window_days ?? line.ti_bs_return_window_days;
+  const returnable = snapshottedReturnable;
+  const windowDaysRaw =
+    line.return_window_days ?? line.bs_return_window_days ?? line.ti_bs_return_window_days ?? line.profile_expertise_return_window_days;
   const windowDays = windowDaysRaw == null || String(windowDaysRaw).trim() === "" ? null : parseInt(windowDaysRaw, 10);
   if (returnable === false || (returnable == null && windowDays === 0)) {
     return { eligible: false, reason: "Not returnable" };
@@ -6005,6 +6086,7 @@ export default function AccountScreen({ navigation, route }) {
     error: null,
     bountyPaidFallback: 0,
     isSellerView: true,
+    sellerId: null,
   });
   const [returnReceivedItemKeys, setReturnReceivedItemKeys] = useState([]);
   const [returnRestockQtyByKey, setReturnRestockQtyByKey] = useState({});
@@ -6307,6 +6389,10 @@ export default function AccountScreen({ navigation, route }) {
         try {
           const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
           setReceiptOrderDetail(orderDetail);
+          const enrichedLines = resolveReturnModalOrderLines(orderDetail, items);
+          if (enrichedLines.length > 0) {
+            setReceiptData(enrichedLines);
+          }
         } catch (orderErr) {
           console.warn("fetchReceipt - order detail unavailable:", orderErr?.message || orderErr);
           setReceiptOrderDetail(null);
@@ -6422,6 +6508,8 @@ export default function AccountScreen({ navigation, route }) {
   };
 
   const resolveSellerIdForReturn = (transactionUid) => {
+    const fromModal = String(returnDetailModal.sellerId || "").trim();
+    if (fromModal) return fromModal;
     const fromAccount = selectedAccount && selectedAccount !== "personal" ? String(selectedAccount).trim() : primaryBusinessUid ? String(primaryBusinessUid).trim() : "";
     if (fromAccount) return fromAccount;
     const fromDetail = String(
@@ -7471,6 +7559,7 @@ export default function AccountScreen({ navigation, route }) {
       error: null,
       bountyPaidFallback: 0,
       isSellerView: true,
+      sellerId: null,
     });
     setReturnReceivedItemKeys([]);
     setReturnRestockQtyByKey({});
@@ -7480,7 +7569,7 @@ export default function AccountScreen({ navigation, route }) {
   }, []);
 
   const openReturnDetails = useCallback(
-    async (orderRow) => {
+    async (orderRow, options = {}) => {
       const orderUid = orderRow?.orderUid || resolveListRowOrderUid(orderRow?.rawRow || orderRow);
       if (!orderUid || orderUid === "—") return;
       const raw = orderRow?.rawRow || orderRow;
@@ -7498,7 +7587,15 @@ export default function AccountScreen({ navigation, route }) {
           saleUid,
       ).trim();
       const bountyPaidFallback = Number(orderRow?.bountyPaid ?? orderRow?.bounty_paid ?? raw?.bounty_paid ?? 0) || 0;
-      const isSellerView = selectedAccount !== "personal";
+      const isSellerView = options.isSellerView ?? selectedAccount !== "personal";
+      let sellerId = String(options.sellerId || "").trim();
+      if (isSellerView && !sellerId) {
+        if (selectedAccount !== "personal") {
+          sellerId = String(selectedAccount || primaryBusinessUid || "").trim();
+        } else {
+          sellerId = String((await AsyncStorage.getItem("profile_uid")) || "").trim();
+        }
+      }
       const sourceReturnRow = isReturnListRow(raw) ? raw : null;
 
       setReturnReceivedItemKeys([]);
@@ -7517,13 +7614,16 @@ export default function AccountScreen({ navigation, route }) {
         error: null,
         bountyPaidFallback,
         isSellerView,
+        sellerId: sellerId || null,
       });
 
       try {
         const ctx = {};
         if (isSellerView) {
-          const bizUid = selectedAccount || primaryBusinessUid;
-          if (bizUid) ctx.businessUid = bizUid;
+          if (sellerId) {
+            ctx.businessUid = sellerId;
+            ctx.sellerId = sellerId;
+          }
         } else {
           const profileId = (await AsyncStorage.getItem("profile_uid")) || "";
           if (profileId) ctx.profileId = String(profileId).trim();
@@ -7826,11 +7926,9 @@ export default function AccountScreen({ navigation, route }) {
     setShowReturnNoteModal(true);
     setReturnModalLoading(true);
 
-    const saleLines = receiptOrderDetail?.sale?.lines;
-    if (Array.isArray(saleLines) && saleLines.length > 0) {
-      setReturnModalOrderLines(saleLines);
-    } else if (Array.isArray(receiptData) && receiptData.length > 0) {
-      setReturnModalReceiptData(receiptData);
+    const modalLines = resolveReturnModalOrderLines(receiptOrderDetail, receiptData);
+    if (modalLines.length > 0) {
+      setReturnModalOrderLines(modalLines);
     } else {
       Alert.alert("Error", "No receipt lines are available for return.");
       setShowReturnNoteModal(false);
@@ -9638,9 +9736,9 @@ export default function AccountScreen({ navigation, route }) {
             {!receiptIsReturnReceipt &&
               (() => {
                 const orderUid = resolveListRowOrderUid(receiptTransaction);
-                const saleLines = receiptOrderDetail?.sale?.lines;
+                const returnModalLines = resolveReturnModalOrderLines(receiptOrderDetail, receiptData);
                 const existingReturnRows = getExistingReturnRowsForOrder(transactionData, orderUid);
-                const selectableLines = buildReturnModalSelectableLines(saleLines, receiptData, returnRequests[orderUid], existingReturnRows);
+                const selectableLines = buildReturnModalSelectableLines(returnModalLines, receiptData, returnRequests[orderUid], existingReturnRows);
                 const allItemsReturned = selectableLines.length > 0 && selectableLines.every((line) => line.remainingQty <= 0);
                 const hasEligibleReturnItem = selectableLines.some((line) => line.remainingQty > 0 && line.returnEligible);
                 const returnButtonDisabled = allItemsReturned || !hasEligibleReturnItem;
@@ -10565,7 +10663,7 @@ export default function AccountScreen({ navigation, route }) {
         loading={returnDetailModal.loading}
         error={returnDetailModal.error}
         darkMode={darkMode}
-        isSellerView={returnDetailModal.isSellerView !== false}
+        isSellerView={returnDetailModal.isSellerView}
         trrUid={returnDetailModal.trrUid || null}
         trrUids={returnDetailModal.trrUids || []}
         returnTxnUid={returnDetailModal.returnTxnUid || null}
@@ -10678,7 +10776,7 @@ export default function AccountScreen({ navigation, route }) {
                 }}
                 onReturnPress={(row) => {
                   setSalesModal({ visible: false, item: null, transactions: [] });
-                  openOrderDetail(row, { isSellerView: true });
+                  openReturnDetails(row, { isSellerView: true });
                 }}
               />
             )}
