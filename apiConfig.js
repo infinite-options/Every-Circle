@@ -2,8 +2,8 @@
 // Uncomment the appropriate line for your environment
 
 // Production/Development Environment
-export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
-// export const API_BASE_URL = "http://localhost:4090";
+// export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
+export const API_BASE_URL = "http://localhost:4090";
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";
@@ -69,6 +69,8 @@ export const BUSINESS_TAG_SEARCH_ENDPOINT = `${API_BASE_URL}/api/v1/businesstags
 export const BUSINESS_SERVICE_PURCHASE_ENDPOINT = `${API_BASE_URL}/business/service/purchase`;
 /** POST JSON `{ bs_uid, quantity, seller_id?, trr_uid?, order_uid? }` — increment limited inventory after return/cancel confirm */
 export const BUSINESS_SERVICE_RESTOCK_ENDPOINT = `${API_BASE_URL}/business/service/restock`;
+/** POST JSON `{ profile_expertise_uid, quantity, seller_id?, trr_uid?, order_uid? }` — increment offering inventory after return/cancel */
+export const PROFILE_EXPERTISE_RESTOCK_ENDPOINT = `${API_BASE_URL}/api/v1/profile-expertise/restock`;
 export const BUSINESS_CLAIM_ENDPOINT = `${API_BASE_URL}/api/v1/business_claim`;
 export const BUSINESS_MAP_ENDPOINT = `${API_BASE_URL}/api/v1/business_map`;
 
