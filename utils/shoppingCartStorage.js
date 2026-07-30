@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { normalizeCartItemFulfillment } from "./cartFulfillmentMethod";
 
 /** Load all cart line items and total count from AsyncStorage (business + expertise carts). */
 export async function loadAllCartItems() {
@@ -16,17 +17,19 @@ export async function loadAllCartItems() {
 
     if (key.startsWith("cart_expertise_")) {
       cartCount += 1;
-      cartItems.push({ ...parsed, cart_key: key });
+      cartItems.push(normalizeCartItemFulfillment({ ...parsed, cart_key: key }));
     } else {
       const items = parsed.items || [];
       cartCount += items.length;
       const businessUid = key.replace("cart_", "");
       cartItems = [
         ...cartItems,
-        ...items.map((item) => ({
-          ...item,
-          business_uid: businessUid,
-        })),
+        ...items.map((item) =>
+          normalizeCartItemFulfillment({
+            ...item,
+            business_uid: businessUid,
+          }),
+        ),
       ];
     }
   }

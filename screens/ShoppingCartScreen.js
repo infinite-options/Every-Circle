@@ -57,10 +57,19 @@ import {
   formatOfferingUnitPriceLabel,
   parseOfferingBountyAmount,
   isCartItemReturnable,
-  isCartItemShippingApplicable,
   isCartItemBuyerPaysShipping,
 } from "../utils/offeringCartUtils";
 import { getCartItemBuyerShippingCharge, sumBuyerShippingCharges } from "../utils/businessServiceShipping";
+import {
+  buildFulfillmentApiFields,
+  cartItemNeedsFulfillmentChoice,
+  cartItemRequiresShippingAddress,
+  formatCartPickupLocationHint,
+  FULFILLMENT_PICKUP,
+  FULFILLMENT_SHIP,
+  normalizeCartItemsFulfillment,
+  resolveDefaultFulfillmentMethod,
+} from "../utils/cartFulfillmentMethod";
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
 
@@ -232,6 +241,43 @@ function CartItemCustomizationText({ item }) {
       ) : null}
     </Text>
   );
+}
+
+function CartFulfillmentChoice({ item, onSelect }) {
+  const method = resolveDefaultFulfillmentMethod(item);
+  const pickupHint = formatCartPickupLocationHint(item);
+
+  if (cartItemNeedsFulfillmentChoice(item)) {
+    return (
+      <View style={styles.fulfillmentSection}>
+        <Text style={styles.fulfillmentChoiceLabel}>Delivery</Text>
+        <View style={styles.fulfillmentChoiceRow}>
+          <TouchableOpacity
+            style={[styles.fulfillmentChoiceBtn, method === FULFILLMENT_SHIP && styles.fulfillmentChoiceBtnActive]}
+            onPress={() => onSelect(FULFILLMENT_SHIP)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name='airplane-outline' size={16} color={method === FULFILLMENT_SHIP ? "#fff" : "#9C45F7"} />
+            <Text style={[styles.fulfillmentChoiceBtnText, method === FULFILLMENT_SHIP && styles.fulfillmentChoiceBtnTextActive]}>Ship to me</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.fulfillmentChoiceBtn, method === FULFILLMENT_PICKUP && styles.fulfillmentChoiceBtnActive]}
+            onPress={() => onSelect(FULFILLMENT_PICKUP)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name='people-outline' size={16} color={method === FULFILLMENT_PICKUP ? "#fff" : "#9C45F7"} />
+            <Text style={[styles.fulfillmentChoiceBtnText, method === FULFILLMENT_PICKUP && styles.fulfillmentChoiceBtnTextActive]}>Pick up</Text>
+          </TouchableOpacity>
+        </View>
+        {method === FULFILLMENT_PICKUP && pickupHint ? <Text style={styles.fulfillmentPickupHint}>Pickup location: {pickupHint}</Text> : null}
+      </View>
+    );
+  }
+
+  if (method === FULFILLMENT_PICKUP) {
+    return <Text style={styles.fulfillmentPickupHint}>Pickup in person{pickupHint ? ` · ${pickupHint}` : ""}</Text>;
+  }
+  return null;
 }
 
 /**
@@ -453,7 +499,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const [escrowBySeller, setEscrowBySeller] = useState({});
   const [refundAcknowledged, setRefundAcknowledged] = useState(false); //refund acknowledgement state
   const [refundError, setRefundError] = useState(false);
-  const [shippingEnabled, setShippingEnabled] = useState(false);
   const [shippingFirstName, setShippingFirstName] = useState("");
   const [shippingLastName, setShippingLastName] = useState("");
   const [shippingStreetLine1, setShippingStreetLine1] = useState("");
@@ -472,19 +517,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   useEffect(() => {
     webCheckoutSessionRef.current = webCheckoutSession;
   }, [webCheckoutSession]);
-
-  useEffect(() => {
-    const hasShippingItems = cartItems.some((it) => isCartItemShippingApplicable(it));
-    const hasBuyerPays = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
-    if (!hasShippingItems && shippingEnabled) {
-      setShippingEnabled(false);
-      return;
-    }
-    // Buyer-pays shipping requires a shipping address — force Shipping on.
-    if (hasBuyerPays && !shippingEnabled) {
-      setShippingEnabled(true);
-    }
-  }, [cartItems, shippingEnabled]);
 
   /** Start at top of the list whenever this screen is opened so users review items first; refund scroll runs only from Proceed without acknowledgement. */
   useFocusEffect(
@@ -657,11 +689,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     }
     setRefundError(false);
 
-    const shippingNeeded = cartItems.some((it) => isCartItemShippingApplicable(it));
-    const buyerPaysShippingRequired = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
-    const shippingMustBeOn = shippingNeeded && (shippingEnabled || buyerPaysShippingRequired);
+    const needsShippingAddress = cartItems.some((it) => cartItemRequiresShippingAddress(it));
     if (
-      shippingMustBeOn &&
+      needsShippingAddress &&
       !isShippingAddressComplete({
         enabled: true,
         firstName: shippingFirstName,
@@ -672,15 +702,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         zip: shippingZip,
       })
     ) {
-      if (buyerPaysShippingRequired && !shippingEnabled) {
-        setShippingEnabled(true);
-      }
-      Alert.alert(
-        "Shipping address required",
-        buyerPaysShippingRequired
-          ? "One or more items require buyer-paid shipping. Please complete First Name, Last Name, Street Address, City, State, and Zip before checkout."
-          : "Please complete all required shipping fields before checkout.",
-      );
+      Alert.alert("Shipping address required", "Please complete First Name, Last Name, Street Address, City, State, and Zip for items being shipped.");
       return;
     }
 
@@ -825,8 +847,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
 
   // Update local state when initialCartItems changes
   useEffect(() => {
-    // setCartItems(initialCartItems);
-    setCartItems(Array.isArray(initialCartItems) ? initialCartItems : []);
+    setCartItems(normalizeCartItemsFulfillment(Array.isArray(initialCartItems) ? initialCartItems : []));
   }, [initialCartItems]);
 
   useEffect(() => {
@@ -857,6 +878,27 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       console.error("Error loading Stripe public key:", error);
       Alert.alert("Error", "Failed to initialize payment system. Please try again.");
       throw error;
+    }
+  };
+
+  const handleFulfillmentMethodChange = async (index, method) => {
+    try {
+      const newCartItems = [...cartItems];
+      newCartItems[index] = { ...newCartItems[index], fulfillment_method: method };
+      setCartItems(newCartItems);
+
+      const item = newCartItems[index];
+      if (item.itemType === "expertise") {
+        const cartKey = item.cart_key || `cart_expertise_${item.expertise_uid}`;
+        await AsyncStorage.setItem(cartKey, JSON.stringify(item));
+      } else {
+        const businessUid = item.business_uid;
+        const businessItems = newCartItems.filter((row) => row.business_uid === businessUid);
+        await AsyncStorage.setItem(`cart_${businessUid}`, JSON.stringify({ items: businessItems }));
+      }
+    } catch (error) {
+      console.error("Error updating fulfillment method:", error);
+      Alert.alert("Error", "Failed to update delivery option");
     }
   };
 
@@ -1106,13 +1148,13 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           bounty_type: bountyType,
           quantity: qty,
           recommender_profile_id: item.bounty_recommender_profile_id || defaultRecommender,
-          // Pass choices data so backend can store it on the transaction item
           choices_extra_cost: item.choicesExtraCost || 0,
           unit_price: item.unitPrice || parsePrice(item.bs_cost),
           selected_choices: item.selectedChoices || {},
           selected_choice_labels: item.selectedChoiceLabels || {},
           selected_choice_items: normalizeSelectedChoiceItemsForApi(item),
           special_instructions: item.specialInstructions || "",
+          ...buildFulfillmentApiFields(item),
         };
       });
 
@@ -1122,9 +1164,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const salesTaxRounded = parseFloat(Number(salesTaxTotal).toFixed(2));
       const merchandiseRounded = parseFloat(Number(merchandiseSubtotal).toFixed(2));
       const shippingRounded = parseFloat(Number(group.shippingSubtotal || 0).toFixed(2));
-      const buyerPaysShippingRequired = group.items.some((it) => isCartItemBuyerPaysShipping(it));
+      const needsShippingAddress = group.items.some((it) => cartItemRequiresShippingAddress(it));
       const shippingAddress = buildShippingAddressPayload({
-        enabled: (shippingEnabled || buyerPaysShippingRequired) && cartItems.some((it) => isCartItemShippingApplicable(it)),
+        enabled: needsShippingAddress,
         firstName: shippingFirstName,
         lastName: shippingLastName,
         streetLine1: shippingStreetLine1,
@@ -1251,7 +1293,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
   const cartRequiresReturnAcknowledgement = cartItems.some((it) => isCartItemReturnable(it));
-  const cartHasShippingApplicableItems = cartItems.some((it) => isCartItemShippingApplicable(it));
+  const cartHasShipFulfillmentLines = cartItems.some((it) => cartItemRequiresShippingAddress(it));
   const cartRequiresBuyerPaysShipping = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
   const feeDialogFirstGroup = sellerGroupsPreview[0];
   const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index] ? webCheckoutSession.groups[webCheckoutSession.index].total : 0;
@@ -1259,9 +1301,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
     null;
-  const shippingEffectiveEnabled = cartHasShippingApplicableItems && (shippingEnabled || cartRequiresBuyerPaysShipping);
   const shippingAddressComplete = isShippingAddressComplete({
-    enabled: shippingEffectiveEnabled,
+    enabled: cartHasShipFulfillmentLines,
     firstName: shippingFirstName,
     lastName: shippingLastName,
     streetLine1: shippingStreetLine1,
@@ -1269,7 +1310,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     state: shippingState,
     zip: shippingZip,
   });
-  const checkoutBlockedByShipping = shippingEffectiveEnabled && !shippingAddressComplete;
+  const checkoutBlockedByShipping = cartHasShipFulfillmentLines && !shippingAddressComplete;
   const checkoutDisabled = loading || checkoutBlockedByShipping;
 
   const content = (
@@ -1308,6 +1349,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           <Text style={styles.cartItemTitle}>{itemTitle}</Text>
                           <CartItemCustomizationText item={item} />
                           <CartStockBadge item={item} />
+                          <CartFulfillmentChoice item={item} onSelect={(method) => handleFulfillmentMethodChange(index, method)} />
                         </View>
                         <View style={styles.cartItemActions}>
                           <TouchableOpacity style={styles.cartItemRemoveButton} onPress={() => handleRemoveItem(index)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
@@ -1370,23 +1412,13 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   </View>
                 );
               })}
-              {cartHasShippingApplicableItems ? (
+              {cartHasShipFulfillmentLines ? (
                 <View style={styles.shippingCard}>
-                  <TouchableOpacity
-                    style={styles.escrowRow}
-                    onPress={() => {
-                      if (cartRequiresBuyerPaysShipping) return;
-                      setShippingEnabled((prev) => !prev);
-                    }}
-                    activeOpacity={cartRequiresBuyerPaysShipping ? 1 : 0.7}
-                    disabled={cartRequiresBuyerPaysShipping}
-                  >
-                    <View style={[styles.checkbox, shippingEffectiveEnabled && styles.checkboxChecked]}>{shippingEffectiveEnabled && <Text style={styles.checkmark}>✓</Text>}</View>
-                    <Text style={styles.escrowLabel}>Shipping{cartRequiresBuyerPaysShipping ? " (required — at least one item requires shipping)" : ""}</Text>
-                  </TouchableOpacity>
-                  {cartRequiresBuyerPaysShipping ? <Text style={styles.shippingRequiredNote}>Shipping address is required because one or more items use buyer-paid shipping.</Text> : null}
-                  {shippingEffectiveEnabled ? (
-                    <View style={styles.shippingFields}>
+                  <Text style={styles.shippingSectionTitle}>Shipping address</Text>
+                  {cartRequiresBuyerPaysShipping ? (
+                    <Text style={styles.shippingRequiredNote}>Required for items being shipped to you.</Text>
+                  ) : null}
+                  <View style={styles.shippingFields}>
                       <Text style={styles.shippingFieldLabel}>First Name *</Text>
                       <TextInput style={styles.shippingInput} value={shippingFirstName} onChangeText={setShippingFirstName} placeholder='First Name' autoCapitalize='words' autoCorrect={false} />
                       <Text style={styles.shippingFieldLabel}>Last Name *</Text>
@@ -1429,8 +1461,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           />
                         </View>
                       </View>
-                    </View>
-                  ) : null}
+                  </View>
                 </View>
               ) : null}
               <View style={styles.totalContainer}>
@@ -1861,12 +1892,61 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 10,
   },
+  shippingSectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 4,
+  },
+  fulfillmentSection: {
+    marginTop: 10,
+  },
+  fulfillmentChoiceLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 8,
+  },
+  fulfillmentChoiceRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  fulfillmentChoiceBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#9C45F7",
+    backgroundColor: "#fff",
+  },
+  fulfillmentChoiceBtnActive: {
+    backgroundColor: "#9C45F7",
+    borderColor: "#9C45F7",
+  },
+  fulfillmentChoiceBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#9C45F7",
+  },
+  fulfillmentChoiceBtnTextActive: {
+    color: "#fff",
+  },
+  fulfillmentPickupHint: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 8,
+    fontStyle: "italic",
+  },
   shippingRequiredNote: {
     fontSize: 12,
     color: "#666",
-    marginTop: 6,
-    marginBottom: 4,
-    marginLeft: 28,
+    marginTop: 4,
+    marginBottom: 8,
   },
   shippingActualBlock: {
     marginBottom: 2,

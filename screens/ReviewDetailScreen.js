@@ -13,6 +13,8 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
 import { bountyPickerRequiresSelection, getDefaultBountyRecipient, isBountyReviewDisabled, mergeBountyEligibleReviews, resolveBountyRecommenderProfileId } from "../utils/bountyRecipientUtils";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
+import { isBusinessShippingApplicable } from "../utils/businessServiceShipping";
+import { FULFILLMENT_PICKUP, FULFILLMENT_SHIP } from "../utils/cartFulfillmentMethod";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
@@ -389,6 +391,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
         business_uid: business_uid,
         business_name: sanitizeText(business?.business_name || business_name || "") || "",
         business_cc_fee_payer: ccPayer,
+        fulfillment_method: isBusinessShippingApplicable(selectedService) ? FULFILLMENT_SHIP : FULFILLMENT_PICKUP,
       };
 
       // Check if the item already exists in the cart
