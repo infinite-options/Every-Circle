@@ -21,6 +21,8 @@ const StripeFeesDialog = ({
   hasActualShipping,
   cardProcessingFee,
   buyerPaysCardFee,
+  walletApplied,
+  cardCharge,
 }) => {
   const { darkMode } = useDarkMode();
 
@@ -35,6 +37,8 @@ const StripeFeesDialog = ({
 
   const legacyFee = hasLegacyBreakdown ? (Number(totalWithFee) - Number(subtotal)).toFixed(2) : null;
   const showShipping = hasCartBreakdown && typeof shippingSubtotal === "number" && (shippingSubtotal > 0 || hasActualShipping);
+  const walletAmt = typeof walletApplied === "number" && walletApplied > 0 ? walletApplied : 0;
+  const cardAmt = typeof cardCharge === "number" ? cardCharge : null;
 
   const payeeTrimmed =
     typeof payeeBusinessName === "string" && payeeBusinessName.trim() !== "" ? payeeBusinessName.trim() : null;
@@ -85,13 +89,29 @@ const StripeFeesDialog = ({
                 {!buyerPaysCardFee ? (
                   <Text style={[styles.waivedNote, darkMode && styles.darkWaivedNote]}>The business pays Stripe fees; the processing line is $0.00.</Text>
                 ) : null}
+                {walletAmt > 0 ? (
+                  <View style={styles.breakdownRow}>
+                    <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Wallet balance applied:</Text>
+                    <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>-${walletAmt.toFixed(2)}</Text>
+                  </View>
+                ) : null}
                 <View style={[styles.breakdownRow, styles.totalRow, darkMode && styles.darkTotalRow]}>
-                  <Text style={[styles.breakdownLabel, styles.totalLabel, darkMode && styles.darkBreakdownLabel]}>Charged total:</Text>
+                  <Text style={[styles.breakdownLabel, styles.totalLabel, darkMode && styles.darkBreakdownLabel]}>
+                    {walletAmt > 0 ? "Order total:" : "Charged total:"}
+                  </Text>
                   <Text style={[styles.breakdownValue, styles.totalValue, darkMode && styles.darkBreakdownValue]}>${Number(totalWithFee).toFixed(2)}</Text>
                 </View>
+                {walletAmt > 0 && cardAmt != null ? (
+                  <View style={styles.breakdownRow}>
+                    <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Charged to card:</Text>
+                    <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${Number(cardAmt).toFixed(2)}</Text>
+                  </View>
+                ) : null}
               </View>
               <Text style={[styles.message, darkMode && styles.darkMessage]}>
-                This matches the amount for this payment step. Click Continue to proceed.
+                {walletAmt > 0 && cardAmt != null && cardAmt < 0.01
+                  ? "This order is fully covered by your wallet balance. Click Continue to place the order."
+                  : "This matches the amount for this payment step. Click Continue to proceed."}
               </Text>
             </>
           ) : hasLegacyBreakdown ? (

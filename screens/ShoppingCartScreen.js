@@ -20,7 +20,7 @@ if (!isWeb) {
   }
 }
 
-import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, BOUNTY_RESULTS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
 import StripeNativeProvider from "../components/StripeNativeProvider";
@@ -373,14 +373,56 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
       buyerPaysCardFee,
       processingFee,
       total,
+      walletApplied: 0,
+      cardCharge: total,
       displayName,
     };
   });
 }
 
+/**
+ * Apply useable wallet balance across seller groups (in order).
+ * Card processing fee is charged only on the remaining card portion.
+ */
+function applyWalletToCheckoutGroups(groups, useableBalance) {
+  let remaining = roundMoney(Math.max(0, Number(useableBalance) || 0));
+  return (groups || []).map((group) => {
+    const base = roundMoney(group.subtotalWithShipping);
+    const walletApplied = roundMoney(Math.min(remaining, base));
+    remaining = roundMoney(remaining - walletApplied);
+    const cardBase = roundMoney(base - walletApplied);
+    const processingFee = cardBase > 0 && group.buyerPaysCardFee ? roundMoney(cardBase * 0.03) : 0;
+    const cardCharge = roundMoney(cardBase + processingFee);
+    const total = roundMoney(walletApplied + cardCharge);
+    return {
+      ...group,
+      walletApplied,
+      processingFee,
+      cardCharge,
+      total,
+    };
+  });
+}
+
+async function fetchUseableWalletBalance(profileUid) {
+  if (!profileUid) return 0;
+  try {
+    const response = await fetch(`${BOUNTY_RESULTS_ENDPOINT}/${profileUid}`);
+    if (!response.ok) return 0;
+    const data = await response.json();
+    const wallet = data?.wallet || data?.data?.wallet || data?.bounty_results?.wallet || {};
+    const useable = Number(wallet.wallet_useable_balance);
+    return Number.isFinite(useable) && useable > 0 ? roundMoney(useable) : 0;
+  } catch (e) {
+    console.warn("Failed to fetch useable wallet balance:", e);
+    return 0;
+  }
+}
+
 const ShoppingCartScreenContent = ({ route, navigation }) => {
   const { cartItems: initialCartItems, businessName, business_uid, recommender_profile_id, returnTo, searchState } = route.params || {};
   const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
+  const [useableWalletBalance, setUseableWalletBalance] = useState(0);
 
   const handleReturnPress = () => {
     if (returnTo === "BusinessProfile") {
@@ -491,6 +533,16 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       requestAnimationFrame(() => {
         scrollViewRef.current?.scrollTo({ y: 0, animated: false });
       });
+      (async () => {
+        try {
+          const profileUid = await AsyncStorage.getItem("profile_uid");
+          const balance = await fetchUseableWalletBalance(profileUid);
+          setUseableWalletBalance(balance);
+        } catch (e) {
+          console.warn("Could not load wallet balance for cart:", e);
+          setUseableWalletBalance(0);
+        }
+      })();
     }, []),
   );
 
@@ -514,9 +566,20 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         return;
       }
 
-      const session = { groups, index: 0 };
+      const buyerUid = await AsyncStorage.getItem("profile_uid");
+      const useableBalance = await fetchUseableWalletBalance(buyerUid);
+      const payableGroups = applyWalletToCheckoutGroups(groups, useableBalance);
+
+      const session = { groups: payableGroups, index: 0 };
       webCheckoutSessionRef.current = session;
       setWebCheckoutSession(session);
+
+      // Wallet-only first group: record without Stripe UI.
+      const first = payableGroups[0];
+      if (first && (first.cardCharge || 0) < 0.01) {
+        await advanceWebCheckoutWithoutCard(buyerUid, session);
+        return;
+      }
 
       await loadStripePublicKey("ECTEST");
 
@@ -526,6 +589,78 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       console.error("Error loading Stripe:", error);
       Alert.alert("Error", "Failed to initialize payment. Please try again.");
       setLoading(false);
+    }
+  };
+
+  const finishWebCheckoutSuccess = async () => {
+    await decrementStockForPurchasedItems();
+
+    webCheckoutSessionRef.current = null;
+    setWebCheckoutSession(null);
+
+    try {
+      const choicesRecord = {};
+      cartItems.forEach((item) => {
+        if (item.itemType === "expertise" && item.expertise_uid && item.cost) {
+          choicesRecord[item.expertise_uid] = { offeringCostString: item.cost };
+        } else {
+          const enrichment = cartChoiceEnrichmentFromItem(item);
+          if (enrichment) {
+            choicesRecord[item.bs_uid] = enrichment;
+          }
+        }
+      });
+      if (Object.keys(choicesRecord).length > 0) {
+        const existing = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
+        const existingParsed = existing ? JSON.parse(existing) : {};
+        await AsyncStorage.setItem("receipt_choices_by_bs_uid", JSON.stringify({ ...existingParsed, ...choicesRecord }));
+      }
+      const keys = await AsyncStorage.getAllKeys();
+      const cartKeys = keys.filter((key) => key.startsWith("cart_"));
+      await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
+      setCartItems([]);
+      Alert.alert("Success", "Payment successful! Your order has been placed.", [
+        {
+          text: "OK",
+          onPress: () => {
+            navigation.navigate("Search", { refreshCart: true });
+          },
+        },
+      ]);
+    } catch (error) {
+      console.error("Error clearing cart data:", error);
+      Alert.alert("Error", "There was an error clearing your cart. Please try again.");
+    }
+    setLoading(false);
+    setShowStripePayment(false);
+  };
+
+  /** Record wallet-only (or continue) web checkout steps that need no card charge. */
+  const advanceWebCheckoutWithoutCard = async (buyerUid, sess) => {
+    let session = sess;
+    while (session && session.index < session.groups.length) {
+      const group = session.groups[session.index];
+      if ((group.cardCharge || 0) >= 0.01) {
+        webCheckoutSessionRef.current = session;
+        setWebCheckoutSession(session);
+        await loadStripePublicKey("ECTEST");
+        setShowStripePayment(true);
+        setLoading(false);
+        return;
+      }
+      await recordSingleBusinessTransaction(
+        buyerUid,
+        null,
+        group,
+        escrowBySeller[group.sellerId] !== false,
+        group.walletApplied || 0,
+      );
+      const nextIndex = session.index + 1;
+      if (nextIndex >= session.groups.length) {
+        await finishWebCheckoutSuccess();
+        return;
+      }
+      session = { groups: session.groups, index: nextIndex };
     }
   };
 
@@ -549,59 +684,22 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const group = sess.groups[sess.index];
       console.log(`Recording web payment step ${sess.index + 1}/${sess.groups.length} for`, group.sellerId);
 
-      await recordSingleBusinessTransaction(buyerUid, paymentIntent, group, escrowBySeller[group.sellerId] !== false);
+      await recordSingleBusinessTransaction(
+        buyerUid,
+        paymentIntent,
+        group,
+        escrowBySeller[group.sellerId] !== false,
+        group.walletApplied || 0,
+      );
 
       const nextIndex = sess.index + 1;
       if (nextIndex < sess.groups.length) {
-        const nextSession = { groups: sess.groups, index: nextIndex };
-        webCheckoutSessionRef.current = nextSession;
-        setWebCheckoutSession(nextSession);
         setShowStripePayment(false);
-        setTimeout(() => setShowStripePayment(true), 200);
-        setLoading(false);
+        await advanceWebCheckoutWithoutCard(buyerUid, { groups: sess.groups, index: nextIndex });
         return;
       }
 
-      await decrementStockForPurchasedItems();
-
-      webCheckoutSessionRef.current = null;
-      setWebCheckoutSession(null);
-
-      try {
-        const choicesRecord = {};
-        cartItems.forEach((item) => {
-          if (item.itemType === "expertise" && item.expertise_uid && item.cost) {
-            choicesRecord[item.expertise_uid] = { offeringCostString: item.cost };
-          } else {
-            const enrichment = cartChoiceEnrichmentFromItem(item);
-            if (enrichment) {
-              choicesRecord[item.bs_uid] = enrichment;
-            }
-          }
-        });
-        if (Object.keys(choicesRecord).length > 0) {
-          const existing = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
-          const existingParsed = existing ? JSON.parse(existing) : {};
-          await AsyncStorage.setItem("receipt_choices_by_bs_uid", JSON.stringify({ ...existingParsed, ...choicesRecord }));
-          console.log("Saved receipt choices:", JSON.stringify(choicesRecord));
-        }
-        console.log("Clearing all cart data...");
-        const keys = await AsyncStorage.getAllKeys();
-        const cartKeys = keys.filter((key) => key.startsWith("cart_"));
-        await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
-        setCartItems([]);
-        Alert.alert("Success", "Payment successful! Your order has been placed.", [
-          {
-            text: "OK",
-            onPress: () => {
-              navigation.navigate("Search", { refreshCart: true });
-            },
-          },
-        ]);
-      } catch (error) {
-        console.error("Error clearing cart data:", error);
-        Alert.alert("Error", "There was an error clearing your cart. Please try again.");
-      }
+      await finishWebCheckoutSuccess();
     } catch (error) {
       console.error("Web payment submission error:", error);
       const sess = webCheckoutSessionRef.current;
@@ -718,28 +816,51 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       setLoading(true);
       console.log("Starting checkout —", groups.length, "separate payment(s) for", groups.length, "seller(s)");
 
-      for (let i = 0; i < groups.length; i++) {
-        const group = groups[i];
-        console.log(`Native checkout step ${i + 1}/${groups.length}`, group.sellerId, group.total);
+      const useableBalance = await fetchUseableWalletBalance(buyerUid);
+      const payableGroups = applyWalletToCheckoutGroups(groups, useableBalance);
+      console.log("Wallet useable balance:", useableBalance, "payable groups:", payableGroups.map((g) => ({
+        sellerId: g.sellerId,
+        walletApplied: g.walletApplied,
+        cardCharge: g.cardCharge,
+        total: g.total,
+      })));
 
-        const clientSecret = await createPaymentIntent(group.total, group.salesTaxTotal);
-        const ok = await initializePaymentSheetForGroup(clientSecret, group.displayName);
-        if (!ok) {
-          throw new Error("Failed to initialize payment sheet");
+      for (let i = 0; i < payableGroups.length; i++) {
+        const group = payableGroups[i];
+        console.log(`Native checkout step ${i + 1}/${payableGroups.length}`, group.sellerId, {
+          total: group.total,
+          walletApplied: group.walletApplied,
+          cardCharge: group.cardCharge,
+        });
+
+        let paymentIntentId = null;
+        if (group.cardCharge >= 0.01) {
+          const clientSecret = await createPaymentIntent(group.cardCharge, group.salesTaxTotal);
+          const ok = await initializePaymentSheetForGroup(clientSecret, group.displayName);
+          if (!ok) {
+            throw new Error("Failed to initialize payment sheet");
+          }
+
+          const result = await presentPaymentSheet();
+          if (result.error) {
+            console.error("Payment error:", result.error);
+            throw new Error(result.error.message || "Payment failed");
+          }
+
+          // Client secret is pi_xxx_secret_yyy — store only the PaymentIntent ID for refunds
+          paymentIntentId = String(clientSecret || "").split("_secret_")[0];
+          if (!paymentIntentId) {
+            throw new Error("Invalid payment intent. Please try again.");
+          }
         }
 
-        const result = await presentPaymentSheet();
-        if (result.error) {
-          console.error("Payment error:", result.error);
-          throw new Error(result.error.message || "Payment failed");
-        }
-
-        // Client secret is pi_xxx_secret_yyy — store only the PaymentIntent ID for refunds
-        const paymentIntentId = String(clientSecret || "").split("_secret_")[0];
-        if (!paymentIntentId) {
-          throw new Error("Invalid payment intent. Please try again.");
-        }
-        await recordSingleBusinessTransaction(buyerUid, paymentIntentId, group, escrowBySeller[group.sellerId] !== false);
+        await recordSingleBusinessTransaction(
+          buyerUid,
+          paymentIntentId,
+          group,
+          escrowBySeller[group.sellerId] !== false,
+          group.walletApplied || 0,
+        );
         completedGroups.push(group);
       }
 
@@ -1069,9 +1190,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   };
 
   /** POST one transaction row for one Stripe payment (one seller's lines only). */
-  const recordSingleBusinessTransaction = async (buyerUid, paymentIntent, group, escrowValue = true) => {
+  const recordSingleBusinessTransaction = async (buyerUid, paymentIntent, group, escrowValue = true, walletAmount = 0) => {
     try {
-      console.log("Recording transaction for seller", group.sellerId, "items:", group.items);
+      console.log("Recording transaction for seller", group.sellerId, "items:", group.items, "wallet:", walletAmount);
 
       let buyerProfileId;
       if (!buyerUid.startsWith("110")) {
@@ -1085,6 +1206,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const salesTaxTotal = group.salesTaxTotal;
       const processingFee = group.processingFee;
       const chargedTotal = group.total;
+      const walletApplied = roundMoney(Math.max(0, Number(walletAmount) || 0));
 
       const defaultRecommender = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : buyerProfileId;
 
@@ -1116,7 +1238,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       });
 
       // total_costs = pretax merchandise only (matches "Merchandise subtotal" in fee dialog).
-      // total_amount_paid = Stripe charged amount (merchandise + sales tax + card processing).
+      // total_amount_paid = full customer obligation (wallet + card).
+      // wallet_amount = portion taken from useable wallet balance.
       // total_taxes / total_fees break out the tax and fee portions of the charge.
       const salesTaxRounded = parseFloat(Number(salesTaxTotal).toFixed(2));
       const merchandiseRounded = parseFloat(Number(merchandiseSubtotal).toFixed(2));
@@ -1135,7 +1258,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const transactionData = {
         profile_id: buyerProfileId,
         business_id: group.sellerId,
-        stripe_payment_intent: paymentIntent,
+        stripe_payment_intent: paymentIntent || null,
+        wallet_amount: walletApplied,
         total_amount_paid: parseFloat(Number(chargedTotal).toFixed(2)),
         total_costs: merchandiseRounded,
         total_taxes: salesTaxRounded,
@@ -1157,6 +1281,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         profile_id: transactionData.profile_id,
         business_id: transactionData.business_id,
         stripe_payment_intent: transactionData.stripe_payment_intent,
+        wallet_amount: transactionData.wallet_amount,
         total_amount_paid: transactionData.total_amount_paid,
         total_costs: transactionData.total_costs,
         total_taxes: transactionData.total_taxes,
@@ -1246,14 +1371,19 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const sellerGroupsPreview = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+  const sellerGroupsPreview = applyWalletToCheckoutGroups(
+    buildSellerCheckoutGroups(cartItems, resolveItemBusinessName),
+    useableWalletBalance,
+  );
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
   const cartRequiresReturnAcknowledgement = cartItems.some((it) => isCartItemReturnable(it));
   const cartHasShippingApplicableItems = cartItems.some((it) => isCartItemShippingApplicable(it));
   const cartRequiresBuyerPaysShipping = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
   const feeDialogFirstGroup = sellerGroupsPreview[0];
-  const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index] ? webCheckoutSession.groups[webCheckoutSession.index].total : 0;
+  const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
+    ? (webCheckoutSession.groups[webCheckoutSession.index].cardCharge ?? webCheckoutSession.groups[webCheckoutSession.index].total)
+    : 0;
   const webCheckoutPayeeDisplayName =
     (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
@@ -1431,6 +1561,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
               ) : null}
               <View style={styles.totalContainer}>
                 <Text style={styles.multiSellerHint}>
+                  {useableWalletBalance > 0
+                    ? `Your useable wallet balance ($${useableWalletBalance.toFixed(2)}) will be applied first; any remainder is charged to your card. `
+                    : null}
                   {hasExpertiseInCart ? "Offering and expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). " : null}
                   {multiSellerCheckout
                     ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%) applies when that business has “buyer pays” card fees.`
@@ -1469,6 +1602,18 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <Text style={styles.totalValue}>${g.processingFee.toFixed(2)}</Text>
                     </View>
                     {!g.buyerPaysCardFee ? <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text> : null}
+                    {g.walletApplied > 0 ? (
+                      <View style={styles.totalRow}>
+                        <Text style={styles.totalLabel}>Wallet balance</Text>
+                        <Text style={styles.totalValue}>-${g.walletApplied.toFixed(2)}</Text>
+                      </View>
+                    ) : null}
+                    {g.walletApplied > 0 ? (
+                      <View style={styles.totalRow}>
+                        <Text style={styles.totalLabel}>Charged to card</Text>
+                        <Text style={styles.totalValue}>${(g.cardCharge || 0).toFixed(2)}</Text>
+                      </View>
+                    ) : null}
                     <View style={[styles.totalRow, styles.perBusinessTotalRow]}>
                       <Text style={styles.totalLabel}>Business total</Text>
                       <Text style={styles.totalValue}>${g.total.toFixed(2)}</Text>
@@ -1576,6 +1721,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
             hasActualShipping={feeDialogFirstGroup ? feeDialogFirstGroup.hasActualShipping : undefined}
             cardProcessingFee={feeDialogFirstGroup ? feeDialogFirstGroup.processingFee : undefined}
             buyerPaysCardFee={feeDialogFirstGroup ? feeDialogFirstGroup.buyerPaysCardFee : undefined}
+            walletApplied={feeDialogFirstGroup ? feeDialogFirstGroup.walletApplied : undefined}
+            cardCharge={feeDialogFirstGroup ? feeDialogFirstGroup.cardCharge : undefined}
             subtotal={feeDialogFirstGroup ? (feeDialogFirstGroup.subtotalWithShipping ?? feeDialogFirstGroup.subtotalAfterTax) : null}
             totalWithFee={feeDialogFirstGroup ? feeDialogFirstGroup.total : null}
             payeeBusinessName={feeDialogFirstGroup?.displayName ?? null}

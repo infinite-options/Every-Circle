@@ -13,7 +13,7 @@ import { getHeaderColors } from "../config/headerColors";
 // PROFILE-SPECIFIC
 import ExperienceSection from "../components/ExperienceSection";
 import EducationSection from "../components/EducationSection";
-import ExpertiseSection, { validateExpertise, validateExpertiseTax } from "../components/ExpertiseSection";
+import ExpertiseSection, { validateExpertise, validateExpertiseTax, validateExpertiseReturnWindow, RETURN_WINDOW_VALIDATION_MESSAGE } from "../components/ExpertiseSection";
 import { TAX_RATE_VALIDATION_MESSAGE } from "../utils/taxValidation";
 import SeekingSection, { validateSeeking } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
@@ -651,6 +651,11 @@ const EditProfileScreen = ({ route, navigation }) => {
 
     if (!validateExpertiseTax(formData.expertise)) {
       Alert.alert("Required Field", TAX_RATE_VALIDATION_MESSAGE);
+      return;
+    }
+
+    if (!validateExpertiseReturnWindow(formData.expertise)) {
+      Alert.alert("Validation", RETURN_WINDOW_VALIDATION_MESSAGE);
       return;
     }
 

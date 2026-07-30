@@ -1194,6 +1194,37 @@ function resolveRefundBusinessCode(sellerNote) {
 }
 
 /**
+ * Split a return credit between wallet restore and Stripe card refund.
+ * Uses estimated_refund.wallet_refund / stripe_refund when present; otherwise
+ * derives from sale.transaction_wallet_amount vs transaction_total.
+ */
+function splitReturnRefundByPaymentMethod(sale, refundGrand, estimatedRefund = null) {
+  const totalCredit = Math.max(0, Math.abs(Number(refundGrand) || 0));
+  const est = estimatedRefund && typeof estimatedRefund === "object" ? estimatedRefund : null;
+  if (est && (est.wallet_refund != null || est.stripe_refund != null)) {
+    const walletRefund = Math.max(0, Math.abs(Number(est.wallet_refund) || 0));
+    const stripeFromEst =
+      est.stripe_refund != null
+        ? Math.abs(Number(est.stripe_refund) || 0)
+        : Math.max(0, totalCredit - walletRefund);
+    return {
+      walletRefund: Math.round(walletRefund * 100) / 100,
+      stripeRefund: Math.round(Math.max(0, stripeFromEst) * 100) / 100,
+    };
+  }
+  const orderTotal = Math.abs(Number(sale?.transaction_total) || 0);
+  const walletPaid = Math.abs(Number(sale?.transaction_wallet_amount) || 0);
+  if (!(orderTotal > 0) || !(walletPaid > 0) || !(totalCredit > 0)) {
+    return { walletRefund: 0, stripeRefund: Math.round(totalCredit * 100) / 100 };
+  }
+  const cappedWallet = Math.min(walletPaid, orderTotal);
+  const walletRatio = cappedWallet / orderTotal;
+  const walletRefund = Math.round(totalCredit * walletRatio * 100) / 100;
+  const stripeRefund = Math.round(Math.max(0, totalCredit - walletRefund) * 100) / 100;
+  return { walletRefund, stripeRefund };
+}
+
+/**
  * POST createRefund on IO-Payments — same shape as createPaymentIntent, plus payment_intent.
  * Caller is responsible for using the same business_code family as the original charge.
  */
@@ -7118,6 +7149,13 @@ export default function AccountScreen({ navigation, route }) {
     });
     const refundAmount = Math.abs(Number(reverse?.total) || 0);
     const refundTax = Math.abs(Number(reverse?.taxes) || 0);
+    const pendingEstimated =
+      (scoped.hasScope ? scoped.scopedPending?.estimated_refund : null) ||
+      sale?.pending_return?.estimated_refund ||
+      orderDetail?.pending_return?.estimated_refund ||
+      reverse?.estimated_refund ||
+      null;
+    const { walletRefund, stripeRefund } = splitReturnRefundByPaymentMethod(sale, refundAmount, pendingEstimated);
     const saleUid = String(pending.orderUid || pending.transactionUid || "").trim();
     const trrUid = String(pending.trrUid || returnDetailModal.trrUid || trrUids[0] || "").trim();
 
@@ -7125,27 +7163,40 @@ export default function AccountScreen({ navigation, route }) {
     setReturnDetailAccepting(true);
     let stripeRefundResult = null;
     try {
-      if (paymentIntent && refundAmount > 0 && buyerUid) {
+      // Only refund the card portion to Stripe. Wallet-paid amounts are restored
+      // to the buyer's useable balance by the backend confirm/ledger path.
+      if (paymentIntent && stripeRefund > 0 && buyerUid) {
+        const stripeTaxShare =
+          refundAmount > 0 ? Math.round(refundTax * (stripeRefund / refundAmount) * 100) / 100 : 0;
         stripeRefundResult = await createStripeRefund({
           customerUid: buyerUid,
           businessCode,
           paymentIntent,
-          refundAmount,
-          tax: refundTax,
+          refundAmount: stripeRefund,
+          tax: stripeTaxShare,
           metadata: {
             order_uid: saleUid,
             transaction_uid: saleUid,
             ...(trrUid ? { trr_uid: trrUid } : {}),
             ...(trrUids.length > 1 ? { trr_uids: trrUids.join(",") } : {}),
             seller_note: sellerNote,
+            wallet_refund: walletRefund,
+            stripe_refund: stripeRefund,
           },
         });
       } else {
         stripeRefundResult = {
-          ok: false,
+          ok: true,
           skipped: true,
           refund_id: null,
-          message: !paymentIntent ? "No Stripe payment intent on sale" : !buyerUid ? "Missing buyer customer_uid" : "Refund amount too small",
+          message:
+            stripeRefund <= 0
+              ? "No card portion to refund (wallet covered refund)"
+              : !paymentIntent
+                ? "No Stripe payment intent on sale"
+                : !buyerUid
+                  ? "Missing buyer customer_uid"
+                  : "Refund amount too small",
         };
       }
 
