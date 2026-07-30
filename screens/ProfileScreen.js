@@ -24,6 +24,7 @@ import SeekingCardDetails from "../components/SeekingCardDetails";
 import OfferingCardDetails from "../components/OfferingCardDetails";
 import MiniCard from "../components/MiniCard";
 import MicroCard from "../components/MicroCard";
+import ConnectionPathChain from "../components/ConnectionPathChain";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -261,6 +262,8 @@ const ProfileScreen = ({ route, navigation }) => {
   const [existingRelationship, setExistingRelationship] = useState(null);
   const [relationshipType, setRelationshipType] = useState(null);
   const [circleUid, setCircleUid] = useState(null);
+  /** Logged-in viewer profile_uid — used for connection path chain when viewing others. */
+  const [viewerProfileUid, setViewerProfileUid] = useState("");
   const { darkMode } = useDarkMode();
   const { businesses: sessionBusinesses } = useSessionBusinesses();
   const businessesData = useMemo(() => {
@@ -480,6 +483,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
         // Check if a specific profile_uid was passed via route params (for viewing other users' profiles)
         const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+        if (loggedInProfileUID) setViewerProfileUid(loggedInProfileUID);
 
         if (routeProfileUID) {
           // console.log("ProfileScreen - Loading profile from route params:", routeProfileUID);
@@ -688,6 +692,7 @@ const ProfileScreen = ({ route, navigation }) => {
         businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
         socialLinksIsPublic: apiUser.personal_info?.profile_personal_social_is_public !== 0,
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
+        profilePersonalPath: apiUser.personal_info?.profile_personal_path || null,
         profileModerationItem: buildProfileModerationItem(apiUser),
         moderation: normalizeProfileModeration(buildProfileModerationItem(apiUser)),
       };
@@ -1797,6 +1802,20 @@ const ProfileScreen = ({ route, navigation }) => {
             />
             {shortBioBelowCard ? <Text style={[styles.shortBioBelowCard, darkMode && styles.darkShortBioBelowCard]}>{shortBioBelowCard}</Text> : null}
           </View>
+
+          {/* Referral-tree connection chain: you → … → them (max 5 avatars) */}
+          {routeProfileUID && !isCurrentUserProfile && viewerProfileUid && user ? (
+            <ConnectionPathChain
+              viewerUid={viewerProfileUid}
+              visitedUid={routeProfileUID || profileUID}
+              visitedFirstName={user.firstName}
+              visitedLastName={user.lastName}
+              visitedProfileImage={user.profileImage}
+              visitedImageIsPublic={user.imageIsPublic}
+              visitedPersonalPath={user.profilePersonalPath}
+              returnTo={returnTo || "Profile"}
+            />
+          ) : null}
 
           {/* Add / View Connection + Message — only when viewing someone else's profile */}
           {routeProfileUID &&
