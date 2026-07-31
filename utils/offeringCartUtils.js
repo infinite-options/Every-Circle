@@ -2,6 +2,7 @@ import { parsePrice } from "./priceUtils";
 import { expertiseCartTaxFields } from "./cartLineTax";
 import { isBusinessShippingApplicable, isCartItemBuyerPaysShipping } from "./businessServiceShipping";
 import { resolveDefaultFulfillmentMethod } from "./cartFulfillmentMethod";
+import { buildOfferingCardModel } from "./offeringResubmission";
 
 /** Parse offering cost string into unit value and unit suffix (e.g. "total", "/hr"). */
 export function parseOfferingCostParts(costStr) {
@@ -260,6 +261,78 @@ export function isCartItemShippingApplicable(item) {
 }
 
 export { isCartItemBuyerPaysShipping };
+
+/**
+ * Normalize an offering from search, profile, or detail into the shape expected by
+ * AddToCartDetailsModal, OfferingDetailScreen, and cart persistence.
+ */
+export function expertiseDataForCartModal(source, profileUid = "") {
+  if (!source || typeof source !== "object") return null;
+  const card = buildOfferingCardModel(source, profileUid);
+  const uid = String(card.profile_expertise_uid || source.expertise_uid || source.profile_expertise_uid || "").trim();
+  return {
+    expertise_uid: uid,
+    profile_expertise_uid: uid,
+    title: card.name || source.title || source.profile_expertise_title || "",
+    profile_expertise_title: card.name || source.title || source.profile_expertise_title || "",
+    description: card.description || source.description || source.profile_expertise_description || "",
+    profile_expertise_description: card.description || source.description || source.profile_expertise_description || "",
+    details: source.details || source.profile_expertise_details || "",
+    cost: card.cost || source.profile_expertise_cost || "",
+    bounty: card.bounty || source.profile_expertise_bounty || "",
+    quantity: card.quantity ?? card.profile_expertise_quantity ?? source.quantity ?? "",
+    profile_expertise_quantity: card.profile_expertise_quantity ?? card.quantity ?? source.quantity ?? "",
+    profile_expertise_image: card.profile_expertise_image || source.profile_expertise_image || "",
+    profile_expertise_image_is_public: card.profile_expertise_image_is_public ?? source.profile_expertise_image_is_public,
+    profile_expertise_start: card.profile_expertise_start || source.profile_expertise_start || "",
+    profile_expertise_end: card.profile_expertise_end || source.profile_expertise_end || "",
+    profile_expertise_location: card.profile_expertise_location || source.profile_expertise_location || "",
+    profile_expertise_latitude: card.profile_expertise_latitude ?? source.profile_expertise_latitude ?? null,
+    profile_expertise_longitude: card.profile_expertise_longitude ?? source.profile_expertise_longitude ?? null,
+    profile_expertise_city: card.profile_expertise_city || source.profile_expertise_city || "",
+    profile_expertise_state: card.profile_expertise_state || source.profile_expertise_state || "",
+    profile_expertise_zip: card.profile_expertise_zip || source.profile_expertise_zip || "",
+    profile_expertise_mode: card.profile_expertise_mode || source.profile_expertise_mode || "",
+    profile_expertise_updated_at: card.profile_expertise_updated_at ?? source.profile_expertise_updated_at ?? source.updated_at,
+    profile_expertise_moderated: card.profile_expertise_moderated ?? source.profile_expertise_moderated,
+    moderation: card.moderation ?? source.moderation,
+    profile_expertise_bounty_type: card.profile_expertise_bounty_type || source.profile_expertise_bounty_type || "none",
+    profile_expertise_is_taxable: card.profile_expertise_is_taxable ?? source.profile_expertise_is_taxable,
+    profile_expertise_tax_rate: card.profile_expertise_tax_rate ?? source.profile_expertise_tax_rate ?? "",
+    profile_expertise_condition_type: card.profile_expertise_condition_type || source.profile_expertise_condition_type || "na",
+    profile_expertise_condition_detail: card.profile_expertise_condition_detail || source.profile_expertise_condition_detail || "",
+    profile_expertise_is_returnable: card.profile_expertise_is_returnable ?? source.profile_expertise_is_returnable ?? 0,
+    profile_expertise_return_window_days: card.profile_expertise_return_window_days ?? source.profile_expertise_return_window_days ?? "",
+    profile_expertise_shipping: card.profile_expertise_shipping ?? source.profile_expertise_shipping ?? null,
+    profile_expertise_shipping_amount: card.profile_expertise_shipping_amount ?? source.profile_expertise_shipping_amount ?? "",
+    profile_expertise_shipping_cost_type: card.profile_expertise_shipping_cost_type || source.profile_expertise_shipping_cost_type || "",
+    profile_expertise_shipping_refundable: card.profile_expertise_shipping_refundable ?? source.profile_expertise_shipping_refundable ?? 0,
+    profile_expertise_free_shipping: card.profile_expertise_free_shipping ?? source.profile_expertise_free_shipping ?? 0,
+    profile_expertise_buyer_pays_shipping: card.profile_expertise_buyer_pays_shipping ?? source.profile_expertise_buyer_pays_shipping ?? 0,
+    profile_expertise_refund_policy: card.profile_expertise_refund_policy || source.profile_expertise_refund_policy || "",
+    profile_personal_moderated: source.profile_personal_moderated ?? source.owner_profile_moderated ?? null,
+  };
+}
+
+/** MiniCard / modal seller info from profile or search row shapes. */
+export function profileDataForCartModal(source) {
+  if (!source || typeof source !== "object") return null;
+  return {
+    firstName: source.firstName || source.profile_personal_first_name || "",
+    lastName: source.lastName || source.profile_personal_last_name || "",
+    email: source.email || source.profile_personal_email || "",
+    phoneNumber: source.phoneNumber || source.phone || source.profile_personal_phone_number || "",
+    profileImage: source.profileImage || source.image || source.profile_personal_image || "",
+    tagLine: source.tagLine || source.profile_personal_tag_line || "",
+    city: source.city || source.profile_personal_city || "",
+    state: source.state || source.profile_personal_state || "",
+    emailIsPublic: source.emailIsPublic ?? source.profile_personal_email_is_public === 1,
+    phoneIsPublic: source.phoneIsPublic ?? source.profile_personal_phone_number_is_public === 1,
+    tagLineIsPublic: source.tagLineIsPublic ?? source.profile_personal_tag_line_is_public === 1,
+    imageIsPublic: source.imageIsPublic ?? source.profile_personal_image_is_public === 1,
+    locationIsPublic: source.locationIsPublic ?? source.profile_personal_location_is_public === 1,
+  };
+}
 
 /** Fields to persist on expertise cart items so cart/checkout can recompute correctly. */
 export function expertiseCartPersistedFields(expertiseData, modalData = {}) {
