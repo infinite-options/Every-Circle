@@ -1,7 +1,7 @@
 import { parsePrice } from "./priceUtils";
 import { expertiseCartTaxFields } from "./cartLineTax";
-import { isBusinessShippingApplicable, isCartItemBuyerPaysShipping } from "./businessServiceShipping";
-import { resolveDefaultFulfillmentMethod } from "./cartFulfillmentMethod";
+import { isBusinessShippingApplicable } from "./businessServiceShipping";
+import { isCartItemBuyerPaysShipping, resolveCartLine } from "./cartFulfillmentMethod";
 import { buildOfferingCardModel } from "./offeringResubmission";
 
 /** Parse offering cost string into unit value and unit suffix (e.g. "total", "/hr"). */
@@ -396,6 +396,6 @@ export function expertiseCartPersistedFields(expertiseData, modalData = {}) {
   };
   return {
     ...draft,
-    fulfillment_method: resolveDefaultFulfillmentMethod({ ...draft, itemType: "expertise" }),
+    fulfillment_method: resolveCartLine({ ...draft, itemType: "expertise" }).fulfillment_method,
   };
 }

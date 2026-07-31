@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { expertiseLineMerchandiseAndTax, roundCartMoney } from "./cartLineTax";
 import { getOfferingMaxQuantity } from "./offeringCartUtils";
-import { getCartItemBuyerShippingCharge } from "./businessServiceShipping";
+import { getCartItemBuyerShippingCharge } from "./cartFulfillmentMethod";
 import { computeCreditCardChargeTotal, computeCreditCardProcessingFee, getCreditCardFeeBase } from "./cartCreditCardFee";
 
 export function expertiseCartKey(expertiseUid) {

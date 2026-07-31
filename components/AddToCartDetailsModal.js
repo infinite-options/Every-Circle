@@ -1,10 +1,9 @@
 // AddToCartDetailsModal.js - Modal for adding expertise to cart with escrow and quantity
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, TextInput } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
-import BountyInfoTooltip from "./BountyInfoTooltip";
+import BountyInfoTooltip, { ESCROW_INFO_COPY } from "./BountyInfoTooltip";
 import {
   formatOfferingAddToCartStockHint,
   getOfferingBountyLineTotal,
@@ -134,11 +133,13 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
           )}
 
           <View style={styles.section}>
-            <TouchableOpacity style={[styles.checkboxRow, darkMode && styles.darkCheckboxRow]} onPress={() => setEscrow(!escrow)} activeOpacity={0.7}>
-              <View style={[styles.checkbox, escrow && styles.checkboxChecked, darkMode && styles.darkCheckbox]}>{escrow && <Text style={styles.checkmark}>✓</Text>}</View>
-              <Text style={[styles.checkboxLabel, darkMode && styles.darkCheckboxLabel]}>Escrow</Text>
-              <Ionicons name='information-circle-outline' size={18} color={darkMode ? "#999" : "#666"} style={styles.infoIcon} />
-            </TouchableOpacity>
+            <View style={[styles.checkboxRow, darkMode && styles.darkCheckboxRow]}>
+              <TouchableOpacity style={styles.escrowTogglePressable} onPress={() => setEscrow(!escrow)} activeOpacity={0.7}>
+                <View style={[styles.checkbox, escrow && styles.checkboxChecked, darkMode && styles.darkCheckbox]}>{escrow && <Text style={styles.checkmark}>✓</Text>}</View>
+                <Text style={[styles.checkboxLabel, darkMode && styles.darkCheckboxLabel]}>Escrow</Text>
+              </TouchableOpacity>
+              <BountyInfoTooltip message={ESCROW_INFO_COPY} darkMode={darkMode} accessibilityLabel='About escrow' />
+            </View>
           </View>
 
           <View style={styles.section}>
@@ -282,6 +283,11 @@ const styles = StyleSheet.create({
   checkboxRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 6,
+  },
+  escrowTogglePressable: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   darkCheckboxRow: {},
   checkbox: {
@@ -311,9 +317,6 @@ const styles = StyleSheet.create({
   },
   darkCheckboxLabel: {
     color: "#fff",
-  },
-  infoIcon: {
-    marginLeft: 6,
   },
   quantityRow: {
     flexDirection: "row",

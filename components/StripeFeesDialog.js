@@ -2,6 +2,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { CREDIT_CARD_FEE_DISPLAY_LABEL } from "../utils/cartCreditCardFee";
 
 const StripeFeesDialog = ({
   show,
@@ -88,7 +89,7 @@ const StripeFeesDialog = ({
                   </>
                 ) : null}
                 <View style={styles.breakdownRow}>
-                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Credit card processing (3%):</Text>
+                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>{CREDIT_CARD_FEE_DISPLAY_LABEL}:</Text>
                   <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${cardProcessingFee.toFixed(2)}</Text>
                 </View>
                 {!buyerPaysCardFee ? (
@@ -129,7 +130,7 @@ const StripeFeesDialog = ({
                   <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${Number(subtotal).toFixed(2)}</Text>
                 </View>
                 <View style={styles.breakdownRow}>
-                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Credit card fee (3%):</Text>
+                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>{CREDIT_CARD_FEE_DISPLAY_LABEL}:</Text>
                   <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${legacyFee}</Text>
                 </View>
                 <View style={[styles.breakdownRow, styles.totalRow, darkMode && styles.darkTotalRow]}>
@@ -140,7 +141,7 @@ const StripeFeesDialog = ({
               <Text style={[styles.message, darkMode && styles.darkMessage]}>This matches the total shown on the previous page. Click Continue to proceed with payment.</Text>
             </>
           ) : (
-            <Text style={[styles.message, darkMode && styles.darkMessage]}>An additional 3% may be charged as credit card processing fees when the buyer pays card fees.</Text>
+            <Text style={[styles.message, darkMode && styles.darkMessage]}>An additional credit card processing fee (3%, $0.30 minimum) may be charged when the buyer pays card fees.</Text>
           )}
 
           <View style={styles.buttonContainer}>

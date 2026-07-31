@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
-import BountyInfoTooltip from "../components/BountyInfoTooltip";
+import BountyInfoTooltip, { ESCROW_INFO_COPY } from "../components/BountyInfoTooltip";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -57,14 +57,13 @@ import {
   formatOfferingUnitPriceLabel,
   parseOfferingBountyAmount,
   isCartItemReturnable,
-  isCartItemBuyerPaysShipping,
 } from "../utils/offeringCartUtils";
-import { getCartItemBuyerShippingCharge, getCartItemDeliveryChargeDisplay, sumBuyerShippingCharges } from "../utils/businessServiceShipping";
 import {
   buildCartLineProcessingFeeMap,
   cartLineProcessingFeeKey,
   computeCreditCardChargeTotal,
   computeCreditCardProcessingFee,
+  CREDIT_CARD_FEE_DISPLAY_LABEL,
   getCreditCardFeeBase,
 } from "../utils/cartCreditCardFee";
 import {
@@ -75,8 +74,13 @@ import {
   FULFILLMENT_SHIP,
   FULFILLMENT_VIRTUAL,
   getCartItemAvailableFulfillmentMethods,
+  getCartItemBuyerShippingCharge,
+  getCartItemDeliveryChargeDisplay,
+  isCartItemBuyerPaysShipping,
+  normalizeCartItemFulfillment,
   normalizeCartItemsFulfillment,
   resolveDefaultFulfillmentMethod,
+  sumBuyerShippingCharges,
 } from "../utils/cartFulfillmentMethod";
 import { cartLineDeliveryChargeLabel, OFFERING_DELIVERY_CHARGE_LABEL, sellerGroupDeliveryChargeLabel } from "../utils/profileOfferingShipping";
 
@@ -406,8 +410,9 @@ function groupBuyerPaysCardFee(items) {
  */
 function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
   if (!Array.isArray(cartItems)) return [];
+  const normalizedItems = normalizeCartItemsFulfillment(cartItems);
   const map = new Map();
-  for (const item of cartItems) {
+  for (const item of normalizedItems) {
     const sid = getCheckoutSellerId(item);
     if (!sid) continue;
     if (!map.has(sid)) map.set(sid, []);
@@ -484,8 +489,8 @@ function applyWalletToCheckoutGroups(groups, walletAmountToApply) {
     const walletApplied = roundMoney(Math.min(remaining, base));
     remaining = roundMoney(remaining - walletApplied);
     const cardBase = roundMoney(base - walletApplied);
-    const processingFee = cardBase > 0 && group.buyerPaysCardFee ? roundMoney(cardBase * 0.03) : 0;
-    const cardCharge = roundMoney(cardBase + processingFee);
+    const processingFee = computeCreditCardProcessingFee(cardBase, group.buyerPaysCardFee);
+    const cardCharge = computeCreditCardChargeTotal(cardBase, group.buyerPaysCardFee);
     const total = roundMoney(walletApplied + cardCharge);
     return {
       ...group,
@@ -1334,26 +1339,37 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
 
       // In recordSingleBusinessTransaction, update the items map:
       const items = group.items.map((item) => {
-        const qty = parseInt(item.quantity, 10) || 1;
-        const bountyType = item.itemType === "expertise" ? getOfferingBountyTypeForCheckout(item) : item.bs_bounty_type || "per_item";
-        const bounty = item.itemType === "expertise" ? parseOfferingBountyAmount(item) : parsePrice(item.bs_bounty);
-        const sellerBusinessId = item.business_uid || item.profile_uid;
-        const { pretax, tax } = lineMerchandiseAndTax(item);
+        const normalizedItem = normalizeCartItemFulfillment(item);
+        const qty = parseInt(normalizedItem.quantity, 10) || 1;
+        const fulfillmentFields = buildFulfillmentApiFields(normalizedItem);
+        const bountyType = normalizedItem.itemType === "expertise" ? getOfferingBountyTypeForCheckout(normalizedItem) : normalizedItem.bs_bounty_type || "per_item";
+        const bounty = normalizedItem.itemType === "expertise" ? parseOfferingBountyAmount(normalizedItem) : parsePrice(normalizedItem.bs_bounty);
+        const sellerBusinessId = normalizedItem.business_uid || normalizedItem.profile_uid;
+        const { pretax, tax } = lineMerchandiseAndTax(normalizedItem);
+        const isExpertise = normalizedItem.itemType === "expertise";
+        const expertiseUid = isExpertise ? String(normalizedItem.expertise_uid || "").trim() : "";
+        const unitPrice = isExpertise
+          ? qty > 0
+            ? roundMoney(pretax / qty)
+            : roundMoney(pretax)
+          : normalizedItem.unitPrice || parsePrice(normalizedItem.bs_cost);
         return {
           business_id: sellerBusinessId,
-          bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
-          item_type: item.itemType === "expertise" ? "expertise" : "service",
+          bs_uid: isExpertise ? expertiseUid : normalizedItem.bs_uid,
+          ...(isExpertise && expertiseUid ? { profile_expertise_uid: expertiseUid, expertise_uid: expertiseUid } : {}),
+          item_type: isExpertise ? "expertise" : "service",
           bounty,
           bounty_type: bountyType,
           quantity: qty,
-          recommender_profile_id: item.bounty_recommender_profile_id || defaultRecommender,
-          choices_extra_cost: item.choicesExtraCost || 0,
-          unit_price: item.unitPrice || parsePrice(item.bs_cost),
-          selected_choices: item.selectedChoices || {},
-          selected_choice_labels: item.selectedChoiceLabels || {},
-          selected_choice_items: normalizeSelectedChoiceItemsForApi(item),
-          special_instructions: item.specialInstructions || "",
-          ...buildFulfillmentApiFields(item),
+          recommender_profile_id: normalizedItem.bounty_recommender_profile_id || defaultRecommender,
+          choices_extra_cost: normalizedItem.choicesExtraCost || 0,
+          unit_price: unitPrice,
+          ...(isExpertise ? { ti_bs_cost: unitPrice } : {}),
+          selected_choices: normalizedItem.selectedChoices || {},
+          selected_choice_labels: normalizedItem.selectedChoiceLabels || {},
+          selected_choice_items: normalizeSelectedChoiceItemsForApi(normalizedItem),
+          special_instructions: normalizedItem.specialInstructions || "",
+          ...fulfillmentFields,
         };
       });
 
@@ -1646,9 +1662,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       </View>
 
                       {bountyTotal > 0 ? (
-                        <View style={styles.cartBountyDisclosureRow}>
-                          <Text style={styles.cartBountyDisclosure}>Seller-paid bounty of {formatCartMoney(item, bountyTotal)} is not part of your charge.</Text>
-                          <BountyInfoTooltip perspective='referrer' darkMode={false} placement='left' />
+                        <View style={styles.cartBountyNoteRow}>
+                          <View style={styles.bountyNoteLabelRow}>
+                            <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
+                            <BountyInfoTooltip perspective='referrer' darkMode={false} placement='left' />
+                          </View>
+                          <Text style={styles.bountyNoteValue}>{formatCartMoney(item, bountyTotal)}</Text>
                         </View>
                       ) : null}
                     </View>
@@ -1762,12 +1781,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   {showWalletPaymentControls
                     ? `You chose $${clampedWalletAmount.toFixed(2)} from your wallet; any remainder is charged to your card. `
                     : null}
-                  {hasExpertiseInCart ? "Offering and expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). " : null}
+                  {hasExpertiseInCart ? "Offering and expertise purchases include a credit card processing fee (3%, $0.30 minimum) in each seller total below (same as when you added them to the cart). " : null}
                   {multiSellerCheckout
-                    ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%) applies when that business has “buyer pays” card fees.`
+                    ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%, $0.30 minimum) applies when that business has “buyer pays” card fees.`
                     : hasExpertiseInCart
-                      ? "Sales tax is computed per item when applicable (including taxable offerings). For business services only, credit card processing (3%) applies when the business has “buyer pays” card fees."
-                      : "Sales tax is computed per item. Credit card processing (3%) applies only when the business has “buyer pays” card fees."}
+                      ? "Sales tax is computed per item when applicable (including taxable offerings). For business services only, credit card processing (3%, $0.30 minimum) applies when the business has “buyer pays” card fees."
+                      : "Sales tax is computed per item. Credit card processing (3%, $0.30 minimum) applies only when the business has “buyer pays” card fees."}
                 </Text>
                 {sellerGroupsPreview.map((g) => (
                   <View key={g.sellerId} style={styles.perBusinessBlock}>
@@ -1812,7 +1831,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       </View>
                     ) : null}
                     <View style={styles.totalRow}>
-                      <Text style={styles.totalLabel}>Credit card processing (3%)</Text>
+                      <Text style={styles.totalLabel}>{CREDIT_CARD_FEE_DISPLAY_LABEL}</Text>
                       <Text style={styles.totalValue}>${g.processingFee.toFixed(2)}</Text>
                     </View>
                     {!g.buyerPaysCardFee ? <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text> : null}
@@ -1833,22 +1852,24 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <Text style={styles.totalValue}>${g.total.toFixed(2)}</Text>
                     </View>
                     <View style={styles.escrowSection}>
-                      <TouchableOpacity
-                        style={styles.escrowRow}
-                        onPress={() =>
-                          setEscrowBySeller((prev) => {
-                            const cur = prev[g.sellerId] !== false;
-                            return { ...prev, [g.sellerId]: !cur };
-                          })
-                        }
-                        activeOpacity={0.7}
-                      >
-                        <View style={[styles.checkbox, escrowBySeller[g.sellerId] !== false && styles.checkboxChecked]}>
-                          {escrowBySeller[g.sellerId] !== false && <Text style={styles.checkmark}>✓</Text>}
-                        </View>
-                        <Text style={styles.escrowLabel}>Escrow ({g.displayName})</Text>
-                        <Ionicons name='information-circle-outline' size={18} color='#666' style={styles.infoIcon} />
-                      </TouchableOpacity>
+                      <View style={styles.escrowRow}>
+                        <TouchableOpacity
+                          style={styles.escrowTogglePressable}
+                          onPress={() =>
+                            setEscrowBySeller((prev) => {
+                              const cur = prev[g.sellerId] !== false;
+                              return { ...prev, [g.sellerId]: !cur };
+                            })
+                          }
+                          activeOpacity={0.7}
+                        >
+                          <View style={[styles.checkbox, escrowBySeller[g.sellerId] !== false && styles.checkboxChecked]}>
+                            {escrowBySeller[g.sellerId] !== false && <Text style={styles.checkmark}>✓</Text>}
+                          </View>
+                          <Text style={styles.escrowLabel}>Escrow ({g.displayName})</Text>
+                        </TouchableOpacity>
+                        <BountyInfoTooltip message={ESCROW_INFO_COPY} darkMode={false} placement='left' accessibilityLabel='About escrow' />
+                      </View>
                     </View>
                   </View>
                 ))}
@@ -2150,17 +2171,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#9C45F7",
   },
-  cartBountyDisclosure: {
-    fontSize: 12,
-    color: "#999",
-    lineHeight: 17,
-    flex: 1,
-    flexShrink: 1,
-  },
-  cartBountyDisclosureRow: {
+  cartBountyNoteRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 6,
+    justifyContent: "space-between",
+    alignItems: "center",
     marginTop: 10,
     zIndex: 2,
   },
@@ -2462,6 +2476,12 @@ const styles = StyleSheet.create({
   escrowRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 6,
+  },
+  escrowTogglePressable: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
   },
   checkbox: {
     width: 24,
@@ -2485,9 +2505,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#333",
     flex: 1,
-  },
-  infoIcon: {
-    marginLeft: 6,
   },
   disabledButton: {
     opacity: 0.7,
@@ -2606,6 +2623,13 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: "#E0E0E0",
+  },
+  bountyNoteLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flex: 1,
+    flexShrink: 1,
   },
   bountyNoteLabel: {
     fontSize: 12,

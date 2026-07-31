@@ -1,24 +1,31 @@
 /** Buyer-paid Stripe card processing rate (3%). */
 export const CREDIT_CARD_FEE_RATE = 0.03;
 
+/** Minimum processing fee when the buyer pays card fees and the charge base is greater than zero. */
+export const CREDIT_CARD_FEE_MINIMUM = 0.3;
+
+/** Label for cart, checkout, and fee dialogs. */
+export const CREDIT_CARD_FEE_DISPLAY_LABEL = "Credit card processing (3%, $0.30 min.)";
+
 export function roundCreditCardMoney(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
 /**
- * Everything charged to the card before the 3% processing fee:
+ * Everything charged to the card before the processing fee:
  * merchandise + sales tax + buyer shipping (and any other non-fee charges).
  */
 export function getCreditCardFeeBase({ merchandise = 0, tax = 0, shipping = 0 } = {}) {
   return roundCreditCardMoney(Number(merchandise) + Number(tax) + Number(shipping));
 }
 
-/** 3% processing fee when the buyer pays card fees; otherwise $0. */
+/** 3% processing fee (minimum $0.30) when the buyer pays card fees; otherwise $0. */
 export function computeCreditCardProcessingFee(feeBase, buyerPaysCardFee = true) {
   if (!buyerPaysCardFee) return 0;
   const base = Number(feeBase);
   if (!Number.isFinite(base) || base <= 0) return 0;
-  return roundCreditCardMoney(base * CREDIT_CARD_FEE_RATE);
+  const percentFee = base * CREDIT_CARD_FEE_RATE;
+  return roundCreditCardMoney(Math.max(percentFee, CREDIT_CARD_FEE_MINIMUM));
 }
 
 /** Card charge total = fee base + processing fee. */
