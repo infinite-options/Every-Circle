@@ -37,7 +37,7 @@ const StripeFeesDialog = ({
 
   const legacyFee = hasLegacyBreakdown ? (Number(totalWithFee) - Number(subtotal)).toFixed(2) : null;
   const showShipping = hasCartBreakdown && typeof shippingSubtotal === "number" && (shippingSubtotal > 0 || hasActualShipping);
-  const walletAmt = typeof walletApplied === "number" && walletApplied > 0 ? walletApplied : 0;
+  const walletAmt = typeof walletApplied === "number" ? Math.max(0, walletApplied) : null;
   const cardAmt = typeof cardCharge === "number" ? cardCharge : null;
 
   const payeeTrimmed =
@@ -89,7 +89,7 @@ const StripeFeesDialog = ({
                 {!buyerPaysCardFee ? (
                   <Text style={[styles.waivedNote, darkMode && styles.darkWaivedNote]}>The business pays Stripe fees; the processing line is $0.00.</Text>
                 ) : null}
-                {walletAmt > 0 ? (
+                {walletAmt != null ? (
                   <View style={styles.breakdownRow}>
                     <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Wallet balance applied:</Text>
                     <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>-${walletAmt.toFixed(2)}</Text>
@@ -97,11 +97,11 @@ const StripeFeesDialog = ({
                 ) : null}
                 <View style={[styles.breakdownRow, styles.totalRow, darkMode && styles.darkTotalRow]}>
                   <Text style={[styles.breakdownLabel, styles.totalLabel, darkMode && styles.darkBreakdownLabel]}>
-                    {walletAmt > 0 ? "Order total:" : "Charged total:"}
+                    {walletAmt != null && walletAmt > 0 ? "Order total:" : "Charged total:"}
                   </Text>
                   <Text style={[styles.breakdownValue, styles.totalValue, darkMode && styles.darkBreakdownValue]}>${Number(totalWithFee).toFixed(2)}</Text>
                 </View>
-                {walletAmt > 0 && cardAmt != null ? (
+                {walletAmt != null && cardAmt != null ? (
                   <View style={styles.breakdownRow}>
                     <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Charged to card:</Text>
                     <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${Number(cardAmt).toFixed(2)}</Text>
@@ -109,9 +109,11 @@ const StripeFeesDialog = ({
                 ) : null}
               </View>
               <Text style={[styles.message, darkMode && styles.darkMessage]}>
-                {walletAmt > 0 && cardAmt != null && cardAmt < 0.01
+                {walletAmt != null && cardAmt != null && cardAmt < 0.01
                   ? "This order is fully covered by your wallet balance. Click Continue to place the order."
-                  : "This matches the amount for this payment step. Click Continue to proceed."}
+                  : walletAmt != null && walletAmt > 0
+                    ? "Wallet covers part of this payment; the card charge is the remainder plus any processing fee. Click Continue to proceed."
+                    : "This matches the amount for this payment step. Click Continue to proceed."}
               </Text>
             </>
           ) : hasLegacyBreakdown ? (

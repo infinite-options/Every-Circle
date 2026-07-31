@@ -459,12 +459,27 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
   });
 }
 
+/** Sum of merchandise + tax + shipping across seller groups (wallet can cover this base). */
+function getCheckoutGroupsWalletBase(groups) {
+  return roundMoney(
+    (groups || []).reduce((sum, group) => sum + roundMoney(Number(group?.subtotalWithShipping) || 0), 0),
+  );
+}
+
 /**
- * Apply useable wallet balance across seller groups (in order).
- * Card processing fee is charged only on the remaining card portion.
+ * Max wallet the buyer may apply: min(useable balance, cart base before card fee).
  */
-function applyWalletToCheckoutGroups(groups, useableBalance) {
-  let remaining = roundMoney(Math.max(0, Number(useableBalance) || 0));
+function getMaxApplicableWalletAmount(groups, useableBalance) {
+  return roundMoney(Math.min(Math.max(0, Number(useableBalance) || 0), getCheckoutGroupsWalletBase(groups)));
+}
+
+/**
+ * Apply a chosen wallet amount across seller groups (in order).
+ * Amount may be 0 (all card) up to the max applicable. Card processing fee is
+ * charged only on the remaining card portion.
+ */
+function applyWalletToCheckoutGroups(groups, walletAmountToApply) {
+  let remaining = roundMoney(Math.max(0, Number(walletAmountToApply) || 0));
   return (groups || []).map((group) => {
     const base = roundMoney(group.subtotalWithShipping);
     const walletApplied = roundMoney(Math.min(remaining, base));
@@ -481,6 +496,17 @@ function applyWalletToCheckoutGroups(groups, useableBalance) {
       total,
     };
   });
+}
+
+function formatWalletAmountInput(amount) {
+  return roundMoney(Math.max(0, Number(amount) || 0)).toFixed(2);
+}
+
+function parseWalletAmountInput(text) {
+  const cleaned = String(text ?? "").replace(/[^0-9.]/g, "");
+  if (cleaned === "" || cleaned === ".") return null;
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : null;
 }
 
 async function fetchUseableWalletBalance(profileUid) {
@@ -502,6 +528,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const { cartItems: initialCartItems, businessName, business_uid, recommender_profile_id, returnTo, searchState } = route.params || {};
   const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
   const [useableWalletBalance, setUseableWalletBalance] = useState(0);
+  /** Chosen wallet dollars to apply at checkout (0 = pay fully by card). */
+  const [walletAmountToApply, setWalletAmountToApply] = useState(0);
+  const [walletAmountDraft, setWalletAmountDraft] = useState("0.00");
+  const walletInitializedRef = useRef(false);
 
   const handleReturnPress = () => {
     if (returnTo === "BusinessProfile") {
@@ -603,6 +633,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           const profileUid = await AsyncStorage.getItem("profile_uid");
           const balance = await fetchUseableWalletBalance(profileUid);
           setUseableWalletBalance(balance);
+          // Default to max wallet on first load; buyer can lower to $0.
+          if (!walletInitializedRef.current) {
+            walletInitializedRef.current = true;
+            setWalletAmountToApply(balance);
+            setWalletAmountDraft(formatWalletAmountInput(balance));
+          }
         } catch (e) {
           console.warn("Could not load wallet balance for cart:", e);
           setUseableWalletBalance(0);
@@ -633,7 +669,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
 
       const buyerUid = await AsyncStorage.getItem("profile_uid");
       const useableBalance = await fetchUseableWalletBalance(buyerUid);
-      const payableGroups = applyWalletToCheckoutGroups(groups, useableBalance);
+      setUseableWalletBalance(useableBalance);
+      const maxApplicable = getMaxApplicableWalletAmount(groups, useableBalance);
+      const amountToApply = roundMoney(Math.min(Math.max(0, walletAmountToApply), maxApplicable));
+      setWalletAmountToApply(amountToApply);
+      setWalletAmountDraft(formatWalletAmountInput(amountToApply));
+      const payableGroups = applyWalletToCheckoutGroups(groups, amountToApply);
 
       const session = { groups: payableGroups, index: 0 };
       webCheckoutSessionRef.current = session;
@@ -872,8 +913,13 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       console.log("Starting checkout —", groups.length, "separate payment(s) for", groups.length, "seller(s)");
 
       const useableBalance = await fetchUseableWalletBalance(buyerUid);
-      const payableGroups = applyWalletToCheckoutGroups(groups, useableBalance);
-      console.log("Wallet useable balance:", useableBalance, "payable groups:", payableGroups.map((g) => ({
+      setUseableWalletBalance(useableBalance);
+      const maxApplicable = getMaxApplicableWalletAmount(groups, useableBalance);
+      const amountToApply = roundMoney(Math.min(Math.max(0, walletAmountToApply), maxApplicable));
+      setWalletAmountToApply(amountToApply);
+      setWalletAmountDraft(formatWalletAmountInput(amountToApply));
+      const payableGroups = applyWalletToCheckoutGroups(groups, amountToApply);
+      console.log("Wallet useable balance:", useableBalance, "chosen wallet:", amountToApply, "payable groups:", payableGroups.map((g) => ({
         sellerId: g.sellerId,
         walletApplied: g.walletApplied,
         cardCharge: g.cardCharge,
@@ -1446,10 +1492,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const sellerGroupsPreview = applyWalletToCheckoutGroups(
-    buildSellerCheckoutGroups(cartItems, resolveItemBusinessName),
-    useableWalletBalance,
-  );
+  const checkoutSellerGroups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+  const maxWalletApplicable = getMaxApplicableWalletAmount(checkoutSellerGroups, useableWalletBalance);
+  const clampedWalletAmount = roundMoney(Math.min(Math.max(0, walletAmountToApply), maxWalletApplicable));
+  const sellerGroupsPreview = applyWalletToCheckoutGroups(checkoutSellerGroups, clampedWalletAmount);
   const cartLineProcessingFeeMap = buildCartLineProcessingFeeMap(sellerGroupsPreview, getCartItemCreditCardFeeBase);
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
@@ -1457,6 +1503,35 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const cartHasShipFulfillmentLines = cartItems.some((it) => cartItemRequiresShippingAddress(it));
   const cartRequiresBuyerPaysShipping = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
   const feeDialogFirstGroup = sellerGroupsPreview[0];
+  const showWalletPaymentControls = useableWalletBalance > 0;
+  const totalWalletAppliedPreview = roundMoney(sellerGroupsPreview.reduce((sum, g) => sum + (g.walletApplied || 0), 0));
+  const totalCardChargePreview = roundMoney(sellerGroupsPreview.reduce((sum, g) => sum + (g.cardCharge || 0), 0));
+
+  useEffect(() => {
+    if (walletAmountToApply > maxWalletApplicable) {
+      setWalletAmountToApply(maxWalletApplicable);
+      setWalletAmountDraft(formatWalletAmountInput(maxWalletApplicable));
+    }
+  }, [maxWalletApplicable, walletAmountToApply]);
+
+  const commitWalletAmountDraft = useCallback(
+    (rawText) => {
+      const parsed = parseWalletAmountInput(rawText);
+      const next = roundMoney(Math.min(Math.max(0, parsed == null ? 0 : parsed), maxWalletApplicable));
+      setWalletAmountToApply(next);
+      setWalletAmountDraft(formatWalletAmountInput(next));
+    },
+    [maxWalletApplicable],
+  );
+
+  const setWalletAmountQuick = useCallback(
+    (amount) => {
+      const next = roundMoney(Math.min(Math.max(0, Number(amount) || 0), maxWalletApplicable));
+      setWalletAmountToApply(next);
+      setWalletAmountDraft(formatWalletAmountInput(next));
+    },
+    [maxWalletApplicable],
+  );
   const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
     ? (webCheckoutSession.groups[webCheckoutSession.index].cardCharge ?? webCheckoutSession.groups[webCheckoutSession.index].total)
     : 0;
@@ -1630,9 +1705,59 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                 </View>
               ) : null}
               <View style={styles.totalContainer}>
+                {showWalletPaymentControls ? (
+                  <View style={styles.walletPaymentSection}>
+                    <Text style={styles.walletPaymentTitle}>Pay with wallet</Text>
+                    <Text style={styles.walletPaymentHint}>
+                      Useable balance: ${useableWalletBalance.toFixed(2)}. Apply any amount from $0.00 up to $
+                      {maxWalletApplicable.toFixed(2)}; the rest is charged to your card (card fee applies only to the card portion).
+                    </Text>
+                    <View style={styles.walletAmountRow}>
+                      <Text style={styles.walletAmountPrefix}>$</Text>
+                      <TextInput
+                        style={styles.walletAmountInput}
+                        value={walletAmountDraft}
+                        onChangeText={(text) => {
+                          const cleaned = String(text ?? "").replace(/[^0-9.]/g, "");
+                          setWalletAmountDraft(cleaned);
+                          const parsed = parseWalletAmountInput(cleaned);
+                          if (parsed != null) {
+                            setWalletAmountToApply(roundMoney(Math.min(Math.max(0, parsed), maxWalletApplicable)));
+                          }
+                        }}
+                        onBlur={() => commitWalletAmountDraft(walletAmountDraft)}
+                        onSubmitEditing={() => commitWalletAmountDraft(walletAmountDraft)}
+                        keyboardType='decimal-pad'
+                        placeholder='0.00'
+                        returnKeyType='done'
+                        accessibilityLabel='Wallet amount to apply'
+                      />
+                    </View>
+                    <View style={styles.walletQuickRow}>
+                      <TouchableOpacity style={styles.walletQuickBtn} onPress={() => setWalletAmountQuick(0)} activeOpacity={0.7}>
+                        <Text style={styles.walletQuickBtnText}>Use $0</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.walletQuickBtn}
+                        onPress={() => setWalletAmountQuick(maxWalletApplicable)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.walletQuickBtnText}>Use max (${maxWalletApplicable.toFixed(2)})</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.totalRow}>
+                      <Text style={styles.totalLabel}>Wallet applied</Text>
+                      <Text style={styles.totalValue}>-${totalWalletAppliedPreview.toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.totalRow}>
+                      <Text style={styles.totalLabel}>Charged to card</Text>
+                      <Text style={styles.totalValue}>${totalCardChargePreview.toFixed(2)}</Text>
+                    </View>
+                  </View>
+                ) : null}
                 <Text style={styles.multiSellerHint}>
-                  {useableWalletBalance > 0
-                    ? `Your useable wallet balance ($${useableWalletBalance.toFixed(2)}) will be applied first; any remainder is charged to your card. `
+                  {showWalletPaymentControls
+                    ? `You chose $${clampedWalletAmount.toFixed(2)} from your wallet; any remainder is charged to your card. `
                     : null}
                   {hasExpertiseInCart ? "Offering and expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). " : null}
                   {multiSellerCheckout
@@ -1672,13 +1797,13 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <Text style={styles.totalValue}>${g.processingFee.toFixed(2)}</Text>
                     </View>
                     {!g.buyerPaysCardFee ? <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text> : null}
-                    {g.walletApplied > 0 ? (
+                    {showWalletPaymentControls ? (
                       <View style={styles.totalRow}>
                         <Text style={styles.totalLabel}>Wallet balance</Text>
-                        <Text style={styles.totalValue}>-${g.walletApplied.toFixed(2)}</Text>
+                        <Text style={styles.totalValue}>-${(g.walletApplied || 0).toFixed(2)}</Text>
                       </View>
                     ) : null}
-                    {g.walletApplied > 0 ? (
+                    {showWalletPaymentControls ? (
                       <View style={styles.totalRow}>
                         <Text style={styles.totalLabel}>Charged to card</Text>
                         <Text style={styles.totalValue}>${(g.cardCharge || 0).toFixed(2)}</Text>
@@ -2196,6 +2321,68 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 10,
     alignItems: "stretch",
+  },
+  walletPaymentSection: {
+    marginBottom: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8E0F5",
+  },
+  walletPaymentTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 6,
+  },
+  walletPaymentHint: {
+    fontSize: 13,
+    color: "#555",
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  walletAmountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  walletAmountPrefix: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+    marginRight: 6,
+  },
+  walletAmountInput: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#9C45F7",
+    fontSize: 16,
+    color: "#333",
+    ...(Platform.OS === "web" && {
+      outlineStyle: "none",
+    }),
+  },
+  walletQuickRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 10,
+  },
+  walletQuickBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#9C45F7",
+    backgroundColor: "#F7F1FF",
+  },
+  walletQuickBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#9C45F7",
   },
   multiSellerHint: {
     fontSize: 13,
