@@ -17,6 +17,14 @@ import {
   parseOfferingCostParts,
 } from "../utils/offeringCartUtils";
 import { loadExpertiseCartQuantity } from "../utils/expertiseCartStorage";
+import { getCartItemBuyerShippingCharge } from "../utils/businessServiceShipping";
+import { resolveDefaultFulfillmentMethod } from "../utils/cartFulfillmentMethod";
+import {
+  computeCreditCardChargeTotal,
+  computeCreditCardProcessingFee,
+  getCreditCardFeeBase,
+  roundCreditCardMoney,
+} from "../utils/cartCreditCardFee";
 
 const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAddToCart, onCancel }) => {
   const { darkMode } = useDarkMode();
@@ -81,8 +89,27 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
   const costAmount = costValue * qtyNum;
   const subtotal = costAmount; // Bounty paid by seller, not included in buyer's total
   const taxAmount = taxRatePct > 0 ? subtotal * (taxRatePct / 100) : 0;
-  const processingFee = (subtotal + taxAmount) * 0.03;
-  const totalWithFee = subtotal + taxAmount + processingFee;
+  const shippingPreviewItem = {
+    itemType: "expertise",
+    quantity: qtyNum,
+    profile_expertise_mode: expertiseData?.profile_expertise_mode,
+    profile_expertise_shipping: expertiseData?.profile_expertise_shipping,
+    profile_expertise_shipping_amount: expertiseData?.profile_expertise_shipping_amount,
+    profile_expertise_free_shipping: expertiseData?.profile_expertise_free_shipping,
+    profile_expertise_buyer_pays_shipping: expertiseData?.profile_expertise_buyer_pays_shipping,
+    profile_expertise_shipping_cost_type: expertiseData?.profile_expertise_shipping_cost_type,
+    fulfillment_method: resolveDefaultFulfillmentMethod({
+      itemType: "expertise",
+      profile_expertise_mode: expertiseData?.profile_expertise_mode,
+      profile_expertise_free_shipping: expertiseData?.profile_expertise_free_shipping,
+      profile_expertise_buyer_pays_shipping: expertiseData?.profile_expertise_buyer_pays_shipping,
+    }),
+  };
+  const shipCharge = getCartItemBuyerShippingCharge(shippingPreviewItem);
+  const shippingAmount = shipCharge?.type === "fixed" ? roundCreditCardMoney(shipCharge.amount) : 0;
+  const cardFeeBase = getCreditCardFeeBase({ merchandise: subtotal, tax: taxAmount, shipping: shippingAmount });
+  const processingFee = computeCreditCardProcessingFee(cardFeeBase, true);
+  const totalWithFee = computeCreditCardChargeTotal(cardFeeBase, true);
   const bountyLineTotal = hasOfferingBounty(expertiseData) ? getOfferingBountyLineTotal(expertiseData, qtyNum) : 0;
   const itemNotReturnable = !isOfferingReturnable(expertiseData);
 
@@ -225,6 +252,12 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
               <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Subtotal</Text>
               <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${subtotal.toFixed(2)}</Text>
             </View>
+            {shippingAmount > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Shipping</Text>
+                <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${shippingAmount.toFixed(2)}</Text>
+              </View>
+            )}
             {taxAmount > 0 && (
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Sales Tax ({taxRatePct}%)</Text>

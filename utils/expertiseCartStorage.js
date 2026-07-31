@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { expertiseLineMerchandiseAndTax, roundCartMoney } from "./cartLineTax";
 import { getOfferingMaxQuantity } from "./offeringCartUtils";
+import { getCartItemBuyerShippingCharge } from "./businessServiceShipping";
+import { computeCreditCardChargeTotal, computeCreditCardProcessingFee, getCreditCardFeeBase } from "./cartCreditCardFee";
 
 export function expertiseCartKey(expertiseUid) {
   return `cart_expertise_${expertiseUid}`;
@@ -25,8 +27,11 @@ export function recomputeExpertiseCartTotals(cartItem, quantity) {
   const { pretax, tax, ratePercentUsed } = expertiseLineMerchandiseAndTax(item);
   const subtotal = pretax;
   const taxAmount = tax;
-  const processingFee = roundCartMoney((subtotal + taxAmount) * 0.03);
-  const totalWithFee = roundCartMoney(subtotal + taxAmount + processingFee);
+  const shipCharge = getCartItemBuyerShippingCharge(item);
+  const shippingAmount = shipCharge?.type === "fixed" ? roundCartMoney(shipCharge.amount) : 0;
+  const cardFeeBase = getCreditCardFeeBase({ merchandise: subtotal, tax: taxAmount, shipping: shippingAmount });
+  const processingFee = computeCreditCardProcessingFee(cardFeeBase, true);
+  const totalWithFee = computeCreditCardChargeTotal(cardFeeBase, true);
   return {
     quantity,
     subtotal,

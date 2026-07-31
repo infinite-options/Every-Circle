@@ -61,6 +61,13 @@ import {
 } from "../utils/offeringCartUtils";
 import { getCartItemBuyerShippingCharge, sumBuyerShippingCharges } from "../utils/businessServiceShipping";
 import {
+  buildCartLineProcessingFeeMap,
+  cartLineProcessingFeeKey,
+  computeCreditCardChargeTotal,
+  computeCreditCardProcessingFee,
+  getCreditCardFeeBase,
+} from "../utils/cartCreditCardFee";
+import {
   buildFulfillmentApiFields,
   cartItemRequiresShippingAddress,
   formatCartPickupLocationHint,
@@ -88,6 +95,14 @@ function getCheckoutSellerId(item) {
 
 function roundMoney(n) {
   return roundCartMoney(n);
+}
+
+/** Pretax + tax + fixed buyer shipping — the base for the 3% card fee. */
+function getCartItemCreditCardFeeBase(item) {
+  const { pretax, tax } = lineMerchandiseAndTax(item);
+  const shipCharge = getCartItemBuyerShippingCharge(item);
+  const shipping = shipCharge?.type === "fixed" ? roundMoney(shipCharge.amount) : 0;
+  return getCreditCardFeeBase({ merchandise: pretax, tax, shipping });
 }
 
 function CartStockBadge({ item }) {
@@ -159,7 +174,7 @@ function formatCartMoney(item, amountNum) {
 }
 
 /** Per-line charge breakdown shown on each cart card (matches checkout grouping math). */
-function getCartLineChargeBreakdown(item) {
+function getCartLineChargeBreakdown(item, processingFeeOverride) {
   const qty = parseInt(item.quantity, 10) || 1;
   const { pretax, tax, taxable, ratePercentUsed } = lineMerchandiseAndTax(item);
   const unitPrice = qty > 0 ? roundMoney(pretax / qty) : pretax;
@@ -175,9 +190,12 @@ function getCartLineChargeBreakdown(item) {
     shippingIsActual = true;
   }
   const buyerPaysCardFee = groupBuyerPaysCardFee([item]);
-  const subtotalWithShipping = roundMoney(pretax + tax + shippingAmount);
-  const processingFee = buyerPaysCardFee ? roundMoney(subtotalWithShipping * 0.03) : 0;
-  const totalCharge = roundMoney(subtotalWithShipping + processingFee);
+  const feeBase = getCreditCardFeeBase({ merchandise: pretax, tax, shipping: shippingAmount });
+  const processingFee =
+    processingFeeOverride != null
+      ? roundMoney(processingFeeOverride)
+      : computeCreditCardProcessingFee(feeBase, buyerPaysCardFee);
+  const totalCharge = roundMoney(feeBase + processingFee);
   return {
     qty,
     unitPrice,
@@ -412,8 +430,8 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
     const subtotalAfterTax = roundMoney(merchandiseSubtotal + salesTaxTotal);
     const subtotalWithShipping = roundMoney(subtotalAfterTax + shippingSubtotal);
     const buyerPaysCardFee = groupBuyerPaysCardFee(items);
-    const processingFee = buyerPaysCardFee ? roundMoney(subtotalWithShipping * 0.03) : 0;
-    const total = roundMoney(subtotalWithShipping + processingFee);
+    const processingFee = computeCreditCardProcessingFee(subtotalWithShipping, buyerPaysCardFee);
+    const total = computeCreditCardChargeTotal(subtotalWithShipping, buyerPaysCardFee);
     const first = items[0];
     const displayName =
       (typeof resolveBusinessName === "function" && resolveBusinessName(first)) ||
@@ -1304,6 +1322,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   };
 
   const sellerGroupsPreview = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+  const cartLineProcessingFeeMap = buildCartLineProcessingFeeMap(sellerGroupsPreview, getCartItemCreditCardFeeBase);
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
   const cartRequiresReturnAcknowledgement = cartItems.some((it) => isCartItemReturnable(it));
@@ -1351,7 +1370,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                 const showLineBusiness = Boolean(lineBusiness) && (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
                 const productName = String(item.bs_service_name || "").trim();
                 const itemTitle = item.itemType === "expertise" ? String(item.title || "Offering").trim() : productName || "Item";
-                const breakdown = getCartLineChargeBreakdown(item);
+                const lineFeeKey = cartLineProcessingFeeKey(item);
+                const allocatedProcessingFee = cartLineProcessingFeeMap.has(lineFeeKey) ? cartLineProcessingFeeMap.get(lineFeeKey) : undefined;
+                const breakdown = getCartLineChargeBreakdown(item, allocatedProcessingFee);
                 const bountyTotal = getCartLineBountyTotal(item);
                 const remainingAddQty = getCartLineRemainingAddQuantity(item);
                 return (
@@ -1395,14 +1416,14 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                         {breakdown.shippingApplicable ? (
                           <CartBreakdownRow label='Shipping' value={formatCartMoney(item, breakdown.shippingAmount)} />
                         ) : null}
-                        {breakdown.buyerPaysCardFee ? (
-                          <CartBreakdownRow label='Card processing fee' value={formatCartMoney(item, breakdown.processingFee)} />
-                        ) : null}
                         {breakdown.taxable && breakdown.tax > 0 ? (
                           <CartBreakdownRow
                             label={breakdown.taxRateLabel ? `Tax (${breakdown.taxRateLabel})` : "Tax"}
                             value={formatCartMoney(item, breakdown.tax)}
                           />
+                        ) : null}
+                        {breakdown.buyerPaysCardFee ? (
+                          <CartBreakdownRow label='Card processing fee' value={formatCartMoney(item, breakdown.processingFee)} />
                         ) : null}
                         {breakdown.shippingIsActual ? (
                           <Text style={styles.cartShippingActualNote}>Seller will contact the buyer directly for actual shipping cost.</Text>
