@@ -25,6 +25,7 @@ import { clearUserProfileCacheStorage, getSessionProfile, refreshSessionProfileF
 import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { logDistinct } from "../utils/logDistinct";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
@@ -265,7 +266,7 @@ export default function SettingsScreen() {
   const [businessReviewSubmitting, setBusinessReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
 
-  console.log("In SettingsScreen");
+  logDistinct("settings-screen", "In SettingsScreen");
 
   useEffect(() => {
     let cancelled = false;

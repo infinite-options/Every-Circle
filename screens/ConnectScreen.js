@@ -621,6 +621,8 @@ const ConnectScreen = ({ navigation }) => {
   /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
   const [focusTick, setFocusTick] = useState(0);
   const [showMessages, setShowMessages] = useState(false);
+  const showMessagesRef = useRef(false);
+  showMessagesRef.current = showMessages;
   const [conversations, setConversations] = useState([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
   const [showMessagesMenu, setShowMessagesMenu] = useState(false);
@@ -700,7 +702,6 @@ const ConnectScreen = ({ navigation }) => {
   // Load persisted Network screen settings
   const loadNetworkSettings = async () => {
     try {
-      console.log("📥 Loading Network screen settings from AsyncStorage...");
       const [
         showAsyncStorageValue,
         degreeValue,
@@ -739,55 +740,34 @@ const ConnectScreen = ({ navigation }) => {
         AsyncStorage.getItem(ASYNC_NETWORK_GROUPED_CIRCLES),
       ]);
 
-      console.log("📥 Loaded values:", {
-        showAsyncStorage: showAsyncStorageValue,
-        degree: degreeValue,
-        viewMode: viewModeValue,
-        hasNetworkData: networkDataValue !== null,
-        hasGroupedNetwork: groupedNetworkValue !== null,
-        hasConnectionsKey: connectionsDataStr !== null,
-        hasCirclesKey: circlesDataStr !== null,
-      });
 
       if (showAsyncStorageValue !== null) {
         const parsedValue = JSON.parse(showAsyncStorageValue);
-        console.log("📥 Setting showAsyncStorage to:", parsedValue);
         setShowAsyncStorage(parsedValue);
       } else {
-        console.log("📥 No persisted showAsyncStorage value, using default: false (collapsed)");
       }
       if (degreeValue !== null) {
-        console.log("📥 Setting degree to:", degreeValue);
         setDegree(degreeValue);
       } else {
-        console.log("📥 No persisted degree value, using default: 2");
       }
       if (viewModeValue !== null) {
-        console.log("📥 Setting viewMode to:", viewModeValue);
         setViewMode(viewModeValue);
       } else {
-        console.log("📥 No persisted viewMode value, using default: list");
       }
 
       if (dateFilterValue !== null) {
-        console.log("📥 Setting dateFilter to:", dateFilterValue);
         setDateFilter(dateFilterValue);
       } else {
-        console.log("📥 No persisted dateFilter value, using default: All");
       }
 
       if (locationFilterValue !== null) {
-        console.log("📥 Setting locationFilter to:", locationFilterValue);
         setLocationFilter(locationFilterValue);
       } else {
-        console.log("📥 No persisted locationFilter value, using default: All");
       }
 
       if (eventFilterValue !== null) {
-        console.log("📥 Setting eventFilter to:", eventFilterValue);
         setEventFilter(eventFilterValue);
       } else {
-        console.log("📥 No persisted eventFilter value, using default: All");
       }
 
       if (notesFilterValue !== null) {
@@ -874,10 +854,8 @@ const ConnectScreen = ({ navigation }) => {
       }
 
       if (activeViewValue === "connections" || activeViewValue === "circles") {
-        console.log("📥 Loading activeView:", activeViewValue);
         setActiveView(activeViewValue);
       } else {
-        console.log("📥 No persisted activeView, using default: connections");
       }
 
       if (showViewMyNetworkValue !== null) {
@@ -900,7 +878,6 @@ const ConnectScreen = ({ navigation }) => {
 
       // Mark settings as loaded so we can start saving changes
       setSettingsLoaded(true);
-      console.log("✅ Settings loaded, now tracking changes for persistence");
     } catch (e) {
       console.error("❌ Error loading network settings:", e);
     }
@@ -917,12 +894,6 @@ const ConnectScreen = ({ navigation }) => {
     }
     const saveSettings = async () => {
       try {
-        console.log("💾 Saving Network screen settings:", {
-          showAsyncStorage,
-          degree,
-          viewMode,
-          showViewMyNetwork,
-        });
         await Promise.all([
           AsyncStorage.setItem("network_showAsyncStorage", JSON.stringify(showAsyncStorage)),
           AsyncStorage.setItem("network_degree", degree),
@@ -934,7 +905,6 @@ const ConnectScreen = ({ navigation }) => {
           AsyncStorage.setItem("network_notesFilter", notesFilter),
           AsyncStorage.setItem("network_introducedByFilter", introducedByFilter),
         ]);
-        console.log("✅ Network screen settings saved successfully");
       } catch (e) {
         console.error("❌ Error saving network settings:", e);
       }
@@ -956,18 +926,6 @@ const ConnectScreen = ({ navigation }) => {
     return () => clearTimeout(timer);
   }, [degree, settingsLoaded, showViewMyNetwork, focusTick]);
 
-  useEffect(() => {
-    if (!__DEV__) return;
-    console.log("🔵 ConnectScreen - data/state changed", {
-      profileUid: profileUid || null,
-      activeView,
-      networkCount: networkData.length,
-      degree,
-      loading,
-      error: error || null,
-    });
-  }, [profileUid, activeView, networkData, degree, loading, error]);
-
   // Extract unique events from network data
   useEffect(() => {
     if (networkData && networkData.length > 0) {
@@ -980,7 +938,6 @@ const ConnectScreen = ({ navigation }) => {
       });
       const sortedEvents = Array.from(events).sort();
       setAvailableEvents(sortedEvents);
-      console.log("📋 Available events:", sortedEvents);
     } else {
       setAvailableEvents([]);
     }
@@ -1005,7 +962,6 @@ const ConnectScreen = ({ navigation }) => {
       });
       const sortedLocations = Array.from(locations).sort();
       setAvailableCities(sortedLocations);
-      console.log("📋 Available locations:", sortedLocations);
     } else {
       setAvailableCities([]);
     }
@@ -1083,7 +1039,6 @@ const ConnectScreen = ({ navigation }) => {
           }
 
           uid = String(uid || "").trim();
-          console.log("📋 Loaded profile_uid from AsyncStorage:", uid, "Type:", typeof uid);
 
           if (uid && uid !== "[object Object]") {
             setProfileUid(uid);
@@ -1098,7 +1053,6 @@ const ConnectScreen = ({ navigation }) => {
           const isEnabled = formSwitchSetting === "true";
           setFormSwitchEnabled(isEnabled);
           formSwitchEnabledRef.current = isEnabled; // Update ref
-          console.log("📋 Loaded form_switch_enabled from AsyncStorage:", isEnabled);
         }
       } catch (e) {
         setStorageData([["error", e.message]]);
@@ -1118,7 +1072,6 @@ const ConnectScreen = ({ navigation }) => {
       url: scanUrl,
       form_switch_enabled: formSwitchEnabledRef.current,
     });
-    console.log("🔗 QR Code URL:", scanUrl);
   }, []);
 
   const hydrateMyProfileFromSession = useCallback(async () => {
@@ -1145,7 +1098,6 @@ const ConnectScreen = ({ navigation }) => {
   // Load settings + session profile when Connect tab is focused.
   useFocusEffect(
     React.useCallback(() => {
-      console.log("Connect screen focused - loading settings...");
       loadNetworkSettings();
       setFocusTick((t) => t + 1);
 
@@ -1162,7 +1114,6 @@ const ConnectScreen = ({ navigation }) => {
           currentProfileUid = "";
         }
         if (currentProfileUid && currentProfileUid !== profileUid) {
-          console.log("Updating profileUid from AsyncStorage:", currentProfileUid);
           setProfileUid(currentProfileUid);
         }
       };
@@ -1930,24 +1881,6 @@ const ConnectScreen = ({ navigation }) => {
     // console.log("🔷 generateVisHTML called with:");
     // console.log("  - youId:", youId);
     // console.log("  - data length:", data.length);
-    console.log(
-      "  - data sample (first 3):",
-      JSON.stringify(
-        data.slice(0, 3).map((n) => ({
-          network_profile_personal_uid: n.network_profile_personal_uid,
-          profile_personal_uid: n.profile_personal_uid,
-          target_uid: n.target_uid,
-          degree: n.degree,
-          parent_uid: n.parent_uid,
-          via_uid: n.via_uid,
-          source_uid: n.source_uid,
-          connection_uid: n.connection_uid,
-        })),
-        null,
-        2,
-      ),
-    );
-
     // Get user's profile image if available
     const userImage = userProfileData?.profileImage || "";
     const hasUserImage = userImage && String(userImage).trim() !== "";
@@ -2019,13 +1952,6 @@ const ConnectScreen = ({ navigation }) => {
     data.forEach((n) => {
       const deg = Number(n.degree) || 1;
       const nodeUid = n.network_profile_personal_uid;
-      console.log(`\n  Processing node ${nodeUid} (degree ${deg}):`, {
-        profile_personal_referred_by: n.profile_personal_referred_by,
-        profile_personal_uid: n.profile_personal_uid,
-        target_uid: n.target_uid,
-        parent_uid: n.parent_uid,
-        via_uid: n.via_uid,
-      });
 
       let parent = null;
 
@@ -2039,18 +1965,14 @@ const ConnectScreen = ({ navigation }) => {
           if (deg === 1) {
             if (n.profile_personal_referred_by === youId || referredByDeg === 1) {
               parent = n.profile_personal_referred_by;
-              console.log(`    ✅ Found parent via profile_personal_referred_by (degree 1): ${parent}`);
             }
           } else if (referredByDeg === deg - 1) {
             parent = n.profile_personal_referred_by;
-            console.log(`    ✅ Found parent via profile_personal_referred_by (${parent} is in degree ${referredByDeg}): ${parent}`);
           } else {
-            console.log(`    ⚠️ profile_personal_referred_by ${n.profile_personal_referred_by} exists but is degree ${referredByDeg}, not ${deg - 1}`);
           }
         } else if (n.profile_personal_referred_by === youId) {
           // If referrer is YOU, use it directly
           parent = youId;
-          console.log(`    ✅ Found parent via profile_personal_referred_by (YOU): ${parent}`);
         }
       }
 
@@ -2060,10 +1982,8 @@ const ConnectScreen = ({ navigation }) => {
           const p = getParentUid(n);
           if (p && allUids.has(p)) {
             parent = p;
-            console.log(`    ✅ Found parent via getParentUid: ${parent}`);
           }
         } catch (e) {
-          console.log(`    ❌ Error in getParentUid:`, e);
         }
       }
 
@@ -2080,11 +2000,9 @@ const ConnectScreen = ({ navigation }) => {
             if (deg === 1) {
               if (directParentUid === youId || parentDeg === 1) {
                 parent = directParentUid;
-                console.log(`    ✅ Found parent via profile_personal_uid/target_uid (degree 1): ${parent}`);
               }
             } else if (parentDeg === deg - 1) {
               parent = directParentUid;
-              console.log(`    ✅ Found parent via profile_personal_uid/target_uid (${directParentUid} is in degree ${parentDeg}): ${parent}`);
             }
           }
         }
@@ -2102,14 +2020,12 @@ const ConnectScreen = ({ navigation }) => {
 
         if (connectingNode && allUids.has(connectingNode.network_profile_personal_uid)) {
           parent = connectingNode.network_profile_personal_uid;
-          console.log(`    ✅ Found parent via reverse lookup (node ${parent} connects to ${nodeUid}): ${parent}`);
         }
       }
 
       // For degree 1, connect to YOU if no parent found
       if (!parent && deg === 1) {
         parent = youId || "YOU";
-        console.log(`    ✅ Connecting to YOU (degree 1, no parent found)`);
       }
 
       // Last resort for degree > 1: find any node with degree-1
@@ -2117,15 +2033,12 @@ const ConnectScreen = ({ navigation }) => {
         const fallbackParent = data.find((x) => Number(x.degree) === deg - 1);
         if (fallbackParent && allUids.has(fallbackParent.network_profile_personal_uid)) {
           parent = fallbackParent.network_profile_personal_uid;
-          console.log(`    ⚠️ Using fallback parent (first degree-1 node): ${parent}`);
         } else {
           parent = youId || "YOU";
-          console.log(`    ⚠️ No parent found, connecting to YOU`);
         }
       }
 
       if (parent) {
-        console.log(`  ✅ Edge: ${parent} -> ${nodeUid} (degree ${deg})`);
         edges.push({
           from: parent,
           to: nodeUid,
@@ -2136,7 +2049,6 @@ const ConnectScreen = ({ navigation }) => {
       }
     });
 
-    console.log("🔷 Total edges created:", edges.length);
     console.log(
       "🔷 Edges:",
       JSON.stringify(
@@ -2527,10 +2439,11 @@ const ConnectScreen = ({ navigation }) => {
     }
   };
 
-  // When returning from Chat, refresh the list so the just-sent message appears immediately.
+  // On screen focus only (not when the Messages accordion toggles): refresh list if open,
+  // and always refresh blocked status for row badges.
   useFocusEffect(
     useCallback(() => {
-      if (showMessages) {
+      if (showMessagesRef.current) {
         fetchConversationsRef.current();
         clearUnread();
       }
@@ -2539,7 +2452,7 @@ const ConnectScreen = ({ navigation }) => {
       // a refresh, sign-out/sign-in, or navigating back from elsewhere in the app.
       // Refs avoid re-running this effect when profileUid hydrates (which recreates the fetch callbacks).
       fetchBlockedUsersRef.current();
-    }, [showMessages, clearUnread]),
+    }, [clearUnread]),
   );
 
   useFocusEffect(
@@ -3307,7 +3220,6 @@ const ConnectScreen = ({ navigation }) => {
                 onPress={() => {
                   setShowMessagesMenu(false);
                   setShowBlockedManager(true);
-                  fetchBlockedUsers();
                 }}
               >
                 <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>Manage blocked people</Text>
@@ -3616,7 +3528,6 @@ const ConnectScreen = ({ navigation }) => {
                       style={[styles.debugDropdownHeader, darkMode && styles.darkDebugDropdownHeader]}
                       onPress={() => {
                         const newValue = !showAsyncStorage;
-                        console.log("👁️ Toggling AsyncStorage visibility from", showAsyncStorage, "to", newValue);
                         setShowAsyncStorage(newValue);
                       }}
                       activeOpacity={0.7}

@@ -4,9 +4,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import MenuBar from "../components/MenuBar";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { logDistinct } from "../utils/logDistinct";
 
 export default function UserProfile({ onContinue, onEdit }) {
-  console.log("UserProfile - Rendering");
+  logDistinct("user-profile-render", "UserProfile - Rendering");
   const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

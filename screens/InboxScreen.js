@@ -79,13 +79,7 @@ export default function InboxScreen() {
     [myUid],
   );
 
-  useEffect(() => {
-    if (myUid) {
-      fetchConversations();
-    }
-  }, [myUid]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Reload whenever the screen gains focus, clear the dot, and suppress banners
+  // Single load path: focus (and myUid hydrate via fetchConversations dep). Do not also fetch in a mount effect.
   useFocusEffect(
     useCallback(() => {
       fetchConversations();

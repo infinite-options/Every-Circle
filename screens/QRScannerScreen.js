@@ -14,6 +14,7 @@ import { useNavigation } from "@react-navigation/native";
 import AppHeader from "../components/AppHeader";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+import { logDistinct } from "../utils/logDistinct";
 
 export default function QRScannerScreen({ route }) {
   const navigation = useNavigation();
@@ -24,8 +25,8 @@ export default function QRScannerScreen({ route }) {
   const [scanned, setScanned] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  console.log("🚀 QRScannerScreen MOUNTED");
-  console.log("🖥 Platform:", Platform.OS);
+  logDistinct("qr-scanner-mount", "🚀 QRScannerScreen MOUNTED");
+  logDistinct("qr-scanner-platform", "🖥 Platform:", Platform.OS);
 
   // Request permission (OLD, STABLE API)
   useEffect(() => {
@@ -140,7 +141,7 @@ export default function QRScannerScreen({ route }) {
     );
   }
 
-  console.log("🎥 Rendering camera");
+  logDistinct("qr-render-camera", "🎥 Rendering camera");
 
   return (
     <View style={styles.container}>

@@ -8,6 +8,7 @@ import MiniCard from "../components/MiniCard";
 import BottomNavBar from "../components/BottomNavBar";
 import { USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { logDistinct } from "../utils/logDistinct";
 import { sanitizeText } from "../utils/textSanitizer";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import WebTextInput from "../components/WebTextInput";
@@ -546,7 +547,7 @@ const NewConnectionScreen = () => {
               {/* Login/SignUp buttons for non-logged-in users */}
               {(() => {
                 const shouldShowAuth = !checkingLogin && !isLoggedIn;
-                console.log("NewConnectionScreen - Render check:", {
+                logDistinct("new-connection-render-check", "NewConnectionScreen - Render check:", {
                   checkingLogin,
                   isLoggedIn,
                   shouldShowAuth,

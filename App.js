@@ -35,6 +35,7 @@ if (!isWeb) {
 
 import config from "./config";
 import { GOOGLE_SOCIAL_AUTH_ENDPOINT, APPLE_AUTH_ENDPOINT, API_BASE_URL } from "./apiConfig";
+import { logDistinct } from "./utils/logDistinct";
 import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
 import { UnreadProvider } from "./contexts/UnreadContext";
@@ -743,7 +744,7 @@ export default function App() {
   }
 
   const HomeScreen = ({ navigation }) => {
-    console.log("App.js - Rendering HomeScreen");
+    logDistinct("app-render-home", "App.js - Rendering HomeScreen");
     const { width: windowWidth } = useWindowDimensions();
     const [hasLoggedPlaying, setHasLoggedPlaying] = useState(false);
     // Static timestamp - set once when component mounts (represents last build/change time)
@@ -878,7 +879,7 @@ export default function App() {
     );
   };
 
-  console.log("App.js - Rendering main App component with initialRoute:", initialRoute);
+  logDistinct("app-render-main", "App.js - Rendering main App component with initialRoute:", initialRoute);
 
   // Add error boundary wrapper
   if (error) {
@@ -976,7 +977,7 @@ export default function App() {
     };
 
     const currentRouteName = getCurrentRoute(state);
-    console.log("App.js - Current route:", currentRouteName);
+    logDistinct("app-current-route", "App.js - Current route:", currentRouteName);
 
     // Check terms acceptance and cookies status from AsyncStorage (in case they changed)
     const termsStatus = await AsyncStorage.getItem("termsAccepted");

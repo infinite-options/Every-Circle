@@ -7,6 +7,7 @@ import axios from "axios";
 import { API_BASE_URL } from "../apiConfig";
 import { encryptPayload, decryptResponse } from "./encryption";
 import { isPrivacyModeEnabled, loadPrivacyMode } from "./privacyMode";
+import { logDistinct } from "./logDistinct";
 
 // Restore persisted privacy-mode preference as soon as the module loads
 loadPrivacyMode().catch(() => {});
@@ -46,7 +47,15 @@ class DecryptingResponse {
     const raw = await this._res.json();
     if (this._local) {
       const hasEncrypted = raw && typeof raw === "object" && "encrypted_data" in raw;
-      console.log("[httpMiddleware] raw keys:", raw ? Object.keys(raw) : null, "| has encrypted_data:", hasEncrypted, "| privacy:", isPrivacyModeEnabled());
+      logDistinct(
+        "httpMiddleware-raw-keys",
+        "[httpMiddleware] raw keys:",
+        raw ? Object.keys(raw) : null,
+        "| has encrypted_data:",
+        hasEncrypted,
+        "| privacy:",
+        isPrivacyModeEnabled(),
+      );
     }
     return this._local ? (decryptResponse(raw) ?? raw) : raw;
   }

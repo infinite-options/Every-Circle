@@ -38,6 +38,7 @@ import {
   PROFILE_WISH_INFO_ENDPOINT,
 } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { logDistinct } from "../utils/logDistinct";
 import { fetchMyOfferingMessageResponses } from "../utils/offeringMessageResponse";
 import { fetchMyWishMessageResponses } from "../utils/wishMessageResponse";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -925,6 +926,10 @@ export default function SearchScreen({ route }) {
   const [respondedWishesById, setRespondedWishesById] = useState({});
   /** profile_expertise_uid → er_datetime for offerings the logged-in user has messaged (Offering tab). */
   const [respondedOfferingsById, setRespondedOfferingsById] = useState({});
+  const wishResponsesInFlightRef = useRef(false);
+  const expertiseResponsesInFlightRef = useRef(false);
+  const wishResponsesLastFetchAtRef = useRef(0);
+  const expertiseResponsesLastFetchAtRef = useRef(0);
   const [connectionDegreeMap, setConnectionDegreeMap] = useState({});
   const connectionDegreeMapRef = useRef({});
   // Stores pre-client-sort results so bounty / alphabetical can re-sort without re-fetching
@@ -1123,34 +1128,54 @@ export default function SearchScreen({ route }) {
   );
 
   const fetchMyWishResponses = useCallback(async () => {
-    const uid = (currentProfileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
-    if (!uid) {
-      setRespondedWishesById({});
+    // Collapse rapid re-fires from useFocusEffect (uid hydrate / remount / web focus quirks).
+    const now = Date.now();
+    if (wishResponsesInFlightRef.current || now - wishResponsesLastFetchAtRef.current < 2500) {
       return;
     }
+    wishResponsesInFlightRef.current = true;
     try {
+      const uid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (!uid) {
+        setRespondedWishesById({});
+        return;
+      }
       const byId = await fetchMyWishMessageResponses(uid);
       setRespondedWishesById(byId);
+      setCurrentProfileUid((prev) => prev || uid);
+      wishResponsesLastFetchAtRef.current = Date.now();
     } catch (e) {
       console.warn("[SearchScreen] fetchMyWishResponses failed:", e);
       setRespondedWishesById({});
+    } finally {
+      wishResponsesInFlightRef.current = false;
     }
-  }, [currentProfileUid]);
+  }, []);
 
   const fetchMyExpertiseResponses = useCallback(async () => {
-    const uid = (currentProfileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
-    if (!uid) {
-      setRespondedOfferingsById({});
+    // Collapse rapid re-fires from useFocusEffect (uid hydrate / remount / web focus quirks).
+    const now = Date.now();
+    if (expertiseResponsesInFlightRef.current || now - expertiseResponsesLastFetchAtRef.current < 2500) {
       return;
     }
+    expertiseResponsesInFlightRef.current = true;
     try {
+      const uid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (!uid) {
+        setRespondedOfferingsById({});
+        return;
+      }
       const byId = await fetchMyOfferingMessageResponses(uid);
       setRespondedOfferingsById(byId);
+      setCurrentProfileUid((prev) => prev || uid);
+      expertiseResponsesLastFetchAtRef.current = Date.now();
     } catch (e) {
       console.warn("[SearchScreen] fetchMyExpertiseResponses failed:", e);
       setRespondedOfferingsById({});
+    } finally {
+      expertiseResponsesInFlightRef.current = false;
     }
-  }, [currentProfileUid]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -1160,12 +1185,6 @@ export default function SearchScreen({ route }) {
     }, [selectedSearchTabs.seeking, fetchMyWishResponses]),
   );
 
-  useEffect(() => {
-    if (selectedSearchTabs.seeking) {
-      fetchMyWishResponses();
-    }
-  }, [selectedSearchTabs.seeking, fetchMyWishResponses]);
-
   useFocusEffect(
     useCallback(() => {
       if (selectedSearchTabs.expertise) {
@@ -1173,12 +1192,6 @@ export default function SearchScreen({ route }) {
       }
     }, [selectedSearchTabs.expertise, fetchMyExpertiseResponses]),
   );
-
-  useEffect(() => {
-    if (selectedSearchTabs.expertise) {
-      fetchMyExpertiseResponses();
-    }
-  }, [selectedSearchTabs.expertise, fetchMyExpertiseResponses]);
 
   // Restore search state when returning from Profile, then refresh individual relationship badges
   useFocusEffect(
@@ -1302,7 +1315,7 @@ export default function SearchScreen({ route }) {
     loadCartItems();
 
     const unsubscribe = navigation.addListener("focus", () => {
-      console.log("SearchScreen focused - refreshing cart");
+      logDistinct("search-focus-cart", "SearchScreen focused - refreshing cart");
       loadCartItems();
     });
 
@@ -1462,7 +1475,7 @@ export default function SearchScreen({ route }) {
           await AsyncStorage.setItem(`last_search_type_${userUid}`, JSON.stringify(selectedSearchTabs));
           const resultsToSave = rawResultsRef.current.length > 0 ? rawResultsRef.current : results;
           await AsyncStorage.setItem(`last_search_results_${userUid}`, JSON.stringify(resultsToSave));
-          console.log("💾 Saved search state for user:", userUid, "Query:", searchQuery);
+          logDistinct("search-save-state", "💾 Saved search state for user:", userUid, "Query:", searchQuery);
         } catch (error) {
           console.error("Error saving search state:", error);
         }
@@ -1493,10 +1506,10 @@ export default function SearchScreen({ route }) {
     clearCartData();
   }, [route.params?.refreshCart]);
 
-  // Log results changes for debugging (runs only when results change, not on every render)
+  // Log results changes for debugging (skips identical length repeats from enrich/save churn)
   useEffect(() => {
     if (!loading && results.length > 0) {
-      console.log("🎨 Rendering results:", results.length, "items");
+      logDistinct("search-render-results", "🎨 Rendering results:", results.length, "items");
       // console.log("🎨 Results array:", results);
     }
   }, [results, loading]);
@@ -2427,8 +2440,15 @@ export default function SearchScreen({ route }) {
           };
 
           list = resultsArray.map((b, i) => {
-            console.log("All image fields:", b.business_profile_img, b.business_images_url, b.business_favorite_image, b.business_name);
-            console.log("Business profile img:", b.business_profile_img, b.business_name);
+            logDistinct(
+              "search-biz-image-fields",
+              "All image fields:",
+              b.business_profile_img,
+              b.business_images_url,
+              b.business_favorite_image,
+              b.business_name,
+            );
+            logDistinct("search-biz-profile-img", "Business profile img:", b.business_profile_img, b.business_name);
             return {
               id: `${b.business_uid || i}`,
               business_uid: b.business_uid ? String(b.business_uid).trim() : null,
@@ -3452,8 +3472,8 @@ export default function SearchScreen({ route }) {
             <Image
               source={item.business_profile_img ? { uri: encodeURI(item.business_profile_img.trim()) } : require("../assets/profile.png")}
               style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }}
-              onError={(e) => console.log("Image load error:", e.nativeEvent.error, item.business_profile_img)}
-              onLoad={() => console.log("Image loaded successfully:", item.business_profile_img)}
+              onError={(e) => console.warn("Image load error:", e.nativeEvent.error, item.business_profile_img)}
+              onLoad={() => logDistinct("search-img-loaded", "Image loaded successfully:", item.business_profile_img)}
               defaultSource={require("../assets/profile.png")}
             />
             <View style={{ flex: 1 }}>

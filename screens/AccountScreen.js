@@ -8540,8 +8540,15 @@ export default function AccountScreen({ navigation, route }) {
     }, []),
   );
 
-  // Refresh the active profile's account-screen payload when selection changes.
+  // Refresh when the user switches personal ↔ business (or between businesses).
+  // Skip the initial mount — useFocusEffect already loads the active profile.
+  // Do not depend on `businesses`: session hydrate would re-fire the same personal/business GET.
+  const accountSelectionInitializedRef = useRef(false);
   useEffect(() => {
+    if (!accountSelectionInitializedRef.current) {
+      accountSelectionInitializedRef.current = true;
+      return;
+    }
     if (selectedAccount === "personal" || !selectedAccount) {
       setSelectedBusinessFullData(null);
       setBusinessSellerTransactionList([]);
@@ -8549,7 +8556,7 @@ export default function AccountScreen({ navigation, route }) {
       return;
     }
     refreshAccountScreenBusiness();
-  }, [selectedAccount, businesses]);
+  }, [selectedAccount]);
 
   // Silently releases escrow for aged-out / already-received no-ship transactions.
   // Guarded so the same uid is only attempted once per session (never from render).
