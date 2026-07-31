@@ -5,15 +5,20 @@ import { formatDateTimeForDisplay } from "../utils/profileDateTime";
 import { formatExpertiseModeForDisplay } from "../utils/expertiseMode";
 import { getSeekingCardLayout, seekingCardHasDetails } from "../utils/seekingDisplayLines";
 import NoBountyIcon from "./NoBountyIcon";
+import BountyInfoTooltip from "./BountyInfoTooltip";
 import ProfileItemAttributeBadges from "./ProfileItemAttributeBadges";
 
 function MetricBox({ columnLabel, value, subtext, darkMode, align = "left" }) {
   const alignStyle = align === "center" ? styles.metricAlignCenter : align === "right" ? styles.metricAlignRight : null;
   const showNoBounty = columnLabel === "Bounty" && !value && !subtext;
   if (!value && !subtext && !showNoBounty) return null;
+  const isBounty = columnLabel === "Bounty";
   return (
     <View style={[styles.metricBox, darkMode && styles.metricBoxDark, alignStyle]}>
-      <Text style={[styles.metricLabel, darkMode && styles.metricLabelDark, alignStyle]}>{columnLabel}</Text>
+      <View style={[styles.metricLabelRow, alignStyle]}>
+        <Text style={[styles.metricLabel, darkMode && styles.metricLabelDark, isBounty && styles.metricLabelWithInfo]}>{columnLabel}</Text>
+        {isBounty ? <BountyInfoTooltip perspective='referrer' darkMode={darkMode} placement={align === "right" ? "left" : "right"} /> : null}
+      </View>
       {showNoBounty ? (
         <NoBountyIcon darkMode={darkMode} />
       ) : value ? (
@@ -122,6 +127,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#888",
     marginBottom: 4,
+  },
+  metricLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 4,
+    zIndex: 2,
+  },
+  metricLabelWithInfo: {
+    marginBottom: 0,
   },
   metricLabelDark: {
     color: "#aaa",

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -17,6 +17,8 @@ import {
   Modal,
   KeyboardAvoidingView,
   FlatList,
+  findNodeHandle,
+  UIManager,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 // import axios from 'axios';
@@ -24,6 +26,7 @@ import SeekingCardDetails from "../components/SeekingCardDetails";
 import OfferingCardDetails from "../components/OfferingCardDetails";
 import MiniCard from "../components/MiniCard";
 import MicroCard from "../components/MicroCard";
+import ConnectionPathChain from "../components/ConnectionPathChain";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -228,10 +231,27 @@ const formatDateTimeForDisplay = (value) => {
   return value;
 };
 
+function resolveScrollTargetNode(targetRef) {
+  if (!targetRef) return null;
+  if (targetRef.current) return targetRef.current;
+  if (typeof targetRef === "object" && targetRef._nativeNode) return targetRef._nativeNode;
+  return targetRef;
+}
+
+function isProfileOfferingVisible(exp, isCurrentUserProfile) {
+  if (getOfferingModeratedState(exp) === MODERATED_ACKNOWLEDGED) return false;
+  return isCurrentUserProfile ? exp.isPublic || isOfferingModeratedBlocked(exp) : exp.isPublic;
+}
+
+function isProfileSectionPublicFlag(value) {
+  return value === 1 || value === "1" || value === true;
+}
+
 const ProfileScreen = ({ route, navigation }) => {
   // modified on 11/08 - for network profile navigation
   // Allows opening a specific user's profile when navigating from the Network screen
-  const { profile_uid: routeProfileUID, returnTo, searchState } = route.params || {};
+  const { profile_uid: routeProfileUID, returnTo, searchState, focusOfferingUid: focusOfferingUidParam, focusOfferingToken } = route.params || {};
+  const focusOfferingUid = String(focusOfferingUidParam || "").trim();
 
   /** Forward Google/Apple prefill when routing incomplete profiles to UserInfo (OAuth skips App.js profile fetch). */
   const getOauthUserInfoNavigateParams = () => {
@@ -261,6 +281,8 @@ const ProfileScreen = ({ route, navigation }) => {
   const [existingRelationship, setExistingRelationship] = useState(null);
   const [relationshipType, setRelationshipType] = useState(null);
   const [circleUid, setCircleUid] = useState(null);
+  /** Logged-in viewer profile_uid — used for connection path chain when viewing others. */
+  const [viewerProfileUid, setViewerProfileUid] = useState("");
   const { darkMode } = useDarkMode();
   const { businesses: sessionBusinesses } = useSessionBusinesses();
   const businessesData = useMemo(() => {
@@ -288,6 +310,9 @@ const ProfileScreen = ({ route, navigation }) => {
   const [showBusiness, setShowBusiness] = useState(true);
   const [showReviews, setShowReviews] = useState(true);
   const [showOffering, setShowOffering] = useState(true);
+  const scrollViewRef = useRef(null);
+  const offeringCardRefs = useRef({});
+  const focusOfferingHandledRef = useRef("");
 
   // Review search modal
   const [reviewSearchVisible, setReviewSearchVisible] = useState(false);
@@ -480,6 +505,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
         // Check if a specific profile_uid was passed via route params (for viewing other users' profiles)
         const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+        if (loggedInProfileUID) setViewerProfileUid(loggedInProfileUID);
 
         if (routeProfileUID) {
           // console.log("ProfileScreen - Loading profile from route params:", routeProfileUID);
@@ -566,6 +592,58 @@ const ProfileScreen = ({ route, navigation }) => {
       profileName: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
     });
   }, [loading, user, isCurrentUserProfile, navigation]);
+
+  const scrollToFocusedOffering = useCallback((offeringUid, attempt = 0) => {
+    const uid = String(offeringUid || "").trim();
+    if (!uid || !scrollViewRef.current) return;
+    const targetRef = offeringCardRefs.current[uid];
+    if (!targetRef) {
+      if (attempt < 10) {
+        setTimeout(() => scrollToFocusedOffering(offeringUid, attempt + 1), 100);
+      }
+      return;
+    }
+
+    const runScroll = () => {
+      try {
+        if (Platform.OS === "web") {
+          const el = resolveScrollTargetNode(targetRef);
+          el?.scrollIntoView?.({ behavior: "smooth", block: "start", inline: "nearest" });
+          return;
+        }
+        const targetHandle = findNodeHandle(targetRef);
+        const scrollHandle = findNodeHandle(scrollViewRef.current);
+        if (!targetHandle || !scrollHandle) return;
+        UIManager.measureLayout(
+          targetHandle,
+          scrollHandle,
+          () => {},
+          (_x, y) => {
+            scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+          },
+        );
+      } catch (error) {
+        console.warn("ProfileScreen - scroll to offering failed:", error);
+      }
+    };
+
+    setTimeout(runScroll, attempt === 0 ? 50 : 0);
+  }, []);
+
+  useEffect(() => {
+    if (loading || !focusOfferingUid || !user?.expertise) return;
+    const handleKey = `${focusOfferingUid}:${String(focusOfferingToken ?? "")}`;
+    if (focusOfferingHandledRef.current === handleKey) return;
+
+    const match = (user.expertise || []).find(
+      (exp) => String(exp.profile_expertise_uid || "").trim() === focusOfferingUid && isProfileOfferingVisible(exp, isCurrentUserProfile),
+    );
+    if (!match) return;
+
+    focusOfferingHandledRef.current = handleKey;
+    setShowOffering(true);
+    scrollToFocusedOffering(focusOfferingUid);
+  }, [loading, focusOfferingUid, focusOfferingToken, user?.expertise, isCurrentUserProfile, scrollToFocusedOffering]);
 
   useEffect(() => {
     let cancelled = false;
@@ -686,8 +764,9 @@ const ProfileScreen = ({ route, navigation }) => {
         expertiseIsPublic: apiUser.personal_info?.profile_personal_expertise_is_public === 1,
         wishesIsPublic: apiUser.personal_info?.profile_personal_wishes_is_public === 1,
         businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
-        socialLinksIsPublic: apiUser.personal_info?.profile_personal_social_is_public !== 0,
+        socialLinksIsPublic: isProfileSectionPublicFlag(apiUser.personal_info?.profile_personal_social_is_public),
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
+        profilePersonalPath: apiUser.personal_info?.profile_personal_path || null,
         profileModerationItem: buildProfileModerationItem(apiUser),
         moderation: normalizeProfileModeration(buildProfileModerationItem(apiUser)),
       };
@@ -1427,7 +1506,9 @@ const ProfileScreen = ({ route, navigation }) => {
         {...(routeProfileUID && !isCurrentUserProfile ? getHeaderColors("profileView") : getHeaderColors("profile"))}
         onTitlePress={() => setShowFeedbackPopup(true)}
         onBackPress={
-          routeProfileUID && !isCurrentUserProfile
+          returnTo === "Account"
+            ? () => navigation.navigate("Account")
+            : routeProfileUID && !isCurrentUserProfile
             ? () => {
                 // Navigate back to the screen we came from with preserved state
                 const wishDetailState = route.params?.wishDetailState;
@@ -1611,6 +1692,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView
+          ref={scrollViewRef}
           style={[styles.scrollContainer, darkMode && styles.darkScrollContainer]}
           contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
           {...(Platform.OS === "web" && {
@@ -1798,6 +1880,20 @@ const ProfileScreen = ({ route, navigation }) => {
             {shortBioBelowCard ? <Text style={[styles.shortBioBelowCard, darkMode && styles.darkShortBioBelowCard]}>{shortBioBelowCard}</Text> : null}
           </View>
 
+          {/* Referral-tree connection chain: you → … → them (max 5 avatars) */}
+          {routeProfileUID && !isCurrentUserProfile && viewerProfileUid && user ? (
+            <ConnectionPathChain
+              viewerUid={viewerProfileUid}
+              visitedUid={routeProfileUID || profileUID}
+              visitedFirstName={user.firstName}
+              visitedLastName={user.lastName}
+              visitedProfileImage={user.profileImage}
+              visitedImageIsPublic={user.imageIsPublic}
+              visitedPersonalPath={user.profilePersonalPath}
+              returnTo={returnTo || "Profile"}
+            />
+          ) : null}
+
           {/* Add / View Connection + Message — only when viewing someone else's profile */}
           {routeProfileUID &&
             !isCurrentUserProfile &&
@@ -1865,16 +1961,19 @@ const ProfileScreen = ({ route, navigation }) => {
               </TouchableOpacity>
               {showOffering &&
                 (user.expertise &&
-                user.expertise.filter((exp) => {
-                  if (getOfferingModeratedState(exp) === MODERATED_ACKNOWLEDGED) return false;
-                  return isCurrentUserProfile ? exp.isPublic || isOfferingModeratedBlocked(exp) : exp.isPublic;
-                }).length > 0 ? (
+                user.expertise.filter((exp) => isProfileOfferingVisible(exp, isCurrentUserProfile)).length > 0 ? (
                   user.expertise
-                    .filter((exp) => {
-                      if (getOfferingModeratedState(exp) === MODERATED_ACKNOWLEDGED) return false;
-                      return isCurrentUserProfile ? exp.isPublic || isOfferingModeratedBlocked(exp) : exp.isPublic;
+                    .filter((exp) => isProfileOfferingVisible(exp, isCurrentUserProfile))
+                    .sort((a, b) => {
+                      if (!focusOfferingUid) return 0;
+                      const aUid = String(a.profile_expertise_uid || "").trim();
+                      const bUid = String(b.profile_expertise_uid || "").trim();
+                      if (aUid === focusOfferingUid) return -1;
+                      if (bUid === focusOfferingUid) return 1;
+                      return 0;
                     })
                     .map((exp, index) => {
+                      const offeringUid = String(exp.profile_expertise_uid || "").trim();
                       const expImageUri = resolveProfileItemImageUri(exp.profile_expertise_image, profileUID);
                       const offeringModeratedBlocked = isOfferingModeratedBlocked(exp);
                       const offeringTakenDown = getOfferingModeratedState(exp) === MODERATED_TAKEN_DOWN;
@@ -2111,11 +2210,16 @@ const ProfileScreen = ({ route, navigation }) => {
                         offeringTakenDown && (darkMode ? styles.darkTakenDownOfferingCard : styles.takenDownOfferingCard),
                         index > 0 && { marginTop: 4 },
                       ];
+                      const assignOfferingCardRef = (node) => {
+                        if (offeringUid) offeringCardRefs.current[offeringUid] = node;
+                      };
                       // Taken-down offerings: view-only detail (no edit). Other own offerings stay non-navigating.
                       if (offeringTakenDown) {
                         return (
                           <TouchableOpacity
-                            key={index}
+                            key={offeringUid || index}
+                            ref={assignOfferingCardRef}
+                            collapsable={false}
                             style={cardShellStyle}
                             onPress={openOfferingDetail}
                             activeOpacity={0.75}
@@ -2129,14 +2233,14 @@ const ProfileScreen = ({ route, navigation }) => {
                       }
                       if (routeProfileUID && !isCurrentUserProfile) {
                         return (
-                          <View key={index} style={cardShellStyle}>
+                          <View key={offeringUid || index} ref={assignOfferingCardRef} collapsable={false} style={cardShellStyle}>
                             <View>{offeringBody}</View>
                             {messageAboutOfferingBtn}
                           </View>
                         );
                       }
                       return (
-                        <View key={index} style={cardShellStyle}>
+                        <View key={offeringUid || index} ref={assignOfferingCardRef} collapsable={false} style={cardShellStyle}>
                           {offeringBody}
                           {messageAboutOfferingBtn}
                         </View>
@@ -2374,7 +2478,7 @@ const ProfileScreen = ({ route, navigation }) => {
           )}
 
           {/* Social Media Links — dropdown section */}
-          {(isCurrentUserProfile || user.socialLinksIsPublic !== false) &&
+          {user.socialLinksIsPublic &&
             (() => {
               const defaults = {
                 linkedin: { label: "LinkedIn", icon: "logo-linkedin", color: "#0077B5" },

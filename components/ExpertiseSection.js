@@ -6,7 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 import { formatCostValue, parsePrice } from "../utils/priceUtils";
 import { isTruthyTaxableFlag, isValidTaxRate, validateTaxableRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
-import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
+import { getAddressSuggestions, getPlaceDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
 import {
   toDateTimeLocalValue,
@@ -23,6 +23,7 @@ import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expert
 import { rejectNativeImageAsset, rejectWebImageFile } from "../utils/imageUploadLimits";
 import OfferingModerationBanner from "./OfferingModerationBanner";
 import ProfileOfferingListCard from "./ProfileOfferingListCard";
+import BountyInfoTooltip from "./BountyInfoTooltip";
 import { isOfferingVisibilityBlocked } from "../utils/offeringModeration";
 import { seekingProfileItemCardFormStyles as formStyles, SEEKING_FORM_ACCENT, SEEKING_FORM_ACCENT_DARK } from "../utils/profileItemCardFormStyles";
 import {
@@ -30,7 +31,6 @@ import {
   PROFILE_TAX_OPTIONS,
   PROFILE_BOUNTY_TYPE_OPTIONS,
   PROFILE_CONDITION_OPTIONS,
-  PROFILE_OFFERING_SHIPPING_OPTIONS,
   PROFILE_QUANTITY_OPTIONS,
   PROFILE_RETURNABLE_OPTIONS,
   getOfferingShippingDropdownValue,
@@ -42,6 +42,9 @@ import {
   isFixedOfferingShipping,
   isOfferingQtyUnlimited,
   offeringShippingAmountDisplay,
+  offeringDeliveredModeSelected,
+  validateOfferingDeliveredShipping,
+  getOfferingShippingDropdownOptions,
 } from "../utils/profileOfferingShipping";
 import { BS_SHIPPING_BUYER_FIXED, parseBsShippingAmount } from "../utils/businessServiceShipping";
 
@@ -107,6 +110,7 @@ const ExpertiseSection = ({
   handleDelete,
   onInputFocus,
   profileUid = "",
+  profileDefaultAddress = null,
   darkMode = false,
   singleItemMode = false,
   disableDelete = false,
@@ -194,6 +198,7 @@ const ExpertiseSection = ({
       profile_expertise_longitude: null,
       profile_expertise_city: "",
       profile_expertise_state: "",
+      profile_expertise_zip: "",
       profile_expertise_mode: "",
       profile_expertise_is_taxable: 0,
       profile_expertise_tax_rate: "",
@@ -366,7 +371,7 @@ const ExpertiseSection = ({
       return {
         ...e,
         profile_expertise_location: text,
-        ...(text.trim() ? {} : { profile_expertise_latitude: null, profile_expertise_longitude: null, profile_expertise_city: "", profile_expertise_state: "" }),
+        ...(text.trim() ? {} : { profile_expertise_latitude: null, profile_expertise_longitude: null, profile_expertise_city: "", profile_expertise_state: "", profile_expertise_zip: "" }),
       };
     });
     if (!text.trim()) setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: [] }));
@@ -395,11 +400,19 @@ const ExpertiseSection = ({
       const pd = await getPlaceDetails(suggs[0].place_id);
       if (pd.lat == null || pd.lng == null) return;
       setExpertise(
-        expertise.map((e, i) =>
-          i !== index
-            ? e
-            : { ...e, profile_expertise_latitude: pd.lat, profile_expertise_longitude: pd.lng, profile_expertise_city: pd.city || e.profile_expertise_city, profile_expertise_state: pd.state || e.profile_expertise_state }
-        )
+        expertise.map((e, i) => {
+          if (i !== index) return e;
+          const fields = applyPlaceDetailsToAddressFields(pd);
+          return {
+            ...e,
+            profile_expertise_location: fields.streetLine,
+            profile_expertise_latitude: fields.lat,
+            profile_expertise_longitude: fields.lng,
+            profile_expertise_city: fields.city || e.profile_expertise_city,
+            profile_expertise_state: fields.state || e.profile_expertise_state,
+            profile_expertise_zip: fields.zip || e.profile_expertise_zip,
+          };
+        })
       );
     } catch (e) {
       console.warn("[Expertise] blur geocode failed:", e);
@@ -415,12 +428,14 @@ const ExpertiseSection = ({
         Alert.alert("Error", "Could not determine coordinates for this address.");
         return;
       }
+      const fields = applyPlaceDetailsToAddressFields(pd, place.description);
       const updated = [...expertise];
-      updated[index].profile_expertise_location = pd.formatted_address || place.description || "";
-      updated[index].profile_expertise_latitude = pd.lat;
-      updated[index].profile_expertise_longitude = pd.lng;
-      updated[index].profile_expertise_city = pd.city || "";
-      updated[index].profile_expertise_state = pd.state || "";
+      updated[index].profile_expertise_location = fields.streetLine;
+      updated[index].profile_expertise_latitude = fields.lat;
+      updated[index].profile_expertise_longitude = fields.lng;
+      updated[index].profile_expertise_city = fields.city;
+      updated[index].profile_expertise_state = fields.state;
+      updated[index].profile_expertise_zip = fields.zip;
       setExpertise(updated);
     } catch (err) {
       console.error("ExpertiseSection address select error:", err);
@@ -474,11 +489,27 @@ const ExpertiseSection = ({
   };
 
   const toggleExpertiseMode = (index, key) => {
-    const item = expertise[index];
+    const updated = [...expertise];
+    const item = updated[index];
     const prev = parseExpertiseModeFlags(item?.profile_expertise_mode);
-    const flags = { virtual: !!prev.virtual, inPerson: !!prev.inPerson };
+    const flags = { virtual: !!prev.virtual, delivered: !!prev.delivered, inPerson: !!prev.inPerson };
     flags[key] = !flags[key];
-    handleInputChange(index, "profile_expertise_mode", serializeExpertiseMode(flags));
+    updated[index] = { ...item, profile_expertise_mode: serializeExpertiseMode(flags) };
+    if (key === "inPerson" && flags.inPerson && profileDefaultAddress) {
+      if (!String(updated[index].profile_expertise_location || "").trim() && profileDefaultAddress.homeAddress) {
+        updated[index].profile_expertise_location = profileDefaultAddress.homeAddress;
+      }
+      if (!String(updated[index].profile_expertise_city || "").trim() && profileDefaultAddress.city) {
+        updated[index].profile_expertise_city = profileDefaultAddress.city;
+      }
+      if (!String(updated[index].profile_expertise_state || "").trim() && profileDefaultAddress.state) {
+        updated[index].profile_expertise_state = profileDefaultAddress.state;
+      }
+      if (!String(updated[index].profile_expertise_zip || "").trim() && profileDefaultAddress.zip) {
+        updated[index].profile_expertise_zip = profileDefaultAddress.zip;
+      }
+    }
+    setExpertise(updated);
   };
 
   const getExpertiseDisplayUri = (item) => {
@@ -1019,7 +1050,7 @@ const ExpertiseSection = ({
               <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Mode</Text>
               <View style={formStyles.modeRow}>
                 {(() => {
-                  const { virtual, inPerson } = parseExpertiseModeFlags(item.profile_expertise_mode);
+                  const { virtual, delivered, inPerson } = parseExpertiseModeFlags(item.profile_expertise_mode);
                   return (
                     <>
                       <TouchableOpacity
@@ -1041,6 +1072,27 @@ const ExpertiseSection = ({
                           ]}
                         >
                           Virtual
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          formStyles.choiceBtn,
+                          formStyles.modeBtn,
+                          darkMode && formStyles.darkChoiceBtn,
+                          delivered && formStyles.choiceBtnActive,
+                          darkMode && delivered && formStyles.darkChoiceBtnActive,
+                        ]}
+                        onPress={() => toggleExpertiseMode(index, "delivered")}
+                      >
+                        <Text
+                          style={[
+                            formStyles.choiceBtnText,
+                            darkMode && formStyles.darkChoiceBtnText,
+                            delivered && formStyles.choiceBtnTextActive,
+                            darkMode && delivered && formStyles.darkChoiceBtnTextActive,
+                          ]}
+                        >
+                          Delivered
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
@@ -1072,7 +1124,7 @@ const ExpertiseSection = ({
             {parseExpertiseModeFlags(item.profile_expertise_mode).inPerson ? (
               <>
                 <View style={formStyles.fieldStack}>
-                  <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Address</Text>
+                  <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Pickup address</Text>
                   {renderOfferingAddressField(index, item)}
                 </View>
                 <View style={formStyles.fieldRow}>
@@ -1096,6 +1148,20 @@ const ExpertiseSection = ({
                       value={item.profile_expertise_state || ""}
                       onChangeText={(text) => handleInputChange(index, "profile_expertise_state", text)}
                       autoCapitalize='characters'
+                    />
+                  </View>
+                </View>
+                <View style={formStyles.fieldRow}>
+                  <View style={formStyles.fieldHalf}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Zip</Text>
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                      placeholder='Zip'
+                      placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                      value={item.profile_expertise_zip || ""}
+                      onChangeText={(text) => handleInputChange(index, "profile_expertise_zip", text)}
+                      keyboardType='number-pad'
+                      autoCorrect={false}
                     />
                   </View>
                 </View>
@@ -1214,7 +1280,10 @@ const ExpertiseSection = ({
               </View>
 
               <View style={formStyles.pricingCol}>
-                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Bounty</Text>
+                <View style={styles.fieldLabelRow}>
+                  <Text style={[formStyles.fieldLabel, styles.fieldLabelInRow, darkMode && formStyles.darkFieldLabel]}>Bounty</Text>
+                  <BountyInfoTooltip perspective='seller' darkMode={darkMode} />
+                </View>
                 <View style={formStyles.inlineControls}>
                   <Dropdown
                     style={[formStyles.dropdown, formStyles.bountyTypeDropdown, darkMode && formStyles.darkDropdown]}
@@ -1295,62 +1364,105 @@ const ExpertiseSection = ({
               </View>
 
               <View style={formStyles.fulfillmentCol}>
-                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Shipping/delivery</Text>
-                <Dropdown
-                  style={[formStyles.dropdown, formStyles.fulfillmentDropdown, darkMode && formStyles.darkDropdown]}
-                  data={PROFILE_OFFERING_SHIPPING_OPTIONS}
-                  labelField='label'
-                  valueField='value'
-                  value={getOfferingShippingDropdownValue(item)}
-                  onChange={(selected) => handleOfferingShippingChange(index, selected)}
-                  containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
-                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                  maxHeight={220}
-                  flatListProps={{ nestedScrollEnabled: true }}
-                />
-                {isFixedOfferingShipping(item) ? (
-                  <View style={formStyles.fulfillmentExtra}>
-                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Fixed shipping amount</Text>
-                    <View style={[formStyles.fixedShippingRow, darkMode && formStyles.darkFixedShippingRow]}>
-                      <Text style={[formStyles.fixedShippingPrefix, darkMode && formStyles.darkFixedShippingPrefix]}>$</Text>
-                      <TextInput
-                        style={[formStyles.fixedShippingInput, darkMode && formStyles.darkFixedShippingInput]}
-                        value={offeringShippingAmountDisplay(item)}
-                        onChangeText={(text) => {
-                          const cleaned = String(text).replace(/[^0-9.]/g, "");
-                          const parts = cleaned.split(".");
-                          const normalized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join("")}` : cleaned;
-                          const updated = [...expertise];
-                          updated[index] = {
-                            ...updated[index],
-                            profile_expertise_shipping: BS_SHIPPING_BUYER_FIXED,
-                            profile_expertise_shipping_amount: normalized === "" ? "" : normalized,
-                            profile_expertise_free_shipping: 0,
-                            profile_expertise_buyer_pays_shipping: 1,
-                            profile_expertise_shipping_cost_type: "fixed",
-                          };
-                          setExpertise(updated);
-                        }}
-                        onBlur={() => {
-                          if (!isFixedOfferingShipping(item)) return;
-                          const raw = String(item.profile_expertise_shipping_amount ?? "").trim();
-                          if (!raw || raw === ".") {
-                            handleInputChange(index, "profile_expertise_shipping_amount", "");
-                            return;
-                          }
-                          const amount = parseBsShippingAmount(raw);
-                          if (amount == null && !(raw === "0" || raw === "0." || raw === "0.0" || raw === "0.00")) return;
-                          handleInputChange(index, "profile_expertise_shipping_amount", amount == null ? "0" : String(amount));
-                        }}
-                        placeholder='Fixed shipping amount'
-                        keyboardType='decimal-pad'
-                        placeholderTextColor={darkMode ? "#888" : "#999"}
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>
+                  Shipping/delivery{offeringDeliveredModeSelected(item) ? " *" : ""}
+                </Text>
+                {(() => {
+                  const deliveredShippingInvalid =
+                    offeringDeliveredModeSelected(item) && !validateOfferingDeliveredShipping(item);
+                  const accentRequiredBorder = {
+                    borderColor: darkMode ? SEEKING_FORM_ACCENT_DARK : SEEKING_FORM_ACCENT,
+                    borderWidth: 2,
+                  };
+                  const highlightShippingDropdown =
+                    deliveredShippingInvalid && getOfferingShippingDropdownValue(item) === "na";
+                  const highlightFixedAmount =
+                    deliveredShippingInvalid && isFixedOfferingShipping(item);
+                  return (
+                    <>
+                      <Dropdown
+                        style={[
+                          formStyles.dropdown,
+                          formStyles.fulfillmentDropdown,
+                          darkMode && formStyles.darkDropdown,
+                          highlightShippingDropdown && accentRequiredBorder,
+                        ]}
+                        data={getOfferingShippingDropdownOptions(item)}
+                        labelField='label'
+                        valueField='value'
+                        value={getOfferingShippingDropdownValue(item)}
+                        onChange={(selected) => handleOfferingShippingChange(index, selected)}
+                        containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                        itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                        selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                        activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                        maxHeight={220}
+                        flatListProps={{ nestedScrollEnabled: true }}
                       />
-                    </View>
-                  </View>
-                ) : null}
+                      {isFixedOfferingShipping(item) ? (
+                        <View style={formStyles.fulfillmentExtra}>
+                          <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>
+                            Fixed shipping amount
+                          </Text>
+                          <View
+                            style={[
+                              formStyles.fixedShippingRow,
+                              darkMode && formStyles.darkFixedShippingRow,
+                              highlightFixedAmount && accentRequiredBorder,
+                            ]}
+                          >
+                            <Text style={[formStyles.fixedShippingPrefix, darkMode && formStyles.darkFixedShippingPrefix]}>
+                              $
+                            </Text>
+                            <TextInput
+                              style={[formStyles.fixedShippingInput, darkMode && formStyles.darkFixedShippingInput]}
+                              value={offeringShippingAmountDisplay(item)}
+                              onChangeText={(text) => {
+                                const cleaned = String(text).replace(/[^0-9.]/g, "");
+                                const parts = cleaned.split(".");
+                                const normalized =
+                                  parts.length > 2 ? `${parts[0]}.${parts.slice(1).join("")}` : cleaned;
+                                const updated = [...expertise];
+                                updated[index] = {
+                                  ...updated[index],
+                                  profile_expertise_shipping: BS_SHIPPING_BUYER_FIXED,
+                                  profile_expertise_shipping_amount: normalized === "" ? "" : normalized,
+                                  profile_expertise_free_shipping: 0,
+                                  profile_expertise_buyer_pays_shipping: 1,
+                                  profile_expertise_shipping_cost_type: "fixed",
+                                };
+                                setExpertise(updated);
+                              }}
+                              onBlur={() => {
+                                if (!isFixedOfferingShipping(item)) return;
+                                const raw = String(item.profile_expertise_shipping_amount ?? "").trim();
+                                if (!raw || raw === ".") {
+                                  handleInputChange(index, "profile_expertise_shipping_amount", "");
+                                  return;
+                                }
+                                const amount = parseBsShippingAmount(raw);
+                                if (
+                                  amount == null &&
+                                  !(raw === "0" || raw === "0." || raw === "0.0" || raw === "0.00")
+                                ) {
+                                  return;
+                                }
+                                handleInputChange(
+                                  index,
+                                  "profile_expertise_shipping_amount",
+                                  amount == null ? "0" : String(amount)
+                                );
+                              }}
+                              placeholder='Fixed shipping amount'
+                              keyboardType='decimal-pad'
+                              placeholderTextColor={darkMode ? "#888" : "#999"}
+                            />
+                          </View>
+                        </View>
+                      ) : null}
+                    </>
+                  );
+                })()}
               </View>
 
               <View style={formStyles.fulfillmentCol}>
@@ -1482,6 +1594,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  fieldLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 6,
+    zIndex: 2,
+  },
+  fieldLabelInRow: {
+    marginBottom: 0,
+  },
   label: { fontSize: 18, fontWeight: "bold" },
   labelDark: { color: "#fff" },
   addText: { fontSize: 24, fontWeight: "bold", color: "#000" },
@@ -1558,8 +1680,13 @@ export const validateExpertise = (expertise) => {
     const hasTitle = !!String(e.name || "").trim();
     const hasDescription = !!String(e.description || "").trim();
     const hasUnit = !!getOfferingCostUnit(e.cost);
-    return hasTitle && hasDescription && hasUnit;
+    const hasDeliveredShipping = validateOfferingDeliveredShipping(e);
+    return hasTitle && hasDescription && hasUnit && hasDeliveredShipping;
   });
+};
+
+export const validateExpertiseShipping = (expertise) => {
+  return (expertise || []).every((e) => validateOfferingDeliveredShipping(e));
 };
 
 export const validateExpertiseTax = (expertise) => {

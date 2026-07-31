@@ -35,6 +35,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Dropdown } from "react-native-element-dropdown";
 import { Ionicons } from "@expo/vector-icons";
 import ProductCard from "../components/ProductCard";
+import BountyInfoTooltip from "../components/BountyInfoTooltip";
 import WebTextInput from "../components/WebTextInput";
 import TagSectionLabel from "../components/TagSectionLabel";
 import { API_BASE_URL, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
@@ -4036,7 +4037,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             </View>
 
             <View style={styles.serviceFormPricingCol}>
-              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Bounty</Text>
+              <View style={styles.bountyFieldLabelRow}>
+                <Text style={[styles.serviceFormFieldLabel, styles.bountyFieldLabelInRow, darkMode && styles.darkServiceFormFieldLabel]}>Bounty</Text>
+                <BountyInfoTooltip perspective='seller' darkMode={darkMode} />
+              </View>
               <View style={styles.serviceFormInlineControls}>
                 <Dropdown
                   style={[...serviceDropdownStyle, styles.serviceFormBountyTypeDropdown]}
@@ -5555,6 +5559,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#374151",
     marginBottom: 6,
+  },
+  bountyFieldLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 6,
+    zIndex: 2,
+  },
+  bountyFieldLabelInRow: {
+    marginBottom: 0,
   },
   darkServiceFormFieldLabel: {
     color: "#d1d5db",

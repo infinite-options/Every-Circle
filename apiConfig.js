@@ -54,6 +54,10 @@ export const CREATE_REFUND_ENDPOINT = "https://huo8rhh76i.execute-api.us-west-1.
 // User Profile Endpoints
 export const USER_INFO_ENDPOINT = `${API_BASE_URL}/userinfo`;
 export const USER_PROFILE_INFO_ENDPOINT = `${API_BASE_URL}/api/v1/userprofileinfo`;
+/** GET /api/v1/profile_avatar/:uid — lightweight icon + name for connection path, etc. */
+export const PROFILE_AVATAR_ENDPOINT = `${API_BASE_URL}/api/v1/profile_avatar`;
+/** POST JSON `{ profile_uids: string[] }` → `{ avatars: [...] }` */
+export const PROFILE_AVATARS_ENDPOINT = `${API_BASE_URL}/api/v1/profile_avatars`;
 export const REFERRAL_API_ENDPOINT = `${API_BASE_URL}/api/v1/userprofileinfo/`;
 
 // Business Endpoints
@@ -69,6 +73,8 @@ export const BUSINESS_TAG_SEARCH_ENDPOINT = `${API_BASE_URL}/api/v1/businesstags
 export const BUSINESS_SERVICE_PURCHASE_ENDPOINT = `${API_BASE_URL}/business/service/purchase`;
 /** POST JSON `{ bs_uid, quantity, seller_id?, trr_uid?, order_uid? }` — increment limited inventory after return/cancel confirm */
 export const BUSINESS_SERVICE_RESTOCK_ENDPOINT = `${API_BASE_URL}/business/service/restock`;
+/** POST JSON `{ profile_expertise_uid, quantity, seller_id?, trr_uid?, order_uid? }` — increment offering inventory after return/cancel */
+export const PROFILE_EXPERTISE_RESTOCK_ENDPOINT = `${API_BASE_URL}/api/v1/profile-expertise/restock`;
 export const BUSINESS_CLAIM_ENDPOINT = `${API_BASE_URL}/api/v1/business_claim`;
 export const BUSINESS_MAP_ENDPOINT = `${API_BASE_URL}/api/v1/business_map`;
 

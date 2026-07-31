@@ -24,7 +24,8 @@ import { getHeaderColors } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { getSessionProfile, resolveBusinessUid } from "../utils/sessionProfile";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
-import { restockReturnedItems } from "../utils/purchaseService";
+import { restockReturnedItems, restockReturnedOfferingItems } from "../utils/purchaseService";
+import { isOfferingQtyUnlimited } from "../utils/profileOfferingShipping";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
@@ -4679,7 +4680,7 @@ function ReturnDetailsModal({
         <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>Restore to inventory (optional)</Text>
         <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
           {awaitingCancelConfirm
-            ? "Add cancelled units back to Product Inventory Available when they are sellable again."
+            ? "Add cancelled units back to inventory when they are sellable again."
             : "For each item you received, choose how many units to put back on sale."}
         </Text>
         {restockCandidates.map((candidate) => (
@@ -6025,37 +6026,98 @@ function findBusinessServiceForLine(services, line) {
   return (services || []).find((service) => String(service?.bs_uid || service?.ti_bs_id || "").trim() === productUid) || null;
 }
 
-/** Limited-inventory lines eligible for restock when seller confirms return/cancel. */
-function buildReturnRestockCandidates(returnItems, businessServices, { receivedKeys = [], isPreShipCancel = false } = {}) {
+function findOfferingForLine(catalog, line) {
+  const uid = String(line?.ti_bs_id || line?.profile_expertise_uid || line?.bs_uid || "").trim();
+  if (!uid) return null;
+  return (catalog || []).find((row) => String(row?.profile_expertise_uid || "").trim() === uid) || null;
+}
+
+function formatOfferingUnitsAvailable(offering) {
+  if (!offering || isOfferingQtyUnlimited(offering)) return "∞";
+  const raw = offering.profile_expertise_quantity ?? offering.quantity;
+  if (raw == null || raw === "") return "—";
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? String(Math.max(0, n)) : String(raw).trim();
+}
+
+function isOfferingInventoryLimited(offering) {
+  return offering && typeof offering === "object" && !isOfferingQtyUnlimited(offering);
+}
+
+/** Limited-inventory return lines — business products and personal offerings. */
+function buildReturnRestockCandidates(returnItems, inventorySources = {}, { receivedKeys = [], isPreShipCancel = false } = {}) {
+  const businessServices = inventorySources.businessServices || inventorySources || [];
+  const expertiseCatalog = inventorySources.expertiseCatalog || [];
   const receivedSet = new Set(receivedKeys || []);
-  return (returnItems || [])
-    .map((item) => {
-      const line = item?.line || {};
-      const service = findBusinessServiceForLine(businessServices, line);
-      if (!service || !isBusinessServiceInventoryLimited(service)) return null;
+  const candidates = [];
+
+  for (const item of returnItems || []) {
+    const line = item?.line || {};
+    const maxQty = Math.max(0, parseInt(item.qty, 10) || 0);
+    if (maxQty <= 0) continue;
+    if (!isPreShipCancel && !receivedSet.has(item.key)) continue;
+
+    const service = findBusinessServiceForLine(businessServices, line);
+    if (service && isBusinessServiceInventoryLimited(service)) {
       const bs_uid = String(service.bs_uid || line.ti_bs_id || "").trim();
-      if (!bs_uid) return null;
-      const maxQty = Math.max(0, parseInt(item.qty, 10) || 0);
-      if (maxQty <= 0) return null;
-      if (!isPreShipCancel && !receivedSet.has(item.key)) return null;
-      return {
-        key: item.key,
-        bs_uid,
-        itemName: item.itemName || item.description || "Item",
-        maxQty,
-        currentAvailableLabel: formatBusinessServiceUnitsAvailableFromService(service),
-      };
-    })
-    .filter(Boolean);
+      if (bs_uid) {
+        candidates.push({
+          key: item.key,
+          bs_uid,
+          itemName: item.itemName || item.description || "Item",
+          maxQty,
+          currentAvailableLabel: formatBusinessServiceUnitsAvailableFromService(service),
+          kind: "business",
+        });
+        continue;
+      }
+    }
+
+    const offering = findOfferingForLine(expertiseCatalog, line);
+    if (offering && isOfferingInventoryLimited(offering)) {
+      const profile_expertise_uid = String(offering.profile_expertise_uid || line.ti_bs_id || "").trim();
+      if (profile_expertise_uid) {
+        candidates.push({
+          key: item.key,
+          profile_expertise_uid,
+          itemName: item.itemName || item.description || offering.profile_expertise_title || "Item",
+          maxQty,
+          currentAvailableLabel: formatOfferingUnitsAvailable(offering),
+          kind: "offering",
+        });
+      }
+    }
+  }
+
+  return candidates;
 }
 
 function buildRestockItemsPayload(candidates, restockQtyByKey) {
   return (candidates || [])
-    .map((candidate) => ({
-      bs_uid: candidate.bs_uid,
-      quantity: Math.max(0, Math.min(candidate.maxQty, parseInt(restockQtyByKey?.[candidate.key], 10) || 0)),
-    }))
-    .filter((item) => item.quantity > 0);
+    .map((candidate) => {
+      const quantity = Math.max(0, Math.min(candidate.maxQty, parseInt(restockQtyByKey?.[candidate.key], 10) || 0));
+      if (quantity <= 0) return null;
+      if (candidate.profile_expertise_uid) {
+        return { profile_expertise_uid: candidate.profile_expertise_uid, quantity, kind: "offering" };
+      }
+      return { bs_uid: candidate.bs_uid, quantity, kind: "business" };
+    })
+    .filter(Boolean);
+}
+
+function partitionRestockItems(items) {
+  const business = [];
+  const offering = [];
+  for (const item of items || []) {
+    const quantity = Math.max(0, parseInt(item.quantity, 10) || 0);
+    if (quantity <= 0) continue;
+    if (item.profile_expertise_uid) {
+      offering.push({ profile_expertise_uid: String(item.profile_expertise_uid).trim(), quantity });
+    } else if (item.bs_uid) {
+      business.push({ bs_uid: String(item.bs_uid).trim(), quantity });
+    }
+  }
+  return { business, offering };
 }
 
 function applyLocalInventoryRestock(setter, results) {
@@ -6073,6 +6135,43 @@ function applyLocalInventoryRestock(setter, results) {
       const base = Number.isFinite(current) ? current : 0;
       const nextQty = String(base + (parseInt(hit.quantity, 10) || 0));
       return { ...service, bs_available_quantity: nextQty, bs_quantity: nextQty };
+    }),
+  );
+}
+
+function applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, results) {
+  if (!Array.isArray(results) || !results.length) return;
+  const byUid = {};
+  for (const row of results) {
+    const uid = String(row.profile_expertise_uid || "").trim();
+    if (uid) byUid[uid] = row;
+  }
+  if (!Object.keys(byUid).length) return;
+
+  setExpertiseCatalog((prev) =>
+    (prev || []).map((offering) => {
+      const uid = String(offering?.profile_expertise_uid || "").trim();
+      const hit = byUid[uid];
+      if (!hit) return offering;
+      if (hit.remaining != null && Number.isFinite(hit.remaining)) {
+        return { ...offering, profile_expertise_quantity: hit.remaining };
+      }
+      const current = parseInt(offering.profile_expertise_quantity, 10);
+      const base = Number.isFinite(current) ? current : 0;
+      return { ...offering, profile_expertise_quantity: base + (parseInt(hit.quantity, 10) || 0) };
+    }),
+  );
+
+  setExpertiseData((prev) =>
+    (prev || []).map((row) => {
+      const uid = String(row?.expertiseUid || "").trim();
+      const hit = byUid[uid];
+      if (!hit) return row;
+      if (hit.remaining != null && Number.isFinite(hit.remaining)) {
+        return { ...row, remaining: hit.remaining };
+      }
+      const current = row.remaining != null && Number.isFinite(Number(row.remaining)) ? Number(row.remaining) : 0;
+      return { ...row, remaining: current + (parseInt(hit.quantity, 10) || 0) };
     }),
   );
 }
@@ -6189,6 +6288,26 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
   });
 }
 
+/** Keep locally restocked offering qty when account-screen profile expertise_info lags the DB. */
+function mergeExpertiseListWithCatalog(incoming, catalog) {
+  const byUid = {};
+  for (const row of catalog || []) {
+    const uid = String(row?.profile_expertise_uid || "").trim();
+    if (uid) byUid[uid] = row;
+  }
+  return (incoming || []).map((exp) => {
+    const uid = String(exp?.profile_expertise_uid || "").trim();
+    const cat = byUid[uid];
+    if (!cat) return exp;
+    const profileQty = parseInt(exp.profile_expertise_quantity, 10);
+    const catalogQty = parseInt(cat.profile_expertise_quantity, 10);
+    if (Number.isFinite(catalogQty) && (!Number.isFinite(profileQty) || catalogQty > profileQty)) {
+      return { ...exp, profile_expertise_quantity: catalogQty };
+    }
+    return exp;
+  });
+}
+
 function ReturnModalQtyStepper({ label, value, max, onChange, darkMode, suffix }) {
   const safeMax = Math.max(0, parseInt(max, 10) || 0);
   const safeValue = Math.max(0, Math.min(safeMax, parseInt(value, 10) || 0));
@@ -6266,6 +6385,8 @@ export default function AccountScreen({ navigation, route }) {
   const [transactionData, setTransactionData] = useState([]);
   const [transactionLoading, setTransactionLoading] = useState(true);
   const [expertiseData, setExpertiseData] = useState([]);
+  const [expertiseCatalog, setExpertiseCatalog] = useState([]);
+  const expertiseCatalogRef = useRef([]);
   const [expertiseLoading, setExpertiseLoading] = useState(true);
   const [sellerTxData, setSellerTxData] = useState([]);
   const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [] });
@@ -6402,10 +6523,14 @@ export default function AccountScreen({ navigation, route }) {
   useEffect(() => {
     businessesRef.current = businesses;
   }, [businesses]);
+  useEffect(() => {
+    expertiseCatalogRef.current = expertiseCatalog;
+  }, [expertiseCatalog]);
 
   const clearPersonalAccountSections = () => {
     setTransactionData([]);
     setExpertiseData([]);
+    setExpertiseCatalog([]);
     setSellerTxData([]);
     setBountyData(null);
     setPersonalWallet(null);
@@ -7205,25 +7330,47 @@ export default function AccountScreen({ navigation, route }) {
         const restockItems = Array.isArray(pending.restockItems) ? pending.restockItems.filter((item) => (parseInt(item.quantity, 10) || 0) > 0) : [];
         if (restockItems.length) {
           const sellerId = resolveSellerIdForReturn(saleUid);
+          const { business: businessRestockItems, offering: offeringRestockItems } = partitionRestockItems(restockItems);
           const backendRestocked = Boolean(outcome.result?.restock_applied || outcome.result?.inventory_restocked);
-          if (!backendRestocked) {
-            const restockOutcome = await restockReturnedItems(restockItems, {
-              sellerId,
-              trrUid,
-              orderUid: saleUid,
-            });
+          const restockCtx = { sellerId, trrUid, orderUid: saleUid };
+          let businessRestockFailed = false;
+          let offeringRestockFailed = false;
+
+          if (!backendRestocked && businessRestockItems.length) {
+            const restockOutcome = await restockReturnedItems(businessRestockItems, restockCtx);
             if (restockOutcome.ok) {
               applyLocalInventoryRestock(setBusinessServices, restockOutcome.results);
             } else if (restockOutcome.partial) {
               applyLocalInventoryRestock(setBusinessServices, restockOutcome.results);
-              Alert.alert("Inventory", "Return confirmed, but some units could not be restocked. Update Product Inventory manually if needed.");
+              businessRestockFailed = true;
             } else {
-              Alert.alert(
-                "Inventory",
-                "Return confirmed, but restock did not complete. Product Inventory was not updated — adjust Available quantity manually if needed.",
-              );
+              businessRestockFailed = true;
             }
           }
+
+          if (offeringRestockItems.length) {
+            const offeringOutcome = await restockReturnedOfferingItems(offeringRestockItems, restockCtx);
+            if (offeringOutcome.ok) {
+              applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, offeringOutcome.results);
+            } else if (offeringOutcome.partial) {
+              applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, offeringOutcome.results);
+              offeringRestockFailed = true;
+            } else {
+              offeringRestockFailed = true;
+            }
+          }
+
+          if (businessRestockFailed || offeringRestockFailed) {
+            Alert.alert(
+              "Inventory",
+              businessRestockFailed && offeringRestockFailed
+                ? "Return confirmed, but some product and offering units could not be restocked. Update inventory manually if needed."
+                : businessRestockFailed
+                  ? "Return confirmed, but some product units could not be restocked. Update Product Inventory manually if needed."
+                  : "Return confirmed, but some offering units could not be restocked. Update offering quantity on your profile if needed.",
+            );
+          }
+
           if (selectedAccountRef.current && selectedAccountRef.current !== "personal") {
             void refreshAccountScreenBusiness();
           }
@@ -7475,9 +7622,11 @@ export default function AccountScreen({ navigation, route }) {
     }
     const fetchGen = personalFetchGenRef.current;
     const task = (async () => {
+      const catalogSnapshot = expertiseCatalogRef.current;
       try {
         setTransactionData([]);
         setExpertiseData([]);
+        setExpertiseCatalog([]);
         setSellerTxData([]);
         setTransactionLoading(true);
         setBountyLoading(true);
@@ -7491,6 +7640,7 @@ export default function AccountScreen({ navigation, route }) {
           setBountyData(null);
           setPersonalWallet(null);
           setExpertiseData([]);
+          setExpertiseCatalog([]);
           return;
         }
         const url = withTimeZoneQuery(`${ACCOUNT_SCREEN_PERSONAL_ENDPOINT}/${profileId}`);
@@ -7505,7 +7655,9 @@ export default function AccountScreen({ navigation, route }) {
           const session = await getSessionProfile();
           const profileResult = session?.rawProfile;
           const expertiseList = profileResult?.expertise_info ? parseExpertiseInfo(profileResult.expertise_info) : [];
-          setExpertiseData(buildExpertiseRows(expertiseList, []));
+          const mergedExpertiseList = mergeExpertiseListWithCatalog(expertiseList, catalogSnapshot);
+          setExpertiseCatalog(mergedExpertiseList);
+          setExpertiseData(buildExpertiseRows(mergedExpertiseList, []));
           await fetchPersonalProfileData();
           return;
         }
@@ -7587,8 +7739,10 @@ export default function AccountScreen({ navigation, route }) {
           expertiseList = parseExpertiseInfo(profileResult.expertise_info);
         }
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+        const mergedExpertiseList = mergeExpertiseListWithCatalog(expertiseList, catalogSnapshot);
         setSellerTxData(sellerTx);
-        setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
+        setExpertiseCatalog(mergedExpertiseList);
+        setExpertiseData(buildExpertiseRows(mergedExpertiseList, sellerTx));
       } catch (error) {
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         console.error("Error loading account-screen personal:", error);
@@ -7596,6 +7750,7 @@ export default function AccountScreen({ navigation, route }) {
         setBountyData({ error: error.message });
         setPersonalWallet(null);
         setExpertiseData([]);
+        setExpertiseCatalog([]);
       } finally {
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setTransactionLoading(false);
@@ -7770,6 +7925,36 @@ export default function AccountScreen({ navigation, route }) {
       loading: false,
     });
   }, []);
+
+  const openOfferingSalesHistory = useCallback(
+    (item) => {
+      if (!item) return;
+      const expertiseUid = String(item.expertiseUid || "").trim();
+      const transactions = sellerTxData.filter((tx) => String(tx.ti_bs_id || "").trim() === expertiseUid);
+      setSalesModal({ visible: true, item, transactions });
+    },
+    [sellerTxData],
+  );
+
+  const openOfferingListing = useCallback(
+    async (item) => {
+      const expertiseUid = String(item?.expertiseUid || "").trim();
+      if (!expertiseUid) return;
+      const session = await getSessionProfile();
+      const profileUid = String(session?.profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (!profileUid) {
+        Alert.alert("Error", "Profile not loaded. Please try again.");
+        return;
+      }
+      navigation.navigate("Profile", {
+        profile_uid: profileUid,
+        returnTo: "Account",
+        focusOfferingUid: expertiseUid,
+        focusOfferingToken: Date.now(),
+      });
+    },
+    [navigation],
+  );
 
   const closeProductSalesModal = useCallback(() => {
     setProductSalesModal({
@@ -9046,7 +9231,7 @@ export default function AccountScreen({ navigation, route }) {
       areScopedReturnItemsUnshipped(returnDetailModal.orderDetail, returnLines) ||
       isPreShipCancelReturn(returnDetailModal.sourceReturnRow, returnDetailModal.orderDetail?.sale) ||
       isPreShipCancelReturn(returnDetailModal.orderDetail?.sale?.pending_return, returnDetailModal.orderDetail?.sale);
-    return buildReturnRestockCandidates(returnItems, businessServices, {
+    return buildReturnRestockCandidates(returnItems, { businessServices, expertiseCatalog }, {
       receivedKeys: returnReceivedItemKeys,
       isPreShipCancel: preShipCancel,
     });
@@ -9059,6 +9244,7 @@ export default function AccountScreen({ navigation, route }) {
     returnDetailModal.returnTxnUid,
     returnDetailModal.sourceReturnRow,
     businessServices,
+    expertiseCatalog,
     returnDetailModal.bountyPaidFallback,
     returnDetailBountyRows,
     returnReceivedItemKeys,
@@ -9206,22 +9392,22 @@ export default function AccountScreen({ navigation, route }) {
                         <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: "right" }]}>Bounty</Text>
                       </View>
                       {expertiseData.map((item, idx) => (
-                        <TouchableOpacity
-                          key={idx}
-                          style={styles.tableRow}
-                          onPress={() => {
-                            const txs = sellerTxData.filter((tx) => tx.ti_bs_id === item.expertiseUid);
-                            setSalesModal({ visible: true, item, transactions: txs });
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.tableCell, { flex: 1.5, color: "#1a73e8", textDecorationLine: "underline" }]}>{item.name}</Text>
-                          <Text style={[styles.tableCell, { flex: 0.9, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
-                          <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
-                          <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.soldQty}</Text>
-                          <Text style={[styles.tableCell, { flex: 0.7, color: item.remaining === 0 ? "#c00" : "#777", marginLeft: 12 }]}>{item.remaining === null ? "∞" : item.remaining}</Text>
-                          <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
-                        </TouchableOpacity>
+                        <View key={item.expertiseUid || idx} style={styles.tableRow}>
+                          <TouchableOpacity style={{ flex: 1.5 }} onPress={() => openOfferingListing(item)} activeOpacity={0.7}>
+                            <Text style={[styles.tableCell, styles.receiptLink]} numberOfLines={2}>
+                              {item.name}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.salesTableDataPressable} onPress={() => openOfferingSalesHistory(item)} activeOpacity={0.7}>
+                            <Text style={[styles.tableCell, { flex: 0.9, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
+                            <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
+                            <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.soldQty}</Text>
+                            <Text style={[styles.tableCell, { flex: 0.7, color: item.remaining === 0 ? "#c00" : "#777", marginLeft: 12 }]}>
+                              {item.remaining === null ? "∞" : item.remaining}
+                            </Text>
+                            <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
+                          </TouchableOpacity>
+                        </View>
                       ))}
                     </View>
                   ) : (
@@ -11093,6 +11279,7 @@ const styles = StyleSheet.create({
   tableHeader: { flexDirection: "row", paddingVertical: 6 },
   tableHeaderText: { fontSize: 12, color: "#000" },
   tableRow: { flexDirection: "row", alignItems: "center", paddingVertical: 6 },
+  salesTableDataPressable: { flex: 5.8, flexDirection: "row", alignItems: "center" },
   tableCell: { fontSize: 12 },
   transactionsContainer: { backgroundColor: "transparent", paddingVertical: 6, alignSelf: "stretch", width: "100%" },
   transactionHeaderRow: {

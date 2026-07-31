@@ -1,6 +1,7 @@
 import { parsePrice } from "./priceUtils";
 import { expertiseCartTaxFields } from "./cartLineTax";
 import { isBusinessShippingApplicable, isCartItemBuyerPaysShipping } from "./businessServiceShipping";
+import { resolveDefaultFulfillmentMethod } from "./cartFulfillmentMethod";
 
 /** Parse offering cost string into unit value and unit suffix (e.g. "total", "/hr"). */
 export function parseOfferingCostParts(costStr) {
@@ -262,8 +263,16 @@ export { isCartItemBuyerPaysShipping };
 
 /** Fields to persist on expertise cart items so cart/checkout can recompute correctly. */
 export function expertiseCartPersistedFields(expertiseData, modalData = {}) {
-  return {
+  const draft = {
     ...expertiseCartTaxFields(expertiseData, modalData),
+    profile_expertise_mode: expertiseData?.profile_expertise_mode ?? "",
+    profile_expertise_location: expertiseData?.profile_expertise_location ?? "",
+    profile_expertise_city: expertiseData?.profile_expertise_city ?? "",
+    profile_expertise_state: expertiseData?.profile_expertise_state ?? "",
+    profile_expertise_zip: expertiseData?.profile_expertise_zip ?? "",
+    profile_expertise_shipping: expertiseData?.profile_expertise_shipping ?? null,
+    profile_expertise_shipping_amount: expertiseData?.profile_expertise_shipping_amount ?? "",
+    profile_expertise_shipping_cost_type: expertiseData?.profile_expertise_shipping_cost_type ?? "",
     profile_expertise_bounty_type: getOfferingBountyType(expertiseData),
     profile_expertise_quantity: expertiseData?.profile_expertise_quantity ?? expertiseData?.quantity ?? "",
     cost_is_total: isOfferingCostTotalUnit(expertiseData?.cost),
@@ -281,5 +290,9 @@ export function expertiseCartPersistedFields(expertiseData, modalData = {}) {
       expertiseData?.profile_expertise_buyer_pays_shipping === true
         ? 1
         : 0,
+  };
+  return {
+    ...draft,
+    fulfillment_method: resolveDefaultFulfillmentMethod({ ...draft, itemType: "expertise" }),
   };
 }

@@ -6,6 +6,22 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 
+/** Ensure businesses list is always a real array (API / route params may send a JSON string or object). */
+function asBusinessArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value == null || value === "") return [];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return asBusinessArray(parsed);
+    } catch (_) {
+      return [];
+    }
+  }
+  if (typeof value === "object") return [value];
+  return [];
+}
+
 const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, preFetchedBusinessesData, onInputFocus }) => {
   const { darkMode } = useDarkMode();
   // Stores each rendered card's ref by index so parent can scroll to the new one.
@@ -15,8 +31,10 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
   const [modalVisible, setModalVisible] = useState(false);
   const [businessList, setBusinessList] = useState([]);
   const [activeBusinessIndex, setActiveBusinessIndex] = useState(null);
-  const [businessesData, setBusinessesData] = useState(preFetchedBusinessesData || []);
+  const [businessesData, setBusinessesData] = useState(() => asBusinessArray(preFetchedBusinessesData));
   const [loadingBusinesses, setLoadingBusinesses] = useState(false);
+  const businessesList = asBusinessArray(businesses);
+  const businessesDataList = asBusinessArray(businessesData);
 
   // Debugging: Log businesses prop whenever it changes
   useEffect(() => {
@@ -30,9 +48,9 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
     } else {
       // Fallback: add entry if navigation not provided
       // Mark the next card index before state update, then notify parent after render.
-      pendingNewIndexRef.current = businesses.length;
+      pendingNewIndexRef.current = businessesList.length;
       const newEntry = { name: "", role: "", isPublic: true, individualIsPublic: true, isNew: false };
-      setBusinesses([...businesses, newEntry]);
+      setBusinesses([...businessesList, newEntry]);
     }
   };
 
@@ -46,13 +64,13 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
       onInputFocus?.(newCardRef);
       pendingNewIndexRef.current = null;
     }, 100);
-  }, [businesses.length, onInputFocus]);
+  }, [businessesList.length, onInputFocus]);
 
   const fetchBusinesses = async (index) => {
     try {
       const response = await fetch(BUSINESSES_ENDPOINT);
       const data = await response.json();
-      setBusinessList(data);
+      setBusinessList(asBusinessArray(data));
       setActiveBusinessIndex(index);
       setModalVisible(true);
     } catch (error) {
@@ -64,19 +82,19 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
     if (handleDelete) {
       handleDelete(index);
     } else {
-      const updated = businesses.filter((_, i) => i !== index);
+      const updated = businessesList.filter((_, i) => i !== index);
       setBusinesses(updated);
     }
   };
 
   const handleInputChange = (index, field, value) => {
-    const updated = [...businesses];
+    const updated = [...businessesList];
     updated[index][field] = value;
     setBusinesses(updated);
   };
 
   const toggleEntryVisibility = (index) => {
-    const updated = [...businesses];
+    const updated = [...businessesList];
     const currentVisible = !!(updated[index]?.individualIsPublic ?? updated[index]?.isPublic);
     const nextVisible = !currentVisible;
     updated[index] = {
@@ -90,13 +108,14 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
   // Fetch business details for MiniCards
   // Only fetch if preFetchedBusinessesData was not provided
   useEffect(() => {
-    if (preFetchedBusinessesData && preFetchedBusinessesData.length > 0) {
+    const prefetched = asBusinessArray(preFetchedBusinessesData);
+    if (prefetched.length > 0) {
       // Use pre-fetched data from ProfileScreen to avoid redundant API calls
       console.log("BusinessSection - Using pre-fetched business data, skipping API call");
-      setBusinessesData(preFetchedBusinessesData);
-    } else if (businesses && businesses.length > 0) {
+      setBusinessesData(prefetched);
+    } else if (businessesList.length > 0) {
       // Only fetch if we don't have pre-fetched data
-      fetchBusinessesData(businesses);
+      fetchBusinessesData(businessesList);
     } else {
       setBusinessesData([]);
     }
@@ -104,11 +123,11 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
 
   // Sync businessesData with businesses prop changes (especially individualIsPublic)
   useEffect(() => {
-    if (businessesData && businessesData.length > 0 && businesses && businesses.length > 0) {
+    if (businessesDataList.length > 0 && businessesList.length > 0) {
       // Update businessesData to reflect changes in businesses prop (like individualIsPublic toggles)
-      const updatedBusinessesData = businessesData.map((businessDataItem) => {
+      const updatedBusinessesData = businessesDataList.map((businessDataItem) => {
         const originalIndex = businessDataItem.index;
-        const matchingBusiness = businesses[originalIndex];
+        const matchingBusiness = businessesList[originalIndex];
 
         if (matchingBusiness) {
           // Sync individualIsPublic and other fields that might change
@@ -126,7 +145,8 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
     }
   }, [businesses]); // Run whenever businesses prop changes
 
-  const fetchBusinessesData = async (businesses) => {
+  const fetchBusinessesData = async (businessesInput) => {
+    const businesses = asBusinessArray(businessesInput);
     try {
       setLoadingBusinesses(true);
       console.log("Starting fetchBusinessesData with businesses:", businesses);
@@ -246,10 +266,10 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
 
       {loadingBusinesses ? (
         <ActivityIndicator size='small' color={darkMode ? "#ffffff" : "#000000"} style={{ marginVertical: 20 }} />
-      ) : businessesData && businessesData.length > 0 ? (
-        businessesData.map((business, idx) => {
+      ) : businessesDataList.length > 0 ? (
+        businessesDataList.map((business, idx) => {
           const originalIndex = business.index;
-          const originalBusiness = businesses[originalIndex];
+          const originalBusiness = businessesList[originalIndex];
           const entryVisible = !!(originalBusiness?.individualIsPublic ?? originalBusiness?.isPublic);
           return (
             <View key={business.business_uid || business.profile_business_uid || idx} style={[styles.card, darkMode && styles.darkCard, idx > 0 && { marginTop: 10 }]}>
@@ -287,12 +307,12 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
             </View>
           );
         })
-      ) : businesses && businesses.length > 0 ? (
+      ) : businessesList.length > 0 ? (
         // Show input form for new businesses without UID
-        businesses
+        businessesList
           .filter((item) => !item.profile_business_uid && !item.business_uid)
           .map((item, index) => {
-            const actualIndex = businesses.indexOf(item);
+            const actualIndex = businessesList.indexOf(item);
             const entryVisible = !!(item.individualIsPublic ?? item.isPublic);
             return (
               <View
@@ -318,7 +338,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                 <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
                   <TouchableOpacity
                     onPress={async () => {
-                      const updated = [...businesses];
+                      const updated = [...businessesList];
                       updated[actualIndex].isNew = !updated[actualIndex].isNew;
                       setBusinesses(updated);
                       if (!updated[actualIndex].isNew) return;
@@ -376,7 +396,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                   style={{ paddingVertical: 10, borderBottomWidth: 1, borderColor: "#eee" }}
                   onPress={() => {
                     if (activeBusinessIndex !== null) {
-                      const updated = [...businesses];
+                      const updated = [...businessesList];
                       // For new businesses, don't include profile_business_uid at all
                       const newBusiness = {
                         name: biz.business_name,

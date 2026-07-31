@@ -181,6 +181,25 @@ function _parseAddressComponents(components) {
   };
 }
 
+/** Street line for forms — prefer parsed address_line_1 over full formatted_address. */
+export function placeDetailsStreetLine(pd, fallback = "") {
+  const line1 = String(pd?.address_line_1 || "").trim();
+  if (line1) return line1;
+  return String(fallback || pd?.formatted_address || "").trim();
+}
+
+/** Normalize Google Place details into form address fields. */
+export function applyPlaceDetailsToAddressFields(pd, fallbackDescription = "") {
+  return {
+    streetLine: placeDetailsStreetLine(pd, fallbackDescription),
+    city: pd?.city || "",
+    state: pd?.state || "",
+    zip: pd?.zip || "",
+    lat: pd?.lat ?? null,
+    lng: pd?.lng ?? null,
+  };
+}
+
 // ─── getPlaceDetails ──────────────────────────────────────────────────────────
 export async function getPlaceDetails(placeId) {
   if (Platform.OS === "web") {

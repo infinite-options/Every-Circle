@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert, ActivityIndicator } from "react-native";
-import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
+import { getAddressSuggestions, getPlaceDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
 import { Dropdown } from "react-native-element-dropdown";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
@@ -21,6 +21,7 @@ import {
 import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expertiseMode";
 import SeekingModerationBanner from "./SeekingModerationBanner";
 import ProfileSeekingListCard from "./ProfileSeekingListCard";
+import BountyInfoTooltip from "./BountyInfoTooltip";
 import { isSeekingVisibilityBlocked } from "../utils/seekingModeration";
 import { seekingProfileItemCardFormStyles as formStyles, SEEKING_FORM_ACCENT, SEEKING_FORM_ACCENT_DARK } from "../utils/profileItemCardFormStyles";
 import { PROFILE_COST_UNIT_OPTIONS, PROFILE_BOUNTY_TYPE_OPTIONS } from "../utils/profileItemFormOptions";
@@ -35,7 +36,7 @@ if (Platform.OS !== "web") {
   }
 }
 
-const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", darkMode = false }) => {
+const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", profileDefaultAddress = null, darkMode = false }) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
   const sectionHeaderRef = useRef(null);
@@ -118,6 +119,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       profile_wish_longitude: null,
       profile_wish_city: "",
       profile_wish_state: "",
+      profile_wish_zip: "",
       profile_wish_mode: "",
       isPublic: true,
       _wishNewImageUri: "",
@@ -171,11 +173,27 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   };
 
   const toggleWishMode = (index, key) => {
-    const item = wishes[index];
+    const updated = [...wishes];
+    const item = updated[index];
     const prev = parseExpertiseModeFlags(item?.profile_wish_mode);
-    const flags = { virtual: !!prev.virtual, inPerson: !!prev.inPerson };
+    const flags = { virtual: !!prev.virtual, delivered: !!prev.delivered, inPerson: !!prev.inPerson };
     flags[key] = !flags[key];
-    handleInputChange(index, "profile_wish_mode", serializeExpertiseMode(flags));
+    updated[index] = { ...item, profile_wish_mode: serializeExpertiseMode(flags) };
+    if (key === "inPerson" && flags.inPerson && profileDefaultAddress) {
+      if (!String(updated[index].profile_wish_location || "").trim() && profileDefaultAddress.homeAddress) {
+        updated[index].profile_wish_location = profileDefaultAddress.homeAddress;
+      }
+      if (!String(updated[index].profile_wish_city || "").trim() && profileDefaultAddress.city) {
+        updated[index].profile_wish_city = profileDefaultAddress.city;
+      }
+      if (!String(updated[index].profile_wish_state || "").trim() && profileDefaultAddress.state) {
+        updated[index].profile_wish_state = profileDefaultAddress.state;
+      }
+      if (!String(updated[index].profile_wish_zip || "").trim() && profileDefaultAddress.zip) {
+        updated[index].profile_wish_zip = profileDefaultAddress.zip;
+      }
+    }
+    setWishes(updated);
   };
 
   const handleSeekingBountyTypeChange = (index, selected) => {
@@ -193,7 +211,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       return {
         ...w,
         profile_wish_location: text,
-        ...(text.trim() ? {} : { profile_wish_latitude: null, profile_wish_longitude: null, profile_wish_city: "", profile_wish_state: "" }),
+        ...(text.trim() ? {} : { profile_wish_latitude: null, profile_wish_longitude: null, profile_wish_city: "", profile_wish_state: "", profile_wish_zip: "" }),
       };
     });
     if (!text.trim()) setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: [] }));
@@ -222,11 +240,19 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       const pd = await getPlaceDetails(suggs[0].place_id);
       if (pd.lat == null || pd.lng == null) return;
       setWishes(
-        wishes.map((w, i) =>
-          i !== index
-            ? w
-            : { ...w, profile_wish_latitude: pd.lat, profile_wish_longitude: pd.lng, profile_wish_city: pd.city || w.profile_wish_city, profile_wish_state: pd.state || w.profile_wish_state }
-        )
+        wishes.map((w, i) => {
+          if (i !== index) return w;
+          const fields = applyPlaceDetailsToAddressFields(pd);
+          return {
+            ...w,
+            profile_wish_location: fields.streetLine,
+            profile_wish_latitude: fields.lat,
+            profile_wish_longitude: fields.lng,
+            profile_wish_city: fields.city || w.profile_wish_city,
+            profile_wish_state: fields.state || w.profile_wish_state,
+            profile_wish_zip: fields.zip || w.profile_wish_zip,
+          };
+        })
       );
     } catch (e) {
       console.warn("[Seeking] blur geocode failed:", e);
@@ -245,15 +271,17 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
         Alert.alert("Error", "Could not determine coordinates for this address.");
         return;
       }
+      const fields = applyPlaceDetailsToAddressFields(pd, place.description);
       const updated = wishes.map((w, i) => {
         if (i !== index) return w;
         return {
           ...w,
-          profile_wish_location: pd.formatted_address || place.description || "",
-          profile_wish_latitude: pd.lat,
-          profile_wish_longitude: pd.lng,
-          profile_wish_city: pd.city || "",
-          profile_wish_state: pd.state || "",
+          profile_wish_location: fields.streetLine,
+          profile_wish_latitude: fields.lat,
+          profile_wish_longitude: fields.lng,
+          profile_wish_city: fields.city,
+          profile_wish_state: fields.state,
+          profile_wish_zip: fields.zip,
         };
       });
       console.log("[Seeking] updated wish lat/lng:", updated[index]?.profile_wish_latitude, updated[index]?.profile_wish_longitude);
@@ -920,7 +948,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Mode</Text>
               <View style={formStyles.modeRow}>
                 {(() => {
-                  const { virtual, inPerson } = parseExpertiseModeFlags(item.profile_wish_mode);
+                  const { virtual, delivered, inPerson } = parseExpertiseModeFlags(item.profile_wish_mode);
                   return (
                     <>
                       <TouchableOpacity
@@ -942,6 +970,27 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                           ]}
                         >
                           Virtual
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          formStyles.choiceBtn,
+                          formStyles.modeBtn,
+                          darkMode && formStyles.darkChoiceBtn,
+                          delivered && formStyles.choiceBtnActive,
+                          darkMode && delivered && formStyles.darkChoiceBtnActive,
+                        ]}
+                        onPress={() => toggleWishMode(index, "delivered")}
+                      >
+                        <Text
+                          style={[
+                            formStyles.choiceBtnText,
+                            darkMode && formStyles.darkChoiceBtnText,
+                            delivered && formStyles.choiceBtnTextActive,
+                            darkMode && delivered && formStyles.darkChoiceBtnTextActive,
+                          ]}
+                        >
+                          Delivered
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
@@ -973,7 +1022,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             {parseExpertiseModeFlags(item.profile_wish_mode).inPerson ? (
               <>
                 <View style={formStyles.fieldStack}>
-                  <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Address</Text>
+                  <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Pickup address</Text>
                   {renderWishAddressField(index, item)}
                 </View>
                 <View style={formStyles.fieldRow}>
@@ -995,6 +1044,20 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                       placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
                       value={item.profile_wish_state || ""}
                       onChangeText={(text) => handleInputChange(index, "profile_wish_state", text)}
+                    />
+                  </View>
+                </View>
+                <View style={formStyles.fieldRow}>
+                  <View style={formStyles.fieldHalf}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Zip</Text>
+                    <TextInput
+                      style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                      placeholder='Zip'
+                      placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                      value={item.profile_wish_zip || ""}
+                      onChangeText={(text) => handleInputChange(index, "profile_wish_zip", text)}
+                      keyboardType='number-pad'
+                      autoCorrect={false}
                     />
                   </View>
                 </View>
@@ -1079,7 +1142,10 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               </View>
 
               <View style={formStyles.pricingCol}>
-                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Bounty</Text>
+                <View style={styles.bountyFieldLabelRow}>
+                  <Text style={[formStyles.fieldLabel, styles.bountyFieldLabelInRow, darkMode && formStyles.darkFieldLabel]}>Bounty</Text>
+                  <BountyInfoTooltip perspective='seller' darkMode={darkMode} />
+                </View>
                 <View style={formStyles.inlineControls}>
                   <Dropdown
                     style={[formStyles.dropdown, formStyles.bountyTypeDropdown, darkMode && formStyles.darkDropdown]}
@@ -1144,6 +1210,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 10,
+  },
+  bountyFieldLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 6,
+    zIndex: 2,
+  },
+  bountyFieldLabelInRow: {
+    marginBottom: 0,
   },
   label: { fontSize: 18, fontWeight: "bold" },
   labelDark: { color: "#fff" },

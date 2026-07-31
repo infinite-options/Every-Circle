@@ -6,6 +6,7 @@ import {
   parseBsShippingAmount,
   isBuyerPaysShippingValue,
 } from "./businessServiceShipping";
+import { parseExpertiseModeFlags } from "./expertiseMode";
 
 /** Map offering fields onto the shape expected by business shipping helpers. */
 function offeringAsShippingCarrier(item) {
@@ -43,6 +44,39 @@ export function offeringShippingAmountDisplay(item) {
   if (raw == null || raw === "") return "";
   if (raw === 0 || raw === "0" || raw === "0.00") return "0";
   return String(raw);
+}
+
+export function isOfferingShippingConfigured(item) {
+  return parseOfferingShipping(item) != null;
+}
+
+export function offeringDeliveredModeSelected(item) {
+  return parseExpertiseModeFlags(item?.profile_expertise_mode).delivered;
+}
+
+/** Delivered mode requires shipping/delivery to be set (not N/A); fixed requires an amount. */
+export function validateOfferingDeliveredShipping(item) {
+  if (!offeringDeliveredModeSelected(item)) return true;
+  const shipping = parseOfferingShipping(item);
+  if (shipping == null) return false;
+  if (isFixedOfferingShipping(item)) {
+    const raw = String(item?.profile_expertise_shipping_amount ?? "").trim();
+    if (!raw || raw === ".") return false;
+    const amount = parseBsShippingAmount(raw);
+    if (amount == null && !(raw === "0" || raw === "0.0" || raw === "0.00")) return false;
+  }
+  return true;
+}
+
+export function getOfferingShippingDropdownOptions(item) {
+  const options = [
+    { label: "Not applicable", value: "na" },
+    { label: "Free shipping", value: "free" },
+    { label: "Buyer pays (fixed)", value: "buyer_fixed" },
+    { label: "Buyer pays (actual)", value: "buyer_actual" },
+  ];
+  if (!offeringDeliveredModeSelected(item)) return options;
+  return options.filter((option) => option.value !== "na");
 }
 
 export function getOfferingShippingDropdownValue(item) {
