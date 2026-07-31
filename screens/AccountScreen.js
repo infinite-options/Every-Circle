@@ -7875,6 +7875,36 @@ export default function AccountScreen({ navigation, route }) {
     });
   }, []);
 
+  const openOfferingSalesHistory = useCallback(
+    (item) => {
+      if (!item) return;
+      const expertiseUid = String(item.expertiseUid || "").trim();
+      const transactions = sellerTxData.filter((tx) => String(tx.ti_bs_id || "").trim() === expertiseUid);
+      setSalesModal({ visible: true, item, transactions });
+    },
+    [sellerTxData],
+  );
+
+  const openOfferingListing = useCallback(
+    async (item) => {
+      const expertiseUid = String(item?.expertiseUid || "").trim();
+      if (!expertiseUid) return;
+      const session = await getSessionProfile();
+      const profileUid = String(session?.profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (!profileUid) {
+        Alert.alert("Error", "Profile not loaded. Please try again.");
+        return;
+      }
+      navigation.navigate("Profile", {
+        profile_uid: profileUid,
+        returnTo: "Account",
+        focusOfferingUid: expertiseUid,
+        focusOfferingToken: Date.now(),
+      });
+    },
+    [navigation],
+  );
+
   const closeProductSalesModal = useCallback(() => {
     setProductSalesModal({
       visible: false,
@@ -9311,22 +9341,22 @@ export default function AccountScreen({ navigation, route }) {
                         <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: "right" }]}>Bounty</Text>
                       </View>
                       {expertiseData.map((item, idx) => (
-                        <TouchableOpacity
-                          key={idx}
-                          style={styles.tableRow}
-                          onPress={() => {
-                            const txs = sellerTxData.filter((tx) => tx.ti_bs_id === item.expertiseUid);
-                            setSalesModal({ visible: true, item, transactions: txs });
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.tableCell, { flex: 1.5, color: "#1a73e8", textDecorationLine: "underline" }]}>{item.name}</Text>
-                          <Text style={[styles.tableCell, { flex: 0.9, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
-                          <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
-                          <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.soldQty}</Text>
-                          <Text style={[styles.tableCell, { flex: 0.7, color: item.remaining === 0 ? "#c00" : "#777", marginLeft: 12 }]}>{item.remaining === null ? "∞" : item.remaining}</Text>
-                          <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
-                        </TouchableOpacity>
+                        <View key={item.expertiseUid || idx} style={styles.tableRow}>
+                          <TouchableOpacity style={{ flex: 1.5 }} onPress={() => openOfferingListing(item)} activeOpacity={0.7}>
+                            <Text style={[styles.tableCell, styles.receiptLink]} numberOfLines={2}>
+                              {item.name}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.salesTableDataPressable} onPress={() => openOfferingSalesHistory(item)} activeOpacity={0.7}>
+                            <Text style={[styles.tableCell, { flex: 0.9, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
+                            <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
+                            <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.soldQty}</Text>
+                            <Text style={[styles.tableCell, { flex: 0.7, color: item.remaining === 0 ? "#c00" : "#777", marginLeft: 12 }]}>
+                              {item.remaining === null ? "∞" : item.remaining}
+                            </Text>
+                            <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
+                          </TouchableOpacity>
+                        </View>
                       ))}
                     </View>
                   ) : (
@@ -11198,6 +11228,7 @@ const styles = StyleSheet.create({
   tableHeader: { flexDirection: "row", paddingVertical: 6 },
   tableHeaderText: { fontSize: 12, color: "#000" },
   tableRow: { flexDirection: "row", alignItems: "center", paddingVertical: 6 },
+  salesTableDataPressable: { flex: 5.8, flexDirection: "row", alignItems: "center" },
   tableCell: { fontSize: 12 },
   transactionsContainer: { backgroundColor: "transparent", paddingVertical: 6, alignSelf: "stretch", width: "100%" },
   transactionHeaderRow: {

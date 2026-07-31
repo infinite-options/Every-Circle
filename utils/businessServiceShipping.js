@@ -91,17 +91,11 @@ export function getCartItemShippingCarrier(item) {
   return item;
 }
 
-function isCartLinePickup(item) {
-  return (
-    String(item?.fulfillment_method || "")
-      .trim()
-      .toLowerCase() === "pickup"
-  );
-}
+import { cartItemSkipsShippingCharge } from "./cartFulfillmentMethod";
 
 /** True when a cart line requires the buyer to pay shipping (fixed or actual) and ships. */
 export function isCartItemBuyerPaysShipping(item) {
-  if (!item || typeof item !== "object" || isCartLinePickup(item)) return false;
+  if (!item || typeof item !== "object" || cartItemSkipsShippingCharge(item)) return false;
   return isBuyerPaysShippingValue(getCartItemShippingCarrier(item));
 }
 
@@ -112,7 +106,7 @@ export function isCartItemBuyerPaysShipping(item) {
  * @returns {null | { type: 'fixed'|'actual', unitAmount: number, amount: number, quantity: number }}
  */
 export function getCartItemBuyerShippingCharge(item) {
-  if (!item || typeof item !== "object" || isCartLinePickup(item)) return null;
+  if (!item || typeof item !== "object" || cartItemSkipsShippingCharge(item)) return null;
   const shipping = parseBsShipping(getCartItemShippingCarrier(item));
   const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
   if (shipping === BS_SHIPPING_BUYER_FIXED) {

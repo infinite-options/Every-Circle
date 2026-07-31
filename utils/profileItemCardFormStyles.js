@@ -342,11 +342,13 @@ export function createProfileItemCardFormStyles(accent = PROFILE_ITEM_FORM_ACCEN
     },
     modeRow: {
       flexDirection: "row",
+      flexWrap: "wrap",
       gap: 10,
     },
     modeBtn: {
-      flex: 1,
-      minWidth: 100,
+      flexGrow: 1,
+      flexBasis: "30%",
+      minWidth: 96,
       alignItems: "center",
     },
     dateTimeButton: {

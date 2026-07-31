@@ -62,11 +62,12 @@ import {
 import { getCartItemBuyerShippingCharge, sumBuyerShippingCharges } from "../utils/businessServiceShipping";
 import {
   buildFulfillmentApiFields,
-  cartItemNeedsFulfillmentChoice,
   cartItemRequiresShippingAddress,
   formatCartPickupLocationHint,
   FULFILLMENT_PICKUP,
   FULFILLMENT_SHIP,
+  FULFILLMENT_VIRTUAL,
+  getCartItemAvailableFulfillmentMethods,
   normalizeCartItemsFulfillment,
   resolveDefaultFulfillmentMethod,
 } from "../utils/cartFulfillmentMethod";
@@ -245,39 +246,52 @@ function CartItemCustomizationText({ item }) {
 
 function CartFulfillmentChoice({ item, onSelect }) {
   const method = resolveDefaultFulfillmentMethod(item);
+  const available = getCartItemAvailableFulfillmentMethods(item);
   const pickupHint = formatCartPickupLocationHint(item);
 
-  if (cartItemNeedsFulfillmentChoice(item)) {
-    return (
-      <View style={styles.fulfillmentSection}>
-        <Text style={styles.fulfillmentChoiceLabel}>Delivery</Text>
-        <View style={styles.fulfillmentChoiceRow}>
-          <TouchableOpacity
-            style={[styles.fulfillmentChoiceBtn, method === FULFILLMENT_SHIP && styles.fulfillmentChoiceBtnActive]}
-            onPress={() => onSelect(FULFILLMENT_SHIP)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name='airplane-outline' size={16} color={method === FULFILLMENT_SHIP ? "#fff" : "#9C45F7"} />
-            <Text style={[styles.fulfillmentChoiceBtnText, method === FULFILLMENT_SHIP && styles.fulfillmentChoiceBtnTextActive]}>Ship to me</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.fulfillmentChoiceBtn, method === FULFILLMENT_PICKUP && styles.fulfillmentChoiceBtnActive]}
-            onPress={() => onSelect(FULFILLMENT_PICKUP)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name='people-outline' size={16} color={method === FULFILLMENT_PICKUP ? "#fff" : "#9C45F7"} />
-            <Text style={[styles.fulfillmentChoiceBtnText, method === FULFILLMENT_PICKUP && styles.fulfillmentChoiceBtnTextActive]}>Pick up</Text>
-          </TouchableOpacity>
-        </View>
-        {method === FULFILLMENT_PICKUP && pickupHint ? <Text style={styles.fulfillmentPickupHint}>Pickup location: {pickupHint}</Text> : null}
-      </View>
-    );
+  const options = [
+    { key: FULFILLMENT_VIRTUAL, label: "Virtual", icon: "videocam-outline" },
+    { key: FULFILLMENT_SHIP, label: "Delivery", icon: "car-outline" },
+    { key: FULFILLMENT_PICKUP, label: "In person", icon: "people-outline" },
+  ].filter((option) => available.includes(option.key));
+
+  if (options.length === 0) return null;
+
+  if (options.length === 1) {
+    const only = options[0];
+    if (only.key === FULFILLMENT_VIRTUAL) {
+      return <Text style={styles.fulfillmentPickupHint}>Virtual · No shipping required · verify immediately</Text>;
+    }
+    if (only.key === FULFILLMENT_PICKUP) {
+      return <Text style={styles.fulfillmentPickupHint}>Pickup in person{pickupHint ? ` · ${pickupHint}` : ""}</Text>;
+    }
+    return null;
   }
 
-  if (method === FULFILLMENT_PICKUP) {
-    return <Text style={styles.fulfillmentPickupHint}>Pickup in person{pickupHint ? ` · ${pickupHint}` : ""}</Text>;
-  }
-  return null;
+  return (
+    <View style={styles.fulfillmentSection}>
+      <Text style={styles.fulfillmentChoiceLabel}>Fulfillment</Text>
+      <View style={[styles.fulfillmentChoiceRow, styles.fulfillmentChoiceRowWrap]}>
+        {options.map((option) => {
+          const active = method === option.key;
+          return (
+            <TouchableOpacity
+              key={option.key}
+              style={[styles.fulfillmentChoiceBtn, styles.fulfillmentChoiceBtnMulti, active && styles.fulfillmentChoiceBtnActive]}
+              onPress={() => onSelect(option.key)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name={option.icon} size={16} color={active ? "#fff" : "#9C45F7"} />
+              <Text style={[styles.fulfillmentChoiceBtnText, active && styles.fulfillmentChoiceBtnTextActive]}>{option.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {method === FULFILLMENT_VIRTUAL ? <Text style={styles.fulfillmentPickupHint}>No shipping required · verify immediately</Text> : null}
+      {method === FULFILLMENT_PICKUP && pickupHint ? <Text style={styles.fulfillmentPickupHint}>Pickup location: {pickupHint}</Text> : null}
+      {method === FULFILLMENT_SHIP ? <Text style={styles.fulfillmentPickupHint}>Shipping address required at checkout</Text> : null}
+    </View>
+  );
 }
 
 /**
@@ -1911,6 +1925,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
+  fulfillmentChoiceRowWrap: {
+    flexWrap: "wrap",
+  },
   fulfillmentChoiceBtn: {
     flex: 1,
     flexDirection: "row",
@@ -1923,6 +1940,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#9C45F7",
     backgroundColor: "#fff",
+  },
+  fulfillmentChoiceBtnMulti: {
+    flexGrow: 1,
+    flexBasis: "30%",
+    minWidth: 96,
   },
   fulfillmentChoiceBtnActive: {
     backgroundColor: "#9C45F7",

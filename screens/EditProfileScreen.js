@@ -13,7 +13,7 @@ import { getHeaderColors } from "../config/headerColors";
 // PROFILE-SPECIFIC
 import ExperienceSection from "../components/ExperienceSection";
 import EducationSection from "../components/EducationSection";
-import ExpertiseSection, { validateExpertise, validateExpertiseTax } from "../components/ExpertiseSection";
+import ExpertiseSection, { validateExpertise, validateExpertiseTax, validateExpertiseShipping } from "../components/ExpertiseSection";
 import { TAX_RATE_VALIDATION_MESSAGE } from "../utils/taxValidation";
 import SeekingSection, { validateSeeking } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
@@ -62,7 +62,7 @@ function mapBusinessEntryForEdit(biz) {
     business_updated_at: biz.business_updated_at ?? biz.updated_at,
   };
 }
-import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
+import { getAddressSuggestions, getPlaceDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
 import { Ionicons } from "@expo/vector-icons";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -381,13 +381,14 @@ const EditProfileScreen = ({ route, navigation }) => {
         Alert.alert("Error", "Could not determine coordinates for this address.");
         return;
       }
-      setHomeAddress(pd.formatted_address || place.description || "");
+      const fields = applyPlaceDetailsToAddressFields(pd, place.description);
+      setHomeAddress(fields.streetLine);
       setFormData((prev) => ({
         ...prev,
-        homeLatitude: pd.lat,
-        homeLongitude: pd.lng,
-        city: pd.city || prev.city,
-        state: pd.state || prev.state,
+        homeLatitude: fields.lat,
+        homeLongitude: fields.lng,
+        city: fields.city || prev.city,
+        state: fields.state || prev.state,
       }));
       setIsChanged(true);
     } catch (err) {
@@ -645,7 +646,14 @@ const EditProfileScreen = ({ route, navigation }) => {
 
   const handleSave = async () => {
     if (!validateExpertise(formData.expertise)) {
-      Alert.alert("Required Field", "Please fill in title, description, and unit for all Offering entries before submitting.");
+      if (!validateExpertiseShipping(formData.expertise)) {
+        Alert.alert(
+          "Required Field",
+          "Offerings with Delivered mode must have Shipping/delivery set (Free shipping, Buyer pays fixed, or Buyer pays actual). Fixed shipping also requires an amount.",
+        );
+      } else {
+        Alert.alert("Required Field", "Please fill in title, description, and unit for all Offering entries before submitting.");
+      }
       return;
     }
 
@@ -1522,6 +1530,11 @@ const EditProfileScreen = ({ route, navigation }) => {
               isPublic={formData.expertiseIsPublic}
               handleDelete={handleDeleteExpertise}
               profileUid={profileUID.trim()}
+              profileDefaultAddress={{
+                homeAddress: formData.homeAddress,
+                city: formData.city,
+                state: formData.state,
+              }}
               darkMode={darkMode}
               onInputFocus={(inputRef, options) => {
                 scrollNewCardToMiddleIfNeeded(inputRef, options);
@@ -1552,6 +1565,11 @@ const EditProfileScreen = ({ route, navigation }) => {
             isPublic={formData.wishesIsPublic}
             handleDelete={handleDeleteWish}
             profileUid={profileUID.trim()}
+            profileDefaultAddress={{
+              homeAddress: formData.homeAddress,
+              city: formData.city,
+              state: formData.state,
+            }}
             darkMode={darkMode}
             onInputFocus={(inputRef, options) => {
               scrollNewCardToMiddleIfNeeded(inputRef, options);

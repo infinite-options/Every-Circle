@@ -266,8 +266,10 @@ export function expertiseCartPersistedFields(expertiseData, modalData = {}) {
   const draft = {
     ...expertiseCartTaxFields(expertiseData, modalData),
     profile_expertise_mode: expertiseData?.profile_expertise_mode ?? "",
+    profile_expertise_location: expertiseData?.profile_expertise_location ?? "",
     profile_expertise_city: expertiseData?.profile_expertise_city ?? "",
     profile_expertise_state: expertiseData?.profile_expertise_state ?? "",
+    profile_expertise_zip: expertiseData?.profile_expertise_zip ?? "",
     profile_expertise_shipping: expertiseData?.profile_expertise_shipping ?? null,
     profile_expertise_shipping_amount: expertiseData?.profile_expertise_shipping_amount ?? "",
     profile_expertise_shipping_cost_type: expertiseData?.profile_expertise_shipping_cost_type ?? "",
