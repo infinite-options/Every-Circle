@@ -6,9 +6,11 @@ import { Ionicons } from "@expo/vector-icons";
 export const BOUNTY_INFO_COPY = {
   seller:
     "Offer a bounty to reward people in your network who refer buyers. You pay it—not the buyer—so referrals can grow your sales without raising the price. Per item pays on each unit sold; single bounty is one payment for the sale.",
-  referrer:
-    "Earn this bounty when someone you referred buys. Look for the 💰 and recommend offerings with bounties to your network—you get rewarded when they purchase.",
+  referrer: "Earn part of this bounty when someone you referred buys. Look for the 💰 and recommend offerings with bounties to your network—you get rewarded when they purchase.",
 };
+
+export const ESCROW_INFO_COPY =
+  "If selected, everyCircle will hold on to the funds until you verify receipt of the product/service";
 
 const TOOLTIP_WIDTH = 260;
 const TOOLTIP_Z = 100000;
@@ -36,8 +38,9 @@ function resolveDomNode(ref) {
  * @param {boolean} [darkMode]
  * @param {"right"|"left"} [placement="right"] which side the tooltip opens toward
  * @param {string} [message] optional override; defaults to BOUNTY_INFO_COPY[perspective]
+ * @param {string} [accessibilityLabel] optional a11y label when using custom message
  */
-export default function BountyInfoTooltip({ perspective = "seller", darkMode = false, placement = "right", message }) {
+export default function BountyInfoTooltip({ perspective = "seller", darkMode = false, placement = "right", message, accessibilityLabel }) {
   const [visible, setVisible] = useState(false);
   const [fixedPos, setFixedPos] = useState(null);
   const anchorRef = useRef(null);
@@ -96,10 +99,7 @@ export default function BountyInfoTooltip({ perspective = "seller", darkMode = f
     </View>
   ) : null;
 
-  const webPortalTooltip =
-    isWeb && visible && fixedPos && createPortal && typeof document !== "undefined"
-      ? createPortal(tooltipNode, document.body)
-      : null;
+  const webPortalTooltip = isWeb && visible && fixedPos && createPortal && typeof document !== "undefined" ? createPortal(tooltipNode, document.body) : null;
 
   return (
     <View
@@ -108,7 +108,7 @@ export default function BountyInfoTooltip({ perspective = "seller", darkMode = f
       onMouseEnter={isWeb ? () => setVisible(true) : undefined}
       onMouseLeave={isWeb ? () => setVisible(false) : undefined}
       accessibilityRole='image'
-      accessibilityLabel={perspective === "referrer" ? "About earning bounty" : "About setting a bounty"}
+      accessibilityLabel={accessibilityLabel || (perspective === "referrer" ? "About earning bounty" : "About setting a bounty")}
     >
       <Ionicons name='information-circle-outline' size={16} color={visible ? (darkMode ? "#c4b5fd" : "#4B2E83") : darkMode ? "#999" : "#666"} />
       {/* Native / no-portal fallback stays in-tree; web uses portal above. */}

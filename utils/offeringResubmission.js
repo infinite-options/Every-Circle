@@ -109,7 +109,14 @@ export function mapOfferingFormToPayload(e) {
     ...buildOfferingConditionForApi(e),
     profile_expertise_bounty_type: e.profile_expertise_bounty_type || "none",
     profile_expertise_is_returnable: e.profile_expertise_is_returnable === 1 || e.profile_expertise_is_returnable === "1" ? 1 : 0,
-    profile_expertise_return_window_days: e.profile_expertise_return_window_days || "",
+    profile_expertise_return_window_days: (() => {
+      const returnable = e.profile_expertise_is_returnable === 1 || e.profile_expertise_is_returnable === "1";
+      if (!returnable) return "";
+      const n = parseInt(String(e.profile_expertise_return_window_days ?? "").trim(), 10);
+      if (!Number.isFinite(n) || n < 5) return "5";
+      if (n > 30) return "30";
+      return String(n);
+    })(),
     profile_expertise_refund_policy: e.profile_expertise_refund_policy || "",
     ...shippingFields,
     ...(e.profile_expertise_uid && (e.profile_expertise_updated_at != null || e.updated_at != null)

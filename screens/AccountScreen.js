@@ -47,6 +47,14 @@ import {
 /** 1 = compact: Purchases (Date, Type, Seller, Delivered, Received, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
 
+/** Matches React Native Web default body text; SVG chart labels do not inherit this unless set explicitly. */
+const ACCOUNT_UI_FONT_FAMILY = Platform.select({
+  web: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  default: null,
+});
+const accountUiFontStyle = ACCOUNT_UI_FONT_FAMILY ? { fontFamily: ACCOUNT_UI_FONT_FAMILY } : {};
+const accountChartSvgFontProps = ACCOUNT_UI_FONT_FAMILY ? { fontFamily: ACCOUNT_UI_FONT_FAMILY } : {};
+
 /** Purchased Item cell: list up to two comma-separated names; more than two → "Multiple". */
 function formatPurchasedItemDisplay(purchasedItem) {
   const raw = String(purchasedItem || "").trim();
@@ -1192,6 +1200,37 @@ function resolveRefundBusinessCode(sellerNote) {
   if (n === "EC" || n === "PM") return n;
   // Default live (createPaymentIntent uses ECTEST in dev; live purchases use EC)
   return "EC";
+}
+
+/**
+ * Split a return credit between wallet restore and Stripe card refund.
+ * Uses estimated_refund.wallet_refund / stripe_refund when present; otherwise
+ * derives from sale.transaction_wallet_amount vs transaction_total.
+ */
+function splitReturnRefundByPaymentMethod(sale, refundGrand, estimatedRefund = null) {
+  const totalCredit = Math.max(0, Math.abs(Number(refundGrand) || 0));
+  const est = estimatedRefund && typeof estimatedRefund === "object" ? estimatedRefund : null;
+  if (est && (est.wallet_refund != null || est.stripe_refund != null)) {
+    const walletRefund = Math.max(0, Math.abs(Number(est.wallet_refund) || 0));
+    const stripeFromEst =
+      est.stripe_refund != null
+        ? Math.abs(Number(est.stripe_refund) || 0)
+        : Math.max(0, totalCredit - walletRefund);
+    return {
+      walletRefund: Math.round(walletRefund * 100) / 100,
+      stripeRefund: Math.round(Math.max(0, stripeFromEst) * 100) / 100,
+    };
+  }
+  const orderTotal = Math.abs(Number(sale?.transaction_total) || 0);
+  const walletPaid = Math.abs(Number(sale?.transaction_wallet_amount) || 0);
+  if (!(orderTotal > 0) || !(walletPaid > 0) || !(totalCredit > 0)) {
+    return { walletRefund: 0, stripeRefund: Math.round(totalCredit * 100) / 100 };
+  }
+  const cappedWallet = Math.min(walletPaid, orderTotal);
+  const walletRatio = cappedWallet / orderTotal;
+  const walletRefund = Math.round(totalCredit * walletRatio * 100) / 100;
+  const stripeRefund = Math.round(Math.max(0, totalCredit - walletRefund) * 100) / 100;
+  return { walletRefund, stripeRefund };
 }
 
 /**
@@ -3284,10 +3323,23 @@ function parseOrderTransactionShipping(source, fallback) {
   return value != null ? value : null;
 }
 
-const ORDER_LINE_SHIPPING_TOTAL_KEYS = ["ti_shipping_total", "line_shipping_total", "shipping_total", "ti_total_shipping", "total_line_shipping"];
-const ORDER_LINE_SHIPPING_UNIT_KEYS = ["ti_shipping_unit", "shipping_unit", "ti_shipping_per_unit", "unit_shipping"];
-const ORDER_LINE_SHIPPING_KEYS = [
+const ORDER_LINE_SHIPPING_TOTAL_KEYS = [
+  "ti_line_shipping_amount",
+  "line_shipping_amount",
+  "ti_shipping_total",
+  "line_shipping_total",
+  "shipping_total",
+  "ti_total_shipping",
+  "total_line_shipping",
+];
+const ORDER_LINE_SHIPPING_UNIT_KEYS = [
   "ti_shipping_amount",
+  "ti_shipping_unit",
+  "shipping_unit",
+  "ti_shipping_per_unit",
+  "unit_shipping",
+];
+const ORDER_LINE_SHIPPING_KEYS = [
   "line_shipping",
   "shipping_amount",
   "shipping_cost",
@@ -4074,7 +4126,7 @@ function OrderDetailLinesTable({
                     const trackingPairs = Array.isArray(row.trackingPairs) ? row.trackingPairs : [];
                     const hasTracking = trackingPairs.length > 0;
                     const longestPair = trackingPairs.reduce((max, pair) => Math.max(max, pair.length), 0);
-                    const trackingLikelyTruncated = hasTracking && (trackingPairs.length > 2 || longestPair > 28);
+                    const trackingLikelyTruncated = hasTracking && (trackingPairs.length > 2 || longestPair > 48);
                     const visiblePairs = trackingExpanded || !trackingLikelyTruncated ? trackingPairs : trackingPairs.slice(0, 2);
                     const showExpandControl = hasTracking && trackingLikelyTruncated;
                     return (
@@ -6553,6 +6605,7 @@ export default function AccountScreen({ navigation, route }) {
   const [returnModalReceiptData, setReturnModalReceiptData] = useState([]);
   const [returnModalOrderLines, setReturnModalOrderLines] = useState([]);
   const [returnModalLoading, setReturnModalLoading] = useState(false);
+  const [returnSubmitLoading, setReturnSubmitLoading] = useState(false);
   const [receiptOrderDetail, setReceiptOrderDetail] = useState(null);
 
   const [businessReceiptCache, setBusinessReceiptCache] = useState({});
@@ -7243,6 +7296,13 @@ export default function AccountScreen({ navigation, route }) {
     });
     const refundAmount = Math.abs(Number(reverse?.total) || 0);
     const refundTax = Math.abs(Number(reverse?.taxes) || 0);
+    const pendingEstimated =
+      (scoped.hasScope ? scoped.scopedPending?.estimated_refund : null) ||
+      sale?.pending_return?.estimated_refund ||
+      orderDetail?.pending_return?.estimated_refund ||
+      reverse?.estimated_refund ||
+      null;
+    const { walletRefund, stripeRefund } = splitReturnRefundByPaymentMethod(sale, refundAmount, pendingEstimated);
     const saleUid = String(pending.orderUid || pending.transactionUid || "").trim();
     const trrUid = String(pending.trrUid || returnDetailModal.trrUid || trrUids[0] || "").trim();
 
@@ -7250,27 +7310,40 @@ export default function AccountScreen({ navigation, route }) {
     setReturnDetailAccepting(true);
     let stripeRefundResult = null;
     try {
-      if (paymentIntent && refundAmount > 0 && buyerUid) {
+      // Only refund the card portion to Stripe. Wallet-paid amounts are restored
+      // to the buyer's useable balance by the backend confirm/ledger path.
+      if (paymentIntent && stripeRefund > 0 && buyerUid) {
+        const stripeTaxShare =
+          refundAmount > 0 ? Math.round(refundTax * (stripeRefund / refundAmount) * 100) / 100 : 0;
         stripeRefundResult = await createStripeRefund({
           customerUid: buyerUid,
           businessCode,
           paymentIntent,
-          refundAmount,
-          tax: refundTax,
+          refundAmount: stripeRefund,
+          tax: stripeTaxShare,
           metadata: {
             order_uid: saleUid,
             transaction_uid: saleUid,
             ...(trrUid ? { trr_uid: trrUid } : {}),
             ...(trrUids.length > 1 ? { trr_uids: trrUids.join(",") } : {}),
             seller_note: sellerNote,
+            wallet_refund: walletRefund,
+            stripe_refund: stripeRefund,
           },
         });
       } else {
         stripeRefundResult = {
-          ok: false,
+          ok: true,
           skipped: true,
           refund_id: null,
-          message: !paymentIntent ? "No Stripe payment intent on sale" : !buyerUid ? "Missing buyer customer_uid" : "Refund amount too small",
+          message:
+            stripeRefund <= 0
+              ? "No card portion to refund (wallet covered refund)"
+              : !paymentIntent
+                ? "No Stripe payment intent on sale"
+                : !buyerUid
+                  ? "Missing buyer customer_uid"
+                  : "Refund amount too small",
         };
       }
 
@@ -8298,6 +8371,7 @@ export default function AccountScreen({ navigation, route }) {
     setSelectedReturnItems([]);
     setReturnItemQuantities({});
     setReturnItemSplitQty({});
+    setReturnSubmitLoading(false);
     setShowReceiptModal(false);
     setShowReturnNoteModal(true);
     setReturnModalLoading(true);
@@ -8913,11 +8987,11 @@ export default function AccountScreen({ navigation, route }) {
         <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
-            <Text style={{ fontSize: 12, color: "#666" }}>Daily Bounty</Text>
+            <Text style={{ fontSize: 12, color: "#666", ...accountUiFontStyle }}>Daily Bounty</Text>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
-            <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Bounty</Text>
+            <Text style={{ fontSize: 12, color: "#666", ...accountUiFontStyle }}>Cumulative Bounty</Text>
           </View>
         </View>
         <Svg width={chartWidth} height={chartHeight}>
@@ -8934,7 +9008,7 @@ export default function AccountScreen({ navigation, route }) {
             return (
               <G key={`left-tick-${index}`}>
                 <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#B71C1C' strokeWidth='1' />
-                <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#B71C1C' textAnchor='end'>
+                <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#B71C1C' textAnchor='end' {...accountChartSvgFontProps}>
                   {formatYLabel(tick)}
                 </SvgText>
               </G>
@@ -8948,7 +9022,7 @@ export default function AccountScreen({ navigation, route }) {
             return (
               <G key={`right-tick-${index}`}>
                 <Line x1={paddingLeft + plotWidth} y1={y} x2={paddingLeft + plotWidth + 5} y2={y} stroke='#666' strokeWidth='1' />
-                <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start'>
+                <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start' {...accountChartSvgFontProps}>
                   {formatYLabel(tick)}
                 </SvgText>
               </G>
@@ -8963,19 +9037,19 @@ export default function AccountScreen({ navigation, route }) {
             ? chartData.dates.map((date, index) => {
                 const x = xPositions[index];
                 return (
-                  <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+                  <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle' {...accountChartSvgFontProps}>
                     {formatDateLabel(date)}
                   </SvgText>
                 );
               })
             : buildMobileEarningsXAxisTicksByTime(chartData.dates, xPositions, paddingLeft, paddingLeft + plotWidth).map((tick) => (
-                <SvgText key={tick.key} x={tick.x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+                <SvgText key={tick.key} x={tick.x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle' {...accountChartSvgFontProps}>
                   {tick.label}
                 </SvgText>
               ))}
 
           {/* X-axis title label */}
-          <SvgText x={paddingLeft + plotWidth / 2} y={paddingTop + plotHeight + 35} fontSize='12' fill='#333' fontWeight='600' textAnchor='middle'>
+          <SvgText x={paddingLeft + plotWidth / 2} y={paddingTop + plotHeight + 35} fontSize='12' fill='#333' fontWeight='600' textAnchor='middle' {...accountChartSvgFontProps}>
             Date
           </SvgText>
 
@@ -9065,11 +9139,11 @@ export default function AccountScreen({ navigation, route }) {
         <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
-            <Text style={{ fontSize: 12, color: "#666" }}>Daily Net Earnings</Text>
+            <Text style={{ fontSize: 12, color: "#666", ...accountUiFontStyle }}>Daily Net Earnings</Text>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
-            <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Net Earnings</Text>
+            <Text style={{ fontSize: 12, color: "#666", ...accountUiFontStyle }}>Cumulative Net Earnings</Text>
           </View>
         </View>
         <Svg width={chartWidth} height={chartHeight}>
@@ -9086,7 +9160,7 @@ export default function AccountScreen({ navigation, route }) {
             return (
               <G key={`left-tick-${index}`}>
                 <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#666' strokeWidth='1' />
-                <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#666' textAnchor='end'>
+                <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#666' textAnchor='end' {...accountChartSvgFontProps}>
                   {formatYLabel(tick)}
                 </SvgText>
               </G>
@@ -9100,7 +9174,7 @@ export default function AccountScreen({ navigation, route }) {
             return (
               <G key={`right-tick-${index}`}>
                 <Line x1={paddingLeft + plotWidth} y1={y} x2={paddingLeft + plotWidth + 5} y2={y} stroke='#666' strokeWidth='1' />
-                <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start'>
+                <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start' {...accountChartSvgFontProps}>
                   {formatYLabel(tick)}
                 </SvgText>
               </G>
@@ -9115,19 +9189,19 @@ export default function AccountScreen({ navigation, route }) {
             ? chartData.dates.map((date, index) => {
                 const x = xPositions[index];
                 return (
-                  <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+                  <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle' {...accountChartSvgFontProps}>
                     {formatDateLabel(date)}
                   </SvgText>
                 );
               })
             : buildMobileEarningsXAxisTicksByTime(chartData.dates, xPositions, paddingLeft, paddingLeft + plotWidth).map((tick) => (
-                <SvgText key={tick.key} x={tick.x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+                <SvgText key={tick.key} x={tick.x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle' {...accountChartSvgFontProps}>
                   {tick.label}
                 </SvgText>
               ))}
 
           {/* X-axis title label */}
-          <SvgText x={paddingLeft + plotWidth / 2} y={paddingTop + plotHeight + 35} fontSize='12' fill='#333' fontWeight='600' textAnchor='middle'>
+          <SvgText x={paddingLeft + plotWidth / 2} y={paddingTop + plotHeight + 35} fontSize='12' fill='#333' fontWeight='600' textAnchor='middle' {...accountChartSvgFontProps}>
             Date
           </SvgText>
 
@@ -10188,19 +10262,26 @@ export default function AccountScreen({ navigation, route }) {
         transparent={true}
         visible={showReturnNoteModal}
         onRequestClose={() => {
+          if (returnSubmitLoading) return;
           setShowReturnNoteModal(false);
           setReturnNote("");
           setSelectedReturnItems([]);
           setReturnItemQuantities({});
           setReturnItemSplitQty({});
+          setReturnSubmitLoading(false);
         }}
       >
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "80%" }]}>
             <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>Request Return</Text>
 
-            {returnModalLoading ? (
-              <ActivityIndicator size='large' color='#B71C1C' style={{ marginVertical: 24 }} />
+            {returnModalLoading || returnSubmitLoading ? (
+              <View style={{ alignItems: "center", marginVertical: 24 }}>
+                <ActivityIndicator size='large' color='#B71C1C' />
+                {returnSubmitLoading ? (
+                  <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginTop: 12, textAlign: "center" }}>Submitting return request...</Text>
+                ) : null}
+              </View>
             ) : (
               <>
                 {/* Item selection */}
@@ -10381,19 +10462,22 @@ export default function AccountScreen({ navigation, route }) {
                     const split = returnItemSplitQty[id] || initialReturnItemSplitQty(row);
                     return !isReturnItemSplitValid(row, split);
                   });
-                  const canSubmitReturn = selectedReturnItems.length > 0 && !hasInvalidQty && !returnModalLoading;
+                  const canSubmitReturn = selectedReturnItems.length > 0 && !hasInvalidQty && !returnModalLoading && !returnSubmitLoading;
 
                   return (
                     <View style={{ flexDirection: "row", gap: 12 }}>
                       <TouchableOpacity
                         style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                        disabled={returnSubmitLoading}
                         onPress={() => {
+                          if (returnSubmitLoading) return;
                           setShowReturnNoteModal(false);
                           setReturnNote("");
                           setSelectedReturnItems([]);
                           setReturnItemQuantities({});
                           setReturnItemSplitQty({});
                           setReturnModalOrderLines([]);
+                          setReturnSubmitLoading(false);
                         }}
                       >
                         <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
@@ -10425,17 +10509,22 @@ export default function AccountScreen({ navigation, route }) {
                             return;
                           }
                           const { cancelOnly } = resolveReturnRequestCancelFlags(transactionReturnItems);
-                          const ok = await handleReturnRequest(receiptTransaction, returnNote, transactionReturnItems, {
-                            cancel_unshipped: cancelOnly,
-                            cancel_only: cancelOnly,
-                          });
-                          if (!ok) return;
-                          setShowReturnNoteModal(false);
-                          setReturnNote("");
-                          setSelectedReturnItems([]);
-                          setReturnItemQuantities({});
-                          setReturnItemSplitQty({});
-                          setReturnModalOrderLines([]);
+                          setReturnSubmitLoading(true);
+                          try {
+                            const ok = await handleReturnRequest(receiptTransaction, returnNote, transactionReturnItems, {
+                              cancel_unshipped: cancelOnly,
+                              cancel_only: cancelOnly,
+                            });
+                            if (!ok) return;
+                            setShowReturnNoteModal(false);
+                            setReturnNote("");
+                            setSelectedReturnItems([]);
+                            setReturnItemQuantities({});
+                            setReturnItemSplitQty({});
+                            setReturnModalOrderLines([]);
+                          } finally {
+                            setReturnSubmitLoading(false);
+                          }
                         }}
                       >
                         <Text style={styles.receiveItemModalButtonText}>Submit</Text>
@@ -10773,27 +10862,28 @@ export default function AccountScreen({ navigation, route }) {
                     awaitingShipment ||
                     (shipDisplay.statusLabel && shipDisplay.statusLabel !== "—");
 
-                  let shipMetaText = "Ready to verify";
+                  let shipStatusText = "Ready to verify";
                   if (awaitingShipment) {
-                    shipMetaText =
+                    shipStatusText =
                       shipDisplay.statusLabel === "—" || shipDisplay.statusLabel === "Not shipped"
                         ? "Not shipped yet — verify after shipping"
                         : `${shipDisplay.statusLabel} — verify after shipping`;
                   } else if (shipDisplay.statusLabel && shipDisplay.statusLabel !== "—") {
                     if (shipDisplay.statusLabel === "Shipped" && shippedQty > 0 && purchasedQty > 1) {
-                      shipMetaText = `Shipped ${shippedQty}/${purchasedQty}`;
+                      shipStatusText = `Shipped ${shippedQty}/${purchasedQty}`;
                     } else if (shipDisplay.statusLabel.includes("/") && !String(shipDisplay.statusLabel).startsWith("Shipped")) {
-                      shipMetaText = `Shipped ${shipDisplay.statusLabel}`;
+                      shipStatusText = `Shipped ${shipDisplay.statusLabel}`;
                     } else {
-                      shipMetaText = shipDisplay.statusLabel;
+                      shipStatusText = shipDisplay.statusLabel;
                     }
                   }
-                  if (!awaitingShipment && shipDisplay.trackingLabel && shipDisplay.trackingLabel !== "—") {
-                    shipMetaText = `${shipMetaText} · ${shipDisplay.trackingLabel}`;
-                  }
-                  if (cancelNote) {
-                    shipMetaText = `${shipMetaText} · ${cancelNote}`;
-                  }
+                  const trackingLines =
+                    !awaitingShipment && shipDisplay.trackingPairs?.length
+                      ? shipDisplay.trackingPairs
+                      : !awaitingShipment && shipDisplay.trackingLabel && shipDisplay.trackingLabel !== "—"
+                        ? shipDisplay.trackingLabel.split(",").map((s) => s.trim()).filter(Boolean)
+                        : [];
+                  const shipMetaSubtextStyle = { fontSize: 11, color: darkMode ? "#aaa" : "#666", marginTop: 2 };
 
                   return (
                     <View
@@ -10836,7 +10926,17 @@ export default function AccountScreen({ navigation, route }) {
                             {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
                           </Text>
                           {showShipMeta ? (
-                            <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", marginTop: 2 }}>{shipMetaText}</Text>
+                            <View style={{ marginTop: 2 }}>
+                              <Text style={shipMetaSubtextStyle}>
+                                {shipStatusText}
+                                {cancelNote ? ` · ${cancelNote}` : ""}
+                              </Text>
+                              {trackingLines.map((line, trackingIdx) => (
+                                <Text key={`${itemId}-tracking-${trackingIdx}`} style={shipMetaSubtextStyle}>
+                                  {line}
+                                </Text>
+                              ))}
+                            </View>
                           ) : null}
                         </View>
                         {fullyReceived ? (
@@ -11731,13 +11831,14 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   businessOrderDetailTableWithFulfillment: {
-    minWidth: 1180,
+    minWidth: 1360,
   },
   businessOrderDetailColShipped: {
     width: 112,
   },
+  /** Carrier label + space + up to 40-digit tracking number at 12px. */
   businessOrderDetailColTracking: {
-    width: 200,
+    width: 380,
   },
   businessOrderDetailTrackingText: {
     fontSize: 12,

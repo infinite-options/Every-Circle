@@ -13,7 +13,7 @@ import { getHeaderColors } from "../config/headerColors";
 // PROFILE-SPECIFIC
 import ExperienceSection from "../components/ExperienceSection";
 import EducationSection from "../components/EducationSection";
-import ExpertiseSection, { validateExpertise, validateExpertiseTax, validateExpertiseShipping } from "../components/ExpertiseSection";
+import ExpertiseSection, { validateExpertise, validateExpertiseTax, validateExpertiseShipping, validateExpertiseReturnWindow, RETURN_WINDOW_VALIDATION_MESSAGE } from "../components/ExpertiseSection";
 import { TAX_RATE_VALIDATION_MESSAGE } from "../utils/taxValidation";
 import SeekingSection, { validateSeeking } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
@@ -649,7 +649,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       if (!validateExpertiseShipping(formData.expertise)) {
         Alert.alert(
           "Required Field",
-          "Offerings with Delivered mode must have Shipping/delivery set (Free shipping, Buyer pays fixed, or Buyer pays actual). Fixed shipping also requires an amount.",
+          "Offerings with Delivered mode must have Delivery charge set (Free delivery charge, Buyer pays fixed, or Buyer pays actual). Fixed delivery charge also requires an amount.",
         );
       } else {
         Alert.alert("Required Field", "Please fill in title, description, and unit for all Offering entries before submitting.");
@@ -659,6 +659,11 @@ const EditProfileScreen = ({ route, navigation }) => {
 
     if (!validateExpertiseTax(formData.expertise)) {
       Alert.alert("Required Field", TAX_RATE_VALIDATION_MESSAGE);
+      return;
+    }
+
+    if (!validateExpertiseReturnWindow(formData.expertise)) {
+      Alert.alert("Validation", RETURN_WINDOW_VALIDATION_MESSAGE);
       return;
     }
 

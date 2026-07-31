@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
-import BountyInfoTooltip from "../components/BountyInfoTooltip";
+import BountyInfoTooltip, { ESCROW_INFO_COPY } from "../components/BountyInfoTooltip";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -21,7 +21,7 @@ if (!isWeb) {
   }
 }
 
-import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, BOUNTY_RESULTS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
 import StripeNativeProvider from "../components/StripeNativeProvider";
@@ -57,14 +57,13 @@ import {
   formatOfferingUnitPriceLabel,
   parseOfferingBountyAmount,
   isCartItemReturnable,
-  isCartItemBuyerPaysShipping,
 } from "../utils/offeringCartUtils";
-import { getCartItemBuyerShippingCharge, sumBuyerShippingCharges } from "../utils/businessServiceShipping";
 import {
   buildCartLineProcessingFeeMap,
   cartLineProcessingFeeKey,
   computeCreditCardChargeTotal,
   computeCreditCardProcessingFee,
+  CREDIT_CARD_FEE_DISPLAY_LABEL,
   getCreditCardFeeBase,
 } from "../utils/cartCreditCardFee";
 import {
@@ -75,9 +74,15 @@ import {
   FULFILLMENT_SHIP,
   FULFILLMENT_VIRTUAL,
   getCartItemAvailableFulfillmentMethods,
+  getCartItemBuyerShippingCharge,
+  getCartItemDeliveryChargeDisplay,
+  isCartItemBuyerPaysShipping,
+  normalizeCartItemFulfillment,
   normalizeCartItemsFulfillment,
   resolveDefaultFulfillmentMethod,
+  sumBuyerShippingCharges,
 } from "../utils/cartFulfillmentMethod";
+import { cartLineDeliveryChargeLabel, OFFERING_DELIVERY_CHARGE_LABEL, sellerGroupDeliveryChargeLabel } from "../utils/profileOfferingShipping";
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
 
@@ -178,17 +183,10 @@ function getCartLineChargeBreakdown(item, processingFeeOverride) {
   const qty = parseInt(item.quantity, 10) || 1;
   const { pretax, tax, taxable, ratePercentUsed } = lineMerchandiseAndTax(item);
   const unitPrice = qty > 0 ? roundMoney(pretax / qty) : pretax;
-  const shipCharge = getCartItemBuyerShippingCharge(item);
-  let shippingAmount = 0;
-  let shippingIsActual = false;
-  let shippingApplicable = false;
-  if (shipCharge?.type === "fixed") {
-    shippingApplicable = true;
-    shippingAmount = roundMoney(shipCharge.amount);
-  } else if (shipCharge?.type === "actual") {
-    shippingApplicable = true;
-    shippingIsActual = true;
-  }
+  const deliveryDisplay = getCartItemDeliveryChargeDisplay(item);
+  const shippingAmount = deliveryDisplay.showRow ? roundMoney(deliveryDisplay.amount) : 0;
+  const shippingIsActual = deliveryDisplay.isActual;
+  const shippingApplicable = deliveryDisplay.showRow;
   const buyerPaysCardFee = groupBuyerPaysCardFee([item]);
   const feeBase = getCreditCardFeeBase({ merchandise: pretax, tax, shipping: shippingAmount });
   const processingFee =
@@ -307,7 +305,11 @@ function CartFulfillmentChoice({ item, onSelect }) {
       </View>
       {method === FULFILLMENT_VIRTUAL ? <Text style={styles.fulfillmentPickupHint}>No shipping required · verify immediately</Text> : null}
       {method === FULFILLMENT_PICKUP && pickupHint ? <Text style={styles.fulfillmentPickupHint}>Pickup location: {pickupHint}</Text> : null}
-      {method === FULFILLMENT_SHIP ? <Text style={styles.fulfillmentPickupHint}>Shipping address required at checkout</Text> : null}
+      {method === FULFILLMENT_SHIP ? (
+        <Text style={styles.fulfillmentPickupHint}>
+          {item?.itemType === "expertise" ? "Delivery address required at checkout" : "Shipping address required at checkout"}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -408,8 +410,9 @@ function groupBuyerPaysCardFee(items) {
  */
 function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
   if (!Array.isArray(cartItems)) return [];
+  const normalizedItems = normalizeCartItemsFulfillment(cartItems);
   const map = new Map();
-  for (const item of cartItems) {
+  for (const item of normalizedItems) {
     const sid = getCheckoutSellerId(item);
     if (!sid) continue;
     if (!map.has(sid)) map.set(sid, []);
@@ -446,20 +449,93 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
       shippingSubtotal,
       hasFixedShipping: shippingInfo.hasFixedShipping,
       hasActualShipping: shippingInfo.hasActualShipping,
+      hasWaivedDeliveryCharge: shippingInfo.hasWaivedDeliveryCharge,
       hasBuyerPaysShipping: items.some((it) => isCartItemBuyerPaysShipping(it)),
       subtotalAfterTax,
       subtotalWithShipping,
       buyerPaysCardFee,
       processingFee,
       total,
+      walletApplied: 0,
+      cardCharge: total,
       displayName,
     };
   });
 }
 
+/** Sum of merchandise + tax + shipping across seller groups (wallet can cover this base). */
+function getCheckoutGroupsWalletBase(groups) {
+  return roundMoney(
+    (groups || []).reduce((sum, group) => sum + roundMoney(Number(group?.subtotalWithShipping) || 0), 0),
+  );
+}
+
+/**
+ * Max wallet the buyer may apply: min(useable balance, cart base before card fee).
+ */
+function getMaxApplicableWalletAmount(groups, useableBalance) {
+  return roundMoney(Math.min(Math.max(0, Number(useableBalance) || 0), getCheckoutGroupsWalletBase(groups)));
+}
+
+/**
+ * Apply a chosen wallet amount across seller groups (in order).
+ * Amount may be 0 (all card) up to the max applicable. Card processing fee is
+ * charged only on the remaining card portion.
+ */
+function applyWalletToCheckoutGroups(groups, walletAmountToApply) {
+  let remaining = roundMoney(Math.max(0, Number(walletAmountToApply) || 0));
+  return (groups || []).map((group) => {
+    const base = roundMoney(group.subtotalWithShipping);
+    const walletApplied = roundMoney(Math.min(remaining, base));
+    remaining = roundMoney(remaining - walletApplied);
+    const cardBase = roundMoney(base - walletApplied);
+    const processingFee = computeCreditCardProcessingFee(cardBase, group.buyerPaysCardFee);
+    const cardCharge = computeCreditCardChargeTotal(cardBase, group.buyerPaysCardFee);
+    const total = roundMoney(walletApplied + cardCharge);
+    return {
+      ...group,
+      walletApplied,
+      processingFee,
+      cardCharge,
+      total,
+    };
+  });
+}
+
+function formatWalletAmountInput(amount) {
+  return roundMoney(Math.max(0, Number(amount) || 0)).toFixed(2);
+}
+
+function parseWalletAmountInput(text) {
+  const cleaned = String(text ?? "").replace(/[^0-9.]/g, "");
+  if (cleaned === "" || cleaned === ".") return null;
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : null;
+}
+
+async function fetchUseableWalletBalance(profileUid) {
+  if (!profileUid) return 0;
+  try {
+    const response = await fetch(`${BOUNTY_RESULTS_ENDPOINT}/${profileUid}`);
+    if (!response.ok) return 0;
+    const data = await response.json();
+    const wallet = data?.wallet || data?.data?.wallet || data?.bounty_results?.wallet || {};
+    const useable = Number(wallet.wallet_useable_balance);
+    return Number.isFinite(useable) && useable > 0 ? roundMoney(useable) : 0;
+  } catch (e) {
+    console.warn("Failed to fetch useable wallet balance:", e);
+    return 0;
+  }
+}
+
 const ShoppingCartScreenContent = ({ route, navigation }) => {
   const { cartItems: initialCartItems, businessName, business_uid, recommender_profile_id, returnTo, searchState } = route.params || {};
   const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
+  const [useableWalletBalance, setUseableWalletBalance] = useState(0);
+  /** Chosen wallet dollars to apply at checkout (0 = pay fully by card). */
+  const [walletAmountToApply, setWalletAmountToApply] = useState(0);
+  const [walletAmountDraft, setWalletAmountDraft] = useState("0.00");
+  const walletInitializedRef = useRef(false);
 
   const handleReturnPress = () => {
     if (returnTo === "BusinessProfile") {
@@ -556,6 +632,22 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       requestAnimationFrame(() => {
         scrollViewRef.current?.scrollTo({ y: 0, animated: false });
       });
+      (async () => {
+        try {
+          const profileUid = await AsyncStorage.getItem("profile_uid");
+          const balance = await fetchUseableWalletBalance(profileUid);
+          setUseableWalletBalance(balance);
+          // Default to max wallet on first load; buyer can lower to $0.
+          if (!walletInitializedRef.current) {
+            walletInitializedRef.current = true;
+            setWalletAmountToApply(balance);
+            setWalletAmountDraft(formatWalletAmountInput(balance));
+          }
+        } catch (e) {
+          console.warn("Could not load wallet balance for cart:", e);
+          setUseableWalletBalance(0);
+        }
+      })();
     }, []),
   );
 
@@ -579,9 +671,25 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         return;
       }
 
-      const session = { groups, index: 0 };
+      const buyerUid = await AsyncStorage.getItem("profile_uid");
+      const useableBalance = await fetchUseableWalletBalance(buyerUid);
+      setUseableWalletBalance(useableBalance);
+      const maxApplicable = getMaxApplicableWalletAmount(groups, useableBalance);
+      const amountToApply = roundMoney(Math.min(Math.max(0, walletAmountToApply), maxApplicable));
+      setWalletAmountToApply(amountToApply);
+      setWalletAmountDraft(formatWalletAmountInput(amountToApply));
+      const payableGroups = applyWalletToCheckoutGroups(groups, amountToApply);
+
+      const session = { groups: payableGroups, index: 0 };
       webCheckoutSessionRef.current = session;
       setWebCheckoutSession(session);
+
+      // Wallet-only first group: record without Stripe UI.
+      const first = payableGroups[0];
+      if (first && (first.cardCharge || 0) < 0.01) {
+        await advanceWebCheckoutWithoutCard(buyerUid, session);
+        return;
+      }
 
       await loadStripePublicKey("ECTEST");
 
@@ -591,6 +699,78 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       console.error("Error loading Stripe:", error);
       Alert.alert("Error", "Failed to initialize payment. Please try again.");
       setLoading(false);
+    }
+  };
+
+  const finishWebCheckoutSuccess = async () => {
+    await decrementStockForPurchasedItems();
+
+    webCheckoutSessionRef.current = null;
+    setWebCheckoutSession(null);
+
+    try {
+      const choicesRecord = {};
+      cartItems.forEach((item) => {
+        if (item.itemType === "expertise" && item.expertise_uid && item.cost) {
+          choicesRecord[item.expertise_uid] = { offeringCostString: item.cost };
+        } else {
+          const enrichment = cartChoiceEnrichmentFromItem(item);
+          if (enrichment) {
+            choicesRecord[item.bs_uid] = enrichment;
+          }
+        }
+      });
+      if (Object.keys(choicesRecord).length > 0) {
+        const existing = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
+        const existingParsed = existing ? JSON.parse(existing) : {};
+        await AsyncStorage.setItem("receipt_choices_by_bs_uid", JSON.stringify({ ...existingParsed, ...choicesRecord }));
+      }
+      const keys = await AsyncStorage.getAllKeys();
+      const cartKeys = keys.filter((key) => key.startsWith("cart_"));
+      await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
+      setCartItems([]);
+      Alert.alert("Success", "Payment successful! Your order has been placed.", [
+        {
+          text: "OK",
+          onPress: () => {
+            navigation.navigate("Search", { refreshCart: true });
+          },
+        },
+      ]);
+    } catch (error) {
+      console.error("Error clearing cart data:", error);
+      Alert.alert("Error", "There was an error clearing your cart. Please try again.");
+    }
+    setLoading(false);
+    setShowStripePayment(false);
+  };
+
+  /** Record wallet-only (or continue) web checkout steps that need no card charge. */
+  const advanceWebCheckoutWithoutCard = async (buyerUid, sess) => {
+    let session = sess;
+    while (session && session.index < session.groups.length) {
+      const group = session.groups[session.index];
+      if ((group.cardCharge || 0) >= 0.01) {
+        webCheckoutSessionRef.current = session;
+        setWebCheckoutSession(session);
+        await loadStripePublicKey("ECTEST");
+        setShowStripePayment(true);
+        setLoading(false);
+        return;
+      }
+      await recordSingleBusinessTransaction(
+        buyerUid,
+        null,
+        group,
+        escrowBySeller[group.sellerId] !== false,
+        group.walletApplied || 0,
+      );
+      const nextIndex = session.index + 1;
+      if (nextIndex >= session.groups.length) {
+        await finishWebCheckoutSuccess();
+        return;
+      }
+      session = { groups: session.groups, index: nextIndex };
     }
   };
 
@@ -614,59 +794,22 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const group = sess.groups[sess.index];
       console.log(`Recording web payment step ${sess.index + 1}/${sess.groups.length} for`, group.sellerId);
 
-      await recordSingleBusinessTransaction(buyerUid, paymentIntent, group, escrowBySeller[group.sellerId] !== false);
+      await recordSingleBusinessTransaction(
+        buyerUid,
+        paymentIntent,
+        group,
+        escrowBySeller[group.sellerId] !== false,
+        group.walletApplied || 0,
+      );
 
       const nextIndex = sess.index + 1;
       if (nextIndex < sess.groups.length) {
-        const nextSession = { groups: sess.groups, index: nextIndex };
-        webCheckoutSessionRef.current = nextSession;
-        setWebCheckoutSession(nextSession);
         setShowStripePayment(false);
-        setTimeout(() => setShowStripePayment(true), 200);
-        setLoading(false);
+        await advanceWebCheckoutWithoutCard(buyerUid, { groups: sess.groups, index: nextIndex });
         return;
       }
 
-      await decrementStockForPurchasedItems();
-
-      webCheckoutSessionRef.current = null;
-      setWebCheckoutSession(null);
-
-      try {
-        const choicesRecord = {};
-        cartItems.forEach((item) => {
-          if (item.itemType === "expertise" && item.expertise_uid && item.cost) {
-            choicesRecord[item.expertise_uid] = { offeringCostString: item.cost };
-          } else {
-            const enrichment = cartChoiceEnrichmentFromItem(item);
-            if (enrichment) {
-              choicesRecord[item.bs_uid] = enrichment;
-            }
-          }
-        });
-        if (Object.keys(choicesRecord).length > 0) {
-          const existing = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
-          const existingParsed = existing ? JSON.parse(existing) : {};
-          await AsyncStorage.setItem("receipt_choices_by_bs_uid", JSON.stringify({ ...existingParsed, ...choicesRecord }));
-          console.log("Saved receipt choices:", JSON.stringify(choicesRecord));
-        }
-        console.log("Clearing all cart data...");
-        const keys = await AsyncStorage.getAllKeys();
-        const cartKeys = keys.filter((key) => key.startsWith("cart_"));
-        await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
-        setCartItems([]);
-        Alert.alert("Success", "Payment successful! Your order has been placed.", [
-          {
-            text: "OK",
-            onPress: () => {
-              navigation.navigate("Search", { refreshCart: true });
-            },
-          },
-        ]);
-      } catch (error) {
-        console.error("Error clearing cart data:", error);
-        Alert.alert("Error", "There was an error clearing your cart. Please try again.");
-      }
+      await finishWebCheckoutSuccess();
     } catch (error) {
       console.error("Web payment submission error:", error);
       const sess = webCheckoutSessionRef.current;
@@ -773,28 +916,56 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       setLoading(true);
       console.log("Starting checkout —", groups.length, "separate payment(s) for", groups.length, "seller(s)");
 
-      for (let i = 0; i < groups.length; i++) {
-        const group = groups[i];
-        console.log(`Native checkout step ${i + 1}/${groups.length}`, group.sellerId, group.total);
+      const useableBalance = await fetchUseableWalletBalance(buyerUid);
+      setUseableWalletBalance(useableBalance);
+      const maxApplicable = getMaxApplicableWalletAmount(groups, useableBalance);
+      const amountToApply = roundMoney(Math.min(Math.max(0, walletAmountToApply), maxApplicable));
+      setWalletAmountToApply(amountToApply);
+      setWalletAmountDraft(formatWalletAmountInput(amountToApply));
+      const payableGroups = applyWalletToCheckoutGroups(groups, amountToApply);
+      console.log("Wallet useable balance:", useableBalance, "chosen wallet:", amountToApply, "payable groups:", payableGroups.map((g) => ({
+        sellerId: g.sellerId,
+        walletApplied: g.walletApplied,
+        cardCharge: g.cardCharge,
+        total: g.total,
+      })));
 
-        const clientSecret = await createPaymentIntent(group.total, group.salesTaxTotal);
-        const ok = await initializePaymentSheetForGroup(clientSecret, group.displayName);
-        if (!ok) {
-          throw new Error("Failed to initialize payment sheet");
+      for (let i = 0; i < payableGroups.length; i++) {
+        const group = payableGroups[i];
+        console.log(`Native checkout step ${i + 1}/${payableGroups.length}`, group.sellerId, {
+          total: group.total,
+          walletApplied: group.walletApplied,
+          cardCharge: group.cardCharge,
+        });
+
+        let paymentIntentId = null;
+        if (group.cardCharge >= 0.01) {
+          const clientSecret = await createPaymentIntent(group.cardCharge, group.salesTaxTotal);
+          const ok = await initializePaymentSheetForGroup(clientSecret, group.displayName);
+          if (!ok) {
+            throw new Error("Failed to initialize payment sheet");
+          }
+
+          const result = await presentPaymentSheet();
+          if (result.error) {
+            console.error("Payment error:", result.error);
+            throw new Error(result.error.message || "Payment failed");
+          }
+
+          // Client secret is pi_xxx_secret_yyy — store only the PaymentIntent ID for refunds
+          paymentIntentId = String(clientSecret || "").split("_secret_")[0];
+          if (!paymentIntentId) {
+            throw new Error("Invalid payment intent. Please try again.");
+          }
         }
 
-        const result = await presentPaymentSheet();
-        if (result.error) {
-          console.error("Payment error:", result.error);
-          throw new Error(result.error.message || "Payment failed");
-        }
-
-        // Client secret is pi_xxx_secret_yyy — store only the PaymentIntent ID for refunds
-        const paymentIntentId = String(clientSecret || "").split("_secret_")[0];
-        if (!paymentIntentId) {
-          throw new Error("Invalid payment intent. Please try again.");
-        }
-        await recordSingleBusinessTransaction(buyerUid, paymentIntentId, group, escrowBySeller[group.sellerId] !== false);
+        await recordSingleBusinessTransaction(
+          buyerUid,
+          paymentIntentId,
+          group,
+          escrowBySeller[group.sellerId] !== false,
+          group.walletApplied || 0,
+        );
         completedGroups.push(group);
       }
 
@@ -1144,9 +1315,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   };
 
   /** POST one transaction row for one Stripe payment (one seller's lines only). */
-  const recordSingleBusinessTransaction = async (buyerUid, paymentIntent, group, escrowValue = true) => {
+  const recordSingleBusinessTransaction = async (buyerUid, paymentIntent, group, escrowValue = true, walletAmount = 0) => {
     try {
-      console.log("Recording transaction for seller", group.sellerId, "items:", group.items);
+      console.log("Recording transaction for seller", group.sellerId, "items:", group.items, "wallet:", walletAmount);
 
       let buyerProfileId;
       if (!buyerUid.startsWith("110")) {
@@ -1160,6 +1331,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const salesTaxTotal = group.salesTaxTotal;
       const processingFee = group.processingFee;
       const chargedTotal = group.total;
+      const walletApplied = roundMoney(Math.max(0, Number(walletAmount) || 0));
 
       const defaultRecommender = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : buyerProfileId;
 
@@ -1167,31 +1339,43 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
 
       // In recordSingleBusinessTransaction, update the items map:
       const items = group.items.map((item) => {
-        const qty = parseInt(item.quantity, 10) || 1;
-        const bountyType = item.itemType === "expertise" ? getOfferingBountyTypeForCheckout(item) : item.bs_bounty_type || "per_item";
-        const bounty = item.itemType === "expertise" ? parseOfferingBountyAmount(item) : parsePrice(item.bs_bounty);
-        const sellerBusinessId = item.business_uid || item.profile_uid;
-        const { pretax, tax } = lineMerchandiseAndTax(item);
+        const normalizedItem = normalizeCartItemFulfillment(item);
+        const qty = parseInt(normalizedItem.quantity, 10) || 1;
+        const fulfillmentFields = buildFulfillmentApiFields(normalizedItem);
+        const bountyType = normalizedItem.itemType === "expertise" ? getOfferingBountyTypeForCheckout(normalizedItem) : normalizedItem.bs_bounty_type || "per_item";
+        const bounty = normalizedItem.itemType === "expertise" ? parseOfferingBountyAmount(normalizedItem) : parsePrice(normalizedItem.bs_bounty);
+        const sellerBusinessId = normalizedItem.business_uid || normalizedItem.profile_uid;
+        const { pretax, tax } = lineMerchandiseAndTax(normalizedItem);
+        const isExpertise = normalizedItem.itemType === "expertise";
+        const expertiseUid = isExpertise ? String(normalizedItem.expertise_uid || "").trim() : "";
+        const unitPrice = isExpertise
+          ? qty > 0
+            ? roundMoney(pretax / qty)
+            : roundMoney(pretax)
+          : normalizedItem.unitPrice || parsePrice(normalizedItem.bs_cost);
         return {
           business_id: sellerBusinessId,
-          bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
-          item_type: item.itemType === "expertise" ? "expertise" : "service",
+          bs_uid: isExpertise ? expertiseUid : normalizedItem.bs_uid,
+          ...(isExpertise && expertiseUid ? { profile_expertise_uid: expertiseUid, expertise_uid: expertiseUid } : {}),
+          item_type: isExpertise ? "expertise" : "service",
           bounty,
           bounty_type: bountyType,
           quantity: qty,
-          recommender_profile_id: item.bounty_recommender_profile_id || defaultRecommender,
-          choices_extra_cost: item.choicesExtraCost || 0,
-          unit_price: item.unitPrice || parsePrice(item.bs_cost),
-          selected_choices: item.selectedChoices || {},
-          selected_choice_labels: item.selectedChoiceLabels || {},
-          selected_choice_items: normalizeSelectedChoiceItemsForApi(item),
-          special_instructions: item.specialInstructions || "",
-          ...buildFulfillmentApiFields(item),
+          recommender_profile_id: normalizedItem.bounty_recommender_profile_id || defaultRecommender,
+          choices_extra_cost: normalizedItem.choicesExtraCost || 0,
+          unit_price: unitPrice,
+          ...(isExpertise ? { ti_bs_cost: unitPrice } : {}),
+          selected_choices: normalizedItem.selectedChoices || {},
+          selected_choice_labels: normalizedItem.selectedChoiceLabels || {},
+          selected_choice_items: normalizeSelectedChoiceItemsForApi(normalizedItem),
+          special_instructions: normalizedItem.specialInstructions || "",
+          ...fulfillmentFields,
         };
       });
 
       // total_costs = pretax merchandise only (matches "Merchandise subtotal" in fee dialog).
-      // total_amount_paid = Stripe charged amount (merchandise + sales tax + card processing).
+      // total_amount_paid = full customer obligation (wallet + card).
+      // wallet_amount = portion taken from useable wallet balance.
       // total_taxes / total_fees break out the tax and fee portions of the charge.
       const salesTaxRounded = parseFloat(Number(salesTaxTotal).toFixed(2));
       const merchandiseRounded = parseFloat(Number(merchandiseSubtotal).toFixed(2));
@@ -1210,7 +1394,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const transactionData = {
         profile_id: buyerProfileId,
         business_id: group.sellerId,
-        stripe_payment_intent: paymentIntent,
+        stripe_payment_intent: paymentIntent || null,
+        wallet_amount: walletApplied,
         total_amount_paid: parseFloat(Number(chargedTotal).toFixed(2)),
         total_costs: merchandiseRounded,
         total_taxes: salesTaxRounded,
@@ -1232,6 +1417,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         profile_id: transactionData.profile_id,
         business_id: transactionData.business_id,
         stripe_payment_intent: transactionData.stripe_payment_intent,
+        wallet_amount: transactionData.wallet_amount,
         total_amount_paid: transactionData.total_amount_paid,
         total_costs: transactionData.total_costs,
         total_taxes: transactionData.total_taxes,
@@ -1321,7 +1507,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const sellerGroupsPreview = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+  const checkoutSellerGroups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+  const maxWalletApplicable = getMaxApplicableWalletAmount(checkoutSellerGroups, useableWalletBalance);
+  const clampedWalletAmount = roundMoney(Math.min(Math.max(0, walletAmountToApply), maxWalletApplicable));
+  const sellerGroupsPreview = applyWalletToCheckoutGroups(checkoutSellerGroups, clampedWalletAmount);
   const cartLineProcessingFeeMap = buildCartLineProcessingFeeMap(sellerGroupsPreview, getCartItemCreditCardFeeBase);
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
@@ -1329,7 +1518,38 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const cartHasShipFulfillmentLines = cartItems.some((it) => cartItemRequiresShippingAddress(it));
   const cartRequiresBuyerPaysShipping = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
   const feeDialogFirstGroup = sellerGroupsPreview[0];
-  const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index] ? webCheckoutSession.groups[webCheckoutSession.index].total : 0;
+  const showWalletPaymentControls = useableWalletBalance > 0;
+  const totalWalletAppliedPreview = roundMoney(sellerGroupsPreview.reduce((sum, g) => sum + (g.walletApplied || 0), 0));
+  const totalCardChargePreview = roundMoney(sellerGroupsPreview.reduce((sum, g) => sum + (g.cardCharge || 0), 0));
+
+  useEffect(() => {
+    if (walletAmountToApply > maxWalletApplicable) {
+      setWalletAmountToApply(maxWalletApplicable);
+      setWalletAmountDraft(formatWalletAmountInput(maxWalletApplicable));
+    }
+  }, [maxWalletApplicable, walletAmountToApply]);
+
+  const commitWalletAmountDraft = useCallback(
+    (rawText) => {
+      const parsed = parseWalletAmountInput(rawText);
+      const next = roundMoney(Math.min(Math.max(0, parsed == null ? 0 : parsed), maxWalletApplicable));
+      setWalletAmountToApply(next);
+      setWalletAmountDraft(formatWalletAmountInput(next));
+    },
+    [maxWalletApplicable],
+  );
+
+  const setWalletAmountQuick = useCallback(
+    (amount) => {
+      const next = roundMoney(Math.min(Math.max(0, Number(amount) || 0), maxWalletApplicable));
+      setWalletAmountToApply(next);
+      setWalletAmountDraft(formatWalletAmountInput(next));
+    },
+    [maxWalletApplicable],
+  );
+  const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
+    ? (webCheckoutSession.groups[webCheckoutSession.index].cardCharge ?? webCheckoutSession.groups[webCheckoutSession.index].total)
+    : 0;
   const webCheckoutPayeeDisplayName =
     (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
@@ -1414,7 +1634,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           value={formatCartMoney(item, breakdown.itemSubtotal)}
                         />
                         {breakdown.shippingApplicable ? (
-                          <CartBreakdownRow label='Shipping' value={formatCartMoney(item, breakdown.shippingAmount)} />
+                          <CartBreakdownRow label={cartLineDeliveryChargeLabel(item)} value={formatCartMoney(item, breakdown.shippingAmount)} />
                         ) : null}
                         {breakdown.taxable && breakdown.tax > 0 ? (
                           <CartBreakdownRow
@@ -1426,7 +1646,11 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           <CartBreakdownRow label='Card processing fee' value={formatCartMoney(item, breakdown.processingFee)} />
                         ) : null}
                         {breakdown.shippingIsActual ? (
-                          <Text style={styles.cartShippingActualNote}>Seller will contact the buyer directly for actual shipping cost.</Text>
+                          <Text style={styles.cartShippingActualNote}>
+                            {item.itemType === "expertise"
+                              ? "Seller will contact the buyer directly for actual delivery charge."
+                              : "Seller will contact the buyer directly for actual shipping cost."}
+                          </Text>
                         ) : null}
                       </View>
 
@@ -1438,9 +1662,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       </View>
 
                       {bountyTotal > 0 ? (
-                        <View style={styles.cartBountyDisclosureRow}>
-                          <Text style={styles.cartBountyDisclosure}>Seller-paid bounty of {formatCartMoney(item, bountyTotal)} is not part of your charge.</Text>
-                          <BountyInfoTooltip perspective='referrer' darkMode={false} placement='left' />
+                        <View style={styles.cartBountyNoteRow}>
+                          <View style={styles.bountyNoteLabelRow}>
+                            <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
+                            <BountyInfoTooltip perspective='referrer' darkMode={false} placement='left' />
+                          </View>
+                          <Text style={styles.bountyNoteValue}>{formatCartMoney(item, bountyTotal)}</Text>
                         </View>
                       ) : null}
                     </View>
@@ -1500,13 +1727,66 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                 </View>
               ) : null}
               <View style={styles.totalContainer}>
+                {showWalletPaymentControls ? (
+                  <View style={styles.walletPaymentSection}>
+                    <Text style={styles.walletPaymentTitle}>Pay with wallet</Text>
+                    <Text style={styles.walletPaymentHint}>
+                      Useable balance: ${useableWalletBalance.toFixed(2)}. Apply any amount from $0.00 up to $
+                      {maxWalletApplicable.toFixed(2)}; the rest is charged to your card (card fee applies only to the card portion).
+                    </Text>
+                    <View style={styles.walletAmountRow}>
+                      <Text style={styles.walletAmountPrefix}>$</Text>
+                      <TextInput
+                        style={styles.walletAmountInput}
+                        value={walletAmountDraft}
+                        onChangeText={(text) => {
+                          const cleaned = String(text ?? "").replace(/[^0-9.]/g, "");
+                          setWalletAmountDraft(cleaned);
+                          const parsed = parseWalletAmountInput(cleaned);
+                          if (parsed != null) {
+                            setWalletAmountToApply(roundMoney(Math.min(Math.max(0, parsed), maxWalletApplicable)));
+                          }
+                        }}
+                        onBlur={() => commitWalletAmountDraft(walletAmountDraft)}
+                        onSubmitEditing={() => commitWalletAmountDraft(walletAmountDraft)}
+                        keyboardType='decimal-pad'
+                        placeholder='0.00'
+                        returnKeyType='done'
+                        accessibilityLabel='Wallet amount to apply'
+                      />
+                    </View>
+                    <View style={styles.walletQuickRow}>
+                      <TouchableOpacity style={styles.walletQuickBtn} onPress={() => setWalletAmountQuick(0)} activeOpacity={0.7}>
+                        <Text style={styles.walletQuickBtnText}>Use $0</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.walletQuickBtn}
+                        onPress={() => setWalletAmountQuick(maxWalletApplicable)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.walletQuickBtnText}>Use max (${maxWalletApplicable.toFixed(2)})</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.totalRow}>
+                      <Text style={styles.totalLabel}>Wallet applied</Text>
+                      <Text style={styles.totalValue}>-${totalWalletAppliedPreview.toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.totalRow}>
+                      <Text style={styles.totalLabel}>Charged to card</Text>
+                      <Text style={styles.totalValue}>${totalCardChargePreview.toFixed(2)}</Text>
+                    </View>
+                  </View>
+                ) : null}
                 <Text style={styles.multiSellerHint}>
-                  {hasExpertiseInCart ? "Offering and expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). " : null}
+                  {showWalletPaymentControls
+                    ? `You chose $${clampedWalletAmount.toFixed(2)} from your wallet; any remainder is charged to your card. `
+                    : null}
+                  {hasExpertiseInCart ? "Offering and expertise purchases include a credit card processing fee (3%, $0.30 minimum) in each seller total below (same as when you added them to the cart). " : null}
                   {multiSellerCheckout
-                    ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%) applies when that business has “buyer pays” card fees.`
+                    ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%, $0.30 minimum) applies when that business has “buyer pays” card fees.`
                     : hasExpertiseInCart
-                      ? "Sales tax is computed per item when applicable (including taxable offerings). For business services only, credit card processing (3%) applies when the business has “buyer pays” card fees."
-                      : "Sales tax is computed per item. Credit card processing (3%) applies only when the business has “buyer pays” card fees."}
+                      ? "Sales tax is computed per item when applicable (including taxable offerings). For business services only, credit card processing (3%, $0.30 minimum) applies when the business has “buyer pays” card fees."
+                      : "Sales tax is computed per item. Credit card processing (3%, $0.30 minimum) applies only when the business has “buyer pays” card fees."}
                 </Text>
                 {sellerGroupsPreview.map((g) => (
                   <View key={g.sellerId} style={styles.perBusinessBlock}>
@@ -1519,47 +1799,77 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <Text style={styles.totalLabel}>Sales tax</Text>
                       <Text style={styles.totalValue}>${g.salesTaxTotal.toFixed(2)}</Text>
                     </View>
-                    {g.hasFixedShipping ? (
+                    {g.hasFixedShipping || g.hasWaivedDeliveryCharge ? (
                       <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Shipping (buyer fixed)</Text>
+                        <Text style={styles.totalLabel}>
+                          {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
+                            ? g.hasWaivedDeliveryCharge && !g.hasFixedShipping
+                              ? "Delivery charge"
+                              : "Delivery charge (buyer fixed)"
+                            : g.hasWaivedDeliveryCharge && !g.hasFixedShipping
+                              ? "Shipping"
+                              : "Shipping (buyer fixed)"}
+                        </Text>
                         <Text style={styles.totalValue}>${g.shippingSubtotal.toFixed(2)}</Text>
                       </View>
                     ) : null}
                     {g.hasActualShipping ? (
                       <View style={styles.shippingActualBlock}>
                         <View style={styles.totalRow}>
-                          <Text style={styles.totalLabel}>Shipping (actual cost)</Text>
+                          <Text style={styles.totalLabel}>
+                            {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
+                              ? "Delivery charge (actual cost)"
+                              : "Shipping (actual cost)"}
+                          </Text>
                           <Text style={styles.totalValue}>$0.00</Text>
                         </View>
-                        <Text style={styles.shippingActualNote}>Seller will contact the buyer directly for actual shipping cost.</Text>
+                        <Text style={styles.shippingActualNote}>
+                          {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
+                            ? "Seller will contact the buyer directly for actual delivery charge."
+                            : "Seller will contact the buyer directly for actual shipping cost."}
+                        </Text>
                       </View>
                     ) : null}
                     <View style={styles.totalRow}>
-                      <Text style={styles.totalLabel}>Credit card processing (3%)</Text>
+                      <Text style={styles.totalLabel}>{CREDIT_CARD_FEE_DISPLAY_LABEL}</Text>
                       <Text style={styles.totalValue}>${g.processingFee.toFixed(2)}</Text>
                     </View>
                     {!g.buyerPaysCardFee ? <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text> : null}
+                    {showWalletPaymentControls ? (
+                      <View style={styles.totalRow}>
+                        <Text style={styles.totalLabel}>Wallet balance</Text>
+                        <Text style={styles.totalValue}>-${(g.walletApplied || 0).toFixed(2)}</Text>
+                      </View>
+                    ) : null}
+                    {showWalletPaymentControls ? (
+                      <View style={styles.totalRow}>
+                        <Text style={styles.totalLabel}>Charged to card</Text>
+                        <Text style={styles.totalValue}>${(g.cardCharge || 0).toFixed(2)}</Text>
+                      </View>
+                    ) : null}
                     <View style={[styles.totalRow, styles.perBusinessTotalRow]}>
                       <Text style={styles.totalLabel}>Business total</Text>
                       <Text style={styles.totalValue}>${g.total.toFixed(2)}</Text>
                     </View>
                     <View style={styles.escrowSection}>
-                      <TouchableOpacity
-                        style={styles.escrowRow}
-                        onPress={() =>
-                          setEscrowBySeller((prev) => {
-                            const cur = prev[g.sellerId] !== false;
-                            return { ...prev, [g.sellerId]: !cur };
-                          })
-                        }
-                        activeOpacity={0.7}
-                      >
-                        <View style={[styles.checkbox, escrowBySeller[g.sellerId] !== false && styles.checkboxChecked]}>
-                          {escrowBySeller[g.sellerId] !== false && <Text style={styles.checkmark}>✓</Text>}
-                        </View>
-                        <Text style={styles.escrowLabel}>Escrow ({g.displayName})</Text>
-                        <Ionicons name='information-circle-outline' size={18} color='#666' style={styles.infoIcon} />
-                      </TouchableOpacity>
+                      <View style={styles.escrowRow}>
+                        <TouchableOpacity
+                          style={styles.escrowTogglePressable}
+                          onPress={() =>
+                            setEscrowBySeller((prev) => {
+                              const cur = prev[g.sellerId] !== false;
+                              return { ...prev, [g.sellerId]: !cur };
+                            })
+                          }
+                          activeOpacity={0.7}
+                        >
+                          <View style={[styles.checkbox, escrowBySeller[g.sellerId] !== false && styles.checkboxChecked]}>
+                            {escrowBySeller[g.sellerId] !== false && <Text style={styles.checkmark}>✓</Text>}
+                          </View>
+                          <Text style={styles.escrowLabel}>Escrow ({g.displayName})</Text>
+                        </TouchableOpacity>
+                        <BountyInfoTooltip message={ESCROW_INFO_COPY} darkMode={false} placement='left' accessibilityLabel='About escrow' />
+                      </View>
                     </View>
                   </View>
                 ))}
@@ -1643,9 +1953,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
             merchandiseSubtotal={feeDialogFirstGroup ? feeDialogFirstGroup.merchandiseSubtotal : undefined}
             salesTaxTotal={feeDialogFirstGroup ? feeDialogFirstGroup.salesTaxTotal : undefined}
             shippingSubtotal={feeDialogFirstGroup ? feeDialogFirstGroup.shippingSubtotal : undefined}
+            shippingLabel={feeDialogFirstGroup ? sellerGroupDeliveryChargeLabel(feeDialogFirstGroup) : undefined}
             hasActualShipping={feeDialogFirstGroup ? feeDialogFirstGroup.hasActualShipping : undefined}
             cardProcessingFee={feeDialogFirstGroup ? feeDialogFirstGroup.processingFee : undefined}
             buyerPaysCardFee={feeDialogFirstGroup ? feeDialogFirstGroup.buyerPaysCardFee : undefined}
+            walletApplied={feeDialogFirstGroup ? feeDialogFirstGroup.walletApplied : undefined}
+            cardCharge={feeDialogFirstGroup ? feeDialogFirstGroup.cardCharge : undefined}
             subtotal={feeDialogFirstGroup ? (feeDialogFirstGroup.subtotalWithShipping ?? feeDialogFirstGroup.subtotalAfterTax) : null}
             totalWithFee={feeDialogFirstGroup ? feeDialogFirstGroup.total : null}
             payeeBusinessName={feeDialogFirstGroup?.displayName ?? null}
@@ -1858,17 +2171,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#9C45F7",
   },
-  cartBountyDisclosure: {
-    fontSize: 12,
-    color: "#999",
-    lineHeight: 17,
-    flex: 1,
-    flexShrink: 1,
-  },
-  cartBountyDisclosureRow: {
+  cartBountyNoteRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 6,
+    justifyContent: "space-between",
+    alignItems: "center",
     marginTop: 10,
     zIndex: 2,
   },
@@ -2050,6 +2356,68 @@ const styles = StyleSheet.create({
     marginTop: 10,
     alignItems: "stretch",
   },
+  walletPaymentSection: {
+    marginBottom: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8E0F5",
+  },
+  walletPaymentTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 6,
+  },
+  walletPaymentHint: {
+    fontSize: 13,
+    color: "#555",
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  walletAmountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  walletAmountPrefix: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+    marginRight: 6,
+  },
+  walletAmountInput: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#9C45F7",
+    fontSize: 16,
+    color: "#333",
+    ...(Platform.OS === "web" && {
+      outlineStyle: "none",
+    }),
+  },
+  walletQuickRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 10,
+  },
+  walletQuickBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#9C45F7",
+    backgroundColor: "#F7F1FF",
+  },
+  walletQuickBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#9C45F7",
+  },
   multiSellerHint: {
     fontSize: 13,
     color: "#555",
@@ -2108,6 +2476,12 @@ const styles = StyleSheet.create({
   escrowRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 6,
+  },
+  escrowTogglePressable: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
   },
   checkbox: {
     width: 24,
@@ -2131,9 +2505,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#333",
     flex: 1,
-  },
-  infoIcon: {
-    marginLeft: 6,
   },
   disabledButton: {
     opacity: 0.7,
@@ -2252,6 +2623,13 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: "#E0E0E0",
+  },
+  bountyNoteLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flex: 1,
+    flexShrink: 1,
   },
   bountyNoteLabel: {
     fontSize: 12,

@@ -8,6 +8,26 @@ import {
 } from "./businessServiceShipping";
 import { parseExpertiseModeFlags } from "./expertiseMode";
 
+/** Buyer-facing label for offering delivery fees (replaces "Ship" / "Shipping" on offerings). */
+export const OFFERING_DELIVERY_CHARGE_LABEL = "Delivery charge";
+
+/** Offering card badge / detail row label (describes the delivery setting, not the dollar amount). */
+export const OFFERING_DELIVERY_OPTION_CARD_LABEL = "Delivery option";
+
+/** Cart / checkout line label — offerings use delivery charge; business services keep Shipping. */
+export function cartLineDeliveryChargeLabel(item) {
+  return item?.itemType === "expertise" ? OFFERING_DELIVERY_CHARGE_LABEL : "Shipping";
+}
+
+/** Seller-group checkout label when all lines are offerings. */
+export function sellerGroupDeliveryChargeLabel(group) {
+  const items = Array.isArray(group?.items) ? group.items : [];
+  if (items.length > 0 && items.every((it) => it?.itemType === "expertise")) {
+    return OFFERING_DELIVERY_CHARGE_LABEL;
+  }
+  return "Shipping";
+}
+
 /** Map offering fields onto the shape expected by business shipping helpers. */
 function offeringAsShippingCarrier(item) {
   if (!item || typeof item !== "object") return {};
@@ -71,7 +91,7 @@ export function validateOfferingDeliveredShipping(item) {
 export function getOfferingShippingDropdownOptions(item) {
   const options = [
     { label: "Not applicable", value: "na" },
-    { label: "Free shipping", value: "free" },
+    { label: "Free delivery charge", value: "free" },
     { label: "Buyer pays (fixed)", value: "buyer_fixed" },
     { label: "Buyer pays (actual)", value: "buyer_actual" },
   ];

@@ -43,6 +43,7 @@ if (isWeb) {
 import StripePayment from "../components/StripePaymentWeb";
 import PaymentFailure from "../components/PaymentFailure";
 import AcceptDetailsModal from "../components/AcceptDetailsModal";
+import { computeCreditCardChargeTotal, computeCreditCardProcessingFee } from "../utils/cartCreditCardFee";
 
 // Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
 const formatDateTimeForDisplay = (value) => {
@@ -140,8 +141,8 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
 
       const { recommendedProfileUid, recommenderProfileUid, wishResponseUid, subtotal, escrow, bountyAmount, quantity, costAmount, costValue } = pendingAccept;
 
-      const processingFee = subtotal * 0.03;
-      const totalAmount = subtotal + processingFee;
+      const processingFee = computeCreditCardProcessingFee(subtotal, true);
+      const totalAmount = computeCreditCardChargeTotal(subtotal, true);
 
       await recordTransaction(
         buyerUid,
@@ -524,8 +525,8 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         throw new Error("Recommender profile ID not found");
       }
 
-      // Use subtotal for transaction record (totalWithFee includes 3% processing fee)
-      const processingFee = subtotal * 0.03;
+      // Use subtotal for transaction record (totalWithFee includes processing fee)
+      const processingFee = computeCreditCardProcessingFee(subtotal, true);
       await recordTransaction(
         buyerUid,
         paymentIntentId,

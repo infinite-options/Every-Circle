@@ -179,21 +179,30 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
   // --------------------------
   const firstName = sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
   const lastName = sanitizeText(user?.lastName || user?.personal_info?.profile_personal_last_name);
-  const tagLine = sanitizeText(user?.tagLine || user?.personal_info?.profile_personal_tagline);
-  const email = sanitizeText(user?.email || user?.user_email);
-  const phone = sanitizeText(user?.phoneNumber || user?.personal_info?.profile_personal_phone_number);
+  const tagLine = sanitizeText(
+    user?.tagLine || user?.personal_info?.profile_personal_tag_line || user?.personal_info?.profile_personal_tagline
+  );
+  const email = sanitizeText(user?.email || user?.user_email || user?.personal_info?.profile_personal_email);
+  const phone = sanitizeText(user?.phoneNumber || user?.phone || user?.personal_info?.profile_personal_phone_number);
   // Resolve profile image URL from either flattened (profileImage) or API shape (personal_info.profile_personal_image)
   const profileImageRaw = user?.profileImage ?? user?.personal_info?.profile_personal_image ?? "";
   const profileImage = sanitizeText(typeof profileImageRaw === "string" ? profileImageRaw : String(profileImageRaw || ""));
 
   const emailIsPublic = user?.personal_info?.profile_personal_email_is_public == 1 || user?.emailIsPublic;
   const phoneIsPublic = user?.personal_info?.profile_personal_phone_number_is_public == 1 || user?.phoneIsPublic;
-  const tagLineIsPublic = user?.personal_info?.profile_personal_tagline_is_public == 1 || user?.tagLineIsPublic;
+  const tagLineIsPublic =
+    user?.personal_info?.profile_personal_tag_line_is_public == 1 ||
+    user?.personal_info?.profile_personal_tagline_is_public == 1 ||
+    user?.tagLineIsPublic;
   // Display = TRUE: show uploaded image when user has chosen to display it (works with 1, "1", true from API or flattened shape)
   const imageIsPublic = user?.personal_info?.profile_personal_image_is_public == 1 || user?.imageIsPublic === true || user?.imageIsPublic === 1 || user?.imageIsPublic === "1";
   const city = sanitizeText(user?.personal_info?.profile_personal_city || user?.city || "");
   const state = sanitizeText(user?.personal_info?.profile_personal_state || user?.state || "");
-  const locationIsPublic = user?.personal_info?.profile_personal_location_is_public === 1 || user?.locationIsPublic === true;
+  const locationIsPublic =
+    user?.personal_info?.profile_personal_location_is_public == 1 ||
+    user?.locationIsPublic === true ||
+    user?.locationIsPublic === 1 ||
+    user?.locationIsPublic === "1";
 
   // Profile image rule: show uploaded image only when (image uploaded AND Display is TRUE); otherwise show default (web + mobile)
   const hasUploadedImage = profileImage && String(profileImage).trim() !== "" && isSafeForConditional(profileImage);

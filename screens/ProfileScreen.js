@@ -1376,7 +1376,7 @@ const ProfileScreen = ({ route, navigation }) => {
     }
     try {
       const { expertiseData, profileData, profile_uid } = row;
-      const { quantity: qty, escrow, subtotal, totalWithFee, taxAmount, taxRatePct } = modalData;
+      const { quantity: qty, escrow, taxRatePct } = modalData;
       const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
       const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
       const cartItemDraft = {
@@ -1391,9 +1391,6 @@ const ProfileScreen = ({ route, navigation }) => {
         itemType: "expertise",
         quantity: qty,
         escrow,
-        subtotal,
-        taxAmount,
-        totalWithFee,
         ...expertiseCartPersistedFields(expertiseData, { taxRatePct }),
         cart_key: cartKey,
         addedAt: new Date().toISOString(),

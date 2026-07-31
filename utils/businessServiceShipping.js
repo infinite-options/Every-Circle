@@ -91,73 +91,6 @@ export function getCartItemShippingCarrier(item) {
   return item;
 }
 
-import { cartItemSkipsShippingCharge } from "./cartFulfillmentMethod";
-
-/** True when a cart line requires the buyer to pay shipping (fixed or actual) and ships. */
-export function isCartItemBuyerPaysShipping(item) {
-  if (!item || typeof item !== "object" || cartItemSkipsShippingCharge(item)) return false;
-  return isBuyerPaysShippingValue(getCartItemShippingCarrier(item));
-}
-
-/**
- * Buyer-paid shipping charge for one cart line.
- * Fixed: unit amount × quantity. Actual: $0 placeholder (seller contacts buyer).
- * Pickup lines return null. Offerings use profile_expertise_shipping fields.
- * @returns {null | { type: 'fixed'|'actual', unitAmount: number, amount: number, quantity: number }}
- */
-export function getCartItemBuyerShippingCharge(item) {
-  if (!item || typeof item !== "object" || cartItemSkipsShippingCharge(item)) return null;
-  const shipping = parseBsShipping(getCartItemShippingCarrier(item));
-  const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
-  if (shipping === BS_SHIPPING_BUYER_FIXED) {
-    const carrier = getCartItemShippingCarrier(item);
-    const raw = carrier.bs_shipping_amount ?? carrier.bs_fixed_shipping_amount;
-    let unitAmount = parseBsShippingAmount(raw);
-    if (unitAmount == null && (raw === 0 || raw === "0" || raw === "0.00")) unitAmount = 0;
-    if (unitAmount == null) unitAmount = 0;
-    return {
-      type: "fixed",
-      unitAmount,
-      amount: Math.round(unitAmount * quantity * 100) / 100,
-      quantity,
-    };
-  }
-  if (shipping === BS_SHIPPING_BUYER_ACTUAL || shipping === "Buyer") {
-    return { type: "actual", unitAmount: 0, amount: 0, quantity };
-  }
-  return null;
-}
-
-/** Charged shipping $ for one line (for transaction POST line_shipping_amount). */
-export function getCartItemLineShippingAmount(item) {
-  const charge = getCartItemBuyerShippingCharge(item);
-  if (!charge) return 0;
-  if (charge.type === "fixed") return charge.amount;
-  return 0;
-}
-
-/** Sum charged buyer shipping (fixed only) across cart lines. */
-export function sumBuyerShippingCharges(items) {
-  if (!Array.isArray(items)) return { shippingSubtotal: 0, hasFixedShipping: false, hasActualShipping: false };
-  let total = 0;
-  let hasFixedShipping = false;
-  let hasActualShipping = false;
-  for (const item of items) {
-    const charge = getCartItemBuyerShippingCharge(item);
-    if (!charge) continue;
-    if (charge.type === "fixed") {
-      hasFixedShipping = true;
-      total += charge.amount;
-    }
-    if (charge.type === "actual") hasActualShipping = true;
-  }
-  return {
-    shippingSubtotal: Math.round(total * 100) / 100,
-    hasFixedShipping,
-    hasActualShipping,
-  };
-}
-
 /**
  * Build API shipping fields for PUT/POST.
  * @returns {{ bs_shipping: null|string, bs_shipping_amount: null|number }}
@@ -186,7 +119,6 @@ export function buildBsShippingApiFields(service) {
  */
 export function applyBsShippingFromApi(service) {
   let shipping = parseBsShipping(service);
-  // Incomplete "Buyer" from legacy flags → default Actual for display.
   if (shipping === "Buyer") shipping = BS_SHIPPING_BUYER_ACTUAL;
 
   let amount = null;

@@ -45,12 +45,33 @@ import {
   offeringDeliveredModeSelected,
   validateOfferingDeliveredShipping,
   getOfferingShippingDropdownOptions,
+  OFFERING_DELIVERY_CHARGE_LABEL,
 } from "../utils/profileOfferingShipping";
 import { BS_SHIPPING_BUYER_FIXED, parseBsShippingAmount } from "../utils/businessServiceShipping";
 
 const CONDITION_DETAIL_MAX_CHARS = 250;
 const QUANTITY_MAX_DIGITS = 10;
-const RETURN_WINDOW_MAX_DIGITS = 3;
+const RETURN_WINDOW_MIN_DAYS = 5;
+const RETURN_WINDOW_MAX_DAYS = 30;
+const RETURN_WINDOW_DEFAULT_DAYS = String(RETURN_WINDOW_MAX_DAYS);
+const RETURN_WINDOW_MAX_DIGITS = 2;
+
+const sanitizeReturnWindowInput = (text) => {
+  const digits = String(text ?? "").replace(/\D/g, "").slice(0, RETURN_WINDOW_MAX_DIGITS);
+  if (digits === "") return "";
+  const n = parseInt(digits, 10);
+  if (Number.isFinite(n) && n > RETURN_WINDOW_MAX_DAYS) return String(RETURN_WINDOW_MAX_DAYS);
+  return digits;
+};
+
+const clampReturnWindowDays = (value) => {
+  const n = parseInt(String(value ?? "").trim(), 10);
+  if (!Number.isFinite(n) || n < RETURN_WINDOW_MIN_DAYS) return String(RETURN_WINDOW_MIN_DAYS);
+  if (n > RETURN_WINDOW_MAX_DAYS) return String(RETURN_WINDOW_MAX_DAYS);
+  return String(n);
+};
+
+export const RETURN_WINDOW_VALIDATION_MESSAGE = `Return window must be between ${RETURN_WINDOW_MIN_DAYS} and ${RETURN_WINDOW_MAX_DAYS} days.`;
 
 /** Numeric cost amount from an offering cost string (ignores unit suffix). */
 export const getOfferingCostAmount = (cost) => {
@@ -312,13 +333,20 @@ const ExpertiseSection = ({
         profile_expertise_shipping_refundable: 0,
       };
     } else {
+      const existingDays = String(updated[index].profile_expertise_return_window_days ?? "").trim();
       updated[index] = {
         ...updated[index],
         profile_expertise_is_returnable: 1,
-        profile_expertise_return_window_days: updated[index].profile_expertise_return_window_days || "30",
+        profile_expertise_return_window_days: existingDays && existingDays !== "0" ? clampReturnWindowDays(existingDays) : RETURN_WINDOW_DEFAULT_DAYS,
       };
     }
     setExpertise(updated);
+  };
+
+  const handleReturnWindowBlur = (index) => {
+    const item = expertise[index];
+    if (getOfferingReturnableDropdownValue(item) !== "yes") return;
+    handleInputChange(index, "profile_expertise_return_window_days", clampReturnWindowDays(item.profile_expertise_return_window_days));
   };
 
   const handleOfferingQtyLimitChange = (index, selected) => {
@@ -1338,7 +1366,8 @@ const ExpertiseSection = ({
 
               <View style={formStyles.fulfillmentCol}>
                 <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>
-                  Shipping/delivery{offeringDeliveredModeSelected(item) ? " *" : ""}
+                  {OFFERING_DELIVERY_CHARGE_LABEL}
+                  {offeringDeliveredModeSelected(item) ? " *" : ""}
                 </Text>
                 {(() => {
                   const deliveredShippingInvalid =
@@ -1456,13 +1485,14 @@ const ExpertiseSection = ({
                 />
                 {getOfferingReturnableDropdownValue(item) === "yes" ? (
                   <View style={formStyles.fulfillmentExtra}>
-                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Return window</Text>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Return window ({RETURN_WINDOW_MIN_DAYS}–{RETURN_WINDOW_MAX_DAYS} days)</Text>
                     <View style={formStyles.fulfillmentInlineRow}>
                       <TextInput
                         style={[formStyles.fieldInput, formStyles.quantityInput, darkMode && formStyles.darkFieldInput]}
-                        value={String(item.profile_expertise_return_window_days ?? "30")}
-                        onChangeText={(t) => handleInputChange(index, "profile_expertise_return_window_days", t.replace(/\D/g, "").slice(0, RETURN_WINDOW_MAX_DIGITS))}
-                        placeholder='30'
+                        value={String(item.profile_expertise_return_window_days ?? RETURN_WINDOW_DEFAULT_DAYS)}
+                        onChangeText={(t) => handleInputChange(index, "profile_expertise_return_window_days", sanitizeReturnWindowInput(t))}
+                        onBlur={() => handleReturnWindowBlur(index)}
+                        placeholder={RETURN_WINDOW_DEFAULT_DAYS}
                         placeholderTextColor={darkMode ? "#888" : "#999"}
                         keyboardType='number-pad'
                         maxLength={RETURN_WINDOW_MAX_DIGITS}
@@ -1482,7 +1512,7 @@ const ExpertiseSection = ({
                             size={18}
                             color={item.profile_expertise_shipping_refundable === 1 || item.profile_expertise_shipping_refundable === "1" ? "#111" : darkMode ? "#aaa" : "#666"}
                           />
-                          <Text style={[formStyles.checkboxLabelCompact, darkMode && formStyles.darkCheckboxLabelCompact]}>Shipping is refundable</Text>
+                          <Text style={[formStyles.checkboxLabelCompact, darkMode && formStyles.darkCheckboxLabelCompact]}>{OFFERING_DELIVERY_CHARGE_LABEL} is refundable</Text>
                         </TouchableOpacity>
                       ) : null}
                     </View>
@@ -1665,6 +1695,14 @@ export const validateExpertiseTax = (expertise) => {
   return (expertise || []).every((e) => {
     if (!String(e.name || "").trim()) return true;
     return validateTaxableRate(e.profile_expertise_is_taxable, e.profile_expertise_tax_rate);
+  });
+};
+
+export const validateExpertiseReturnWindow = (expertise) => {
+  return (expertise || []).every((e) => {
+    if (!(e.profile_expertise_is_returnable === 1 || e.profile_expertise_is_returnable === "1")) return true;
+    const n = parseInt(String(e.profile_expertise_return_window_days ?? "").trim(), 10);
+    return Number.isFinite(n) && n >= RETURN_WINDOW_MIN_DAYS && n <= RETURN_WINDOW_MAX_DAYS;
   });
 };
 export default ExpertiseSection;

@@ -2,6 +2,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { CREDIT_CARD_FEE_DISPLAY_LABEL } from "../utils/cartCreditCardFee";
 
 const StripeFeesDialog = ({
   show,
@@ -18,9 +19,12 @@ const StripeFeesDialog = ({
   merchandiseSubtotal,
   salesTaxTotal,
   shippingSubtotal,
+  shippingLabel,
   hasActualShipping,
   cardProcessingFee,
   buyerPaysCardFee,
+  walletApplied,
+  cardCharge,
 }) => {
   const { darkMode } = useDarkMode();
 
@@ -34,7 +38,15 @@ const StripeFeesDialog = ({
     !hasCartBreakdown && subtotal != null && totalWithFee != null && Number.isFinite(Number(subtotal)) && Number.isFinite(Number(totalWithFee));
 
   const legacyFee = hasLegacyBreakdown ? (Number(totalWithFee) - Number(subtotal)).toFixed(2) : null;
+  const shippingLineLabel =
+    typeof shippingLabel === "string" && shippingLabel.trim() !== "" ? shippingLabel.trim() : "Shipping";
+  const actualShippingNote =
+    shippingLineLabel === "Delivery charge"
+      ? "Actual delivery charge is $0.00 at checkout — the seller will contact you directly."
+      : "Actual shipping is $0.00 at checkout — the seller will contact you directly.";
   const showShipping = hasCartBreakdown && typeof shippingSubtotal === "number" && (shippingSubtotal > 0 || hasActualShipping);
+  const walletAmt = typeof walletApplied === "number" ? Math.max(0, walletApplied) : null;
+  const cardAmt = typeof cardCharge === "number" ? cardCharge : null;
 
   const payeeTrimmed =
     typeof payeeBusinessName === "string" && payeeBusinessName.trim() !== "" ? payeeBusinessName.trim() : null;
@@ -67,31 +79,47 @@ const StripeFeesDialog = ({
                   <>
                     {shippingSubtotal > 0 || !hasActualShipping ? (
                       <View style={styles.breakdownRow}>
-                        <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Shipping:</Text>
+                        <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>{shippingLineLabel}:</Text>
                         <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${Number(shippingSubtotal || 0).toFixed(2)}</Text>
                       </View>
                     ) : null}
                     {hasActualShipping ? (
-                      <Text style={[styles.waivedNote, darkMode && styles.darkWaivedNote]}>
-                        Actual shipping is $0.00 at checkout — the seller will contact you directly.
-                      </Text>
+                      <Text style={[styles.waivedNote, darkMode && styles.darkWaivedNote]}>{actualShippingNote}</Text>
                     ) : null}
                   </>
                 ) : null}
                 <View style={styles.breakdownRow}>
-                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Credit card processing (3%):</Text>
+                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>{CREDIT_CARD_FEE_DISPLAY_LABEL}:</Text>
                   <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${cardProcessingFee.toFixed(2)}</Text>
                 </View>
                 {!buyerPaysCardFee ? (
                   <Text style={[styles.waivedNote, darkMode && styles.darkWaivedNote]}>The business pays Stripe fees; the processing line is $0.00.</Text>
                 ) : null}
+                {walletAmt != null ? (
+                  <View style={styles.breakdownRow}>
+                    <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Wallet balance applied:</Text>
+                    <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>-${walletAmt.toFixed(2)}</Text>
+                  </View>
+                ) : null}
                 <View style={[styles.breakdownRow, styles.totalRow, darkMode && styles.darkTotalRow]}>
-                  <Text style={[styles.breakdownLabel, styles.totalLabel, darkMode && styles.darkBreakdownLabel]}>Charged total:</Text>
+                  <Text style={[styles.breakdownLabel, styles.totalLabel, darkMode && styles.darkBreakdownLabel]}>
+                    {walletAmt != null && walletAmt > 0 ? "Order total:" : "Charged total:"}
+                  </Text>
                   <Text style={[styles.breakdownValue, styles.totalValue, darkMode && styles.darkBreakdownValue]}>${Number(totalWithFee).toFixed(2)}</Text>
                 </View>
+                {walletAmt != null && cardAmt != null ? (
+                  <View style={styles.breakdownRow}>
+                    <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Charged to card:</Text>
+                    <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${Number(cardAmt).toFixed(2)}</Text>
+                  </View>
+                ) : null}
               </View>
               <Text style={[styles.message, darkMode && styles.darkMessage]}>
-                This matches the amount for this payment step. Click Continue to proceed.
+                {walletAmt != null && cardAmt != null && cardAmt < 0.01
+                  ? "This order is fully covered by your wallet balance. Click Continue to place the order."
+                  : walletAmt != null && walletAmt > 0
+                    ? "Wallet covers part of this payment; the card charge is the remainder plus any processing fee. Click Continue to proceed."
+                    : "This matches the amount for this payment step. Click Continue to proceed."}
               </Text>
             </>
           ) : hasLegacyBreakdown ? (
@@ -102,7 +130,7 @@ const StripeFeesDialog = ({
                   <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${Number(subtotal).toFixed(2)}</Text>
                 </View>
                 <View style={styles.breakdownRow}>
-                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Credit card fee (3%):</Text>
+                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>{CREDIT_CARD_FEE_DISPLAY_LABEL}:</Text>
                   <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${legacyFee}</Text>
                 </View>
                 <View style={[styles.breakdownRow, styles.totalRow, darkMode && styles.darkTotalRow]}>
@@ -113,7 +141,7 @@ const StripeFeesDialog = ({
               <Text style={[styles.message, darkMode && styles.darkMessage]}>This matches the total shown on the previous page. Click Continue to proceed with payment.</Text>
             </>
           ) : (
-            <Text style={[styles.message, darkMode && styles.darkMessage]}>An additional 3% may be charged as credit card processing fees when the buyer pays card fees.</Text>
+            <Text style={[styles.message, darkMode && styles.darkMessage]}>An additional credit card processing fee (3%, $0.30 minimum) may be charged when the buyer pays card fees.</Text>
           )}
 
           <View style={styles.buttonContainer}>

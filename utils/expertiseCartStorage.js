@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { expertiseLineMerchandiseAndTax, roundCartMoney } from "./cartLineTax";
 import { getOfferingMaxQuantity } from "./offeringCartUtils";
-import { getCartItemBuyerShippingCharge } from "./businessServiceShipping";
+import { getCartItemBuyerShippingCharge } from "./cartFulfillmentMethod";
 import { computeCreditCardChargeTotal, computeCreditCardProcessingFee, getCreditCardFeeBase } from "./cartCreditCardFee";
 
 export function expertiseCartKey(expertiseUid) {
@@ -21,7 +21,7 @@ export async function loadExpertiseCartQuantity(expertiseUid) {
   }
 }
 
-/** Recompute stored line totals after quantity changes (matches AddToCartDetailsModal). */
+/** Recompute stored line totals after quantity changes (canonical cart pricing). */
 export function recomputeExpertiseCartTotals(cartItem, quantity) {
   const item = { ...cartItem, quantity };
   const { pretax, tax, ratePercentUsed } = expertiseLineMerchandiseAndTax(item);
