@@ -1,5 +1,4 @@
-// AddToCartDetailsModal.js - Modal for adding expertise to cart with escrow, quantity, and cost breakdown
-// Same format as AcceptDetailsModal (Seeking Responses)
+// AddToCartDetailsModal.js - Modal for adding expertise to cart with escrow and quantity
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,23 +7,15 @@ import MiniCard from "./MiniCard";
 import BountyInfoTooltip from "./BountyInfoTooltip";
 import {
   formatOfferingAddToCartStockHint,
-  formatOfferingCostLineLabel,
   getOfferingBountyLineTotal,
   getOfferingMaxAddQuantity,
   getOfferingQuantityLabelSuffix,
   hasOfferingBounty,
   isOfferingReturnable,
   parseOfferingCostParts,
+  profileDataForCartModal,
 } from "../utils/offeringCartUtils";
 import { loadExpertiseCartQuantity } from "../utils/expertiseCartStorage";
-import { getCartItemBuyerShippingCharge } from "../utils/businessServiceShipping";
-import { resolveDefaultFulfillmentMethod } from "../utils/cartFulfillmentMethod";
-import {
-  computeCreditCardChargeTotal,
-  computeCreditCardProcessingFee,
-  getCreditCardFeeBase,
-  roundCreditCardMoney,
-} from "../utils/cartCreditCardFee";
 
 const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAddToCart, onCancel }) => {
   const { darkMode } = useDarkMode();
@@ -86,30 +77,7 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
   const qtyNum = parseFloat(quantity) || 0;
   const stockHint = formatOfferingAddToCartStockHint(expertiseData, existingInCart, qtyNum);
   const atSelectionMaximum = maxCanAdd != null && qtyNum > 0 && qtyNum >= maxCanAdd;
-  const costAmount = costValue * qtyNum;
-  const subtotal = costAmount; // Bounty paid by seller, not included in buyer's total
-  const taxAmount = taxRatePct > 0 ? subtotal * (taxRatePct / 100) : 0;
-  const shippingPreviewItem = {
-    itemType: "expertise",
-    quantity: qtyNum,
-    profile_expertise_mode: expertiseData?.profile_expertise_mode,
-    profile_expertise_shipping: expertiseData?.profile_expertise_shipping,
-    profile_expertise_shipping_amount: expertiseData?.profile_expertise_shipping_amount,
-    profile_expertise_free_shipping: expertiseData?.profile_expertise_free_shipping,
-    profile_expertise_buyer_pays_shipping: expertiseData?.profile_expertise_buyer_pays_shipping,
-    profile_expertise_shipping_cost_type: expertiseData?.profile_expertise_shipping_cost_type,
-    fulfillment_method: resolveDefaultFulfillmentMethod({
-      itemType: "expertise",
-      profile_expertise_mode: expertiseData?.profile_expertise_mode,
-      profile_expertise_free_shipping: expertiseData?.profile_expertise_free_shipping,
-      profile_expertise_buyer_pays_shipping: expertiseData?.profile_expertise_buyer_pays_shipping,
-    }),
-  };
-  const shipCharge = getCartItemBuyerShippingCharge(shippingPreviewItem);
-  const shippingAmount = shipCharge?.type === "fixed" ? roundCreditCardMoney(shipCharge.amount) : 0;
-  const cardFeeBase = getCreditCardFeeBase({ merchandise: subtotal, tax: taxAmount, shipping: shippingAmount });
-  const processingFee = computeCreditCardProcessingFee(cardFeeBase, true);
-  const totalWithFee = computeCreditCardChargeTotal(cardFeeBase, true);
+  const lineMerchandise = costValue * qtyNum;
   const bountyLineTotal = hasOfferingBounty(expertiseData) ? getOfferingBountyLineTotal(expertiseData, qtyNum) : 0;
   const itemNotReturnable = !isOfferingReturnable(expertiseData);
 
@@ -133,21 +101,15 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
       setQuantityError(`You can only add ${maxCanAdd} more (${existingInCart} already in cart).`);
       return;
     }
-    if (subtotal <= 0) {
+    if (lineMerchandise <= 0) {
       setQuantityError("Subtotal must be greater than 0");
       return;
     }
     setQuantityError("");
     onAddToCart({
-      subtotal,
-      taxAmount,
-      taxRatePct,
-      totalWithFee,
       quantity: qtyNum,
       escrow,
-      costAmount,
-      costValue,
-      bountyAmount: bountyLineTotal,
+      taxRatePct,
     });
     setShow(false);
   };
@@ -157,23 +119,7 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
     onCancel();
   };
 
-  const miniCardUser = profileData
-    ? {
-        firstName: profileData.profile_personal_first_name || profileData.firstName || "",
-        lastName: profileData.profile_personal_last_name || profileData.lastName || "",
-        email: profileData.profile_personal_email || profileData.email || "",
-        phoneNumber: profileData.profile_personal_phone_number || profileData.phoneNumber || profileData.phone || "",
-        profileImage: profileData.profile_personal_image || profileData.profileImage || profileData.image || "",
-        tagLine: profileData.profile_personal_tag_line || profileData.tagLine || "",
-        city: profileData.profile_personal_city || profileData.city || "",
-        state: profileData.profile_personal_state || profileData.state || "",
-        emailIsPublic: profileData.profile_personal_email_is_public === 1 || profileData.emailIsPublic === true,
-        phoneIsPublic: profileData.profile_personal_phone_number_is_public === 1 || profileData.phoneIsPublic === true,
-        tagLineIsPublic: profileData.profile_personal_tag_line_is_public === 1 || profileData.tagLineIsPublic === true,
-        imageIsPublic: profileData.profile_personal_image_is_public === 1 || profileData.imageIsPublic === true,
-        locationIsPublic: profileData.profile_personal_location_is_public === 1 || profileData.locationIsPublic === true,
-      }
-    : null;
+  const miniCardUser = profileDataForCartModal(profileData);
 
   return (
     <Modal animationType='fade' transparent={true} visible={show} onRequestClose={handleCancel}>
@@ -239,61 +185,22 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
             {quantityError ? <Text style={styles.errorText}>{quantityError}</Text> : null}
           </View>
 
-          <View style={[styles.summarySection, darkMode && styles.darkSummarySection]}>
-            {costValue > 0 && costAmount > 0 && (
-              <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>
-                  {formatOfferingCostLineLabel(qtyNum, expertiseData?.cost)}
-                </Text>
-                <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${costAmount.toFixed(2)}</Text>
-              </View>
-            )}
-            <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Subtotal</Text>
-              <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${subtotal.toFixed(2)}</Text>
-            </View>
-            {shippingAmount > 0 && (
-              <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Shipping</Text>
-                <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${shippingAmount.toFixed(2)}</Text>
-              </View>
-            )}
-            {taxAmount > 0 && (
-              <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Sales Tax ({taxRatePct}%)</Text>
-                <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${taxAmount.toFixed(2)}</Text>
-              </View>
-            )}
-            <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Credit card processing fee (3%)</Text>
-              <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${processingFee.toFixed(2)}</Text>
-            </View>
-            <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, styles.totalLabel, darkMode && styles.darkSummaryLabel]}>Total</Text>
-              <Text style={[styles.summaryValue, styles.totalValue, darkMode && styles.darkSummaryValue]}>${totalWithFee.toFixed(2)}</Text>
-            </View>
-            {bountyLineTotal > 0 && (
-              <View style={[styles.summaryRow, styles.bountyNoteRow, darkMode && styles.darkBountyNoteRow]}>
-                <View style={styles.bountyNoteLabelRow}>
-                  <Text style={[styles.bountyNoteLabel, darkMode && styles.darkBountyNoteLabel]}>Bounty (paid by Seller)</Text>
-                  <BountyInfoTooltip perspective='referrer' darkMode={darkMode} />
+          {bountyLineTotal > 0 || itemNotReturnable ? (
+            <View style={styles.disclosureSection}>
+              {bountyLineTotal > 0 ? (
+                <View style={styles.disclosureRow}>
+                  <View style={styles.bountyNoteLabelRow}>
+                    <Text style={[styles.bountyNoteLabel, darkMode && styles.darkBountyNoteLabel]}>Bounty (paid by Seller)</Text>
+                    <BountyInfoTooltip perspective='referrer' darkMode={darkMode} />
+                  </View>
+                  <Text style={[styles.bountyNoteValue, darkMode && styles.darkBountyNoteValue]}>${bountyLineTotal.toFixed(2)}</Text>
                 </View>
-                <Text style={[styles.bountyNoteValue, darkMode && styles.darkBountyNoteValue]}>${bountyLineTotal.toFixed(2)}</Text>
-              </View>
-            )}
-            {itemNotReturnable ? (
-              <Text
-                style={[
-                  styles.notReturnableNote,
-                  darkMode && styles.darkNotReturnableNote,
-                  bountyLineTotal > 0 ? styles.notReturnableNoteBelowBounty : styles.notReturnableNoteBelowTotal,
-                  bountyLineTotal <= 0 && darkMode && styles.darkNotReturnableNoteBelowTotal,
-                ]}
-              >
-                Item not returnable
-              </Text>
-            ) : null}
-          </View>
+              ) : null}
+              {itemNotReturnable ? (
+                <Text style={[styles.notReturnableNote, darkMode && styles.darkNotReturnableNote]}>Item not returnable</Text>
+              ) : null}
+            </View>
+          ) : null}
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={[styles.button, styles.cancelButton, darkMode && styles.darkCancelButton]} onPress={handleCancel}>
@@ -476,54 +383,14 @@ const styles = StyleSheet.create({
   continueButtonDisabled: {
     opacity: 0.5,
   },
-  summarySection: {
-    backgroundColor: "#F8F8F8",
-    borderRadius: 12,
-    padding: 16,
+  disclosureSection: {
     marginBottom: 16,
+    gap: 8,
   },
-  darkSummarySection: {
-    backgroundColor: "#1a1a1a",
-  },
-  summaryRow: {
+  disclosureRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: "#666",
-  },
-  darkSummaryLabel: {
-    color: "#ccc",
-  },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-  },
-  darkSummaryValue: {
-    color: "#fff",
-  },
-  totalLabel: {
-    fontWeight: "bold",
-    fontSize: 16,
-    marginTop: 4,
-  },
-  totalValue: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginTop: 4,
-  },
-  bountyNoteRow: {
-    marginTop: 12,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#E0E0E0",
-  },
-  darkBountyNoteRow: {
-    borderTopColor: "#444",
   },
   bountyNoteLabel: {
     fontSize: 13,
@@ -556,18 +423,6 @@ const styles = StyleSheet.create({
   },
   darkNotReturnableNote: {
     color: "#999",
-  },
-  notReturnableNoteBelowBounty: {
-    marginTop: 8,
-  },
-  notReturnableNoteBelowTotal: {
-    marginTop: 12,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#E0E0E0",
-  },
-  darkNotReturnableNoteBelowTotal: {
-    borderTopColor: "#444",
   },
   buttonContainer: {
     flexDirection: "row",

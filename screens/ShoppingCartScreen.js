@@ -59,7 +59,7 @@ import {
   isCartItemReturnable,
   isCartItemBuyerPaysShipping,
 } from "../utils/offeringCartUtils";
-import { getCartItemBuyerShippingCharge, sumBuyerShippingCharges } from "../utils/businessServiceShipping";
+import { getCartItemBuyerShippingCharge, getCartItemDeliveryChargeDisplay, sumBuyerShippingCharges } from "../utils/businessServiceShipping";
 import {
   buildCartLineProcessingFeeMap,
   cartLineProcessingFeeKey,
@@ -78,6 +78,7 @@ import {
   normalizeCartItemsFulfillment,
   resolveDefaultFulfillmentMethod,
 } from "../utils/cartFulfillmentMethod";
+import { cartLineDeliveryChargeLabel, OFFERING_DELIVERY_CHARGE_LABEL, sellerGroupDeliveryChargeLabel } from "../utils/profileOfferingShipping";
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
 
@@ -178,17 +179,10 @@ function getCartLineChargeBreakdown(item, processingFeeOverride) {
   const qty = parseInt(item.quantity, 10) || 1;
   const { pretax, tax, taxable, ratePercentUsed } = lineMerchandiseAndTax(item);
   const unitPrice = qty > 0 ? roundMoney(pretax / qty) : pretax;
-  const shipCharge = getCartItemBuyerShippingCharge(item);
-  let shippingAmount = 0;
-  let shippingIsActual = false;
-  let shippingApplicable = false;
-  if (shipCharge?.type === "fixed") {
-    shippingApplicable = true;
-    shippingAmount = roundMoney(shipCharge.amount);
-  } else if (shipCharge?.type === "actual") {
-    shippingApplicable = true;
-    shippingIsActual = true;
-  }
+  const deliveryDisplay = getCartItemDeliveryChargeDisplay(item);
+  const shippingAmount = deliveryDisplay.showRow ? roundMoney(deliveryDisplay.amount) : 0;
+  const shippingIsActual = deliveryDisplay.isActual;
+  const shippingApplicable = deliveryDisplay.showRow;
   const buyerPaysCardFee = groupBuyerPaysCardFee([item]);
   const feeBase = getCreditCardFeeBase({ merchandise: pretax, tax, shipping: shippingAmount });
   const processingFee =
@@ -307,7 +301,11 @@ function CartFulfillmentChoice({ item, onSelect }) {
       </View>
       {method === FULFILLMENT_VIRTUAL ? <Text style={styles.fulfillmentPickupHint}>No shipping required · verify immediately</Text> : null}
       {method === FULFILLMENT_PICKUP && pickupHint ? <Text style={styles.fulfillmentPickupHint}>Pickup location: {pickupHint}</Text> : null}
-      {method === FULFILLMENT_SHIP ? <Text style={styles.fulfillmentPickupHint}>Shipping address required at checkout</Text> : null}
+      {method === FULFILLMENT_SHIP ? (
+        <Text style={styles.fulfillmentPickupHint}>
+          {item?.itemType === "expertise" ? "Delivery address required at checkout" : "Shipping address required at checkout"}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -446,6 +444,7 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
       shippingSubtotal,
       hasFixedShipping: shippingInfo.hasFixedShipping,
       hasActualShipping: shippingInfo.hasActualShipping,
+      hasWaivedDeliveryCharge: shippingInfo.hasWaivedDeliveryCharge,
       hasBuyerPaysShipping: items.some((it) => isCartItemBuyerPaysShipping(it)),
       subtotalAfterTax,
       subtotalWithShipping,
@@ -1414,7 +1413,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           value={formatCartMoney(item, breakdown.itemSubtotal)}
                         />
                         {breakdown.shippingApplicable ? (
-                          <CartBreakdownRow label='Shipping' value={formatCartMoney(item, breakdown.shippingAmount)} />
+                          <CartBreakdownRow label={cartLineDeliveryChargeLabel(item)} value={formatCartMoney(item, breakdown.shippingAmount)} />
                         ) : null}
                         {breakdown.taxable && breakdown.tax > 0 ? (
                           <CartBreakdownRow
@@ -1426,7 +1425,11 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           <CartBreakdownRow label='Card processing fee' value={formatCartMoney(item, breakdown.processingFee)} />
                         ) : null}
                         {breakdown.shippingIsActual ? (
-                          <Text style={styles.cartShippingActualNote}>Seller will contact the buyer directly for actual shipping cost.</Text>
+                          <Text style={styles.cartShippingActualNote}>
+                            {item.itemType === "expertise"
+                              ? "Seller will contact the buyer directly for actual delivery charge."
+                              : "Seller will contact the buyer directly for actual shipping cost."}
+                          </Text>
                         ) : null}
                       </View>
 
@@ -1519,19 +1522,35 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <Text style={styles.totalLabel}>Sales tax</Text>
                       <Text style={styles.totalValue}>${g.salesTaxTotal.toFixed(2)}</Text>
                     </View>
-                    {g.hasFixedShipping ? (
+                    {g.hasFixedShipping || g.hasWaivedDeliveryCharge ? (
                       <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Shipping (buyer fixed)</Text>
+                        <Text style={styles.totalLabel}>
+                          {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
+                            ? g.hasWaivedDeliveryCharge && !g.hasFixedShipping
+                              ? "Delivery charge"
+                              : "Delivery charge (buyer fixed)"
+                            : g.hasWaivedDeliveryCharge && !g.hasFixedShipping
+                              ? "Shipping"
+                              : "Shipping (buyer fixed)"}
+                        </Text>
                         <Text style={styles.totalValue}>${g.shippingSubtotal.toFixed(2)}</Text>
                       </View>
                     ) : null}
                     {g.hasActualShipping ? (
                       <View style={styles.shippingActualBlock}>
                         <View style={styles.totalRow}>
-                          <Text style={styles.totalLabel}>Shipping (actual cost)</Text>
+                          <Text style={styles.totalLabel}>
+                            {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
+                              ? "Delivery charge (actual cost)"
+                              : "Shipping (actual cost)"}
+                          </Text>
                           <Text style={styles.totalValue}>$0.00</Text>
                         </View>
-                        <Text style={styles.shippingActualNote}>Seller will contact the buyer directly for actual shipping cost.</Text>
+                        <Text style={styles.shippingActualNote}>
+                          {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
+                            ? "Seller will contact the buyer directly for actual delivery charge."
+                            : "Seller will contact the buyer directly for actual shipping cost."}
+                        </Text>
                       </View>
                     ) : null}
                     <View style={styles.totalRow}>
@@ -1643,6 +1662,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
             merchandiseSubtotal={feeDialogFirstGroup ? feeDialogFirstGroup.merchandiseSubtotal : undefined}
             salesTaxTotal={feeDialogFirstGroup ? feeDialogFirstGroup.salesTaxTotal : undefined}
             shippingSubtotal={feeDialogFirstGroup ? feeDialogFirstGroup.shippingSubtotal : undefined}
+            shippingLabel={feeDialogFirstGroup ? sellerGroupDeliveryChargeLabel(feeDialogFirstGroup) : undefined}
             hasActualShipping={feeDialogFirstGroup ? feeDialogFirstGroup.hasActualShipping : undefined}
             cardProcessingFee={feeDialogFirstGroup ? feeDialogFirstGroup.processingFee : undefined}
             buyerPaysCardFee={feeDialogFirstGroup ? feeDialogFirstGroup.buyerPaysCardFee : undefined}

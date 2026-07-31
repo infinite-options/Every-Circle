@@ -69,12 +69,12 @@ function buildOfferingDetailRows(offering, darkMode) {
         darkMode={darkMode}
       />
       <DetailRow
-        label='Shipping'
+        label='Delivery charge'
         value={
           offering.profile_expertise_free_shipping === 1
-            ? "Free shipping"
+            ? "Free delivery charge"
             : offering.profile_expertise_buyer_pays_shipping === 1
-              ? "Buyer pays shipping"
+              ? "Buyer pays delivery charge"
               : ""
         }
         darkMode={darkMode}

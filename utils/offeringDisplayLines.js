@@ -6,7 +6,14 @@ import {
   BS_SHIPPING_FREE,
   parseBsShippingAmount,
 } from "./businessServiceShipping";
-import { isBuyerPaysOfferingShipping, isOfferingQtyUnlimited, normOfferingShippingRefundable, parseOfferingShipping } from "./profileOfferingShipping";
+import {
+  isBuyerPaysOfferingShipping,
+  isOfferingQtyUnlimited,
+  normOfferingShippingRefundable,
+  OFFERING_DELIVERY_CHARGE_LABEL,
+  OFFERING_DELIVERY_OPTION_CARD_LABEL,
+  parseOfferingShipping,
+} from "./profileOfferingShipping";
 
 function isTruthyFlag(v) {
   return v === 1 || v === "1" || v === true;
@@ -183,18 +190,18 @@ function getOfferingReturnableBadgeValue(offering) {
   const days = String(offering?.profile_expertise_return_window_days ?? "").trim();
   const daysLabel = days && days !== "0" ? days : "30";
   if (isBuyerPaysOfferingShipping(offering) && normOfferingShippingRefundable(offering) !== 1) {
-    return `Yes, ${daysLabel}d   (Shipping not refundable)`;
+    return `Yes, ${daysLabel}d   (${OFFERING_DELIVERY_CHARGE_LABEL} not refundable)`;
   }
   return `Yes, ${daysLabel}d`;
 }
 
-/** Pill badges for Offering cards — Tax, Ship, Returnable, Qty (same pattern as ProductCard). */
+/** Pill badges for Offering cards — Tax, Delivery option, Returnable, Qty (same pattern as ProductCard). */
 export function getOfferingAttributeBadges(offering) {
   const badges = [];
   const tax = getOfferingTaxBadgeValue(offering);
   if (tax) badges.push({ key: "tax", label: "Tax", value: tax });
   const ship = getOfferingShippingValue(offering);
-  if (ship) badges.push({ key: "ship", label: "Ship", value: ship });
+  if (ship) badges.push({ key: "ship", label: OFFERING_DELIVERY_OPTION_CARD_LABEL, value: ship });
   const returnable = getOfferingReturnableBadgeValue(offering);
   if (returnable) badges.push({ key: "returnable", label: "Returnable", value: returnable });
   const qty = formatOfferingQtyBadgeValue(offering);
@@ -242,7 +249,7 @@ export function getOfferingCardLayout(offering) {
 
   const fulfillmentRows = [
     { label: "Condition", value: conditionLine },
-    { label: "Shipping", value: getOfferingShippingValue(offering) },
+    { label: OFFERING_DELIVERY_OPTION_CARD_LABEL, value: getOfferingShippingValue(offering) },
     { label: "Tax", value: getOfferingTaxBadgeValue(offering) },
     { label: "Returnable", value: getOfferingReturnableBadgeValue(offering) },
     { label: "Refund policy", value: refundPolicyLine },
@@ -270,7 +277,7 @@ export function getOfferingCommerceGrid(offering) {
     bountyLabel: layout.metrics.availabilitySubtext,
     taxLine: layout.metrics.costSubtext,
     conditionLine: layout.fulfillmentRows.find((r) => r.label === "Condition")?.value || null,
-    shippingLine: layout.fulfillmentRows.find((r) => r.label === "Shipping")?.value || null,
+    shippingLine: layout.fulfillmentRows.find((r) => r.label === OFFERING_DELIVERY_OPTION_CARD_LABEL)?.value || null,
     returnableLine: layout.fulfillmentRows.find((r) => r.label === "Returnable")?.value || null,
     refundLine: layout.fulfillmentRows.find((r) => r.label === "Refund policy")?.value || null,
   };
