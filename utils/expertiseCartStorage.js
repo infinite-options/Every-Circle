@@ -21,7 +21,7 @@ export async function loadExpertiseCartQuantity(expertiseUid) {
   }
 }
 
-/** Recompute stored line totals after quantity changes (matches AddToCartDetailsModal). */
+/** Recompute stored line totals after quantity changes (canonical cart pricing). */
 export function recomputeExpertiseCartTotals(cartItem, quantity) {
   const item = { ...cartItem, quantity };
   const { pretax, tax, ratePercentUsed } = expertiseLineMerchandiseAndTax(item);

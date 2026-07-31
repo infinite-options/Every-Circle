@@ -6,8 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 export const BOUNTY_INFO_COPY = {
   seller:
     "Offer a bounty to reward people in your network who refer buyers. You pay it—not the buyer—so referrals can grow your sales without raising the price. Per item pays on each unit sold; single bounty is one payment for the sale.",
-  referrer:
-    "Earn this bounty when someone you referred buys. Look for the 💰 and recommend offerings with bounties to your network—you get rewarded when they purchase.",
+  referrer: "Earn part of this bounty when someone you referred buys. Look for the 💰 and recommend offerings with bounties to your network—you get rewarded when they purchase.",
 };
 
 const TOOLTIP_WIDTH = 260;
@@ -96,10 +95,7 @@ export default function BountyInfoTooltip({ perspective = "seller", darkMode = f
     </View>
   ) : null;
 
-  const webPortalTooltip =
-    isWeb && visible && fixedPos && createPortal && typeof document !== "undefined"
-      ? createPortal(tooltipNode, document.body)
-      : null;
+  const webPortalTooltip = isWeb && visible && fixedPos && createPortal && typeof document !== "undefined" ? createPortal(tooltipNode, document.body) : null;
 
   return (
     <View

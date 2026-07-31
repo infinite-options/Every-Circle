@@ -45,6 +45,7 @@ import {
   offeringDeliveredModeSelected,
   validateOfferingDeliveredShipping,
   getOfferingShippingDropdownOptions,
+  OFFERING_DELIVERY_CHARGE_LABEL,
 } from "../utils/profileOfferingShipping";
 import { BS_SHIPPING_BUYER_FIXED, parseBsShippingAmount } from "../utils/businessServiceShipping";
 
@@ -1365,7 +1366,8 @@ const ExpertiseSection = ({
 
               <View style={formStyles.fulfillmentCol}>
                 <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>
-                  Shipping/delivery{offeringDeliveredModeSelected(item) ? " *" : ""}
+                  {OFFERING_DELIVERY_CHARGE_LABEL}
+                  {offeringDeliveredModeSelected(item) ? " *" : ""}
                 </Text>
                 {(() => {
                   const deliveredShippingInvalid =
@@ -1510,7 +1512,7 @@ const ExpertiseSection = ({
                             size={18}
                             color={item.profile_expertise_shipping_refundable === 1 || item.profile_expertise_shipping_refundable === "1" ? "#111" : darkMode ? "#aaa" : "#666"}
                           />
-                          <Text style={[formStyles.checkboxLabelCompact, darkMode && formStyles.darkCheckboxLabelCompact]}>Shipping is refundable</Text>
+                          <Text style={[formStyles.checkboxLabelCompact, darkMode && formStyles.darkCheckboxLabelCompact]}>{OFFERING_DELIVERY_CHARGE_LABEL} is refundable</Text>
                         </TouchableOpacity>
                       ) : null}
                     </View>

@@ -26,7 +26,7 @@ import {
   MODERATED_ACKNOWLEDGED,
   MODERATED_TAKEN_DOWN,
 } from "../utils/offeringModeration";
-import { expertiseCartPersistedFields } from "../utils/offeringCartUtils";
+import { expertiseCartPersistedFields, profileDataForCartModal } from "../utils/offeringCartUtils";
 import { upsertExpertiseCartItem } from "../utils/expertiseCartStorage";
 
 const OfferingDetailScreenContent = ({ route, navigation }) => {
@@ -57,18 +57,7 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
   const expertiseUid = String(expertiseData?.expertise_uid || expertiseData?.profile_expertise_uid || "").trim();
   const offeringImageUri = resolveProfileItemImageUri(expertiseData?.profile_expertise_image, profile_uid);
 
-  const userForMiniCard = {
-    firstName: profileData?.firstName || "",
-    lastName: profileData?.lastName || "",
-    email: profileData?.email || "",
-    phoneNumber: profileData?.phone || "",
-    profileImage: profileData?.image || "",
-    tagLine: profileData?.tagLine || "",
-    emailIsPublic: profileData?.emailIsPublic || false,
-    phoneIsPublic: profileData?.phoneIsPublic || false,
-    tagLineIsPublic: profileData?.tagLineIsPublic || false,
-    imageIsPublic: profileData?.imageIsPublic || false,
-  };
+  const userForMiniCard = profileDataForCartModal(profileData);
 
   const handleBack = () => {
     if (returnTo === "Profile" && profileState) {
@@ -183,7 +172,7 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
       return;
     }
     try {
-      const { quantity: qty, escrow, subtotal, totalWithFee, taxAmount, taxRatePct } = modalData;
+      const { quantity: qty, escrow, taxRatePct } = modalData;
       const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
       const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
       const cartItemDraft = {
@@ -198,9 +187,6 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
         itemType: "expertise",
         quantity: qty,
         escrow,
-        subtotal,
-        taxAmount,
-        totalWithFee,
         ...expertiseCartPersistedFields(expertiseData, { taxRatePct }),
         cart_key: cartKey,
         addedAt: new Date().toISOString(),

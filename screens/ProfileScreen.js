@@ -70,7 +70,7 @@ import FlagProfileModal from "../components/FlagProfileModal";
 import OfferingModerationBanner from "../components/OfferingModerationBanner";
 import SeekingModerationBanner from "../components/SeekingModerationBanner";
 import BusinessModerationBanner from "../components/BusinessModerationBanner";
-import { expertiseCartPersistedFields } from "../utils/offeringCartUtils";
+import { expertiseCartPersistedFields, expertiseDataForCartModal, profileDataForCartModal } from "../utils/offeringCartUtils";
 import { upsertExpertiseCartItem } from "../utils/expertiseCartStorage";
 import { getHeaderColors } from "../config/headerColors";
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED, MODERATED_TAKEN_DOWN, normalizeOfferingModeration } from "../utils/offeringModeration";
@@ -1376,7 +1376,7 @@ const ProfileScreen = ({ route, navigation }) => {
     }
     try {
       const { expertiseData, profileData, profile_uid } = row;
-      const { quantity: qty, escrow, subtotal, totalWithFee, taxAmount, taxRatePct } = modalData;
+      const { quantity: qty, escrow, taxRatePct } = modalData;
       const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
       const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
       const cartItemDraft = {
@@ -1391,9 +1391,6 @@ const ProfileScreen = ({ route, navigation }) => {
         itemType: "expertise",
         quantity: qty,
         escrow,
-        subtotal,
-        taxAmount,
-        totalWithFee,
         ...expertiseCartPersistedFields(expertiseData, { taxRatePct }),
         cart_key: cartKey,
         addedAt: new Date().toISOString(),
@@ -1978,58 +1975,9 @@ const ProfileScreen = ({ route, navigation }) => {
                       const offeringModeratedBlocked = isOfferingModeratedBlocked(exp);
                       const offeringTakenDown = getOfferingModeratedState(exp) === MODERATED_TAKEN_DOWN;
                       const openOfferingDetail = () => {
-                        const expertiseData = {
-                          expertise_uid: exp.profile_expertise_uid,
-                          profile_expertise_uid: exp.profile_expertise_uid,
-                          title: exp.name,
-                          profile_expertise_title: exp.name,
-                          description: exp.description,
-                          profile_expertise_description: exp.description,
-                          details: exp.details || exp.profile_expertise_details || "",
-                          cost: exp.cost,
-                          bounty: exp.bounty,
-                          quantity: exp.quantity,
-                          profile_expertise_quantity: exp.quantity,
-                          profile_expertise_image: exp.profile_expertise_image,
-                          profile_expertise_image_is_public: exp.profile_expertise_image_is_public,
-                          profile_expertise_start: exp.profile_expertise_start,
-                          profile_expertise_end: exp.profile_expertise_end,
-                          profile_expertise_location: exp.profile_expertise_location,
-                          profile_expertise_city: exp.profile_expertise_city,
-                          profile_expertise_state: exp.profile_expertise_state,
-                          profile_expertise_mode: exp.profile_expertise_mode,
-                          profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
-                          moderation: exp.moderation,
-                          profile_expertise_moderated: exp.profile_expertise_moderated,
-                          profile_expertise_is_taxable: exp.profile_expertise_is_taxable,
-                          profile_expertise_tax_rate: exp.profile_expertise_tax_rate,
-                          profile_expertise_condition_type: exp.profile_expertise_condition_type,
-                          profile_expertise_condition_detail: exp.profile_expertise_condition_detail,
-                          profile_expertise_bounty_type: exp.profile_expertise_bounty_type,
-                          profile_expertise_is_returnable: exp.profile_expertise_is_returnable,
-                          profile_expertise_return_window_days: exp.profile_expertise_return_window_days,
-                          profile_expertise_free_shipping: exp.profile_expertise_free_shipping,
-                          profile_expertise_buyer_pays_shipping: exp.profile_expertise_buyer_pays_shipping,
-                          profile_expertise_refund_policy: exp.profile_expertise_refund_policy,
-                        };
-                        const profileData = {
-                          firstName: user.firstName,
-                          lastName: user.lastName,
-                          email: user.email,
-                          phone: user.phoneNumber,
-                          image: user.profileImage,
-                          tagLine: user.tagLine,
-                          city: user.city,
-                          state: user.state,
-                          emailIsPublic: user.emailIsPublic,
-                          phoneIsPublic: user.phoneIsPublic,
-                          imageIsPublic: user.imageIsPublic,
-                          tagLineIsPublic: user.tagLineIsPublic,
-                          locationIsPublic: user.locationIsPublic,
-                        };
                         navigation.navigate("OfferingDetail", {
-                          expertiseData,
-                          profileData,
+                          expertiseData: expertiseDataForCartModal(exp, profileUID),
+                          profileData: profileDataForCartModal(user),
                           profile_uid: profileUID,
                           returnTo: "Profile",
                           profileState: { profile_uid: profileUID, returnTo, searchState },
@@ -2067,45 +2015,9 @@ const ProfileScreen = ({ route, navigation }) => {
                                     {exp.expertise_responses > 0 ? (
                                       <TouchableOpacity
                                         onPress={() => {
-                                          const expertiseDataForNavigation = {
-                                            expertise_uid: exp.profile_expertise_uid,
-                                            profile_expertise_uid: exp.profile_expertise_uid,
-                                            title: exp.name,
-                                            profile_expertise_title: exp.name,
-                                            description: exp.description,
-                                            profile_expertise_description: exp.description,
-                                            cost: exp.cost,
-                                            bounty: exp.bounty,
-                                            quantity: exp.quantity,
-                                            profile_expertise_quantity: exp.quantity,
-                                            profile_expertise_image: exp.profile_expertise_image,
-                                            profile_expertise_image_is_public: exp.profile_expertise_image_is_public,
-                                            profile_expertise_start: exp.profile_expertise_start,
-                                            profile_expertise_end: exp.profile_expertise_end,
-                                            profile_expertise_location: exp.profile_expertise_location,
-                                            profile_expertise_city: exp.profile_expertise_city,
-                                            profile_expertise_state: exp.profile_expertise_state,
-                                            profile_expertise_mode: exp.profile_expertise_mode,
-                                            profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
-                                          };
-                                          const profileDataForNavigation = {
-                                            firstName: user.firstName,
-                                            lastName: user.lastName,
-                                            email: user.email,
-                                            phone: user.phoneNumber,
-                                            image: user.profileImage,
-                                            tagLine: user.tagLine,
-                                            city: user.city,
-                                            state: user.state,
-                                            emailIsPublic: user.emailIsPublic,
-                                            phoneIsPublic: user.phoneIsPublic,
-                                            imageIsPublic: user.imageIsPublic,
-                                            tagLineIsPublic: user.tagLineIsPublic,
-                                            locationIsPublic: user.locationIsPublic,
-                                          };
                                           navigation.navigate("OfferingResponses", {
-                                            expertiseData: expertiseDataForNavigation,
-                                            profileData: profileDataForNavigation,
+                                            expertiseData: expertiseDataForCartModal(exp, profileUID),
+                                            profileData: profileDataForCartModal(user),
                                             profile_uid: profileUID,
                                             profileState: { profile_uid: profileUID, returnTo, searchState },
                                           });
@@ -2178,23 +2090,8 @@ const ProfileScreen = ({ route, navigation }) => {
                               activeOpacity={0.8}
                               onPress={() =>
                                 setOfferingCartModalItem({
-                                  expertiseData: {
-                                    expertise_uid: exp.profile_expertise_uid || exp.expertise_uid || "",
-                                    title: exp.name || "",
-                                    description: exp.description || "",
-                                    cost: exp.cost || "",
-                                    bounty: exp.bounty || "",
-                                    quantity: exp.quantity || "",
-                                    profile_expertise_quantity: exp.quantity || "",
-                                    profile_expertise_bounty_type: exp.profile_expertise_bounty_type || "none",
-                                    profile_expertise_is_taxable: exp.profile_expertise_is_taxable ?? 0,
-                                    profile_expertise_tax_rate: exp.profile_expertise_tax_rate || "",
-                                  },
-                                  profileData: {
-                                    firstName: user.firstName,
-                                    lastName: user.lastName,
-                                    profileImage: user.profileImage,
-                                  },
+                                  expertiseData: expertiseDataForCartModal(exp, profileUID),
+                                  profileData: profileDataForCartModal(user),
                                   profile_uid: routeProfileUID,
                                 })
                               }

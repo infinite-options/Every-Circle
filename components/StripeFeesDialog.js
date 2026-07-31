@@ -18,6 +18,7 @@ const StripeFeesDialog = ({
   merchandiseSubtotal,
   salesTaxTotal,
   shippingSubtotal,
+  shippingLabel,
   hasActualShipping,
   cardProcessingFee,
   buyerPaysCardFee,
@@ -36,6 +37,12 @@ const StripeFeesDialog = ({
     !hasCartBreakdown && subtotal != null && totalWithFee != null && Number.isFinite(Number(subtotal)) && Number.isFinite(Number(totalWithFee));
 
   const legacyFee = hasLegacyBreakdown ? (Number(totalWithFee) - Number(subtotal)).toFixed(2) : null;
+  const shippingLineLabel =
+    typeof shippingLabel === "string" && shippingLabel.trim() !== "" ? shippingLabel.trim() : "Shipping";
+  const actualShippingNote =
+    shippingLineLabel === "Delivery charge"
+      ? "Actual delivery charge is $0.00 at checkout — the seller will contact you directly."
+      : "Actual shipping is $0.00 at checkout — the seller will contact you directly.";
   const showShipping = hasCartBreakdown && typeof shippingSubtotal === "number" && (shippingSubtotal > 0 || hasActualShipping);
   const walletAmt = typeof walletApplied === "number" ? Math.max(0, walletApplied) : null;
   const cardAmt = typeof cardCharge === "number" ? cardCharge : null;
@@ -71,14 +78,12 @@ const StripeFeesDialog = ({
                   <>
                     {shippingSubtotal > 0 || !hasActualShipping ? (
                       <View style={styles.breakdownRow}>
-                        <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Shipping:</Text>
+                        <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>{shippingLineLabel}:</Text>
                         <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${Number(shippingSubtotal || 0).toFixed(2)}</Text>
                       </View>
                     ) : null}
                     {hasActualShipping ? (
-                      <Text style={[styles.waivedNote, darkMode && styles.darkWaivedNote]}>
-                        Actual shipping is $0.00 at checkout — the seller will contact you directly.
-                      </Text>
+                      <Text style={[styles.waivedNote, darkMode && styles.darkWaivedNote]}>{actualShippingNote}</Text>
                     ) : null}
                   </>
                 ) : null}

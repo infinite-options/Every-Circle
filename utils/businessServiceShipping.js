@@ -92,6 +92,37 @@ export function getCartItemShippingCarrier(item) {
 }
 
 import { cartItemSkipsShippingCharge } from "./cartFulfillmentMethod";
+import { parseExpertiseModeFlags } from "./expertiseMode";
+import { isOfferingShippingConfigured } from "./profileOfferingShipping";
+
+/** Listing has a delivery/shipping option (even if buyer chose pickup or virtual). */
+export function cartItemHasConfiguredDeliveryOption(item) {
+  if (!item || typeof item !== "object") return false;
+  if (item.itemType === "expertise") {
+    const { delivered } = parseExpertiseModeFlags(item.profile_expertise_mode);
+    if (delivered) return true;
+    return isOfferingShippingConfigured(item);
+  }
+  return isBusinessShippingApplicable(item);
+}
+
+/**
+ * Cart UI: whether to show a delivery/shipping row and at what amount.
+ * Charge math still uses getCartItemBuyerShippingCharge (null when waived).
+ */
+export function getCartItemDeliveryChargeDisplay(item) {
+  const charge = getCartItemBuyerShippingCharge(item);
+  if (charge?.type === "fixed") {
+    return { showRow: true, amount: charge.amount, isActual: false, waived: false };
+  }
+  if (charge?.type === "actual") {
+    return { showRow: true, amount: 0, isActual: true, waived: false };
+  }
+  if (cartItemHasConfiguredDeliveryOption(item) && cartItemSkipsShippingCharge(item)) {
+    return { showRow: true, amount: 0, isActual: false, waived: true };
+  }
+  return { showRow: false, amount: 0, isActual: false, waived: false };
+}
 
 /** True when a cart line requires the buyer to pay shipping (fixed or actual) and ships. */
 export function isCartItemBuyerPaysShipping(item) {
@@ -138,11 +169,14 @@ export function getCartItemLineShippingAmount(item) {
 
 /** Sum charged buyer shipping (fixed only) across cart lines. */
 export function sumBuyerShippingCharges(items) {
-  if (!Array.isArray(items)) return { shippingSubtotal: 0, hasFixedShipping: false, hasActualShipping: false };
+  if (!Array.isArray(items)) return { shippingSubtotal: 0, hasFixedShipping: false, hasActualShipping: false, hasWaivedDeliveryCharge: false };
   let total = 0;
   let hasFixedShipping = false;
   let hasActualShipping = false;
+  let hasWaivedDeliveryCharge = false;
   for (const item of items) {
+    const display = getCartItemDeliveryChargeDisplay(item);
+    if (display.waived) hasWaivedDeliveryCharge = true;
     const charge = getCartItemBuyerShippingCharge(item);
     if (!charge) continue;
     if (charge.type === "fixed") {
@@ -155,6 +189,7 @@ export function sumBuyerShippingCharges(items) {
     shippingSubtotal: Math.round(total * 100) / 100,
     hasFixedShipping,
     hasActualShipping,
+    hasWaivedDeliveryCharge,
   };
 }
 
