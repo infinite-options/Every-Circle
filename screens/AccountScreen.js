@@ -296,6 +296,8 @@ function areAllReceiptLinesFullyReceived(receiptRows, selectedItemIds, receivedQ
 
 /** Sum return qty already requested for a line (supports partial multi-qty returns). */
 function getReturnedQtyForLine(returnRequestData, itemIndex, purchasedQty) {
+  const split = getLocalReturnSplitForLine(returnRequestData, itemIndex);
+  if (split.total > 0) return split.total;
   if (!returnRequestData?.notes?.length) return 0;
   const id = String(itemIndex);
   let total = 0;
@@ -309,6 +311,37 @@ function getReturnedQtyForLine(returnRequestData, itemIndex, purchasedQty) {
     }
   }
   return total;
+}
+
+/** Shipped vs unshipped qty already requested locally before backend confirms. */
+function getLocalReturnSplitForLine(returnRequestData, itemIndex) {
+  const id = String(itemIndex);
+  let shipped = 0;
+  let unshipped = 0;
+  let total = 0;
+  let splitKnown = false;
+
+  for (const entry of returnRequestData?.notes || []) {
+    if (!(entry.items || []).includes(id)) continue;
+    const split = entry.itemSplitQuantities?.[id];
+    if (split && typeof split === "object") {
+      const s = Math.max(0, parseInt(split.shipped, 10) || 0);
+      const u = Math.max(0, parseInt(split.unshipped, 10) || 0);
+      if (s + u > 0) {
+        shipped += s;
+        unshipped += u;
+        total += s + u;
+        splitKnown = true;
+        continue;
+      }
+    }
+    const q = entry.itemQuantities?.[id];
+    if (q != null && Number(q) > 0) {
+      total += Math.round(Number(q));
+    }
+  }
+
+  return { shipped, unshipped, total, splitKnown };
 }
 
 /** Unit cost × qty for each receipt row (same rule as return modal: qty defaults to 1). */
@@ -887,6 +920,14 @@ function getSaleLineQty(row) {
   return Number.isFinite(q) && q > 0 ? q : 1;
 }
 
+/** Signed qty for product-sales totals; return lines store negative ti_bs_qty. */
+function getSignedProductSalesLineQty(row) {
+  const q = parseInt(row?.ti_bs_qty, 10);
+  if (Number.isFinite(q) && q !== 0) return q;
+  if (isReturnListRow(row)) return 0;
+  return 1;
+}
+
 function getSaleLineUnitCost(row) {
   const cost = parseFloat(row?.ti_bs_cost ?? row?.bs_cost ?? 0);
   return Number.isFinite(cost) ? cost : 0;
@@ -900,9 +941,10 @@ function aggregateBusinessProductSales(bountyLines) {
     const productUid = resolveProductUidFromSaleLine(row);
     if (!productUid) continue;
 
-    const qty = getSaleLineQty(row);
+    const qty = getSignedProductSalesLineQty(row);
+    if (qty === 0) continue;
     const unitCost = getSaleLineUnitCost(row);
-    const bountyPaid = parseFloat(row?.bounty_paid ?? 0) || 0;
+    const bountyPaid = parseFloat(row?.bounty_earned ?? row?.bounty_paid ?? 0) || 0;
     const productName = String(row?.bs_service_name || row?.bs_service_desc || "Unknown product").trim() || "Unknown product";
 
     if (!byProduct[productUid]) {
@@ -1011,6 +1053,11 @@ function resolveSaleOrderUid(saleRow) {
 /** True for reverse-txn returns and pending return request rows (is_pending_return). */
 function isReturnListRow(row) {
   return Number(row?.is_return) === 1 || row?.is_pending_return === true || Number(row?.is_pending_return) === 1 || String(row?.transaction_type || "").toLowerCase() === "return";
+}
+
+/** Open return-request list rows — not ledger yet; must not affect sold counts. */
+function isPendingReturnListRow(row) {
+  return row?.is_pending_return === true || Number(row?.is_pending_return) === 1;
 }
 
 /**
@@ -2702,7 +2749,18 @@ function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines,
 /** Real product/service name from a line or pending-return stub (ignores placeholder "Item"). */
 function resolveLineItemDisplayName(line) {
   if (!line || typeof line !== "object") return null;
-  const candidates = [line.item_name, line.bs_service_name, line.bs_service_desc, line.service_name, line.product_name, line.purchased_item, line.name, line.description];
+  const candidates = [
+    line.item_name,
+    line.bs_service_name,
+    line.bs_service_desc,
+    line.profile_expertise_title,
+    line.profile_wish_title,
+    line.service_name,
+    line.product_name,
+    line.purchased_item,
+    line.name,
+    line.description,
+  ];
   for (const candidate of candidates) {
     const s = String(candidate ?? "").trim();
     if (!s) continue;
@@ -3055,6 +3113,106 @@ function getExistingReturnRowsForOrder(rows, orderUid) {
   return rows.filter((row) => isReturnListRow(row) && resolveListRowOrderUid(row) === orderUid);
 }
 
+/** Line payloads attached to one return / pending-return event on the account screen. */
+function collectReturnEventLinesFromRow(row) {
+  if (!row || typeof row !== "object") return [];
+  if (Array.isArray(row.return_lines) && row.return_lines.length) return row.return_lines;
+  if (Array.isArray(row.pending_return?.items) && row.pending_return.items.length) return row.pending_return.items;
+  if (Array.isArray(row.pending_returns) && row.pending_returns.length) {
+    return row.pending_returns.flatMap((pending) => (Array.isArray(pending?.items) ? pending.items : []));
+  }
+  if (Array.isArray(row.transaction_return_items) && row.transaction_return_items.length) return row.transaction_return_items;
+  if (Array.isArray(row.lines) && row.lines.length) return row.lines;
+  if (row.ti_uid || row.transaction_item_uid) return [row];
+  return [];
+}
+
+function isReturnEventCancelUnshipped(eventRow) {
+  if (!eventRow || typeof eventRow !== "object") return false;
+  return (
+    eventRow.cancel_unshipped === true ||
+    Number(eventRow.cancel_unshipped) === 1 ||
+    eventRow.pre_ship_cancel === true ||
+    eventRow.is_cancel_before_ship === true ||
+    String(eventRow.return_status || eventRow.trr_return_status || "").toLowerCase() === "cancelled"
+  );
+}
+
+/** Shipped vs unshipped split for one return line on a prior return request or ledger row. */
+function parseReturnEventLineSplit(line, eventRow) {
+  if (!line || typeof line !== "object") return { shipped: 0, unshipped: 0, total: 0, splitKnown: true };
+
+  const shippedRaw = line.return_shipped_qty ?? line.shipped_return_qty;
+  const unshippedRaw = line.cancel_unshipped_qty ?? line.return_unshipped_qty ?? line.unshipped_return_qty;
+  const hasExplicitShipped = shippedRaw != null && String(shippedRaw).trim() !== "";
+  const hasExplicitUnshipped = unshippedRaw != null && String(unshippedRaw).trim() !== "";
+
+  if (hasExplicitShipped || hasExplicitUnshipped) {
+    const shipped = Math.max(0, parseInt(shippedRaw, 10) || 0);
+    const unshipped = Math.max(0, parseInt(unshippedRaw, 10) || 0);
+    const total = shipped + unshipped;
+    if (total > 0) return { shipped, unshipped, total, splitKnown: true };
+  }
+
+  const qty = Math.abs(parseInt(line.return_quantity ?? line.ti_bs_qty ?? line.quantity, 10) || 0);
+  if (qty <= 0) return { shipped: 0, unshipped: 0, total: 0, splitKnown: true };
+
+  if (isReturnEventCancelUnshipped(eventRow)) {
+    return { shipped: 0, unshipped: qty, total: qty, splitKnown: true };
+  }
+
+  if (isReturnListRow(eventRow)) {
+    return { shipped: qty, unshipped: 0, total: qty, splitKnown: true };
+  }
+
+  return { shipped: 0, unshipped: 0, total: qty, splitKnown: false };
+}
+
+/**
+ * Shipped vs unshipped quantities already returned/reserved, keyed by transaction-item UID.
+ * Uses return_shipped_qty / cancel_unshipped_qty when stored on prior requests.
+ */
+function buildExistingReturnSplitByLine(returnRows) {
+  const splitByLine = {};
+  const seenEvents = new Set();
+
+  for (const row of returnRows || []) {
+    if (!row || typeof row !== "object") continue;
+    const eventUid = String(resolveTrrUid(row) || row.transaction_uid || "").trim();
+    const eventKey = eventUid || JSON.stringify(row);
+    if (seenEvents.has(eventKey)) continue;
+    seenEvents.add(eventKey);
+
+    const eventSplitByLine = {};
+    for (const line of collectReturnEventLinesFromRow(row)) {
+      const tiUid = String(line?.ti_original_ti_uid || line?.transaction_item_uid || line?.ti_uid || "").trim();
+      if (!tiUid) continue;
+      const parsed = parseReturnEventLineSplit(line, row);
+      const prev = eventSplitByLine[tiUid];
+      if (!prev || parsed.total > prev.total) {
+        eventSplitByLine[tiUid] = parsed;
+      }
+    }
+
+    for (const [tiUid, parsed] of Object.entries(eventSplitByLine)) {
+      if (!splitByLine[tiUid]) {
+        splitByLine[tiUid] = { shipped: 0, unshipped: 0, total: 0, splitKnown: true };
+      }
+      const bucket = splitByLine[tiUid];
+      if (parsed.splitKnown) {
+        bucket.shipped += parsed.shipped;
+        bucket.unshipped += parsed.unshipped;
+        bucket.total += parsed.total;
+      } else {
+        bucket.total += parsed.total;
+        bucket.splitKnown = false;
+      }
+    }
+  }
+
+  return splitByLine;
+}
+
 /**
  * Quantities already unavailable for return, keyed by transaction-item UID.
  * Uses one line source per backend return row so mirrored return_lines/lines/pending_return
@@ -3071,26 +3229,8 @@ function buildExistingReturnQtyByLine(returnRows) {
     if (seenEvents.has(eventKey)) continue;
     seenEvents.add(eventKey);
 
-    let lines = [];
-    if (Array.isArray(row.return_lines) && row.return_lines.length) {
-      lines = row.return_lines;
-    } else if (Array.isArray(row.pending_return?.items) && row.pending_return.items.length) {
-      lines = row.pending_return.items;
-    } else if (Array.isArray(row.pending_returns) && row.pending_returns.length) {
-      lines = row.pending_returns.flatMap((pending) => (Array.isArray(pending?.items) ? pending.items : []));
-    } else if (Array.isArray(row.transaction_return_items) && row.transaction_return_items.length) {
-      lines = row.transaction_return_items;
-    } else if (Array.isArray(row.lines) && row.lines.length) {
-      lines = row.lines;
-    } else if (row.ti_uid || row.transaction_item_uid) {
-      lines = [row];
-    }
-
-    // Duplicate line representations within one return event are the same reservation.
     const eventQtyByLine = {};
-    for (const line of lines) {
-      // Completed reverse-transaction lines have their own ti_uid; link them back to
-      // the original purchased line via ti_original_ti_uid.
+    for (const line of collectReturnEventLinesFromRow(row)) {
       const tiUid = String(line?.ti_original_ti_uid || line?.transaction_item_uid || line?.ti_uid || "").trim();
       if (!tiUid) continue;
       const qty = Math.abs(parseInt(line.return_quantity ?? line.ti_bs_qty ?? line.quantity, 10) || 1);
@@ -3228,6 +3368,7 @@ function resolveLineReturnEligibility(line) {
 
 function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequestData, existingReturnRows = []) {
   const backendReturnQtyByLine = buildExistingReturnQtyByLine(existingReturnRows);
+  const backendReturnSplitByLine = buildExistingReturnSplitByLine(existingReturnRows);
 
   if (Array.isArray(orderLines) && orderLines.length > 0) {
     return orderLines
@@ -3236,7 +3377,8 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
         const transactionItemUid = String(line.ti_uid || "").trim();
         if (!transactionItemUid) return null;
         const completedQty = Math.max(0, parseInt(line.returned_qty, 10) || 0);
-        const localRequestedQty = getReturnedQtyForLine(returnRequestData, transactionItemUid, purchasedQty);
+        const localSplit = getLocalReturnSplitForLine(returnRequestData, transactionItemUid);
+        const localRequestedQty = localSplit.total || getReturnedQtyForLine(returnRequestData, transactionItemUid, purchasedQty);
         const backendUnavailableQty = backendReturnQtyByLine[transactionItemUid] || 0;
         const unavailableQty = Math.max(completedQty, localRequestedQty, backendUnavailableQty);
         const explicitRemaining = parseInt(line.remaining_qty, 10);
@@ -3245,15 +3387,22 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
         const eligibility = resolveLineReturnEligibility(line);
         const shippedOnLine = Math.min(purchasedQty, getLineShippedQty(line));
         const unshippedOnLine = Math.max(0, purchasedQty - shippedOnLine);
+        const backendSplit = backendReturnSplitByLine[transactionItemUid] || { shipped: 0, unshipped: 0, splitKnown: false };
+        const returnedShippedQty = backendSplit.shipped + localSplit.shipped;
+        const returnedUnshippedQty = backendSplit.unshipped + localSplit.unshipped;
+        const returnSplitKnown = (backendSplit.splitKnown && (backendSplit.shipped + backendSplit.unshipped > 0 || backendSplit.total === 0)) || localSplit.splitKnown;
         return {
           itemId: transactionItemUid,
-          itemName: line.item_name || "Item",
+          itemName: resolveLineItemDisplayName(line) || "Item",
           unitCost: line.ti_bs_cost,
           purchasedQty,
           remainingQty,
           transactionItemUid,
           shippedQty: shippedOnLine,
           unshippedOnLine,
+          returnedShippedQty,
+          returnedUnshippedQty,
+          returnSplitKnown,
           returnEligible: eligibility.eligible,
           returnIneligibleReason: eligibility.reason,
           line,
@@ -3265,16 +3414,21 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
   return (receiptLines || []).map((item, index) => {
     const purchasedQty = getReceiptLineQty(item);
     const transactionItemUid = getReceiptLineTransactionItemUid(item);
-    const localRequestedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
+    const localSplit = getLocalReturnSplitForLine(returnRequestData, index);
+    const localRequestedQty = localSplit.total || getReturnedQtyForLine(returnRequestData, index, purchasedQty);
     const backendUnavailableQty = backendReturnQtyByLine[transactionItemUid] || 0;
     const alreadyReturnedQty = Math.max(localRequestedQty, backendUnavailableQty);
     const remainingQty = Math.max(0, purchasedQty - alreadyReturnedQty);
     const eligibility = resolveLineReturnEligibility(item);
     const shippedOnLine = Math.min(purchasedQty, getLineShippedQty(item));
     const unshippedOnLine = Math.max(0, purchasedQty - shippedOnLine);
+    const backendSplit = backendReturnSplitByLine[transactionItemUid] || { shipped: 0, unshipped: 0, splitKnown: false };
+    const returnedShippedQty = backendSplit.shipped + localSplit.shipped;
+    const returnedUnshippedQty = backendSplit.unshipped + localSplit.unshipped;
+    const returnSplitKnown = (backendSplit.splitKnown && (backendSplit.shipped + backendSplit.unshipped > 0 || backendSplit.total === 0)) || localSplit.splitKnown;
     return {
       itemId: String(index),
-      itemName: item.bs_service_name || "Item",
+      itemName: resolveLineItemDisplayName(item) || "Item",
       unitCost: item.ti_bs_cost,
       purchasedQty,
       remainingQty,
@@ -3282,6 +3436,9 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
       receiptIndex: index,
       shippedQty: shippedOnLine,
       unshippedOnLine,
+      returnedShippedQty,
+      returnedUnshippedQty,
+      returnSplitKnown,
       returnEligible: eligibility.eligible,
       returnIneligibleReason: eligibility.reason,
       line: item,
@@ -3316,7 +3473,7 @@ function getReturnModalQtyLabels(line) {
     notLeftShort: "Unshipped items to cancel",
     leftSimple: "How many shipped items are you returning?",
     notLeftSimple: "How many unshipped items are you cancelling?",
-    mixedIntro: "This item has shipped and unshipped units. How many of each?",
+    mixedIntro: "This item has both shipped and unshipped units.",
     hintMixed: (left, notLeft) => `${left} shipped · ${notLeft} not shipped`,
     hintAllLeft: (n) => `${n} shipped`,
     hintAllNotLeft: (n) => `${n} not shipped`,
@@ -3330,8 +3487,18 @@ function getReturnModalLineFulfillmentCaps(row) {
   const leftOnLine = Math.min(purchasedQty, getReturnModalLineLeftSellerQty(line, purchasedQty));
   const notLeftOnLine = Math.max(0, purchasedQty - leftOnLine);
   const alreadyReturned = Math.max(0, purchasedQty - remainingQty);
-  const returnedFromLeft = Math.min(alreadyReturned, leftOnLine);
-  const returnedFromNotLeft = Math.max(0, alreadyReturned - returnedFromLeft);
+
+  let returnedFromLeft = 0;
+  let returnedFromNotLeft = 0;
+  if (row?.returnSplitKnown) {
+    returnedFromLeft = Math.max(0, parseInt(row.returnedShippedQty, 10) || 0);
+    returnedFromNotLeft = Math.max(0, parseInt(row.returnedUnshippedQty, 10) || 0);
+  } else if (alreadyReturned > 0) {
+    // Legacy rows without split metadata: assume unshipped/cancel units returned first.
+    returnedFromNotLeft = Math.min(alreadyReturned, notLeftOnLine);
+    returnedFromLeft = Math.max(0, alreadyReturned - returnedFromNotLeft);
+  }
+
   const remainingLeft = Math.max(0, leftOnLine - returnedFromLeft);
   const remainingNotLeft = Math.max(0, notLeftOnLine - returnedFromNotLeft);
   const hasMixedFulfillment = remainingLeft > 0 && remainingNotLeft > 0 && remainingQty > 0;
@@ -3342,12 +3509,36 @@ function getReturnModalLineFulfillmentCaps(row) {
     unshippedOnLine: notLeftOnLine,
     remainingLeft,
     remainingNotLeft,
+    returnedFromLeft,
+    returnedFromNotLeft,
     hasMixedFulfillment,
     allShipped: remainingLeft > 0 && remainingNotLeft <= 0,
     allUnshipped: remainingNotLeft > 0 && remainingLeft <= 0,
     maxReturnShippedQty: Math.min(remainingQty, remainingLeft),
     maxCancelUnshippedQty: Math.min(remainingQty, remainingNotLeft),
   };
+}
+
+/** Subtitle under item row, e.g. "2 shipped (1 verified) · 3 not shipped". */
+function buildReturnModalFulfillmentSubtitle(row, caps) {
+  const line = row?.line || row;
+  const shippedCount = Math.max(0, caps?.shippedOnLine ?? 0);
+  const notShippedCount = Math.max(0, caps?.unshippedOnLine ?? 0);
+  if (shippedCount < 1 && notShippedCount < 1) return null;
+
+  const parts = [];
+  if (shippedCount > 0) {
+    if (lineWasPurchasedForShipping(line)) {
+      const verifiedQty = Math.min(shippedCount, getPreviouslyReceivedQty(line));
+      parts.push(verifiedQty > 0 ? `${shippedCount} shipped (${verifiedQty} verified)` : `${shippedCount} shipped`);
+    } else {
+      parts.push(`${shippedCount} received`);
+    }
+  }
+  if (notShippedCount > 0) {
+    parts.push(lineWasPurchasedForShipping(line) ? `${notShippedCount} not shipped` : `${notShippedCount} unreceived`);
+  }
+  return parts.join(" · ");
 }
 
 function normalizeReturnItemSplitQty(split, caps) {
@@ -3499,43 +3690,73 @@ function getReturnLineUnshippedQty(line, returnQtyOverride) {
   return Math.min(returnQty, unshippedOnLine);
 }
 
-/** Flat buyer shipping charged on the line at checkout (not prorated by return qty). */
+/** Per-unit buyer shipping snapshotted at checkout (ti_shipping_amount). */
+function getReturnLinePerUnitShippingAmount(line) {
+  if (!line || typeof line !== "object") return 0;
+  for (const key of ORDER_LINE_SHIPPING_UNIT_KEYS) {
+    const unit = receiptMoneyNullable(line[key]);
+    if (unit != null && unit > 0) return unit;
+  }
+  const purchasedQty = Math.max(1, getLinePurchasedQty(line) || getReceiptLineQty(line) || 1);
+  for (const key of ORDER_LINE_SHIPPING_TOTAL_KEYS) {
+    const total = receiptMoneyNullable(line[key]);
+    if (total != null && total > 0) {
+      return Math.round((total / purchasedQty) * 100) / 100;
+    }
+  }
+  for (const key of ORDER_LINE_SHIPPING_KEYS) {
+    const amount = receiptMoneyNullable(line[key]);
+    if (amount != null && amount > 0) {
+      return Math.round((amount / purchasedQty) * 100) / 100;
+    }
+  }
+  return 0;
+}
+
+/** Total line shipping charged at checkout (all units on the line). */
 function getReturnLineFlatShippingAmount(line) {
   const purchasedQty = Math.max(1, getLinePurchasedQty(line) || 1);
+  const perUnit = getReturnLinePerUnitShippingAmount(line);
+  if (perUnit > 0) {
+    return Math.round(perUnit * purchasedQty * 100) / 100;
+  }
   const lineShipping = getOrderLineShippingAmount(line, purchasedQty);
   if (lineShipping == null || lineShipping <= 0) return 0;
   return Math.round(lineShipping * 100) / 100;
 }
 
 /**
- * Refundable shipping for a return line — flat per product line (never prorated by qty).
- * - Post-delivery returns: honor ti_shipping_refundable when return_shipped_qty / return_quantity > 0.
- * - Pre-ship cancel: full line shipping when cancel_unshipped_qty > 0, even if not refundable.
+ * Refundable shipping for a return line — per-unit × returned/cancelled qty.
+ * - Refundable lines: per_unit × return_quantity (shipped or cancelled units).
+ * - Non-refundable: per_unit × cancel_unshipped_qty only (pre-ship cancel).
  */
 function getReturnLineRefundableShippingAmount(line, returnQtyOverride) {
   const returnQty = Math.max(0, parseInt(returnQtyOverride ?? line?.return_quantity ?? line?.ti_bs_qty, 10) || 0);
   if (returnQty <= 0) return 0;
 
-  const lineShipping = getReturnLineFlatShippingAmount(line);
-  if (lineShipping <= 0) return 0;
+  const perUnit = getReturnLinePerUnitShippingAmount(line);
+  if (perUnit <= 0) return 0;
 
   const explicitShippedReturn = parseInt(line?.return_shipped_qty ?? line?.ti_return_shipped_qty, 10);
   const explicitCancelUnshipped = parseInt(line?.cancel_unshipped_qty ?? line?.ti_cancel_unshipped_qty, 10);
   const hasExplicitSplit =
     (Number.isFinite(explicitShippedReturn) && explicitShippedReturn >= 0) || (Number.isFinite(explicitCancelUnshipped) && explicitCancelUnshipped >= 0);
 
+  let refundableQty = 0;
   if (hasExplicitSplit) {
-    const cancelUnshippedQty = Number.isFinite(explicitCancelUnshipped) && explicitCancelUnshipped >= 0 ? explicitCancelUnshipped : 0;
     if (isLineShippingRefundable(line)) {
-      return returnQty > 0 ? lineShipping : 0;
+      refundableQty = returnQty;
+    } else {
+      refundableQty = Number.isFinite(explicitCancelUnshipped) && explicitCancelUnshipped >= 0 ? explicitCancelUnshipped : 0;
     }
-    return cancelUnshippedQty > 0 ? lineShipping : 0;
+  } else if (isLineShippingRefundable(line)) {
+    refundableQty = returnQty;
+  } else {
+    refundableQty = getReturnLineUnshippedQty(line, returnQty);
   }
 
-  if (isLineShippingRefundable(line)) return lineShipping;
-
-  const unshippedReturnQty = getReturnLineUnshippedQty(line, returnQty);
-  return unshippedReturnQty > 0 ? lineShipping : 0;
+  if (refundableQty <= 0) return 0;
+  return Math.round(perUnit * refundableQty * 100) / 100;
 }
 
 function parseReturnRefundShippingFromSource(source, keys = ["shipping_refund", "returned_shipping", "refund_shipping", "transaction_shipping", "total_shipping", "shipping_amount"]) {
@@ -3599,11 +3820,11 @@ function orderRefundableCustomerTotal(sale) {
   return Math.round((amount + taxes + shipping) * 100) / 100;
 }
 
-/** Refundable shipping — line items first, then order-level shipping on full returns only. */
+/** Refundable shipping — line-item proration first, then pending estimate, then full order on full returns. */
 function estimateReverseReturnShipping(sale, itemMerchandise, computedShippingRefund, estimatedTax, pending = null) {
+  if (computedShippingRefund > 0) return computedShippingRefund;
   const fromEstimated = parseEstimatedRefundShipping(pending?.estimated_refund);
   if (fromEstimated > 0) return fromEstimated;
-  if (computedShippingRefund > 0) return computedShippingRefund;
   const merch = Math.abs(Number(itemMerchandise) || 0);
   if (!isFullMerchandiseReturn(sale, merch)) return 0;
   const orderShipping = parseOrderTransactionShipping(sale, null);
@@ -3845,7 +4066,8 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   const estimated = pending?.estimated_refund;
   const pendingSubtotal = parseOrderMoneyField(estimated?.subtotal);
   const pendingTaxes = parseOrderMoneyField(estimated?.taxes ?? estimated?.transaction_taxes);
-  const pendingShippingRefund = parseEstimatedRefundShipping(estimated) ?? computedShippingRefund;
+  const pendingShippingFromApi = parseEstimatedRefundShipping(estimated);
+  const pendingShippingRefund = computedShippingRefund > 0 ? computedShippingRefund : pendingShippingFromApi ?? computedShippingRefund;
   const pendingComponentCredit = Math.round((pendingSubtotal + pendingTaxes + (pendingShippingRefund || 0)) * 100) / 100;
   const pendingCreditRaw = parseOrderMoneyField(
     estimated?.total_customer_credit ?? estimated?.total ?? pending?.estimated_total ?? pending?.total_customer_credit ?? pending?.total,
@@ -3870,7 +4092,11 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
     const computedRefund = Math.abs(amount) + Math.abs(taxes) + Math.abs(shipping);
     let totalAbs = computedRefund;
     if (pendingCredit > 0) {
-      if (pendingCredit >= computedRefund - 0.02) {
+      const usedCorrectedLineShipping =
+        computedShippingRefund > 0 &&
+        pendingShippingFromApi != null &&
+        Math.abs(pendingShippingFromApi - computedShippingRefund) > 0.02;
+      if (!usedCorrectedLineShipping && pendingCredit >= computedRefund - 0.02) {
         totalAbs = pendingCredit;
       }
       // else API under-refunded (e.g. card fees wrongly withheld) — use merchandise + tax + shipping
@@ -4098,9 +4324,7 @@ function OrderDetailLinesTable({
     const specialInstructions = enrichment?.specialInstructions || String(line.special_instructions ?? line.ti_special_instructions ?? "").trim();
     const unitCost = Math.abs(getReceiptLineUnitPrice(line, enrichment) || parseFloat(line.ti_bs_cost) || 0);
     const lineTotal = unitCost * qty;
-    const rawLineShipping = signedRows
-      ? getReturnLineRefundableShippingAmount(line, qty) || getOrderLineShippingAmount(line, qty)
-      : getOrderLineShippingAmount(line, qty);
+    const rawLineShipping = signedRows ? getReturnLineRefundableShippingAmount(line, qty) : getOrderLineShippingAmount(line, qty);
     const lineShipping = rawLineShipping == null ? null : Math.abs(rawLineShipping);
     const bountyAmounts = resolveReturnLineBountyAmounts(line, qty || 1, bountyRows, transactionUid, saleBountyPaid);
     const bountyAmount = isSellerView ? bountyAmounts.bountyPaidReversed || bountyAmounts.lineBounty || 0 : bountyAmounts.lineBounty || bountyAmounts.bountyPaidReversed || 0;
@@ -6456,12 +6680,13 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
       }
     }
     let soldQty = 0;
+    const offeringUid = String(expertiseUid || "").trim();
     sellerTx.forEach((transaction) => {
-      if (transaction.ti_bs_id === expertiseUid) {
-        const qty = parseInt(transaction.ti_bs_qty) || 0;
-        soldQty += qty;
-      }
+      if (String(transaction.ti_bs_id || "").trim() !== offeringUid) return;
+      if (isPendingReturnListRow(transaction)) return;
+      soldQty += getSignedProductSalesLineQty(transaction);
     });
+    soldQty = Math.max(0, soldQty);
     // profile_expertise_quantity is the remaining quantity in the DB (decremented on each sale).
     // null/0 with no sales = unlimited ("—"); 0 with sales = sold out.
     const rawDbQty = exp.profile_expertise_quantity;
@@ -10470,20 +10695,7 @@ export default function AccountScreen({ navigation, route }) {
                     const needsMixedQtyPicker = isSelected && caps.hasMixedFulfillment;
                     const needsSimpleQtyPicker =
                       isSelected && !caps.hasMixedFulfillment && caps.purchasedQty > 1 && caps.remainingQty > 1;
-                    const fulfillmentHint =
-                      caps.hasMixedFulfillment && !alreadyReturned
-                        ? qtyLabels.hintMixed(caps.shippedOnLine, caps.unshippedOnLine)
-                        : caps.allShipped && caps.shippedOnLine > 0
-                          ? qtyLabels.hintAllLeft(caps.shippedOnLine)
-                          : caps.allUnshipped && caps.unshippedOnLine > 0
-                            ? qtyLabels.hintAllNotLeft(caps.unshippedOnLine)
-                            : caps.shippedOnLine > 0 && caps.unshippedOnLine > 0
-                              ? qtyLabels.hintMixed(caps.shippedOnLine, caps.unshippedOnLine)
-                              : caps.shippedOnLine > 0
-                                ? qtyLabels.hintAllLeft(caps.shippedOnLine)
-                                : caps.unshippedOnLine > 0
-                                  ? qtyLabels.hintAllNotLeft(caps.unshippedOnLine)
-                                  : null;
+                    const fulfillmentSubtitle = !alreadyReturned && !returnIneligible ? buildReturnModalFulfillmentSubtitle(row, caps) : null;
 
                     return (
                       <View
@@ -10498,7 +10710,7 @@ export default function AccountScreen({ navigation, route }) {
                       >
                         <TouchableOpacity
                           disabled={selectionDisabled}
-                          style={{ flexDirection: "row", alignItems: "center" }}
+                          style={{ flexDirection: "row", alignItems: "flex-start" }}
                           onPress={() => {
                             if (selectionDisabled) return;
                             if (isSelected) {
@@ -10523,18 +10735,21 @@ export default function AccountScreen({ navigation, route }) {
                           }}
                           activeOpacity={0.7}
                         >
-                          <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={18} color={selectionDisabled ? "#999" : isSelected ? "#B71C1C" : "#555"} style={{ marginRight: 8 }} />
-                          <Text style={{ fontSize: 13, color: selectionDisabled ? (darkMode ? "#888" : "#777") : darkMode ? "#fff" : "#333", flex: 1 }}>
-                            {row.itemName} — ${parseFloat(row.unitCost || 0).toFixed(2)} x {purchasedQty}
-                          </Text>
+                          <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={18} color={selectionDisabled ? "#999" : isSelected ? "#B71C1C" : "#555"} style={{ marginRight: 8, marginTop: 1 }} />
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={{ fontSize: 13, color: selectionDisabled ? (darkMode ? "#888" : "#777") : darkMode ? "#fff" : "#333" }}>
+                              {row.itemName} — ${parseFloat(row.unitCost || 0).toFixed(2)} x {purchasedQty}
+                            </Text>
+                            {fulfillmentSubtitle ? (
+                              <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", marginTop: 2 }}>{fulfillmentSubtitle}</Text>
+                            ) : null}
+                          </View>
                           {alreadyReturned ? (
                             <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>
                           ) : returnIneligible ? (
                             <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", marginLeft: 4 }}>{row.returnIneligibleReason || "Not eligible for return"}</Text>
                           ) : purchasedQty > remainingQty ? (
                             <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{remainingQty} left</Text>
-                          ) : fulfillmentHint ? (
-                            <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", marginLeft: 4 }}>{fulfillmentHint}</Text>
                           ) : null}
                         </TouchableOpacity>
 
