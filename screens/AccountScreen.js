@@ -1110,6 +1110,7 @@ function mergePendingReturnEstimates(pendings) {
     if (note && !notes.includes(note)) notes.push(note);
     if (Array.isArray(pending.items)) items.push(...pending.items);
   }
+  const computedTotal = Math.round((subtotal + taxes + shipping) * 100) / 100;
   return {
     ...list[0],
     trr_uid: trrUids[0] || list[0].trr_uid,
@@ -1123,8 +1124,8 @@ function mergePendingReturnEstimates(pendings) {
       taxes: taxes || list[0].estimated_refund?.taxes,
       shipping_refund: shipping || list[0].estimated_refund?.shipping_refund || list[0].estimated_refund?.shipping,
       fees_allocated: fees || list[0].estimated_refund?.fees_allocated,
-      total_customer_credit: totalCredit || list[0].estimated_refund?.total_customer_credit,
-      total: totalCredit || list[0].estimated_refund?.total,
+      total_customer_credit: computedTotal || totalCredit || list[0].estimated_refund?.total_customer_credit,
+      total: computedTotal || totalCredit || list[0].estimated_refund?.total,
     },
   };
 }
@@ -1180,10 +1181,21 @@ function collectItemsFromPendingReturns(row) {
 
 function resolvePendingReturnEntryMoney(pending) {
   if (!pending || typeof pending !== "object") return { total: 0, bountyPaid: 0 };
-  const credit = parseFloat(pending.estimated_refund?.total_customer_credit ?? pending.estimated_refund?.total ?? pending.estimated_total ?? pending.total_customer_credit ?? pending.total ?? NaN);
+  const est = pending.estimated_refund || {};
+  const subtotal = Math.abs(parseOrderMoneyField(est.subtotal) || 0);
+  const taxes = Math.abs(parseOrderMoneyField(est.taxes ?? est.transaction_taxes) || 0);
+  const shipping = Math.abs(parseOrderMoneyField(est.shipping_refund ?? est.returned_shipping ?? est.shipping) || 0);
+  const fromComponents = Math.round((subtotal + taxes + shipping) * 100) / 100;
+  const credit = parseFloat(est.total_customer_credit ?? est.total ?? pending.estimated_total ?? pending.total_customer_credit ?? pending.total ?? NaN);
+  let total = 0;
+  if (fromComponents > 0.01) {
+    total = -fromComponents;
+  } else if (Number.isFinite(credit) && credit !== 0) {
+    total = -Math.abs(credit);
+  }
   const bounty = parseFloat(pending.bounty_to_reclaim ?? NaN);
   return {
-    total: Number.isFinite(credit) && credit !== 0 ? -Math.abs(credit) : 0,
+    total,
     bountyPaid: Number.isFinite(bounty) && bounty !== 0 ? -Math.abs(bounty) : 0,
   };
 }
@@ -2235,7 +2247,7 @@ function resolveAccountBountyRowsForReturn(isSellerView, selectedAccount, bounty
 
 /**
  * Pending (or just-completed) return money from seller_transactions.pending_return(s).
- * Total = estimated customer credit (subtotal + tax [+ fees]); Bounty = bounty_to_reclaim.
+ * Total = estimated customer credit (subtotal + tax + shipping; card fees excluded); Bounty = bounty_to_reclaim.
  * Sums concurrent pending_returns when present.
  */
 function resolvePendingReturnTableMoney(row) {
@@ -2349,10 +2361,20 @@ function resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines) {
   }
 
   if (!total) {
-    const totalRaw = parseFloat(row?.transaction_total ?? row?.returned_total ?? row?.return_total ?? row?.refund_total ?? row?.pending_return?.total ?? row?.pending_return?.transaction_total ?? NaN);
-    total = Number.isFinite(totalRaw) ? totalRaw : 0;
-    // Display returns as credits (negative). Keep already-negative API values.
-    if (total > 0) total = -Math.abs(total);
+    const fromComponents = resolveReturnCustomerCreditTotal(row);
+    if (fromComponents) {
+      total = fromComponents;
+    } else {
+      const totalRaw = parseFloat(row?.transaction_total ?? row?.returned_total ?? row?.return_total ?? row?.refund_total ?? row?.pending_return?.total ?? row?.pending_return?.transaction_total ?? NaN);
+      total = Number.isFinite(totalRaw) ? totalRaw : 0;
+      // Display returns as credits (negative). Keep already-negative API values.
+      if (total > 0) total = -Math.abs(total);
+    }
+  } else {
+    const fromComponents = resolveReturnCustomerCreditTotal(row);
+    if (fromComponents && Math.abs(fromComponents) > Math.abs(total) + 0.01) {
+      total = fromComponents;
+    }
   }
 
   if (!bountyPaid) {
@@ -3513,6 +3535,21 @@ function estimateProportionalReturnTax(sale, itemMerchandise, pending = null) {
   return 0;
 }
 
+/** Customer credit for a return row: merchandise + tax + shipping (excludes non-refundable card fees). */
+function resolveReturnCustomerCreditTotal(row) {
+  if (!row || typeof row !== "object") return 0;
+  const amount = Math.abs(parseOrderMoneyField(row.transaction_amount));
+  const taxes = Math.abs(parseOrderMoneyField(row.transaction_taxes));
+  const shipping = Math.abs(parseOrderTransactionShipping(row, null) ?? parseReturnRefundShippingFromSource(row) ?? 0);
+  const fromComponents = Math.round((amount + taxes + shipping) * 100) / 100;
+  // List rows may omit transaction_shipping; transaction_total is refund_grand (authoritative when larger).
+  // For pre-fix returns, component sum can exceed an under-credited transaction_total.
+  const txnTotalAbs = Math.abs(parseOrderMoneyField(row.transaction_total));
+  const creditAbs = Math.round(Math.max(fromComponents, txnTotalAbs) * 100) / 100;
+  if (creditAbs > 0.01) return -creditAbs;
+  return 0;
+}
+
 /** Customer-refundable order total (merchandise + tax + shipping; excludes non-refundable card fees). */
 function orderRefundableCustomerTotal(sale) {
   const amount = Math.abs(parseOrderMoneyField(sale?.transaction_amount));
@@ -3750,18 +3787,19 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
 
   const pending = pendingReturn || sale?.pending_return || null;
   const estimated = pending?.estimated_refund;
-  const pendingCredit = parseOrderMoneyField(
-    estimated?.total_customer_credit ?? estimated?.total ?? pending?.estimated_total ?? pending?.total_customer_credit ?? pending?.total,
-  );
   const pendingSubtotal = parseOrderMoneyField(estimated?.subtotal);
   const pendingTaxes = parseOrderMoneyField(estimated?.taxes ?? estimated?.transaction_taxes);
-  const pendingFees = parseOrderMoneyField(estimated?.fees_allocated ?? estimated?.fees);
+  const pendingShippingRefund = parseEstimatedRefundShipping(estimated) ?? computedShippingRefund;
+  const pendingComponentCredit = Math.round((pendingSubtotal + pendingTaxes + (pendingShippingRefund || 0)) * 100) / 100;
+  const pendingCreditRaw = parseOrderMoneyField(
+    estimated?.total_customer_credit ?? estimated?.total ?? pending?.estimated_total ?? pending?.total_customer_credit ?? pending?.total,
+  );
+  const pendingCredit = pendingComponentCredit > 0.01 ? pendingComponentCredit : pendingCreditRaw;
   const pendingBountyExplicit = pending?.bounty_to_reclaim != null && String(pending.bounty_to_reclaim).trim() !== "" ? parseOrderMoneyField(pending.bounty_to_reclaim) : null;
   const pendingBounty = pendingBountyExplicit > 0 ? pendingBountyExplicit : bountyPool || itemBounty;
-  const pendingShippingRefund = parseEstimatedRefundShipping(estimated) ?? computedShippingRefund;
   if (pending && (pendingCredit || pendingSubtotal || pendingBounty)) {
     const merchAbs = pendingSubtotal || itemMerchandise;
-    const amount = asNegative(merchAbs || Math.max(0, pendingCredit - pendingTaxes - pendingFees - pendingShippingRefund) || itemMerchandise);
+    const amount = asNegative(merchAbs || Math.max(0, pendingCredit - pendingTaxes - pendingShippingRefund) || itemMerchandise);
     const taxAmount = pendingTaxes > 0 ? pendingTaxes : estimateProportionalReturnTax(sale, merchAbs || itemMerchandise, pending);
     const shippingAmount =
       pendingShippingRefund > 0 ? pendingShippingRefund : estimateReverseReturnShipping(sale, merchAbs || itemMerchandise, computedShippingRefund, taxAmount, pending);
