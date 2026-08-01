@@ -186,7 +186,7 @@ function getOfferingTaxBadgeValue(offering) {
 }
 
 function getOfferingReturnableBadgeValue(offering) {
-  if (!isTruthyFlag(offering?.profile_expertise_is_returnable)) return null;
+  if (!isTruthyFlag(offering?.profile_expertise_is_returnable)) return "No";
   const days = String(offering?.profile_expertise_return_window_days ?? "").trim();
   const daysLabel = days && days !== "0" ? days : "30";
   if (isBuyerPaysOfferingShipping(offering) && normOfferingShippingRefundable(offering) !== 1) {
@@ -203,7 +203,7 @@ export function getOfferingAttributeBadges(offering) {
   const ship = getOfferingShippingValue(offering);
   if (ship) badges.push({ key: "ship", label: OFFERING_DELIVERY_OPTION_CARD_LABEL, value: ship });
   const returnable = getOfferingReturnableBadgeValue(offering);
-  if (returnable) badges.push({ key: "returnable", label: "Returnable", value: returnable });
+  badges.push({ key: "returnable", label: "Returnable", value: returnable });
   const qty = formatOfferingQtyBadgeValue(offering);
   if (qty) badges.push({ key: "qty", label: "Qty", value: qty });
   return badges;

@@ -96,7 +96,7 @@ function formatReturnableBadgeValue(service) {
     service.is_returnable === 1 ||
     service.is_returnable === "1" ||
     service.is_returnable === true;
-  if (!returnable) return null;
+  if (!returnable) return "No";
   const days = String(service.bs_return_window_days ?? service.return_window_days ?? "").trim();
   const daysLabel = days && days !== "0" ? days : "5";
   if (isBuyerPaysShippingValue(service) && normServiceShippingRefundable(service) !== 1) {
@@ -131,7 +131,7 @@ function buildAttributeBadges(service) {
   const ship = formatShipBadgeValue(service);
   if (ship) badges.push({ key: "ship", label: OFFERING_DELIVERY_OPTION_CARD_LABEL, value: ship });
   const returnable = formatReturnableBadgeValue(service);
-  if (returnable) badges.push({ key: "returnable", label: "Returnable", value: returnable });
+  badges.push({ key: "returnable", label: "Returnable", value: returnable });
   const qty = formatQtyBadgeValue(service);
   if (qty) badges.push({ key: "qty", label: "Qty", value: qty });
   return badges;

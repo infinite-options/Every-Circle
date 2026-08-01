@@ -1,15 +1,13 @@
-// AddToCartDetailsModal.js - Modal for adding expertise to cart with escrow and quantity
+// AddToCartDetailsModal.js - Modal for adding expertise to cart with quantity
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, TextInput } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
-import BountyInfoTooltip, { ESCROW_INFO_COPY } from "./BountyInfoTooltip";
 import {
   formatOfferingAddToCartStockHint,
-  getOfferingBountyLineTotal,
   getOfferingMaxAddQuantity,
   getOfferingQuantityLabelSuffix,
-  hasOfferingBounty,
   isOfferingReturnable,
   parseOfferingCostParts,
   profileDataForCartModal,
@@ -24,12 +22,13 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
   const taxRateStr = String(expertiseData?.profile_expertise_tax_rate ?? "").trim();
   const taxRatePct = isTaxable && taxRateStr !== "" ? parseFloat(taxRateStr) : 0;
 
-  const [escrow, setEscrow] = useState(true);
   const [quantity, setQuantity] = useState("1");
   const [quantityError, setQuantityError] = useState("");
   const [existingInCart, setExistingInCart] = useState(0);
   const [cartQtyLoading, setCartQtyLoading] = useState(false);
 
+  const offeringName =
+    expertiseData?.title || expertiseData?.profile_expertise_title || expertiseData?.name || "Offering";
   const maxCanAdd = getOfferingMaxAddQuantity(expertiseData, existingInCart);
   const atCartMaximum = maxCanAdd != null && maxCanAdd <= 0;
 
@@ -39,7 +38,6 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
       setCartQtyLoading(false);
       return;
     }
-    setEscrow(true);
     setQuantity("1");
     setQuantityError("");
 
@@ -77,8 +75,7 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
   const stockHint = formatOfferingAddToCartStockHint(expertiseData, existingInCart, qtyNum);
   const atSelectionMaximum = maxCanAdd != null && qtyNum > 0 && qtyNum >= maxCanAdd;
   const lineMerchandise = costValue * qtyNum;
-  const bountyLineTotal = hasOfferingBounty(expertiseData) ? getOfferingBountyLineTotal(expertiseData, qtyNum) : 0;
-  const itemNotReturnable = !isOfferingReturnable(expertiseData);
+  const itemReturnable = isOfferingReturnable(expertiseData);
 
   const clampQuantity = (nextQty) => {
     if (maxCanAdd != null && maxCanAdd <= 0) return 0;
@@ -107,7 +104,7 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
     setQuantityError("");
     onAddToCart({
       quantity: qtyNum,
-      escrow,
+      escrow: true,
       taxRatePct,
     });
     setShow(false);
@@ -125,83 +122,71 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
       <View style={[styles.modalOverlay, darkMode && styles.darkModalOverlay]}>
         <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
           <Text style={[styles.title, darkMode && styles.darkTitle]}>Add to Cart</Text>
+          <Text style={[styles.offeringName, darkMode && styles.darkOfferingName]}>{offeringName}</Text>
 
-          {miniCardUser && (
+          {miniCardUser ? (
             <View style={styles.miniCardSection}>
               <MiniCard user={miniCardUser} />
             </View>
-          )}
-
-          <View style={styles.section}>
-            <View style={[styles.checkboxRow, darkMode && styles.darkCheckboxRow]}>
-              <TouchableOpacity style={styles.escrowTogglePressable} onPress={() => setEscrow(!escrow)} activeOpacity={0.7}>
-                <View style={[styles.checkbox, escrow && styles.checkboxChecked, darkMode && styles.darkCheckbox]}>{escrow && <Text style={styles.checkmark}>✓</Text>}</View>
-                <Text style={[styles.checkboxLabel, darkMode && styles.darkCheckboxLabel]}>Escrow</Text>
-              </TouchableOpacity>
-              <BountyInfoTooltip message={ESCROW_INFO_COPY} darkMode={darkMode} accessibilityLabel='About escrow' />
-            </View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={[styles.label, darkMode && styles.darkLabel]}>Quantity ({quantityLabelSuffix})</Text>
-            {stockHint ? (
-              <Text style={[styles.stockHint, darkMode && styles.darkStockHint, (atCartMaximum || atSelectionMaximum) && styles.stockHintWarning]}>
-                {stockHint}
-              </Text>
-            ) : cartQtyLoading ? (
-              <Text style={[styles.stockHint, darkMode && styles.darkStockHint]}>Checking cart…</Text>
-            ) : null}
-            <View style={[styles.quantityRow, atCartMaximum && styles.quantityRowDisabled]}>
-              <TouchableOpacity
-                style={[styles.quantityButton, darkMode && styles.darkQuantityButton]}
-                onPress={() => setQuantity(String(clampQuantity(qtyNum - 1)))}
-                disabled={atCartMaximum || qtyNum <= 1}
-              >
-                <Text style={[styles.quantityButtonText, darkMode && styles.darkQuantityButtonText]}>−</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={[styles.quantityInput, { marginHorizontal: 12 }, darkMode && styles.darkQuantityInput, atCartMaximum && styles.quantityInputDisabled]}
-                value={quantity}
-                onChangeText={(t) => {
-                  setQuantity(t.replace(/[^0-9.]/g, ""));
-                  setQuantityError("");
-                }}
-                onBlur={() => {
-                  if (atCartMaximum) return;
-                  const parsed = parseFloat(quantity) || 1;
-                  setQuantity(String(clampQuantity(parsed)));
-                }}
-                keyboardType='decimal-pad'
-                placeholder='1'
-                editable={!atCartMaximum}
-              />
-              <TouchableOpacity
-                style={[styles.quantityButton, darkMode && styles.darkQuantityButton, maxCanAdd != null && qtyNum >= maxCanAdd && styles.quantityButtonDisabled]}
-                onPress={() => setQuantity(String(clampQuantity(qtyNum + 1)))}
-                disabled={atCartMaximum || (maxCanAdd != null && qtyNum >= maxCanAdd)}
-              >
-                <Text style={[styles.quantityButtonText, darkMode && styles.darkQuantityButtonText]}>+</Text>
-              </TouchableOpacity>
-            </View>
-            {quantityError ? <Text style={styles.errorText}>{quantityError}</Text> : null}
-          </View>
-
-          {bountyLineTotal > 0 || itemNotReturnable ? (
-            <View style={styles.disclosureSection}>
-              {bountyLineTotal > 0 ? (
-                <View style={styles.disclosureRow}>
-                  <View style={styles.bountyNoteLabelRow}>
-                    <Text style={[styles.bountyNoteLabel, darkMode && styles.darkBountyNoteLabel]}>Bounty (paid by Seller)</Text>
-                    <BountyInfoTooltip perspective='referrer' darkMode={darkMode} />
-                  </View>
-                  <Text style={[styles.bountyNoteValue, darkMode && styles.darkBountyNoteValue]}>${bountyLineTotal.toFixed(2)}</Text>
-                </View>
-              ) : null}
-              {itemNotReturnable ? (
-                <Text style={[styles.notReturnableNote, darkMode && styles.darkNotReturnableNote]}>Item not returnable</Text>
-              ) : null}
-            </View>
           ) : null}
+
+          {stockHint ? (
+            <Text style={[styles.stockHint, darkMode && styles.darkStockHint, (atCartMaximum || atSelectionMaximum) && styles.stockHintWarning]}>
+              {stockHint}
+            </Text>
+          ) : cartQtyLoading ? (
+            <Text style={[styles.stockHint, darkMode && styles.darkStockHint]}>Checking cart…</Text>
+          ) : null}
+
+          <View style={[styles.quantityContainer, atCartMaximum && styles.quantityRowDisabled]}>
+            <TouchableOpacity
+              style={[styles.quantityButton, darkMode && styles.darkQuantityButton]}
+              onPress={() => setQuantity(String(clampQuantity(qtyNum - 1)))}
+              disabled={atCartMaximum || qtyNum <= 1}
+            >
+              <Ionicons name='remove' size={24} color={darkMode ? "#7B35C7" : "#9C45F7"} />
+            </TouchableOpacity>
+            <TextInput
+              style={[styles.quantityInput, darkMode && styles.darkQuantityInput, atCartMaximum && styles.quantityInputDisabled]}
+              value={quantity}
+              onChangeText={(t) => {
+                setQuantity(t.replace(/[^0-9.]/g, ""));
+                setQuantityError("");
+              }}
+              onBlur={() => {
+                if (atCartMaximum) return;
+                const parsed = parseFloat(quantity) || 1;
+                setQuantity(String(clampQuantity(parsed)));
+              }}
+              keyboardType='decimal-pad'
+              placeholder='1'
+              editable={!atCartMaximum}
+            />
+            <TouchableOpacity
+              style={[
+                styles.quantityButton,
+                darkMode && styles.darkQuantityButton,
+                maxCanAdd != null && qtyNum >= maxCanAdd && styles.quantityButtonDisabled,
+              ]}
+              onPress={() => setQuantity(String(clampQuantity(qtyNum + 1)))}
+              disabled={atCartMaximum || (maxCanAdd != null && qtyNum >= maxCanAdd)}
+            >
+              <Ionicons name='add' size={24} color={darkMode ? "#7B35C7" : "#9C45F7"} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.totalPrice, darkMode && styles.darkTotalPrice]}>
+            Total: ${lineMerchandise.toFixed(2)}
+          </Text>
+
+          {quantityLabelSuffix ? (
+            <Text style={[styles.quantitySuffix, darkMode && styles.darkQuantitySuffix]}>{quantityLabelSuffix}</Text>
+          ) : null}
+          {quantityError ? <Text style={styles.errorText}>{quantityError}</Text> : null}
+
+          <Text style={[styles.returnableNote, darkMode && styles.darkReturnableNote]}>
+            {itemReturnable ? "Returnable" : "Item not returnable"}
+          </Text>
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={[styles.button, styles.cancelButton, darkMode && styles.darkCancelButton]} onPress={handleCancel}>
@@ -259,113 +244,29 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
     color: "#333",
-    marginBottom: 16,
+    marginBottom: 10,
     textAlign: "center",
   },
   darkTitle: {
     color: "#fff",
   },
-  miniCardSection: {
-    marginBottom: 20,
-  },
-  section: {
+  offeringName: {
+    fontSize: 16,
+    color: "#666",
     marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  darkLabel: {
-    color: "#fff",
-  },
-  checkboxRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  escrowTogglePressable: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  darkCheckboxRow: {},
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: "#9C45F7",
-    borderRadius: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-  checkboxChecked: {
-    backgroundColor: "#9C45F7",
-  },
-  darkCheckbox: {
-    borderColor: "#7B35C7",
-  },
-  checkmark: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  checkboxLabel: {
-    fontSize: 16,
-    color: "#333",
-  },
-  darkCheckboxLabel: {
-    color: "#fff",
-  },
-  quantityRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  quantityButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: "#F0F0F0",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  darkQuantityButton: {
-    backgroundColor: "#404040",
-  },
-  quantityButtonText: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  darkQuantityButtonText: {
-    color: "#fff",
-  },
-  quantityInput: {
-    flex: 1,
-    height: 40,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    fontSize: 16,
-    color: "#333",
     textAlign: "center",
   },
-  darkQuantityInput: {
-    borderColor: "#555",
-    color: "#fff",
-    backgroundColor: "#404040",
+  darkOfferingName: {
+    color: "#ccc",
   },
-  errorText: {
-    fontSize: 12,
-    color: "#f44336",
-    marginTop: 4,
+  miniCardSection: {
+    marginBottom: 16,
   },
   stockHint: {
     fontSize: 12,
     color: "#666",
-    marginBottom: 6,
+    marginBottom: 8,
+    textAlign: "center",
   },
   stockHintWarning: {
     color: "#b45309",
@@ -373,6 +274,64 @@ const styles = StyleSheet.create({
   },
   darkStockHint: {
     color: "#aaa",
+  },
+  quantityContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  quantityButton: {
+    backgroundColor: "#F5F5F5",
+    padding: 10,
+    borderRadius: 10,
+    width: 44,
+    height: 44,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  darkQuantityButton: {
+    backgroundColor: "#404040",
+  },
+  quantityInput: {
+    width: 48,
+    height: 44,
+    marginHorizontal: 12,
+    borderWidth: 0,
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+    textAlign: "center",
+    paddingHorizontal: 0,
+  },
+  darkQuantityInput: {
+    color: "#fff",
+    backgroundColor: "transparent",
+  },
+  totalPrice: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#9C45F7",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  darkTotalPrice: {
+    color: "#7B35C7",
+  },
+  quantitySuffix: {
+    fontSize: 12,
+    color: "#888",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  darkQuantitySuffix: {
+    color: "#999",
+  },
+  errorText: {
+    fontSize: 12,
+    color: "#f44336",
+    marginBottom: 8,
+    textAlign: "center",
   },
   quantityRowDisabled: {
     opacity: 0.5,
@@ -383,49 +342,18 @@ const styles = StyleSheet.create({
   quantityButtonDisabled: {
     opacity: 0.4,
   },
+  returnableNote: {
+    fontSize: 13,
+    color: "#888",
+    fontStyle: "italic",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  darkReturnableNote: {
+    color: "#999",
+  },
   continueButtonDisabled: {
     opacity: 0.5,
-  },
-  disclosureSection: {
-    marginBottom: 16,
-    gap: 8,
-  },
-  disclosureRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  bountyNoteLabel: {
-    fontSize: 13,
-    color: "#888",
-    fontStyle: "italic",
-  },
-  bountyNoteLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    flex: 1,
-    flexShrink: 1,
-    zIndex: 2,
-  },
-  darkBountyNoteLabel: {
-    color: "#999",
-  },
-  bountyNoteValue: {
-    fontSize: 13,
-    color: "#888",
-    fontStyle: "italic",
-  },
-  darkBountyNoteValue: {
-    color: "#999",
-  },
-  notReturnableNote: {
-    fontSize: 13,
-    color: "#888",
-    fontStyle: "italic",
-  },
-  darkNotReturnableNote: {
-    color: "#999",
   },
   buttonContainer: {
     flexDirection: "row",
