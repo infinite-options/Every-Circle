@@ -1639,6 +1639,41 @@ function areScopedReturnItemsUnshipped(orderDetail, returnLines) {
   return matched > 0;
 }
 
+/** Ship / pickup / virtual from checkout snapshot (ti_fulfillment_method). */
+function getLineFulfillmentMethod(line) {
+  return String(line?.ti_fulfillment_method || line?.fulfillment_method || "").trim().toLowerCase();
+}
+
+/** True when the line was purchased for ship fulfillment (not pickup/virtual). */
+function lineWasPurchasedForShipping(line) {
+  if (!line || typeof line !== "object") return false;
+  const method = getLineFulfillmentMethod(line);
+  if (method === "pickup" || method === "virtual") return false;
+  if (method === "ship") return true;
+  if (NOT_REQUIRED_FULFILLMENT_STATUSES.has(getLineFulfillmentStatus(line))) return false;
+  return lineRequiresShipping(line);
+}
+
+/**
+ * True when return lines include units that were purchased for shipping
+ * and have not left the seller yet (pre-ship cancel, not pickup/virtual).
+ */
+function returnIncludesUnshippedShippableUnits(orderDetail, returnLines) {
+  const saleLines = Array.isArray(orderDetail?.sale?.lines) ? orderDetail.sale.lines : [];
+  const lines = Array.isArray(returnLines) ? returnLines : [];
+  if (!lines.length) return false;
+
+  for (const retLine of lines) {
+    const originalTi = String(retLine?.ti_original_ti_uid || retLine?.transaction_item_uid || retLine?.ti_uid || "").trim();
+    const saleLine =
+      (originalTi && saleLines.find((line) => String(line?.ti_uid || line?.transaction_item_uid || "").trim() === originalTi)) || retLine;
+    if (!lineWasPurchasedForShipping(saleLine)) continue;
+    if (lineHasLeftSeller(saleLine)) continue;
+    return true;
+  }
+  return false;
+}
+
 function getReturnStatusOverrideFromCache(returnStatusesByKey, ...keys) {
   if (!returnStatusesByKey) return {};
   for (const key of keys) {
@@ -3478,7 +3513,15 @@ function estimateProportionalReturnTax(sale, itemMerchandise, pending = null) {
   return 0;
 }
 
-/** Refundable shipping — line items first, then order-level / residual from sale total on full returns. */
+/** Customer-refundable order total (merchandise + tax + shipping; excludes non-refundable card fees). */
+function orderRefundableCustomerTotal(sale) {
+  const amount = Math.abs(parseOrderMoneyField(sale?.transaction_amount));
+  const taxes = Math.abs(parseOrderMoneyField(sale?.transaction_taxes));
+  const shipping = Math.abs(parseOrderTransactionShipping(sale, null) ?? 0);
+  return Math.round((amount + taxes + shipping) * 100) / 100;
+}
+
+/** Refundable shipping — line items first, then order-level shipping on full returns only. */
 function estimateReverseReturnShipping(sale, itemMerchandise, computedShippingRefund, estimatedTax, pending = null) {
   const fromEstimated = parseEstimatedRefundShipping(pending?.estimated_refund);
   if (fromEstimated > 0) return fromEstimated;
@@ -3487,11 +3530,6 @@ function estimateReverseReturnShipping(sale, itemMerchandise, computedShippingRe
   if (!isFullMerchandiseReturn(sale, merch)) return 0;
   const orderShipping = parseOrderTransactionShipping(sale, null);
   if (orderShipping != null && orderShipping > 0) return Math.abs(orderShipping);
-  const saleTotal = Math.abs(parseOrderMoneyField(sale?.transaction_total));
-  const tax = Math.abs(Number(estimatedTax) || 0);
-  if (saleTotal > 0 && merch + tax > 0 && saleTotal > merch + tax + 0.001) {
-    return Math.round((saleTotal - merch - tax) * 100) / 100;
-  }
   return 0;
 }
 
@@ -3730,15 +3768,20 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
     const taxes = asNegative(taxAmount);
     const shipping = asNegative(shippingAmount);
     const bounty = asNegative(pendingBounty || itemBounty || bountyPool);
-    const feesAbs = Math.abs(pendingFees);
-    let totalAbs =
-      pendingCredit > 0 ? pendingCredit : Math.abs(amount) + Math.abs(taxes) + Math.abs(shipping) + feesAbs;
+    const computedRefund = Math.abs(amount) + Math.abs(taxes) + Math.abs(shipping);
+    let totalAbs = computedRefund;
+    if (pendingCredit > 0) {
+      if (pendingCredit >= computedRefund - 0.02) {
+        totalAbs = pendingCredit;
+      }
+      // else API under-refunded (e.g. card fees wrongly withheld) — use merchandise + tax + shipping
+    }
     const refundTarget = refundTotalFallback > 0 ? Math.abs(refundTotalFallback) : 0;
-    if (refundTarget > 0 && Math.abs(totalAbs - refundTarget) > 0.02) {
+    const refundableCap = orderRefundableCustomerTotal(sale);
+    if (refundTarget > 0 && Math.abs(totalAbs - refundTarget) <= 0.02) {
       totalAbs = refundTarget;
-    } else if (!pendingCredit && isFullMerchandiseReturn(sale, merchAbs || itemMerchandise)) {
-      const saleTotal = Math.abs(parseOrderMoneyField(sale?.transaction_total));
-      if (saleTotal > totalAbs + 0.01) totalAbs = saleTotal;
+    } else if (refundableCap > 0 && isFullMerchandiseReturn(sale, merchAbs || itemMerchandise)) {
+      totalAbs = Math.min(totalAbs, refundableCap);
     }
     const total = asNegative(totalAbs);
     return {
@@ -3798,11 +3841,11 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
     const shippingOut = shippingRefund === 0 ? 0 : shipping < 0 ? shipping : asNegative(shippingRefund);
     let totalAbs = Math.abs(amount) + Math.abs(taxes) + Math.abs(shippingOut);
     const refundTarget = refundTotalFallback > 0 ? Math.abs(refundTotalFallback) : 0;
-    if (refundTarget > 0 && Math.abs(totalAbs - refundTarget) > 0.02) {
+    const refundableCap = orderRefundableCustomerTotal(sale);
+    if (refundTarget > 0 && Math.abs(totalAbs - refundTarget) <= 0.02) {
       totalAbs = refundTarget;
-    } else if (isFullMerchandiseReturn(sale, itemMerchandise)) {
-      const saleTotal = Math.abs(parseOrderMoneyField(sale?.transaction_total));
-      if (saleTotal > totalAbs + 0.01) totalAbs = saleTotal;
+    } else if (refundableCap > 0 && isFullMerchandiseReturn(sale, itemMerchandise)) {
+      totalAbs = Math.min(totalAbs, refundableCap);
     }
     return {
       amount,
@@ -3825,11 +3868,11 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   const bountyOut = itemBounty > 0 ? itemBounty : bountyPool;
   let totalAbs = itemMerchandise + taxes + shippingRefund;
   const refundTarget = refundTotalFallback > 0 ? Math.abs(refundTotalFallback) : 0;
-  if (refundTarget > 0 && Math.abs(totalAbs - refundTarget) > 0.02) {
+  const refundableCap = orderRefundableCustomerTotal(sale);
+  if (refundTarget > 0 && Math.abs(totalAbs - refundTarget) <= 0.02) {
     totalAbs = refundTarget;
-  } else if (isFullMerchandiseReturn(sale, itemMerchandise)) {
-    const saleTotal = Math.abs(parseOrderMoneyField(sale?.transaction_total));
-    if (saleTotal > totalAbs + 0.01) totalAbs = saleTotal;
+  } else if (refundableCap > 0 && isFullMerchandiseReturn(sale, itemMerchandise)) {
+    totalAbs = Math.min(totalAbs, refundableCap);
   }
 
   return {
@@ -4662,6 +4705,7 @@ function ReturnDetailsModal({
   const refundStatus = logistics?.refund_status || "";
   const displayStatus = logistics?.display_status || "";
   const isCancelBeforeShip = returnStatus === "cancelled" || !!logistics?.is_cancel_before_ship || preShipCancel;
+  const includesUnshippedShippableUnits = returnIncludesUnshippedShippableUnits(orderDetail, returnLines);
   const pendingSellerDecision = returnStatus === "returning" && refundStatus === "pending";
   const pendingCancelDecision = isCancelBeforeShip && refundStatus === "pending" && (returnStatus === "cancelled" || returnStatus === "returning");
   const awaitingSellerAction = isSellerView && pendingSellerDecision && !isCancelBeforeShip;
@@ -4740,7 +4784,9 @@ function ReturnDetailsModal({
     if (pendingSellerDecision && isSellerView && !isCancelBeforeShip) return null;
     if (pendingCancelDecision && isSellerView) return null;
     if (pendingCancelDecision && !isSellerView) {
-      return "Items were not shipped — waiting for seller to confirm cancel and refund.";
+      return includesUnshippedShippableUnits
+        ? "Items were not shipped — waiting for seller to confirm cancel and refund."
+        : "Waiting for seller to confirm cancel and refund.";
     }
     if (pendingSellerDecision && !isSellerView) {
       return "Waiting for seller to confirm receipt of your return.";
@@ -4755,7 +4801,9 @@ function ReturnDetailsModal({
       return isCancelBeforeShip
         ? isSellerView
           ? "Delivered: Cancelled · Received: Refunded"
-          : "Cancel completed — refund issued (item was never shipped)."
+          : includesUnshippedShippableUnits
+            ? "Cancel completed — refund issued (item was never shipped)."
+            : "Cancel completed — refund issued."
         : isSellerView
           ? "Delivered: Returned · Received: Refunded"
           : "Refund completed.";
@@ -4798,7 +4846,13 @@ function ReturnDetailsModal({
           ) : (
             <ScrollView style={styles.businessOrderDetailScroll} nestedScrollEnabled keyboardShouldPersistTaps='handled'>
               <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>
-                {awaitingSellerAction ? "Select item(s) received:" : isCancelBeforeShip ? "Items cancelled (not shipped)" : "Items being returned"}
+                {awaitingSellerAction
+                  ? "Select item(s) received:"
+                  : isCancelBeforeShip
+                    ? includesUnshippedShippableUnits
+                      ? "Items cancelled (not shipped)"
+                      : "Items cancelled"
+                    : "Items being returned"}
               </Text>
 
               {returnLines.length > 0 ? (
@@ -4837,7 +4891,7 @@ function ReturnDetailsModal({
                 ) : null}
                 {moneyRow("Returned items", reverse.amount)}
                 {moneyRow("Sales tax", reverse.taxes)}
-                {moneyRow("Shipping", reverse.shipping ?? 0)}
+                {Math.abs(Number(reverse.shipping) || 0) > 0.01 ? moneyRow("Shipping", reverse.shipping) : null}
                 <View style={[styles.orderDetailSummaryRow, styles.orderDetailSummaryRowTotal]}>
                   <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>{isSellerView ? "Refund total" : "Refund you should expect"}</Text>
                   <Text style={[styles.orderDetailSummaryValue, styles.orderDetailSummaryNet, { color: "#B71C1C" }]}>{formatSignedOrderMoney(reverse.total)}</Text>
@@ -4889,7 +4943,9 @@ function ReturnDetailsModal({
               {awaitingCancelConfirm ? (
                 <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
                   <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
-                    These items were never shipped. Confirming cancels the ship quantity and issues the refund. No physical return is required.
+                    {includesUnshippedShippableUnits
+                      ? "These items were never shipped. Confirming cancels the ship quantity and issues the refund. No physical return is required."
+                      : "Confirming cancels the order and issues the refund. No physical return is required."}
                   </Text>
                   {renderRestockSection()}
                   <View style={[styles.orderDetailShipActions, { marginTop: 14 }]}>
