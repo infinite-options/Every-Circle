@@ -3289,23 +3289,64 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
   });
 }
 
+function getReturnModalLineLeftSellerQty(line, purchasedQty) {
+  if (!line || purchasedQty <= 0) return 0;
+  const shipped = Math.min(purchasedQty, getLineShippedQty(line));
+  const received = Math.min(purchasedQty, getPreviouslyReceivedQty(line));
+  if (lineWasPurchasedForShipping(line)) return shipped;
+  return Math.max(shipped, received);
+}
+
+function getReturnModalQtyLabels(line) {
+  const receivedWording = !lineWasPurchasedForShipping(line);
+  if (receivedWording) {
+    return {
+      leftShort: "Received items to cancel",
+      notLeftShort: "Unreceived items to cancel",
+      leftSimple: "How many received items are you cancelling?",
+      notLeftSimple: "How many unreceived items are you cancelling?",
+      mixedIntro: "This item has received and unreceived units. How many of each?",
+      hintMixed: (left, notLeft) => `${left} received · ${notLeft} unreceived`,
+      hintAllLeft: (n) => `${n} received`,
+      hintAllNotLeft: (n) => `${n} unreceived`,
+    };
+  }
+  return {
+    leftShort: "Shipped items to return",
+    notLeftShort: "Unshipped items to cancel",
+    leftSimple: "How many shipped items are you returning?",
+    notLeftSimple: "How many unshipped items are you cancelling?",
+    mixedIntro: "This item has shipped and unshipped units. How many of each?",
+    hintMixed: (left, notLeft) => `${left} shipped · ${notLeft} not shipped`,
+    hintAllLeft: (n) => `${n} shipped`,
+    hintAllNotLeft: (n) => `${n} not shipped`,
+  };
+}
+
 function getReturnModalLineFulfillmentCaps(row) {
   const line = row?.line || row;
   const purchasedQty = Math.max(0, row?.purchasedQty ?? getLinePurchasedQty(line));
   const remainingQty = Math.max(0, row?.remainingQty ?? 0);
-  const shippedOnLine = Math.min(purchasedQty, row?.shippedQty ?? getLineShippedQty(line));
-  const unshippedOnLine = Math.max(0, row?.unshippedOnLine ?? purchasedQty - shippedOnLine);
-  const hasMixedFulfillment = shippedOnLine > 0 && unshippedOnLine > 0 && remainingQty > 0;
+  const leftOnLine = Math.min(purchasedQty, getReturnModalLineLeftSellerQty(line, purchasedQty));
+  const notLeftOnLine = Math.max(0, purchasedQty - leftOnLine);
+  const alreadyReturned = Math.max(0, purchasedQty - remainingQty);
+  const returnedFromLeft = Math.min(alreadyReturned, leftOnLine);
+  const returnedFromNotLeft = Math.max(0, alreadyReturned - returnedFromLeft);
+  const remainingLeft = Math.max(0, leftOnLine - returnedFromLeft);
+  const remainingNotLeft = Math.max(0, notLeftOnLine - returnedFromNotLeft);
+  const hasMixedFulfillment = remainingLeft > 0 && remainingNotLeft > 0 && remainingQty > 0;
   return {
     purchasedQty,
     remainingQty,
-    shippedOnLine,
-    unshippedOnLine,
+    shippedOnLine: leftOnLine,
+    unshippedOnLine: notLeftOnLine,
+    remainingLeft,
+    remainingNotLeft,
     hasMixedFulfillment,
-    allShipped: shippedOnLine > 0 && unshippedOnLine <= 0,
-    allUnshipped: shippedOnLine <= 0 && unshippedOnLine > 0,
-    maxReturnShippedQty: Math.min(remainingQty, shippedOnLine),
-    maxCancelUnshippedQty: Math.min(remainingQty, unshippedOnLine),
+    allShipped: remainingLeft > 0 && remainingNotLeft <= 0,
+    allUnshipped: remainingNotLeft > 0 && remainingLeft <= 0,
+    maxReturnShippedQty: Math.min(remainingQty, remainingLeft),
+    maxCancelUnshippedQty: Math.min(remainingQty, remainingNotLeft),
   };
 }
 
@@ -3766,9 +3807,24 @@ function buildReturnDetailDisplayItems(orderDetail, bountyRows = [], scope = nul
 }
 
 /**
+ * Bounty reversed on a return — prefer line-level math for partial returns,
+ * never the full order bounty pool when return line items are present.
+ */
+function resolveReverseTransactionBountyAmount({ items, itemBounty, pendingBountyExplicit, bountyPool }) {
+  const lineTotal = Math.round(Math.abs(Number(itemBounty) || 0) * 100) / 100;
+  const hasReturnLineItems = Array.isArray(items) && items.length > 0;
+  if (hasReturnLineItems && lineTotal > 0) {
+    return lineTotal;
+  }
+  const pending = Math.round(Math.abs(Number(pendingBountyExplicit) || 0) * 100) / 100;
+  if (pending > 0) return pending;
+  if (lineTotal > 0) return lineTotal;
+  return Math.round(Math.abs(Number(bountyPool) || 0) * 100) / 100;
+}
+
+/**
  * Reverse totals from returned items only (never the full original sale).
- * Prefers pending_return.estimated_refund / bounty_to_reclaim, then refund_breakdown / return txns,
- * else estimates from line items.
+ * Prefers pending_return.estimated_refund for customer credit; bounty uses line-level totals.
  */
 function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, returns, pendingReturn, saleBountyPool = 0, refundTotalFallback = 0 } = {}) {
   const asNegative = (n) => (n === 0 ? 0 : -Math.abs(n));
@@ -3796,8 +3852,13 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   );
   const pendingCredit = pendingComponentCredit > 0.01 ? pendingComponentCredit : pendingCreditRaw;
   const pendingBountyExplicit = pending?.bounty_to_reclaim != null && String(pending.bounty_to_reclaim).trim() !== "" ? parseOrderMoneyField(pending.bounty_to_reclaim) : null;
-  const pendingBounty = pendingBountyExplicit > 0 ? pendingBountyExplicit : bountyPool || itemBounty;
-  if (pending && (pendingCredit || pendingSubtotal || pendingBounty)) {
+  const resolvedBounty = resolveReverseTransactionBountyAmount({
+    items,
+    itemBounty,
+    pendingBountyExplicit,
+    bountyPool,
+  });
+  if (pending && (pendingCredit || pendingSubtotal || resolvedBounty)) {
     const merchAbs = pendingSubtotal || itemMerchandise;
     const amount = asNegative(merchAbs || Math.max(0, pendingCredit - pendingTaxes - pendingShippingRefund) || itemMerchandise);
     const taxAmount = pendingTaxes > 0 ? pendingTaxes : estimateProportionalReturnTax(sale, merchAbs || itemMerchandise, pending);
@@ -3805,7 +3866,7 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
       pendingShippingRefund > 0 ? pendingShippingRefund : estimateReverseReturnShipping(sale, merchAbs || itemMerchandise, computedShippingRefund, taxAmount, pending);
     const taxes = asNegative(taxAmount);
     const shipping = asNegative(shippingAmount);
-    const bounty = asNegative(pendingBounty || itemBounty || bountyPool);
+    const bounty = asNegative(resolvedBounty);
     const computedRefund = Math.abs(amount) + Math.abs(taxes) + Math.abs(shipping);
     let totalAbs = computedRefund;
     if (pendingCredit > 0) {
@@ -3838,7 +3899,14 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
     const taxes = asNegative(parseOrderMoneyField(refundBreakdown.taxes ?? refundBreakdown.transaction_taxes));
     const shippingRefund = parseEstimatedRefundShipping(refundBreakdown) ?? parseReturnRefundShippingFromSource(refundBreakdown) ?? computedShippingRefund;
     const shipping = asNegative(shippingRefund);
-    const bounty = asNegative(parseOrderMoneyField(refundBreakdown.bounty ?? refundBreakdown.bounty_paid ?? itemBounty) || itemBounty);
+    const bounty = asNegative(
+      resolveReverseTransactionBountyAmount({
+        items,
+        itemBounty,
+        pendingBountyExplicit: parseOrderMoneyField(refundBreakdown.bounty ?? refundBreakdown.bounty_paid ?? 0),
+        bountyPool,
+      }),
+    );
     return {
       amount,
       taxes,
@@ -3866,15 +3934,19 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
       if (ret.transaction_uid) txnIds.push(String(ret.transaction_uid));
     }
     if (!amount && itemMerchandise > 0) amount = -itemMerchandise;
-    if (!bounty && itemBounty > 0) bounty = -itemBounty;
-    else if (!bounty && bountyPool > 0) bounty = -bountyPool;
+    const resolvedReturnBounty = resolveReverseTransactionBountyAmount({
+      items,
+      itemBounty,
+      pendingBountyExplicit: bounty !== 0 ? Math.abs(bounty) : null,
+      bountyPool,
+    });
+    bounty = asNegative(resolvedReturnBounty);
     if (!taxes && itemMerchandise > 0) {
       const taxEst = estimateProportionalReturnTax(sale, itemMerchandise, pending);
       if (taxEst > 0) taxes = -taxEst;
     }
     amount = amount > 0 ? -amount : amount;
     taxes = taxes > 0 ? -taxes : taxes;
-    bounty = bounty > 0 ? -bounty : bounty;
     const shippingRefund = shipping > 0 ? shipping : estimateReverseReturnShipping(sale, itemMerchandise, computedShippingRefund, Math.abs(taxes), pending);
     const shippingOut = shippingRefund === 0 ? 0 : shipping < 0 ? shipping : asNegative(shippingRefund);
     let totalAbs = Math.abs(amount) + Math.abs(taxes) + Math.abs(shippingOut);
@@ -3903,7 +3975,12 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   }
 
   const shippingRefund = estimateReverseReturnShipping(sale, itemMerchandise, computedShippingRefund, taxes, pending);
-  const bountyOut = itemBounty > 0 ? itemBounty : bountyPool;
+  const bountyOut = resolveReverseTransactionBountyAmount({
+    items,
+    itemBounty,
+    pendingBountyExplicit,
+    bountyPool,
+  });
   let totalAbs = itemMerchandise + taxes + shippingRefund;
   const refundTarget = refundTotalFallback > 0 ? Math.abs(refundTotalFallback) : 0;
   const refundableCap = orderRefundableCustomerTotal(sale);
@@ -10388,18 +10465,25 @@ export default function AccountScreen({ navigation, route }) {
                     const returnIneligible = !row.returnEligible;
                     const selectionDisabled = alreadyReturned || returnIneligible;
                     const caps = getReturnModalLineFulfillmentCaps(row);
+                    const qtyLabels = getReturnModalQtyLabels(row.line);
                     const split = returnItemSplitQty[itemId] || initialReturnItemSplitQty(row);
                     const needsMixedQtyPicker = isSelected && caps.hasMixedFulfillment;
                     const needsSimpleQtyPicker =
                       isSelected && !caps.hasMixedFulfillment && caps.purchasedQty > 1 && caps.remainingQty > 1;
                     const fulfillmentHint =
                       caps.hasMixedFulfillment && !alreadyReturned
-                        ? `${caps.shippedOnLine} shipped · ${caps.unshippedOnLine} not shipped`
+                        ? qtyLabels.hintMixed(caps.shippedOnLine, caps.unshippedOnLine)
                         : caps.allShipped && caps.shippedOnLine > 0
-                          ? `${caps.shippedOnLine} shipped`
+                          ? qtyLabels.hintAllLeft(caps.shippedOnLine)
                           : caps.allUnshipped && caps.unshippedOnLine > 0
-                            ? `${caps.unshippedOnLine} not shipped`
-                            : null;
+                            ? qtyLabels.hintAllNotLeft(caps.unshippedOnLine)
+                            : caps.shippedOnLine > 0 && caps.unshippedOnLine > 0
+                              ? qtyLabels.hintMixed(caps.shippedOnLine, caps.unshippedOnLine)
+                              : caps.shippedOnLine > 0
+                                ? qtyLabels.hintAllLeft(caps.shippedOnLine)
+                                : caps.unshippedOnLine > 0
+                                  ? qtyLabels.hintAllNotLeft(caps.unshippedOnLine)
+                                  : null;
 
                     return (
                       <View
@@ -10456,11 +10540,9 @@ export default function AccountScreen({ navigation, route }) {
 
                         {needsMixedQtyPicker ? (
                           <View style={{ marginTop: 8, marginLeft: 26 }}>
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>
-                              This item has shipped and unshipped units. How many of each?
-                            </Text>
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>{qtyLabels.mixedIntro}</Text>
                             <ReturnModalQtyStepper
-                              label='Shipped items to return'
+                              label={qtyLabels.leftShort}
                               value={split.shipped}
                               max={Math.min(caps.maxReturnShippedQty, Math.max(0, caps.remainingQty - split.unshipped))}
                               suffix={`up to ${caps.maxReturnShippedQty}`}
@@ -10473,7 +10555,7 @@ export default function AccountScreen({ navigation, route }) {
                               }
                             />
                             <ReturnModalQtyStepper
-                              label='Unshipped items to cancel'
+                              label={qtyLabels.notLeftShort}
                               value={split.unshipped}
                               max={Math.min(caps.maxCancelUnshippedQty, Math.max(0, caps.remainingQty - split.shipped))}
                               suffix={`up to ${caps.maxCancelUnshippedQty}`}
@@ -10491,7 +10573,7 @@ export default function AccountScreen({ navigation, route }) {
                         {needsSimpleQtyPicker ? (
                           <View style={{ marginTop: 8, marginLeft: 26 }}>
                             <ReturnModalQtyStepper
-                              label={caps.allUnshipped ? "How many unshipped items are you cancelling?" : "How many shipped items are you returning?"}
+                              label={caps.allUnshipped ? qtyLabels.notLeftSimple : qtyLabels.leftSimple}
                               value={caps.allUnshipped ? split.unshipped : split.shipped}
                               max={caps.remainingQty}
                               suffix={`of ${caps.remainingQty}`}
@@ -10586,7 +10668,7 @@ export default function AccountScreen({ navigation, route }) {
                             }
                             const split = returnItemSplitQty[id] || initialReturnItemSplitQty(row);
                             if (!isReturnItemSplitValid(row, split)) {
-                              Alert.alert("Invalid quantities", "Please enter valid shipped-return and unshipped-cancel quantities.");
+                              Alert.alert("Invalid quantities", "Please enter valid quantities for each group.");
                               return;
                             }
                             transactionReturnItems.push(buildTransactionReturnItemPayload(row, split));

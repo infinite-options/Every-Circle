@@ -1855,9 +1855,13 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <Text style={styles.totalValue}>${g.processingFee.toFixed(2)}</Text>
                     </View>
                     {!g.buyerPaysCardFee ? <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text> : null}
+                    <View style={[styles.totalRow, styles.perBusinessTotalRow]}>
+                      <Text style={styles.totalLabel}>Total Charge</Text>
+                      <Text style={styles.totalValue}>${g.total.toFixed(2)}</Text>
+                    </View>
                     {showWalletPaymentControls ? (
                       <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Wallet balance</Text>
+                        <Text style={styles.totalLabel}>Paid from Wallet</Text>
                         <Text style={styles.totalValue}>-${(g.walletApplied || 0).toFixed(2)}</Text>
                       </View>
                     ) : null}
@@ -1867,10 +1871,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                         <Text style={styles.totalValue}>${(g.cardCharge || 0).toFixed(2)}</Text>
                       </View>
                     ) : null}
-                    <View style={[styles.totalRow, styles.perBusinessTotalRow]}>
-                      <Text style={styles.totalLabel}>Business total</Text>
-                      <Text style={styles.totalValue}>${g.total.toFixed(2)}</Text>
-                    </View>
                     <View style={styles.escrowSection}>
                       <View style={styles.escrowRow}>
                         <TouchableOpacity
