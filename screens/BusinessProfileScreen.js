@@ -34,7 +34,8 @@ import {
   isBusinessOwnerRestricted,
   isBusinessVisibilityBlocked,
 } from "../utils/businessModeration";
-import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
+import { normalizeBusinessServiceFromApi } from "../utils/normalizeBusinessServiceFromApi";
+import { businessCcFeePayerFromSource } from "../utils/businessCcFeePayer";
 import { isBusinessShippingApplicable } from "../utils/businessServiceShipping";
 import { FULFILLMENT_PICKUP, FULFILLMENT_SHIP } from "../utils/cartFulfillmentMethod";
 import { fetchServiceChoiceGroups, parseServiceOptionsResponse } from "../utils/parseServiceOptionsResponse";
@@ -540,7 +541,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
       }
 
-      const profileCcFeePayer = canonicalBusinessCcFeePayer(rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer);
+      const profileCcFeePayer = businessCcFeePayerFromSource(rawBusiness);
 
       const businessWithRatings = {
         ...rawBusiness,
@@ -916,7 +917,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       eligibleReviews: bountyEligible,
     });
     try {
-      const ccPayer = canonicalBusinessCcFeePayer(business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer);
+      const ccPayer = businessCcFeePayerFromSource(business);
 
       const selectedChoiceItems = buildSelectedChoiceItems(serviceOptions, selectedChoices);
       const choicesExtraCost = sumChoiceExtraCost(selectedChoiceItems);

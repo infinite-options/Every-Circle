@@ -21,7 +21,7 @@ if (!isWeb) {
   }
 }
 
-import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, BOUNTY_RESULTS_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
 import StripeNativeProvider from "../components/StripeNativeProvider";
@@ -42,7 +42,6 @@ import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
 import { parsePrice } from "../utils/priceUtils";
 import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines, normalizeSelectedChoiceItemsForApi } from "../utils/selectedChoiceItems";
-import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { recordServicePurchase } from "../utils/purchaseService";
 import { expertiseLineMerchandiseAndTax, roundCartMoney, taxRatePercentForCalculation } from "../utils/cartLineTax";
 import {
@@ -83,6 +82,7 @@ import {
   sumBuyerShippingCharges,
 } from "../utils/cartFulfillmentMethod";
 import { cartLineDeliveryChargeLabel, OFFERING_DELIVERY_CHARGE_LABEL, sellerGroupDeliveryChargeLabel } from "../utils/profileOfferingShipping";
+import { businessCcFeePayerFromSource, cartItemBuyerPaysCardFee, groupBuyerPaysCardFee } from "../utils/businessCcFeePayer";
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
 
@@ -179,7 +179,7 @@ function formatCartMoney(item, amountNum) {
 }
 
 /** Per-line charge breakdown shown on each cart card (matches checkout grouping math). */
-function getCartLineChargeBreakdown(item, processingFeeOverride) {
+function getCartLineChargeBreakdown(item, processingFeeOverride, ccFeePayerByBusinessUid = null) {
   const qty = parseInt(item.quantity, 10) || 1;
   const { pretax, tax, taxable, ratePercentUsed } = lineMerchandiseAndTax(item);
   const unitPrice = qty > 0 ? roundMoney(pretax / qty) : pretax;
@@ -187,13 +187,12 @@ function getCartLineChargeBreakdown(item, processingFeeOverride) {
   const shippingAmount = deliveryDisplay.showRow ? roundMoney(deliveryDisplay.amount) : 0;
   const shippingIsActual = deliveryDisplay.isActual;
   const shippingApplicable = deliveryDisplay.showRow;
-  const buyerPaysCardFee = groupBuyerPaysCardFee([item]);
+  const buyerPaysCardFee = cartItemBuyerPaysCardFee(item, ccFeePayerByBusinessUid);
   const feeBase = getCreditCardFeeBase({ merchandise: pretax, tax, shipping: shippingAmount });
-  const processingFee =
-    processingFeeOverride != null
-      ? roundMoney(processingFeeOverride)
-      : computeCreditCardProcessingFee(feeBase, buyerPaysCardFee);
-  const totalCharge = roundMoney(feeBase + processingFee);
+  const fullProcessingFee = computeCreditCardProcessingFee(feeBase, buyerPaysCardFee);
+  const chargedProcessingFee =
+    buyerPaysCardFee && processingFeeOverride != null ? roundMoney(processingFeeOverride) : fullProcessingFee;
+  const totalCharge = roundMoney(feeBase + (buyerPaysCardFee ? chargedProcessingFee : 0));
   return {
     qty,
     unitPrice,
@@ -201,7 +200,7 @@ function getCartLineChargeBreakdown(item, processingFeeOverride) {
     shippingAmount,
     shippingIsActual,
     shippingApplicable,
-    processingFee,
+    processingFee: buyerPaysCardFee ? fullProcessingFee : 0,
     buyerPaysCardFee,
     tax,
     taxable,
@@ -394,21 +393,10 @@ function calculateSubtotalForCartItems(items) {
   return items.reduce((sum, item) => sum + lineMerchandiseAndTax(item).pretax, 0);
 }
 
-/** True when buyer pays Stripe card fees (business_cc_fee_payer === buyer). */
-function groupBuyerPaysCardFee(items) {
-  if (!items || items.length === 0) return false;
-  // Expertise lines don't carry business_cc_fee_payer; AddToCartDetailsModal always quotes 3% to the buyer.
-  if (items.some((it) => it && it.itemType === "expertise")) {
-    return true;
-  }
-  const raw = items[0]?.business_cc_fee_payer ?? items[0]?.bs_cc_fee_payer;
-  return canonicalBusinessCcFeePayer(raw) === "buyer";
-}
-
 /**
  * One entry per seller: merchandise, sales tax, buyer shipping, optional 3% card fee, Stripe total.
  */
-function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
+function buildSellerCheckoutGroups(cartItems, resolveBusinessName, ccFeePayerByBusinessUid = null) {
   if (!Array.isArray(cartItems)) return [];
   const normalizedItems = normalizeCartItemsFulfillment(cartItems);
   const map = new Map();
@@ -432,7 +420,7 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
     const shippingSubtotal = roundMoney(shippingInfo.shippingSubtotal);
     const subtotalAfterTax = roundMoney(merchandiseSubtotal + salesTaxTotal);
     const subtotalWithShipping = roundMoney(subtotalAfterTax + shippingSubtotal);
-    const buyerPaysCardFee = groupBuyerPaysCardFee(items);
+    const buyerPaysCardFee = groupBuyerPaysCardFee(items, ccFeePayerByBusinessUid);
     const processingFee = computeCreditCardProcessingFee(subtotalWithShipping, buyerPaysCardFee);
     const total = computeCreditCardChargeTotal(subtotalWithShipping, buyerPaysCardFee);
     const first = items[0];
@@ -536,6 +524,56 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const [walletAmountToApply, setWalletAmountToApply] = useState(0);
   const [walletAmountDraft, setWalletAmountDraft] = useState("0.00");
   const walletInitializedRef = useRef(false);
+  /** business_uid → "buyer" | "seller" from live businessinfo (cart lines may lack this). */
+  const [ccFeePayerByBusinessUid, setCcFeePayerByBusinessUid] = useState({});
+  const ccFeeHydrateStartedRef = useRef(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    const businessUids = [
+      ...new Set(
+        (cartItems || [])
+          .filter((it) => it && it.itemType !== "expertise")
+          .map((it) => String(it.business_uid || "").trim())
+          .filter(Boolean),
+      ),
+    ].filter((uid) => !ccFeeHydrateStartedRef.current.has(uid));
+    if (!businessUids.length) return undefined;
+
+    (async () => {
+      const fetched = {};
+      for (const uid of businessUids) {
+        ccFeeHydrateStartedRef.current.add(uid);
+        try {
+          const response = await fetch(`${BUSINESS_INFO_ENDPOINT}/${uid}`);
+          if (!response.ok) continue;
+          const result = await response.json();
+          const rawBusiness = result?.business;
+          if (!rawBusiness) continue;
+          fetched[uid] = businessCcFeePayerFromSource(rawBusiness);
+        } catch (e) {
+          console.warn("Could not load business card-fee setting for cart:", uid, e?.message || e);
+        }
+      }
+
+      if (cancelled || Object.keys(fetched).length === 0) return;
+
+      setCcFeePayerByBusinessUid((prev) => ({ ...prev, ...fetched }));
+      setCartItems((prev) =>
+        prev.map((item) => {
+          if (item?.itemType === "expertise") return item;
+          const uid = String(item.business_uid || "").trim();
+          const payer = fetched[uid];
+          if (!payer || item.business_cc_fee_payer === payer) return item;
+          return { ...item, business_cc_fee_payer: payer };
+        }),
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cartItems]);
 
   const handleReturnPress = () => {
     if (returnTo === "BusinessProfile") {
@@ -640,8 +678,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           // Default to max wallet on first load; buyer can lower to $0.
           if (!walletInitializedRef.current) {
             walletInitializedRef.current = true;
-            setWalletAmountToApply(balance);
-            setWalletAmountDraft(formatWalletAmountInput(balance));
           }
         } catch (e) {
           console.warn("Could not load wallet balance for cart:", e);
@@ -657,7 +693,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       setShowFeesDialog(false);
       setLoading(true);
 
-      const groups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+      const groups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName, ccFeePayerByBusinessUid);
       if (!groups.length) {
         Alert.alert("Error", "No billable items in your cart (missing seller information).");
         setLoading(false);
@@ -894,7 +930,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       return;
     }
 
-    const groups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+    const groups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName, ccFeePayerByBusinessUid);
     if (!groups.length) {
       Alert.alert("Error", "No billable items in your cart (missing seller information).");
       return;
@@ -1507,7 +1543,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const checkoutSellerGroups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+  const checkoutSellerGroups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName, ccFeePayerByBusinessUid);
   const maxWalletApplicable = getMaxApplicableWalletAmount(checkoutSellerGroups, useableWalletBalance);
   const clampedWalletAmount = roundMoney(Math.min(Math.max(0, walletAmountToApply), maxWalletApplicable));
   const sellerGroupsPreview = applyWalletToCheckoutGroups(checkoutSellerGroups, clampedWalletAmount);
@@ -1592,7 +1628,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                 const itemTitle = item.itemType === "expertise" ? String(item.title || "Offering").trim() : productName || "Item";
                 const lineFeeKey = cartLineProcessingFeeKey(item);
                 const allocatedProcessingFee = cartLineProcessingFeeMap.has(lineFeeKey) ? cartLineProcessingFeeMap.get(lineFeeKey) : undefined;
-                const breakdown = getCartLineChargeBreakdown(item, allocatedProcessingFee);
+                const breakdown = getCartLineChargeBreakdown(item, allocatedProcessingFee, ccFeePayerByBusinessUid);
                 const bountyTotal = getCartLineBountyTotal(item);
                 const remainingAddQty = getCartLineRemainingAddQuantity(item);
                 return (

@@ -2,6 +2,7 @@ import { parseExpertiseModeFlags } from "./expertiseMode";
 import {
   BS_SHIPPING_BUYER_ACTUAL,
   BS_SHIPPING_BUYER_FIXED,
+  applyBsShippingFromApi,
   getCartItemShippingCarrier,
   isBusinessShippingApplicable,
   isBuyerPaysShippingValue,
@@ -179,11 +180,18 @@ export function resolveDefaultFulfillmentMethod(item) {
   return fulfillmentMethodOf(item);
 }
 
+/** Re-sync bs_shipping fields on business cart lines (legacy AsyncStorage rows). */
+function normalizeBusinessCartItemShipping(item) {
+  if (!item || typeof item !== "object" || item.itemType === "expertise") return item;
+  return { ...item, ...applyBsShippingFromApi(item) };
+}
+
 /** Ensure cart line has fulfillment_method set. */
 export function normalizeCartItemFulfillment(item) {
   if (!item || typeof item !== "object") return item;
-  const { fulfillment_method } = resolveCartLine(item);
-  return fulfillment_method === item.fulfillment_method ? item : { ...item, fulfillment_method };
+  const normalized = normalizeBusinessCartItemShipping(item);
+  const { fulfillment_method } = resolveCartLine(normalized);
+  return fulfillment_method === normalized.fulfillment_method ? normalized : { ...normalized, fulfillment_method };
 }
 
 export function normalizeCartItemsFulfillment(items) {

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from "react
 import { Ionicons } from "@expo/vector-icons";
 import { parsePrice, formatCostValue } from "../utils/priceUtils";
 import { parseTagList } from "../utils/tagListUtils";
-import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
+import { businessCcFeePayerFromSource } from "../utils/businessCcFeePayer";
 import {
   BS_SHIPPING_BUYER_ACTUAL,
   BS_SHIPPING_BUYER_FIXED,
@@ -146,8 +146,7 @@ function formatChoiceOptionLabel(opt) {
 }
 
 function creditCardFeeBuyerBadgeValue(service) {
-  const raw = service?.business_cc_fee_payer ?? service?.bs_cc_fee_payer;
-  if (canonicalBusinessCcFeePayer(raw) !== "buyer") return null;
+  if (businessCcFeePayerFromSource(service) !== "buyer") return null;
   return "3% paid by Buyer";
 }
 
