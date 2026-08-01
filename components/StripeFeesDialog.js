@@ -39,7 +39,7 @@ const StripeFeesDialog = ({
 
   const legacyFee = hasLegacyBreakdown ? (Number(totalWithFee) - Number(subtotal)).toFixed(2) : null;
   const shippingLineLabel =
-    typeof shippingLabel === "string" && shippingLabel.trim() !== "" ? shippingLabel.trim() : "Shipping";
+    typeof shippingLabel === "string" && shippingLabel.trim() !== "" ? shippingLabel.trim() : "Delivery charge";
   const actualShippingNote =
     shippingLineLabel === "Delivery charge"
       ? "Actual delivery charge is $0.00 at checkout — the seller will contact you directly."

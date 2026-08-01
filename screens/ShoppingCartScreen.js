@@ -81,7 +81,7 @@ import {
   resolveDefaultFulfillmentMethod,
   sumBuyerShippingCharges,
 } from "../utils/cartFulfillmentMethod";
-import { cartLineDeliveryChargeLabel, OFFERING_DELIVERY_CHARGE_LABEL, sellerGroupDeliveryChargeLabel } from "../utils/profileOfferingShipping";
+import { cartLineDeliveryChargeLabel, sellerGroupDeliveryChargeLabel } from "../utils/profileOfferingShipping";
 import { businessCcFeePayerFromSource, cartItemBuyerPaysCardFee, groupBuyerPaysCardFee } from "../utils/businessCcFeePayer";
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
@@ -305,9 +305,7 @@ function CartFulfillmentChoice({ item, onSelect }) {
       {method === FULFILLMENT_VIRTUAL ? <Text style={styles.fulfillmentPickupHint}>No shipping required · verify immediately</Text> : null}
       {method === FULFILLMENT_PICKUP && pickupHint ? <Text style={styles.fulfillmentPickupHint}>Pickup location: {pickupHint}</Text> : null}
       {method === FULFILLMENT_SHIP ? (
-        <Text style={styles.fulfillmentPickupHint}>
-          {item?.itemType === "expertise" ? "Delivery address required at checkout" : "Shipping address required at checkout"}
-        </Text>
+        <Text style={styles.fulfillmentPickupHint}>Delivery address required at checkout</Text>
       ) : null}
     </View>
   );
@@ -913,7 +911,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         zip: shippingZip,
       })
     ) {
-      Alert.alert("Shipping address required", "Please complete First Name, Last Name, Street Address, City, State, and Zip for items being shipped.");
+      Alert.alert("Delivery address required", "Please complete First Name, Last Name, Street Address, City, State, and Zip for items being delivered.");
       return;
     }
 
@@ -1712,7 +1710,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
               })}
               {cartHasShipFulfillmentLines ? (
                 <View style={styles.shippingCard}>
-                  <Text style={styles.shippingSectionTitle}>Shipping address</Text>
+                  <Text style={styles.shippingSectionTitle}>Delivery address</Text>
                   {cartRequiresBuyerPaysShipping ? (
                     <Text style={styles.shippingRequiredNote}>Required for items being shipped to you.</Text>
                   ) : null}
@@ -1838,13 +1836,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                     {g.hasFixedShipping || g.hasWaivedDeliveryCharge ? (
                       <View style={styles.totalRow}>
                         <Text style={styles.totalLabel}>
-                          {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
-                            ? g.hasWaivedDeliveryCharge && !g.hasFixedShipping
-                              ? "Delivery charge"
-                              : "Delivery charge (buyer fixed)"
-                            : g.hasWaivedDeliveryCharge && !g.hasFixedShipping
-                              ? "Shipping"
-                              : "Shipping (buyer fixed)"}
+                          {g.hasWaivedDeliveryCharge && !g.hasFixedShipping ? "Delivery charge" : "Delivery charge (buyer fixed)"}
                         </Text>
                         <Text style={styles.totalValue}>${g.shippingSubtotal.toFixed(2)}</Text>
                       </View>
@@ -1852,18 +1844,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                     {g.hasActualShipping ? (
                       <View style={styles.shippingActualBlock}>
                         <View style={styles.totalRow}>
-                          <Text style={styles.totalLabel}>
-                            {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
-                              ? "Delivery charge (actual cost)"
-                              : "Shipping (actual cost)"}
-                          </Text>
+                          <Text style={styles.totalLabel}>Delivery charge (actual cost)</Text>
                           <Text style={styles.totalValue}>$0.00</Text>
                         </View>
-                        <Text style={styles.shippingActualNote}>
-                          {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
-                            ? "Seller will contact the buyer directly for actual delivery charge."
-                            : "Seller will contact the buyer directly for actual shipping cost."}
-                        </Text>
+                        <Text style={styles.shippingActualNote}>Seller will contact the buyer directly for actual delivery charge.</Text>
                       </View>
                     ) : null}
                     <View style={styles.totalRow}>

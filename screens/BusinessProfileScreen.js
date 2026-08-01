@@ -36,8 +36,7 @@ import {
 } from "../utils/businessModeration";
 import { normalizeBusinessServiceFromApi } from "../utils/normalizeBusinessServiceFromApi";
 import { businessCcFeePayerFromSource } from "../utils/businessCcFeePayer";
-import { isBusinessShippingApplicable } from "../utils/businessServiceShipping";
-import { FULFILLMENT_PICKUP, FULFILLMENT_SHIP } from "../utils/cartFulfillmentMethod";
+import { businessCartPersistedFields } from "../utils/businessCartUtils";
 import { fetchServiceChoiceGroups, parseServiceOptionsResponse } from "../utils/parseServiceOptionsResponse";
 import {
   parseBusinessGooglePhotos,
@@ -944,7 +943,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         business_uid: business_uid,
         business_name: sanitizeText(business?.business_name || "") || "",
         business_cc_fee_payer: ccPayer,
-        fulfillment_method: isBusinessShippingApplicable(selectedService) ? FULFILLMENT_SHIP : FULFILLMENT_PICKUP,
+        ...businessCartPersistedFields(selectedService, business),
       };
 
       const choicesKey = JSON.stringify(selectedChoices);

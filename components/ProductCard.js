@@ -14,6 +14,8 @@ import {
   parseBsShippingAmount,
 } from "../utils/businessServiceShipping";
 import { normServiceShippingRefundable } from "../utils/buildBusinessServiceForApi";
+import { OFFERING_DELIVERY_CHARGE_LABEL, OFFERING_DELIVERY_OPTION_CARD_LABEL } from "../utils/profileOfferingShipping";
+import { businessDeliveredModeSelected, formatListingModeForDisplay } from "../utils/listingFulfillmentMode";
 import ProfileItemEditIcon from "./ProfileItemEditIcon";
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
@@ -70,6 +72,7 @@ function formatSkuBadgeValue(service) {
 }
 
 function formatShipBadgeValue(service) {
+  if (!businessDeliveredModeSelected(service)) return null;
   if (!isBusinessShippingApplicable(service)) return null;
   const shipping = parseBsShipping(service);
   if (shipping === BS_SHIPPING_FREE) return "Free";
@@ -97,7 +100,7 @@ function formatReturnableBadgeValue(service) {
   const days = String(service.bs_return_window_days ?? service.return_window_days ?? "").trim();
   const daysLabel = days && days !== "0" ? days : "5";
   if (isBuyerPaysShippingValue(service) && normServiceShippingRefundable(service) !== 1) {
-    return `Yes, ${daysLabel}d   (Shipping not refundable)`;
+    return `Yes, ${daysLabel}d   (${OFFERING_DELIVERY_CHARGE_LABEL} not refundable)`;
   }
   return `Yes, ${daysLabel}d`;
 }
@@ -126,7 +129,7 @@ function buildAttributeBadges(service) {
   const sku = formatSkuBadgeValue(service);
   if (sku) badges.push({ key: "sku", label: "SKU", value: sku });
   const ship = formatShipBadgeValue(service);
-  if (ship) badges.push({ key: "ship", label: "Ship", value: ship });
+  if (ship) badges.push({ key: "ship", label: OFFERING_DELIVERY_OPTION_CARD_LABEL, value: ship });
   const returnable = formatReturnableBadgeValue(service);
   if (returnable) badges.push({ key: "returnable", label: "Returnable", value: returnable });
   const qty = formatQtyBadgeValue(service);
@@ -198,6 +201,8 @@ const ProductCard = ({ service, onPress, onEdit, onDelete, showEditButton, showT
     return badges;
   }, [service]);
 
+  const modeLabel = useMemo(() => formatListingModeForDisplay(service), [service.bs_mode]);
+
   const choiceGroups = useMemo(
     () =>
       (service.bs_choice_groups || []).filter(
@@ -256,6 +261,7 @@ const ProductCard = ({ service, onPress, onEdit, onDelete, showEditButton, showT
     tags,
     conditionContent,
     attributeBadges,
+    modeLabel,
     choiceGroups,
     priceHeader,
     bountyHeader,
@@ -291,6 +297,7 @@ function renderProductCardBody({
   tags,
   conditionContent,
   attributeBadges,
+  modeLabel,
   choiceGroups,
   priceHeader,
   bountyHeader,
@@ -327,12 +334,25 @@ function renderProductCardBody({
         </View>
       </View>
 
-      {conditionContent ? (
-        <Text style={[metaTextStyle, styles.conditionLine, darkMode && styles.conditionLineDark]}>
-          Condition:{" "}
-          <Text style={[styles.conditionKind, darkMode && styles.conditionKindDark]}>{conditionContent.kind}</Text>
-          {conditionContent.detail ? ` — ${conditionContent.detail}` : ""}
-        </Text>
+      {(conditionContent || modeLabel) ? (
+        <View style={styles.conditionModeRow}>
+          {conditionContent ? (
+            <Text style={[metaTextStyle, styles.conditionLineInline, darkMode && styles.conditionLineDark]} numberOfLines={2}>
+              Condition:{" "}
+              <Text style={[styles.conditionKind, darkMode && styles.conditionKindDark]}>{conditionContent.kind}</Text>
+              {conditionContent.detail ? ` — ${conditionContent.detail}` : ""}
+            </Text>
+          ) : (
+            <View style={styles.conditionLineSpacer} />
+          )}
+          {modeLabel ? (
+            <View style={[styles.modeBadge, darkMode && styles.modeBadgeDark]}>
+              <Text style={[styles.modeBadgeText, darkMode && styles.modeBadgeTextDark]} numberOfLines={1}>
+                {modeLabel}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       ) : null}
 
       {attributeBadges.length > 0 || bountyHeader ? (
@@ -524,8 +544,45 @@ const styles = StyleSheet.create({
   conditionLine: {
     marginBottom: 8,
   },
+  conditionModeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 8,
+  },
+  conditionLineInline: {
+    flex: 1,
+    minWidth: 0,
+    marginBottom: 0,
+  },
+  conditionLineSpacer: {
+    flex: 1,
+    minWidth: 0,
+  },
   conditionLineDark: {
     color: "#c7c7cc",
+  },
+  modeBadgeRow: {
+    marginBottom: 8,
+  },
+  modeBadge: {
+    flexShrink: 0,
+    backgroundColor: "#e8f0fe",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  modeBadgeDark: {
+    backgroundColor: "#1e3a5f",
+  },
+  modeBadgeText: {
+    fontSize: 12,
+    color: "#1a56db",
+    fontWeight: "500",
+  },
+  modeBadgeTextDark: {
+    color: "#93c5fd",
   },
   conditionKind: {
     fontWeight: "700",

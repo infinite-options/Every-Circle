@@ -108,6 +108,7 @@ export function buildBusinessServiceForApi(service, idx = 0) {
     bs_available_quantity: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? String(service.bs_available_quantity || "").trim() : "",
     bs_condition_type: condType,
     bs_condition_detail: condType === "used" ? (service.bs_condition_detail || "").trim() : "",
+    bs_mode: String(service.bs_mode || "").trim(),
     ...buildBsShippingApiFields(service),
     bs_service_image_is_public: norm01(service.bs_service_image_is_public),
     bs_choice_groups: service.bs_choice_groups || [],

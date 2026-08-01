@@ -41,6 +41,7 @@ import TagSectionLabel from "../components/TagSectionLabel";
 import { API_BASE_URL, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { normalizeBusinessServiceFromApi as normalizeBusinessServiceRow, businessPaysCcFeeFromApiPayer, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { parsePrice, formatCostValue } from "../utils/priceUtils";
+import { formatAmountWithCurrencySymbol, getCurrencySymbol, stripLeadingCurrencySymbol } from "../utils/currencyDisplay";
 import { offeringBountyExceedsCost } from "../components/ExpertiseSection";
 import { isTruthyTaxableFlag, isValidTaxRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagListUtils";
@@ -55,6 +56,13 @@ import {
   parseBsShipping,
   parseBsShippingAmount,
 } from "../utils/businessServiceShipping";
+import FulfillmentModePicker from "../components/FulfillmentModePicker";
+import {
+  FIXED_DELIVERY_CHARGE_AMOUNT_LABEL,
+  getBusinessServiceShippingDropdownOptions,
+  OFFERING_DELIVERY_CHARGE_LABEL,
+} from "../utils/profileOfferingShipping";
+import { businessDeliveredModeSelected, countListingModes, validateListingFulfillmentForSave } from "../utils/listingFulfillmentMode";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getAddressSuggestions, getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
 import { buildBusinessModerationItem, isBusinessOwnerRestricted } from "../utils/businessModeration";
@@ -349,13 +357,6 @@ const SERVICE_CONDITION_OPTIONS = [
   { label: "Not applicable", value: "na" },
   { label: "New", value: "new" },
   { label: "Used", value: "used" },
-];
-
-const SERVICE_SHIPPING_OPTIONS = [
-  { label: "Not applicable", value: "na" },
-  { label: "Free shipping", value: "free" },
-  { label: "Buyer pays (fixed)", value: "buyer_fixed" },
-  { label: "Buyer pays (actual)", value: "buyer_actual" },
 ];
 
 const SERVICE_RETURNABLE_OPTIONS = [
@@ -1655,6 +1656,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         }
         return;
       }
+      if (!affirmBusinessFulfillmentOrHighlight()) return;
       if (!affirmBuyerPaysShippingOrHighlight()) return;
     }
 
@@ -2667,6 +2669,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setServiceFormTaxRateError(false);
     setServiceFormQuantityError(false);
     setServiceFormCostUnitError(false);
+    setServiceFormModeError(false);
     setProductTagInput("");
     setShowServiceForm(true);
     resetServiceProductImageState();
@@ -3054,6 +3057,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_condition_detail: "",
     bs_shipping: null,
     bs_shipping_amount: null,
+    bs_mode: "In-Person",
     bs_service_image_is_public: 1,
     bs_choice_groups: [],
     bs_special_instructions_enabled: 0,
@@ -3067,6 +3071,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [serviceFormQuantityError, setServiceFormQuantityError] = useState(false);
   /** Highlight cost unit when cost is set but unit is missing. */
   const [serviceFormCostUnitError, setServiceFormCostUnitError] = useState(false);
+  /** Highlight mode row when Add/Update blocked by missing or invalid fulfillment mode. */
+  const [serviceFormModeError, setServiceFormModeError] = useState(false);
 
   const handleServiceChange = (field, value) => {
     setServiceForm((prev) => ({ ...prev, [field]: value }));
@@ -3090,7 +3096,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   const handleServiceCostAmountChange = (value) => {
     const parsed = parseServiceCost(serviceForm.bs_cost || "");
-    const newAmount = value.replace(/\$/g, "");
+    const newAmount = stripLeadingCurrencySymbol(value);
     if (newAmount.toLowerCase() === "free") {
       handleServiceChange("bs_cost", "Free");
       return;
@@ -3132,6 +3138,15 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     }
     setServiceFormCostUnitError(false);
     setIsChanged(true);
+  };
+
+  const handleServiceBountyAmountBlur = () => {
+    const raw = String(serviceForm.bs_bounty || "").trim();
+    if (!raw) return;
+    const formatted = formatCostValue(raw);
+    if (formatted !== raw) {
+      handleServiceChange("bs_bounty", formatted);
+    }
   };
 
   const buildServiceRowForList = (formSource = serviceForm) => {
@@ -3324,6 +3339,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     if (!affirmServiceQuantityOrHighlight()) return;
     if (!affirmServiceTaxRateOrHighlight()) return;
     if (!affirmServiceCostUnitOrHighlight()) return;
+    if (!affirmBusinessFulfillmentOrHighlight()) return;
     if (!affirmBuyerPaysShippingOrHighlight()) return;
 
     const row = buildServiceRowForList();
@@ -3347,6 +3363,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setServiceFormTaxRateError(false);
     setServiceFormQuantityError(false);
     setServiceFormCostUnitError(false);
+    setServiceFormModeError(false);
     setProductTagInput("");
     resetServiceProductImageState();
   };
@@ -3409,6 +3426,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_is_returnable: normServiceReturnable(service),
       bs_return_window_days: returnWindowDaysForForm(service),
       bs_shipping_refundable: normServiceShippingRefundable(service),
+      bs_mode: String(service.bs_mode || "").trim(),
     });
     const remoteDisplay = resolveServiceImageDisplayUri(service.bs_image_key);
     const pendingUri = service._svcNewImageUri && String(service._svcNewImageUri).trim() !== "" ? String(service._svcNewImageUri).trim() : "";
@@ -3421,6 +3439,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setServiceFormTaxRateError(false);
     setServiceFormQuantityError(false);
     setServiceFormCostUnitError(false);
+    setServiceFormModeError(false);
     setProductTagInput("");
     setShowServiceForm(true);
 
@@ -3448,6 +3467,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setServiceFormTaxRateError(false);
     setServiceFormQuantityError(false);
     setServiceFormCostUnitError(false);
+    setServiceFormModeError(false);
     setProductTagInput("");
     resetServiceProductImageState();
   };
@@ -3731,11 +3751,26 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     return false;
   };
 
+  const affirmBusinessFulfillmentOrHighlight = () => {
+    const err = validateListingFulfillmentForSave(serviceForm);
+    if (err) {
+      setServiceFormModeError(true);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.alert(err);
+      } else {
+        Alert.alert("Validation", err);
+      }
+      return false;
+    }
+    setServiceFormModeError(false);
+    return true;
+  };
+
   const affirmBuyerPaysShippingOrHighlight = () => {
     const shipping = parseBsShipping(serviceForm);
     if (!isBuyerPaysShippingValue(shipping) && shipping !== "Buyer") return true;
     if (shipping === "Buyer" || !shipping) {
-      const msg = 'When "Buyer pays" is selected, enter a Fixed Shipping Amount or choose Actual Shipping Cost.';
+      const msg = 'When "Buyer pays" is selected, enter a fixed delivery charge or choose buyer pays (actual).';
       if (Platform.OS === "web" && typeof window !== "undefined") {
         window.alert(msg);
       } else {
@@ -3747,7 +3782,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       const amount = parseBsShippingAmount(serviceForm.bs_shipping_amount);
       const zeroOk = serviceForm.bs_shipping_amount === 0 || serviceForm.bs_shipping_amount === "0" || serviceForm.bs_shipping_amount === "0.00";
       if (amount == null && !zeroOk) {
-        const msg = "Enter a fixed shipping amount (including $0 if free to the buyer under Buyer Fixed).";
+        const msg = "Enter a fixed delivery charge (including $0 if free to the buyer under Buyer pays fixed).";
         if (Platform.OS === "web" && typeof window !== "undefined") {
           window.alert(msg);
         } else {
@@ -3789,20 +3824,33 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       (shippingValue === "Buyer" ||
         !shippingValue ||
         (shippingValue === BS_SHIPPING_BUYER_FIXED && fixedAmount == null && !fixedAmountZero));
+    const shippingDropdownValue = getServiceShippingDropdownValue(serviceForm);
+    const isTaxable = serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1";
+    const modeAddBlocked = countListingModes(serviceForm.bs_mode) < 1;
+    const deliveredMode = businessDeliveredModeSelected(serviceForm);
+    const deliveredShippingInvalid =
+      deliveredMode &&
+      (shippingDropdownValue === "na" ||
+        (shippingValue === BS_SHIPPING_BUYER_FIXED && fixedAmount == null && !fixedAmountZero));
+    const highlightShippingDropdown = deliveredMode && parseBsShipping(serviceForm) == null;
+    const highlightFixedAmount =
+      deliveredMode && isFixedShipping(serviceForm) && fixedAmount == null && !fixedAmountZero;
+    const taxRateHighlight =
+      isTaxable && (!String(serviceForm.bs_tax_rate ?? "").trim() || !isValidTaxRate(serviceForm.bs_tax_rate));
     const parsedServiceCost = parseServiceCost(serviceForm.bs_cost || "");
     const costUnitRequired = serviceCostUnitIsRequired(serviceForm.bs_cost);
     const costUnitHighlight = serviceFormCostUnitError || costUnitRequired;
-    const addServiceBlocked = taxAddBlocked || quantityAddBlocked || costUnitAddBlocked || buyerPaysShippingBlocked;
+    const addServiceBlocked = taxAddBlocked || quantityAddBlocked || costUnitAddBlocked || modeAddBlocked || buyerPaysShippingBlocked || deliveredShippingInvalid;
     const bountyExceedsCost = offeringBountyExceedsCost({
       profile_expertise_bounty_type: serviceForm.bs_bounty_type,
       bounty: serviceForm.bs_bounty,
       cost: serviceForm.bs_cost,
     });
-    const shippingDropdownValue = getServiceShippingDropdownValue(serviceForm);
     const serviceDropdownStyle = [styles.serviceFormDropdown, darkMode && styles.darkServiceFormDropdown];
     const serviceDropdownContainerStyle = [styles.serviceFormDropdownContainer, darkMode && styles.darkServiceFormDropdownContainer];
     const imageIsPublic = serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1";
-    const isTaxable = serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1";
+    const serviceCurrencyCode = serviceForm.bs_cost_currency || "USD";
+    const currencySymbol = getCurrencySymbol(serviceCurrencyCode);
     const isReturnable = serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1";
     const isQtyUnlimited = serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1";
     const specialInstructionsEnabled = serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1";
@@ -3922,30 +3970,36 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         <View style={[styles.serviceFormSectionDivider, darkMode && styles.darkServiceFormSectionDivider]} />
 
         <View style={styles.serviceFormSection}>
-          <Text style={[styles.serviceFormSectionTitle, darkMode && styles.darkServiceFormSectionTitle]}>Pricing</Text>
+          <View style={styles.serviceFormSectionHeaderRow}>
+            <Text style={[styles.serviceFormSectionTitle, darkMode && styles.darkServiceFormSectionTitle, { marginBottom: 0 }]}>Pricing</Text>
+            <Dropdown
+              style={[...serviceDropdownStyle, styles.serviceFormHeaderCurrencyDropdown]}
+              data={SERVICE_CURRENCY_OPTIONS}
+              labelField='label'
+              valueField='value'
+              placeholder='USD'
+              placeholderTextColor={darkMode ? "#999" : "#666"}
+              value={serviceForm.bs_cost_currency || "USD"}
+              onChange={(item) => {
+                setServiceForm((prev) => ({
+                  ...prev,
+                  bs_cost_currency: item.value,
+                  bs_bounty_currency: item.value,
+                }));
+                setIsChanged(true);
+              }}
+              containerStyle={serviceDropdownContainerStyle}
+              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+              activeColor={darkMode ? "#404040" : "#f0f0f0"}
+              maxHeight={220}
+              flatListProps={{ nestedScrollEnabled: true }}
+            />
+          </View>
           <View style={styles.serviceFormPricingGrid}>
             <View style={styles.serviceFormPricingCol}>
               <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, serviceFormCostUnitError && { color: "#FF3B30" }]}>Cost</Text>
               <View style={styles.serviceFormInlineControls}>
-                <Dropdown
-                  style={[...serviceDropdownStyle, styles.serviceFormCurrencyDropdown]}
-                  data={SERVICE_CURRENCY_OPTIONS}
-                  labelField='label'
-                  valueField='value'
-                  placeholder='USD'
-                  placeholderTextColor={darkMode ? "#999" : "#666"}
-                  value={serviceForm.bs_cost_currency || "USD"}
-                  onChange={(item) => {
-                    handleServiceChange("bs_cost_currency", item.value);
-                    setIsChanged(true);
-                  }}
-                  containerStyle={serviceDropdownContainerStyle}
-                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                  maxHeight={220}
-                  flatListProps={{ nestedScrollEnabled: true }}
-                />
                 <TextInput
                   style={[styles.serviceFormFieldInput, styles.serviceFormInlineAmountInput, darkMode && styles.darkServiceFormFieldInput, serviceFormCostUnitError && styles.serviceFormFieldInputError]}
                   value={(() => {
@@ -3953,11 +4007,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                     const amount = parsed.amount;
                     if (!amount) return "";
                     if (amount.toLowerCase() === "free") return "Free";
-                    return amount;
+                    return formatAmountWithCurrencySymbol(amount, serviceCurrencyCode);
                   })()}
                   onChangeText={handleServiceCostAmountChange}
                   onBlur={handleServiceCostAmountBlur}
-                  placeholder='0.00'
+                  placeholder={`${currencySymbol}0.00`}
                   keyboardType='decimal-pad'
                   placeholderTextColor={darkMode ? "#888" : "#999"}
                 />
@@ -3966,7 +4020,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                   data={SERVICE_COST_UNIT_OPTIONS}
                   labelField='label'
                   valueField='value'
-                  placeholder='Unit'
+                  placeholder='Unit *'
                   placeholderStyle={{ color: costUnitHighlight ? "#FF3B30" : darkMode ? "#999" : "#666" }}
                   value={parsedServiceCost.unit || null}
                   onChange={handleServiceCostUnitChange}
@@ -4013,7 +4067,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                   <View style={styles.serviceFormInputWithSuffix}>
                     <TextInput
                       ref={serviceTaxRateInputRef}
-                      style={[styles.serviceFormFieldInput, styles.serviceFormInlineAmountInput, darkMode && styles.darkServiceFormFieldInput, serviceFormTaxRateError && styles.serviceFormFieldInputError]}
+                      style={[styles.serviceFormFieldInput, styles.serviceFormTaxRateInput, darkMode && styles.darkServiceFormFieldInput, taxRateHighlight && styles.serviceFormFieldInputError]}
                       value={String(serviceForm.bs_tax_rate ?? "")}
                       onChangeText={(t) => {
                         handleServiceChange("bs_tax_rate", t.replace(/[^0-9.]/g, ""));
@@ -4064,35 +4118,19 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                   flatListProps={{ nestedScrollEnabled: true }}
                 />
                 {serviceForm.bs_bounty_type !== "none" ? (
-                  <>
-                    <Dropdown
-                      style={[...serviceDropdownStyle, styles.serviceFormCurrencyDropdown]}
-                      data={SERVICE_CURRENCY_OPTIONS}
-                      labelField='label'
-                      valueField='value'
-                      placeholder='USD'
-                      placeholderTextColor={darkMode ? "#999" : "#666"}
-                      value={serviceForm.bs_bounty_currency || "USD"}
-                      onChange={(item) => {
-                        handleServiceChange("bs_bounty_currency", item.value);
-                        setIsChanged(true);
-                      }}
-                      containerStyle={serviceDropdownContainerStyle}
-                      itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                      selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                      activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                      maxHeight={220}
-                      flatListProps={{ nestedScrollEnabled: true }}
-                    />
-                    <TextInput
-                      style={[styles.serviceFormFieldInput, styles.serviceFormInlineAmountInput, darkMode && styles.darkServiceFormFieldInput]}
-                      value={serviceForm.bs_bounty}
-                      onChangeText={(t) => handleServiceChange("bs_bounty", t)}
-                      placeholder='0.00'
-                      keyboardType='decimal-pad'
-                      placeholderTextColor={darkMode ? "#888" : "#999"}
-                    />
-                  </>
+                  <TextInput
+                    style={[styles.serviceFormFieldInput, styles.serviceFormInlineAmountInput, darkMode && styles.darkServiceFormFieldInput]}
+                    value={(() => {
+                      const amount = String(serviceForm.bs_bounty || "").trim();
+                      if (!amount) return "";
+                      return formatAmountWithCurrencySymbol(amount, serviceCurrencyCode);
+                    })()}
+                    onChangeText={(t) => handleServiceChange("bs_bounty", stripLeadingCurrencySymbol(t))}
+                    onBlur={handleServiceBountyAmountBlur}
+                    placeholder={`${currencySymbol}0.00`}
+                    keyboardType='decimal-pad'
+                    placeholderTextColor={darkMode ? "#888" : "#999"}
+                  />
                 ) : null}
               </View>
             </View>
@@ -4108,11 +4146,32 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
         <View style={styles.serviceFormSection}>
           <Text style={[styles.serviceFormSectionTitle, darkMode && styles.darkServiceFormSectionTitle]}>Fulfillment</Text>
+          <View style={styles.serviceFormFulfillmentModeRow}>
+            <FulfillmentModePicker
+              modeStr={serviceForm.bs_mode || ""}
+              onChange={(modeStr) => {
+                setServiceForm((prev) => {
+                  const next = { ...prev, bs_mode: modeStr };
+                  if (!businessDeliveredModeSelected({ bs_mode: modeStr })) {
+                    return { ...next, ...applyServiceShippingDropdownValue("na") };
+                  }
+                  return next;
+                });
+                setServiceFormModeError(false);
+                setIsChanged(true);
+              }}
+              darkMode={darkMode}
+              required
+              highlight={serviceFormModeError && modeAddBlocked}
+              accentColor={BUSINESS_PROFILE_ACCENT}
+              accentDarkColor={BUSINESS_PROFILE_ACCENT_DARK}
+            />
+          </View>
           <View style={styles.serviceFormFulfillmentGrid}>
             <View style={styles.serviceFormFulfillmentCol}>
               <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Condition</Text>
               <Dropdown
-                style={serviceDropdownStyle}
+                style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown]}
                 data={SERVICE_CONDITION_OPTIONS}
                 labelField='label'
                 valueField='value'
@@ -4151,10 +4210,13 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             </View>
 
             <View style={styles.serviceFormFulfillmentCol}>
-              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Shipping/delivery</Text>
+              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>
+                {OFFERING_DELIVERY_CHARGE_LABEL}
+                {deliveredMode ? " *" : ""}
+              </Text>
               <Dropdown
-                style={serviceDropdownStyle}
-                data={SERVICE_SHIPPING_OPTIONS}
+                style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown, highlightShippingDropdown && styles.serviceFormFieldInputError]}
+                data={getBusinessServiceShippingDropdownOptions(serviceForm)}
                 labelField='label'
                 valueField='value'
                 value={shippingDropdownValue}
@@ -4171,11 +4233,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
               />
               {isFixedShipping(serviceForm) ? (
                 <View style={styles.serviceFormFulfillmentExtra}>
-                  <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Fixed shipping amount</Text>
-                  <View style={[styles.fixedShippingAmountRow, styles.serviceFormFixedShippingRow, styles.serviceFormFulfillmentExtraInput, darkMode && styles.darkServiceFormFixedShippingRow]}>
-                    <Text style={[styles.fixedShippingAmountPrefix, darkMode && { color: "#ccc" }]}>$</Text>
+                  <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>{FIXED_DELIVERY_CHARGE_AMOUNT_LABEL}</Text>
+                  <View style={[styles.serviceFormOfferingFixedShippingRow, darkMode && styles.darkServiceFormOfferingFixedShippingRow, highlightFixedAmount && styles.serviceFormFieldInputError]}>
+                    <Text style={[styles.serviceFormOfferingFixedShippingPrefix, darkMode && styles.darkServiceFormOfferingFixedShippingPrefix]}>{currencySymbol}</Text>
                     <TextInput
-                      style={[styles.fixedShippingAmountInput, darkMode && styles.darkInput, styles.serviceFormFixedShippingInput]}
+                      style={[styles.serviceFormOfferingFixedShippingInput, darkMode && styles.darkServiceFormOfferingFixedShippingInput]}
                       value={shippingAmountDisplayValue(serviceForm)}
                       onFocus={() => {
                         setServiceForm((prev) => ({
@@ -4210,7 +4272,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                           handleServiceChange("bs_shipping_amount", nextAmount);
                         }
                       }}
-                      placeholder='Fixed shipping amount'
+                      placeholder='Fixed delivery charge'
                       keyboardType='decimal-pad'
                       placeholderTextColor={darkMode ? "#888" : "#999"}
                     />
@@ -4222,7 +4284,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             <View style={styles.serviceFormFulfillmentCol}>
               <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Returnable</Text>
               <Dropdown
-                style={serviceDropdownStyle}
+                style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown]}
                 data={SERVICE_RETURNABLE_OPTIONS}
                 labelField='label'
                 valueField='value'
@@ -4279,7 +4341,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                           size={18}
                           color={serviceForm.bs_shipping_refundable === 1 || serviceForm.bs_shipping_refundable === "1" ? "#111" : darkMode ? "#aaa" : "#666"}
                         />
-                        <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>Shipping is refundable</Text>
+                        <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>{OFFERING_DELIVERY_CHARGE_LABEL} is refundable</Text>
                       </TouchableOpacity>
                     ) : null}
                   </View>
@@ -4290,7 +4352,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             <View ref={serviceQuantitySectionRef} collapsable={false} style={styles.serviceFormFulfillmentCol}>
               <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, serviceFormQuantityError && { color: "#FF3B30" }]}>Quantity</Text>
               <Dropdown
-                style={[...serviceDropdownStyle, serviceFormQuantityError && styles.serviceFormFieldInputError]}
+                style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown, serviceFormQuantityError && styles.serviceFormFieldInputError]}
                 data={SERVICE_QUANTITY_OPTIONS}
                 labelField='label'
                 valueField='value'
@@ -5624,16 +5686,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
+    alignItems: "flex-start",
   },
   serviceFormPricingCol: {
     flex: 1,
     minWidth: 160,
+  },
+  serviceFormInlineAmountInput: {
+    flex: 1,
+    minWidth: 72,
+  },
+  serviceFormTaxRateInput: {
+    width: 108,
+    minWidth: 108,
+    maxWidth: 108,
+    flexGrow: 0,
+    flexShrink: 0,
   },
   serviceFormFulfillmentGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
     alignItems: "flex-start",
+  },
+  serviceFormFulfillmentModeRow: {
+    marginBottom: 12,
   },
   serviceFormFulfillmentCol: {
     flex: 1,
@@ -5664,9 +5741,42 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  serviceFormInlineAmountInput: {
+  serviceFormOfferingFixedShippingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#fff",
+    minHeight: 40,
+    width: "100%",
+  },
+  darkServiceFormOfferingFixedShippingRow: {
+    borderColor: "#555",
+    backgroundColor: "#2d2d2d",
+  },
+  serviceFormOfferingFixedShippingPrefix: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#555",
+  },
+  darkServiceFormOfferingFixedShippingPrefix: {
+    color: "#ccc",
+  },
+  serviceFormOfferingFixedShippingInput: {
     flex: 1,
     minWidth: 72,
+    fontSize: 14,
+    paddingVertical: Platform.OS === "ios" ? 4 : 2,
+    color: "#111",
+    backgroundColor: "transparent",
+    borderWidth: 0,
+  },
+  darkServiceFormOfferingFixedShippingInput: {
+    color: "#fff",
   },
   serviceFormDropdown: {
     borderWidth: 1,
@@ -5687,6 +5797,13 @@ const styles = StyleSheet.create({
   },
   darkServiceFormDropdownContainer: {
     backgroundColor: "#2d2d2d",
+  },
+  serviceFormHeaderCurrencyDropdown: {
+    width: 84,
+    flexGrow: 0,
+  },
+  serviceFormFulfillmentDropdown: {
+    width: "100%",
   },
   serviceFormCurrencyDropdown: {
     width: 84,

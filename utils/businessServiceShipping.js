@@ -144,15 +144,15 @@ export function applyBsShippingFromApi(service) {
 /** Human-readable line for product cards. */
 export function formatBsShippingDisplay(service) {
   const shipping = parseBsShipping(service);
-  if (shipping === BS_SHIPPING_FREE) return "Shipping: Free shipping";
-  if (shipping === BS_SHIPPING_BUYER_ACTUAL) return "Shipping: Buyer pays (actual cost)";
+  if (shipping === BS_SHIPPING_FREE) return "Delivery: Free";
+  if (shipping === BS_SHIPPING_BUYER_ACTUAL) return "Delivery: Buyer pays (actual cost)";
   if (shipping === BS_SHIPPING_BUYER_FIXED) {
     const amount = parseBsShippingAmount(service?.bs_shipping_amount ?? service?.bs_fixed_shipping_amount);
     if (amount == null && (service?.bs_shipping_amount === 0 || service?.bs_shipping_amount === "0")) {
-      return "Shipping: Buyer pays ($0.00)";
+      return "Delivery: Buyer pays ($0.00)";
     }
-    if (amount == null) return "Shipping: Buyer pays (fixed)";
-    return `Shipping: Buyer pays ($${Number(amount).toFixed(2)})`;
+    if (amount == null) return "Delivery: Buyer pays (fixed)";
+    return `Delivery: Buyer pays ($${Number(amount).toFixed(2)})`;
   }
   return null;
 }
