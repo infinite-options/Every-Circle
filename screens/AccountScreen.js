@@ -716,12 +716,113 @@ function formatLedgerEntryDate(entry) {
   });
 }
 
-/** Prefer wallet ledger availability when present; otherwise infer from line + wallet rules. */
-function bountyProceedsStatus(line, ledgerAvailabilityByTxnUid) {
+function enrichBountyLineFromPurchases(line, transactionData) {
+  if (!line || !Array.isArray(transactionData)) return line;
+  const linkedTxnUid = String(line.ti_transaction_id || line.transaction_uid || "").trim();
+  const linkedTxn = linkedTxnUid ? transactionData.find((t) => String(t.transaction_uid || "").trim() === linkedTxnUid) : null;
+  if (!linkedTxn) return line;
+  return {
+    ...line,
+    ti_received_qty: line.ti_received_qty ?? linkedTxn.ti_received_qty ?? linkedTxn.received_item_count,
+    ti_bs_qty: line.ti_bs_qty ?? linkedTxn.ti_bs_qty ?? linkedTxn.item_count,
+    ti_bs_return_window_days: line.ti_bs_return_window_days ?? linkedTxn.ti_bs_return_window_days ?? linkedTxn.return_window_days,
+    ti_bs_is_returnable: line.ti_bs_is_returnable ?? linkedTxn.ti_bs_is_returnable ?? linkedTxn.is_returnable,
+    bounty_released_at: line.bounty_released_at ?? linkedTxn.bounty_released_at,
+  };
+}
+
+/** Merge receipt fields from bounty_results lines onto purchase list rows (same account-screen payload). */
+function enrichPurchasesFromBountyResults(purchaseRows, bountyLines) {
+  if (!Array.isArray(purchaseRows) || !purchaseRows.length || !Array.isArray(bountyLines) || !bountyLines.length) {
+    return purchaseRows;
+  }
+  const bountyByTxnUid = {};
+  const bountyByTiUid = {};
+  for (const line of bountyLines) {
+    if (!line || typeof line !== "object") continue;
+    const txnUid = String(line.ti_transaction_id || line.transaction_uid || "").trim();
+    const tiUid = String(line.ti_uid || line.tb_ti_id || "").trim();
+    if (txnUid) bountyByTxnUid[txnUid] = line;
+    if (tiUid) bountyByTiUid[tiUid] = line;
+  }
+  return purchaseRows.map((row) => {
+    if (!row || typeof row !== "object" || isReturnListRow(row)) return row;
+    const txnUid = String(row.transaction_uid || "").trim();
+    const tiUid = String(row.ti_uid || row.transaction_item_uid || "").trim();
+    const bountyLine = (tiUid && bountyByTiUid[tiUid]) || (txnUid && bountyByTxnUid[txnUid]);
+    if (!bountyLine) return row;
+
+    const patches = {};
+    const bountyReceived = bountyLine.ti_received_qty;
+    if (bountyReceived != null && String(bountyReceived).trim() !== "" && (row.ti_received_qty == null || String(row.ti_received_qty).trim() === "")) {
+      patches.ti_received_qty = bountyReceived;
+    }
+    if (bountyLine.ti_received_at && !row.ti_received_at) {
+      patches.ti_received_at = bountyLine.ti_received_at;
+    }
+    const receivedCount = parseInt(row.received_item_count ?? row.delivered_item_count, 10);
+    const bountyReceivedNum = Math.max(0, Math.round(parsePrice(bountyReceived)));
+    if (bountyReceivedNum > 0 && !Number.isFinite(receivedCount)) {
+      patches.received_item_count = bountyReceivedNum;
+      patches.delivered_item_count = bountyReceivedNum;
+    }
+    return Object.keys(patches).length ? { ...row, ...patches } : row;
+  });
+}
+
+/** Bounty dollars still pending on a chart date (earned by then, not yet released by then). */
+function bountyAmountPendingOnChartDate(line, dateKey, ledgerAvailabilityByTxnUid, ledgerRows) {
+  const amount = parseFloat(line.bounty_earned) || 0;
+  if (amount <= 0) return 0;
+  const earnedDt = parseTransactionDateTime(line);
+  if (!earnedDt || localDateKey(earnedDt) > dateKey) return 0;
+
+  const releasedRaw = line?.bounty_released_at;
+  if (releasedRaw != null && String(releasedRaw).trim() !== "") {
+    const releaseDt = new Date(releasedRaw);
+    if (!Number.isNaN(releaseDt.getTime()) && localDateKey(releaseDt) <= dateKey) return 0;
+    return amount;
+  }
+
+  const status = bountyProceedsStatus(line, ledgerAvailabilityByTxnUid, ledgerRows);
+  return status === "useable" ? 0 : amount;
+}
+
+/** Match a wallet ledger row to a bounty_results line (transaction + earned amount). */
+function resolveLedgerAvailabilityForBountyLine(line, ledgerRows) {
+  if (!line || !Array.isArray(ledgerRows)) return null;
   const txnUid = String(line?.ti_transaction_id || line?.transaction_uid || "").trim();
-  const ledgerAvail = txnUid && ledgerAvailabilityByTxnUid ? ledgerAvailabilityByTxnUid[txnUid] : null;
-  if (ledgerAvail === "useable") return "useable";
-  if (ledgerAvail === "pending") {
+  if (!txnUid) return null;
+  const earned = parsePrice(line?.bounty_earned ?? line?.tb_amount);
+  const candidates = ledgerRows.filter((entry) => {
+    if (String(entry?.transaction_uid || "").trim() !== txnUid) return false;
+    const type = String(entry?.entry_type || "").trim().toLowerCase();
+    return type === "bounty_earned" || type === "bounty_reversal";
+  });
+  if (!candidates.length) return null;
+  if (Number.isFinite(earned) && earned > 0) {
+    const byAmount = candidates.find((entry) => Math.abs(parsePrice(entry.amount) - earned) < 0.01);
+    if (byAmount?.availability) return byAmount.availability;
+  }
+  if (candidates.some((entry) => entry.availability === "pending")) return "pending";
+  if (candidates.some((entry) => entry.availability === "useable")) return "useable";
+  return candidates[0]?.availability ?? null;
+}
+
+function bountyLineIsReleased(line) {
+  const releasedAt = line?.bounty_released_at;
+  return releasedAt != null && String(releasedAt).trim() !== "";
+}
+
+/** Prefer wallet ledger availability when present; otherwise infer from line + wallet rules. */
+function bountyProceedsStatus(line, ledgerAvailabilityByTxnUid, ledgerRows = null) {
+  const ledgerAvail = resolveLedgerAvailabilityForBountyLine(line, ledgerRows);
+  const txnUid = String(line?.ti_transaction_id || line?.transaction_uid || "").trim();
+  const ledgerAvailTxn = !ledgerAvail && txnUid && ledgerAvailabilityByTxnUid ? ledgerAvailabilityByTxnUid[txnUid] : null;
+  const availability = ledgerAvail || ledgerAvailTxn;
+
+  if (availability === "useable") return "useable";
+  if (availability === "pending") {
     const received = parsePrice(line?.ti_received_qty ?? 0);
     const ordered = parsePrice(line?.ti_bs_qty ?? 0);
     const verified = ordered > 0 && received >= ordered;
@@ -733,7 +834,7 @@ function bountyProceedsStatus(line, ledgerAvailabilityByTxnUid) {
   const verified = ordered > 0 && received >= ordered;
   const returnWindowDays = parsePrice(line?.ti_bs_return_window_days ?? line?.return_window_days ?? 0);
   const isReturnable = parseOptionalBoolean(line?.ti_bs_is_returnable ?? line?.is_returnable ?? line?.bs_is_returnable) !== false;
-  if (!verified) return "pending";
+  if (!verified || !bountyLineIsReleased(line)) return "pending";
   if (isReturnable && returnWindowDays > 0) return "pending_until_window";
   return "useable";
 }
@@ -750,15 +851,15 @@ function bountyProceedsStatusLabel(status) {
   }
 }
 
-/** Latest ledger availability per transaction_uid (bounty + sale proceeds entries). */
+/** Latest ledger availability per transaction_uid (bounty + sale proceeds entries). Pending wins over useable. */
 function buildLedgerAvailabilityByTxnUid(ledgerRows) {
   const map = {};
   if (!Array.isArray(ledgerRows)) return map;
   for (const entry of ledgerRows) {
     const txnUid = String(entry?.transaction_uid || "").trim();
     if (!txnUid || !entry.availability) continue;
-    if (entry.availability === "useable") map[txnUid] = "useable";
-    else if (!map[txnUid]) map[txnUid] = "pending";
+    if (entry.availability === "pending") map[txnUid] = "pending";
+    else if (!map[txnUid] && entry.availability === "useable") map[txnUid] = "useable";
   }
   return map;
 }
@@ -779,8 +880,8 @@ function resolveOrderUidForTransactionUid(txnUid, ...sources) {
 }
 
 /** Seller net earnings follow the same verification / return-window rules as bounty. */
-function sellerProceedsStatus(row, ledgerAvailabilityByTxnUid) {
-  return bountyProceedsStatus(row, ledgerAvailabilityByTxnUid);
+function sellerProceedsStatus(row, ledgerAvailabilityByTxnUid, ledgerRows = null) {
+  return bountyProceedsStatus(row, ledgerAvailabilityByTxnUid, ledgerRows);
 }
 
 /** Settings Debug Mode: log account-screen/personal purchase extraction (txRaw + duplicate txn uids). */
@@ -1899,9 +2000,31 @@ function collectOrderUidsNeedingReturnStatusHydration(purchaseRows) {
   return [...uids];
 }
 
-/** Personal PURCHASES: order UIDs needing order_list_hydration (return chips + shipping progress). */
+/** Buyer PURCHASES: shipped orders whose received totals are missing or incomplete on the list row. */
+function collectOrderUidsNeedingBuyerPurchaseReceivedHydration(purchaseRows) {
+  const uids = new Set();
+  for (const row of purchaseRows || []) {
+    if (isReturnListRow(row)) continue;
+    if (!orderNeedsShipping(row)) continue;
+    const orderUid = resolveListRowOrderUid(row);
+    if (!orderUid || orderUid === "—") continue;
+    if (getOrderReceivedStatusFromSaleRows([row]) === "Yes") continue;
+    const progress = getOrderShippingProgress([row]);
+    if (progress !== "partial" && progress !== "complete") continue;
+    uids.add(orderUid);
+  }
+  return [...uids];
+}
+
+/** Personal PURCHASES: order UIDs needing order_list_hydration (return chips + shipping + received). */
 function collectOrderUidsNeedingPersonalPurchaseHydration(purchaseRows) {
-  return [...new Set([...collectOrderUidsNeedingReturnStatusHydration(purchaseRows), ...collectOrderUidsNeedingShippingProgressHydration(purchaseRows)])];
+  return [
+    ...new Set([
+      ...collectOrderUidsNeedingReturnStatusHydration(purchaseRows),
+      ...collectOrderUidsNeedingShippingProgressHydration(purchaseRows),
+      ...collectOrderUidsNeedingBuyerPurchaseReceivedHydration(purchaseRows),
+    ]),
+  ];
 }
 
 /** Top-level map from GET account-screen/personal|business. */
@@ -2211,6 +2334,26 @@ async function hydrateSellerRowsReceivedFromOrderDetails(sellerRows, orderUids, 
   }
   if (!results.length) return nextRows;
   return applyBusinessSellerHydrationPatches(nextRows, foldBusinessSellerHydrationResults(results));
+}
+
+/** Fallback when order_list_hydration is missing — GET /orders/:uid for buyer purchase received totals. */
+async function hydratePersonalPurchasesReceivedFromOrderDetails(purchaseRows, orderUids, fetchCtx = {}, patchSetters = {}) {
+  const targets = [...new Set((orderUids || []).filter((uid) => uid && uid !== "—"))];
+  if (!targets.length || !Array.isArray(purchaseRows)) return purchaseRows;
+
+  const results = [];
+  let nextRows = purchaseRows;
+  for (const orderUid of targets) {
+    try {
+      const orderDetail = await fetchOrderDetailApi(orderUid, fetchCtx);
+      results.push(buildPersonalPurchaseHydrationResult(orderUid, orderDetail));
+      nextRows = mergeSellerLineReceivedFromOrderDetail(nextRows, orderUid, orderDetail);
+    } catch (err) {
+      console.warn(`[AccountScreen] purchase received hydration fetch failed for ${orderUid}:`, err?.message || err);
+    }
+  }
+  if (!results.length) return nextRows;
+  return applyPersonalPurchaseHydrationPatches(nextRows, foldPersonalPurchaseHydrationResults(results), patchSetters);
 }
 
 /**
@@ -5504,16 +5647,20 @@ function orderNeedsShipping(source) {
 }
 
 /**
- * Order/line does not require shipping (pickup, digital, or fulfillment_status=not_required).
- * Delivered should show "—" in that case — not Shipped / Pending.
+ * Order/line does not require shipping (pickup, virtual, or fulfillment_status=not_required).
+ * Delivered column shows "—" — not Shipped / Delivered / Pending.
  */
 function orderFulfillmentIsNotRequired(row) {
   if (!row || typeof row !== "object") return false;
-  const status = String(row.fulfillment_status || row.shipping_status || row.order_fulfillment_status || row.transaction_fulfillment_status || "")
+  const method = getLineFulfillmentMethod(row);
+  if (method === "pickup" || method === "virtual") return true;
+  if (isTruthyShippingFlag(row.ti_shipping_not_required) || isTruthyShippingFlag(row.shipping_not_required)) return true;
+
+  const status = String(row.fulfillment_status || row.shipping_status || row.order_fulfillment_status || row.transaction_fulfillment_status || row.ti_fulfillment_status || "")
     .trim()
     .toLowerCase();
   if (NOT_REQUIRED_FULFILLMENT_STATUSES.has(status)) return true;
-  if (isTruthyShippingFlag(row.shipping_not_required) || isTruthyShippingFlag(row.fulfillment_not_required)) return true;
+  if (isTruthyShippingFlag(row.fulfillment_not_required)) return true;
 
   if (row.has_shippable_items === 0 || row.has_shippable_items === "0" || row.has_shippable_items === false) return true;
 
@@ -5542,6 +5689,10 @@ function getLineFulfillmentStatus(line) {
 /** False when backend marks the line as not requiring shipping (do not send in_transit for these). */
 function lineRequiresShipping(line) {
   if (!line || typeof line !== "object") return false;
+  const method = getLineFulfillmentMethod(line);
+  if (method === "pickup" || method === "virtual") return false;
+  if (isTruthyShippingFlag(line.ti_shipping_not_required) || isTruthyShippingFlag(line.shipping_not_required)) return false;
+
   const status = getLineFulfillmentStatus(line);
   if (NOT_REQUIRED_FULFILLMENT_STATUSES.has(status)) return false;
   if (isTruthyShippingFlag(line.shipping_required) || isTruthyShippingFlag(line.needs_shipping) || isTruthyShippingFlag(line.requires_shipping)) {
@@ -5569,18 +5720,21 @@ function getLineShippedQty(line) {
   if (!line || typeof line !== "object") return 0;
   const explicit = parseInt(line.shipped_qty ?? line.ti_shipped_qty ?? line.fulfillment_shipped_qty ?? line.shipped_quantity ?? line.ti_shipped_quantity, 10);
   if (Number.isFinite(explicit) && explicit >= 0) return explicit;
-  // Legacy: fully marked shipped/in_transit with no qty fields → treat purchased qty as shipped.
+
+  const purchased = getLinePurchasedQty(line);
   const status = getLineFulfillmentStatus(line);
-  if (
-    SHIPPED_FULFILLMENT_STATUSES.has(status) ||
+  const hasSellerShipEvidence =
     isTruthyShippingFlag(line.shipped) ||
     isTruthyShippingFlag(line.is_shipped) ||
     isTruthyShippingFlag(line.ti_shipped) ||
-    line.ti_shipped_at ||
-    line.shipped_at ||
-    line.fulfilled_at
-  ) {
-    return getLinePurchasedQty(line);
+    !!line.ti_shipped_at ||
+    !!line.shipped_at ||
+    !!line.fulfilled_at ||
+    !!(line.ti_tracking_number || line.tracking_number || line.ti_tracking_carrier || line.tracking_carrier);
+
+  // Seller ship workflow only — buyer verify-only ti_fulfillment_status=delivered must not count as shipped.
+  if (hasSellerShipEvidence && (status === "in_transit" || status === "shipped" || status === "fulfilled")) {
+    return purchased > 0 ? purchased : 0;
   }
   return 0;
 }
@@ -5874,8 +6028,25 @@ function getOrderShippingProgress(sources) {
     return "none";
   }
 
-  if (isTruthyShippingFlag(first.all_items_shipped) || ["in_transit", "shipped", "delivered", "fulfilled", "complete"].includes(txnStatus)) {
+  if (isTruthyShippingFlag(first.all_items_shipped)) {
     return "complete";
+  }
+  if (txnStatus === "delivered") {
+    // Buyer receipt verify can set delivered without seller ship — require shipped qty evidence.
+    if (Number.isFinite(shippedCountField) && Number.isFinite(shippableCount) && shippableCount > 0) {
+      if (shippedCountField >= shippableCount) return "complete";
+      if (shippedCountField > 0) return "partial";
+    }
+    return "none";
+  }
+  if (["in_transit", "shipped", "fulfilled", "complete"].includes(txnStatus)) {
+    if (Number.isFinite(shippedCountField) && shippedCountField > 0) {
+      if (Number.isFinite(shippableCount) && shippableCount > 0) {
+        return shippedCountField >= shippableCount ? "complete" : "partial";
+      }
+      return "complete";
+    }
+    return "none";
   }
   if (txnStatus === "partial" || txnStatus === "partially_shipped") return "partial";
   // Summary status can stay not_shipped while individual lines are partially shipped.
@@ -6084,26 +6255,51 @@ function collectOrderUidsNeedingSellerOrderDetailHydration(sellerLines) {
   return [...uids];
 }
 
-/** Prefer live row shipped counts over a stale hydration cache (e.g. partial → complete). */
+/** True when the purchase list Delivered column should show "—" (pickup/virtual/no shippable items). */
+function purchaseRowDeliveredNotApplicable(row) {
+  if (!row || typeof row !== "object") return true;
+  if (row.has_shippable_items === 0 || row.has_shippable_items === "0" || row.has_shippable_items === false) return true;
+  const status = String(row.fulfillment_status || row.ti_fulfillment_status || row.shipping_status || "").trim().toLowerCase();
+  if (status === "not_required") return true;
+  return orderFulfillmentIsNotRequired(row);
+}
+
+/** Purchased units on a purchase list row — backend source: ti_bs_qty. */
+function resolvePurchaseRowShippableUnits(row) {
+  if (!row || typeof row !== "object") return 0;
+  return Math.max(0, parseInt(row.ti_bs_qty, 10) || 0);
+}
+
+/** Seller-shipped units on a purchase list row — backend source: ti_shipped_qty, all_items_shipped. */
+function resolvePurchaseRowShippedUnits(row) {
+  if (!row || typeof row !== "object") return 0;
+  const purchased = resolvePurchaseRowShippableUnits(row);
+  if (isTruthyShippingFlag(row.all_items_shipped) && purchased > 0) return purchased;
+  return Math.max(0, parseInt(row.ti_shipped_qty, 10) || 0);
+}
+
+/** Prefer live ti_shipped_qty / all_items_shipped over stale hydration cache. */
 function resolveShippingProgressForDisplay(saleRows, shippingProgressOverride) {
   const rows = Array.isArray(saleRows) ? saleRows.filter(Boolean) : [];
-  const fromRow = getOrderShippingProgress(rows);
-  if (fromRow === "complete" || fromRow === "none" || fromRow === "not_required") return fromRow;
-
   const first = rows[0] || {};
-  const shipped = parseInt(first.shipped_item_count ?? first.shipped_count ?? first.items_shipped, 10);
-  const shippable = parseInt(first.shippable_item_count ?? first.items_requiring_shipping ?? first.shipping_required_count, 10);
-  const unshipped = parseInt(first.unshipped_item_count ?? first.unshipped_count ?? first.items_unshipped ?? first.open_shipping_count, 10);
-  const purchased = parseInt(first.purchased_units ?? first.purchased_units_total ?? first.ti_bs_qty, 10);
-  const total = Number.isFinite(shippable) && shippable > 0 ? shippable : Number.isFinite(purchased) && purchased > 0 ? purchased : 0;
+  if (rows.every(purchaseRowDeliveredNotApplicable)) return "not_required";
 
-  if (Number.isFinite(unshipped) && unshipped <= 0 && Number.isFinite(shipped) && shipped > 0) return "complete";
-  if (Number.isFinite(shipped) && total > 0) {
-    if (shipped >= total) return "complete";
-    if (shipped > 0) return "partial";
+  const shippedUnits = resolvePurchaseRowShippedUnits(first);
+  const purchasedUnits = resolvePurchaseRowShippableUnits(first);
+  if (!purchaseRowDeliveredNotApplicable(first) && purchasedUnits > 0) {
+    if (isTruthyShippingFlag(first.all_items_shipped) || shippedUnits >= purchasedUnits) return "complete";
+    if (shippedUnits > 0) return "partial";
     return "none";
   }
+
+  const fromRow = getOrderShippingProgress(rows);
+  if (fromRow === "complete" || fromRow === "not_required") return fromRow;
+  if (fromRow === "none" && shippedUnits <= 0) return "none";
+
   if (isTruthyShippingFlag(first.all_items_shipped)) return "complete";
+  if (shippedUnits > 0 && purchasedUnits > 0) {
+    return shippedUnits >= purchasedUnits ? "complete" : "partial";
+  }
 
   if (
     shippingProgressOverride === "complete" ||
@@ -6120,13 +6316,13 @@ function getOrderDeliveredStatus(saleRows, shippingProgressOverride) {
   if (!Array.isArray(saleRows) || !saleRows.length) return "—";
   const inEscrow = saleRows.some((row) => Number(row.transaction_in_escrow ?? row.in_escrow) === 1);
 
-  // No shipping needed: "—" while still in escrow; "Delivered" once funds are released.
-  if (saleRows.every(orderFulfillmentIsNotRequired)) {
-    return inEscrow ? "—" : "Delivered";
+  // Pickup / virtual / not_required — shipping column does not apply.
+  if (saleRows.every(purchaseRowDeliveredNotApplicable)) {
+    return "—";
   }
 
   const progress = resolveShippingProgressForDisplay(saleRows, shippingProgressOverride);
-  if (progress === "not_required") return inEscrow ? "—" : "Delivered";
+  if (progress === "not_required") return "—";
   if (progress === "none") return "Not Shipped";
   if (progress === "partial") return "Partial";
   // progress === "complete": all shipping work done → escrow-aware Shipped / Delivered
@@ -6139,12 +6335,18 @@ function getOrderDeliveredStatus(saleRows, shippingProgressOverride) {
     return "Delivered";
   }
   if (inEscrow) return "Pending";
-  return "Delivered";
+  return "Not Shipped";
 }
 
 /** True when purchase qty evidence shows the buyer has confirmed full receipt (ignores escrow). */
 function isPurchaseFullyReceivedByQty(transaction) {
   if (!transaction || typeof transaction !== "object") return false;
+  if (isTruthyShippingFlag(transaction.all_items_received)) return true;
+  const hydratedReceived = parseInt(transaction.received_units ?? transaction.received_units_total, 10);
+  const hydratedPurchased = parseInt(transaction.purchased_units ?? transaction.purchased_units_total, 10);
+  if (Number.isFinite(hydratedReceived) && Number.isFinite(hydratedPurchased) && hydratedPurchased > 0 && hydratedReceived >= hydratedPurchased) {
+    return true;
+  }
   const purchased = Math.max(0, parseInt(transaction.ti_bs_qty, 10) || 0);
   if (purchased > 0 && transaction.ti_received_qty != null && String(transaction.ti_received_qty).trim() !== "") {
     const received = Math.max(0, Math.round(parsePrice(transaction.ti_received_qty)));
@@ -6166,23 +6368,31 @@ function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}, shippi
     return "—";
   }
   if (!transaction) return "—";
-  if (orderFulfillmentIsNotRequired(transaction)) {
-    return Number(transaction.transaction_in_escrow) === 1 ? "—" : "Delivered";
+  if (purchaseRowDeliveredNotApplicable(transaction)) {
+    return "—";
   }
   const orderUid = resolveListRowOrderUid(transaction);
   const txnUid = String(transaction.transaction_uid || "").trim();
   const shippingProgressOverride = (shippingProgressByKey && ((orderUid && orderUid !== "—" && shippingProgressByKey[orderUid]) || (txnUid && shippingProgressByKey[txnUid]))) || null;
-  const progress = resolveShippingProgressForDisplay([transaction], shippingProgressOverride);
   const inEscrow = Number(transaction.transaction_in_escrow ?? transaction.in_escrow) === 1;
+
+  const shippedUnits = resolvePurchaseRowShippedUnits(transaction);
+  const purchasedUnits = resolvePurchaseRowShippableUnits(transaction);
+  if (isTruthyShippingFlag(transaction.all_items_shipped) || (purchasedUnits > 0 && shippedUnits >= purchasedUnits)) {
+    return inEscrow ? "Shipped" : "Delivered";
+  }
+  if (shippedUnits > 0 && purchasedUnits > 0 && shippedUnits < purchasedUnits) {
+    return `${shippedUnits}/${purchasedUnits}`;
+  }
+
+  const progress = resolveShippingProgressForDisplay([transaction], shippingProgressOverride);
 
   if (progress === "complete") {
     return inEscrow ? "Shipped" : "Delivered";
   }
   if (progress === "partial") {
-    const shipped = parseInt(transaction.shipped_item_count ?? transaction.shipped_count, 10);
-    const shippable = parseInt(transaction.shippable_item_count ?? transaction.items_requiring_shipping, 10);
-    const purchased = parseInt(transaction.purchased_units ?? transaction.ti_bs_qty, 10);
-    const total = Number.isFinite(shippable) && shippable > 0 ? shippable : purchased;
+    const shipped = shippedUnits > 0 ? shippedUnits : parseInt(transaction.shipped_item_count ?? transaction.shipped_count, 10);
+    const total = purchasedUnits > 0 ? purchasedUnits : parseInt(transaction.shippable_item_count ?? transaction.items_requiring_shipping, 10);
     if (Number.isFinite(shipped) && total > 0 && shipped < total) {
       return `${shipped}/${total}`;
     }
@@ -6214,9 +6424,22 @@ function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}) {
 function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel, shippingProgressByKey = null) {
   if (!transaction || isReturnListRow(transaction)) return false;
   if (receivedLabel === "Yes") return false;
+  if (isPurchaseFullyReceivedByQty(transaction)) return false;
   if (receivedLabel !== "No" && receivedLabel !== "Partial") return false;
 
-  if (orderFulfillmentIsNotRequired(transaction)) return true;
+  if (orderFulfillmentIsNotRequired(transaction)) {
+    const purchased = Math.max(0, parseInt(transaction.ti_bs_qty, 10) || 0);
+    const received = Math.max(0, Math.round(parsePrice(transaction.ti_received_qty ?? transaction.received_item_count ?? transaction.delivered_item_count)));
+    if (purchased > 0 && received >= purchased) return false;
+    return purchased <= 0 || received < purchased;
+  }
+
+  const purchasedUnits = resolvePurchaseRowShippableUnits(transaction);
+  const receivedUnits = Math.max(0, Math.round(parsePrice(transaction.ti_received_qty ?? transaction.received_units ?? transaction.received_item_count)));
+  const shippedUnits = resolvePurchaseRowShippedUnits(transaction);
+  if (purchasedUnits > 0 && receivedUnits < purchasedUnits && shippedUnits > receivedUnits) {
+    return true;
+  }
 
   const orderUid = resolveListRowOrderUid(transaction);
   const txnUid = String(transaction.transaction_uid || "").trim();
@@ -6237,25 +6460,52 @@ function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliv
 
   const hydratedReceived = parseInt(transaction.received_units ?? transaction.received_units_total, 10);
   const hydratedPurchased = parseInt(transaction.purchased_units ?? transaction.purchased_units_total, 10);
-  if (Number.isFinite(hydratedReceived) && Number.isFinite(hydratedPurchased) && hydratedPurchased > 0 && hydratedReceived < hydratedPurchased) {
-    return true;
+  if (Number.isFinite(hydratedReceived) && Number.isFinite(hydratedPurchased) && hydratedPurchased > 0) {
+    if (hydratedReceived >= hydratedPurchased) return false;
+    const shipped = shippedUnits;
+    if (shipped > 0) {
+      return hydratedReceived < shipped;
+    }
+    return hydratedReceived < hydratedPurchased;
   }
 
-  const shipped = parseInt(transaction.shipped_item_count ?? transaction.shipped_count ?? transaction.items_shipped, 10);
-  const received = parseInt(transaction.received_units ?? transaction.received_item_count ?? transaction.ti_received_qty, 10);
-  if (Number.isFinite(shipped) && shipped > 0 && (!Number.isFinite(received) || received < shipped)) return true;
+  if (shippedUnits > 0) {
+    if (receivedUnits < shippedUnits) return true;
+    if (purchasedUnits > shippedUnits) return false;
+    return false;
+  }
 
-  return deliveredIndicatesShipped;
+  return receivedLabel === "No" || receivedLabel === "Partial";
+}
+
+/** Yes/No/Partial from ti_received_qty vs purchased units on list rows (buyer-confirmed receipt). */
+function getUnitReceivedStatusFromSaleRows(saleRows) {
+  if (!Array.isArray(saleRows) || !saleRows.length) return null;
+  let hasExplicitLineReceived = false;
+  let purchasedTracked = 0;
+  let receivedTracked = 0;
+  for (const row of saleRows) {
+    if (row?.ti_received_qty == null || String(row.ti_received_qty).trim() === "") continue;
+    hasExplicitLineReceived = true;
+    purchasedTracked += getSaleLineQty(row);
+    receivedTracked += Math.max(0, Math.round(parsePrice(row.ti_received_qty)));
+  }
+  if (!hasExplicitLineReceived || purchasedTracked <= 0) return null;
+  if (receivedTracked <= 0) return "No";
+  if (receivedTracked >= purchasedTracked) return "Yes";
+  return "Partial";
 }
 
 /**
  * Received status for seller ORDERS (and product-sales order rows).
- * Prefers unit totals / list counts / per-line ti_received_qty.
+ * Prefers unit totals / ti_received_qty / list counts.
  * Partial = some but not all units confirmed received while order is still open.
  */
 function getOrderReceivedStatusFromSaleRows(saleRows) {
   if (!Array.isArray(saleRows) || !saleRows.length) return "—";
   const first = saleRows[0] || {};
+
+  if (isTruthyShippingFlag(first.all_items_received)) return "Yes";
 
   // Hydrated unit totals from order-detail lines (most accurate for Partial).
   const hydratedReceived = parseInt(first.received_units ?? first.received_units_total, 10);
@@ -6265,6 +6515,10 @@ function getOrderReceivedStatusFromSaleRows(saleRows) {
     if (hydratedReceived >= hydratedPurchased) return "Yes";
     return "Partial";
   }
+
+  // ti_received_qty is unit-level buyer confirmation — prefer over received_item_count (often line counts).
+  const fromUnitReceived = getUnitReceivedStatusFromSaleRows(saleRows);
+  if (fromUnitReceived) return fromUnitReceived;
 
   const receivedCount = parseInt(first.received_item_count ?? first.delivered_item_count ?? first.items_received, 10);
   const shippableCount = parseInt(first.shippable_item_count ?? first.items_requiring_shipping, 10);
@@ -6280,32 +6534,6 @@ function getOrderReceivedStatusFromSaleRows(saleRows) {
       if (receivedCount >= purchasedUnits) return "Yes";
       if (receivedCount > 0) return "Partial";
     }
-  }
-
-  let hasExplicitLineReceived = false;
-  let anyReceived = false;
-  let allReceived = true;
-  let purchasedTracked = 0;
-  let receivedTracked = 0;
-  for (const row of saleRows) {
-    if (row?.ti_received_qty == null || String(row.ti_received_qty).trim() === "") continue;
-    hasExplicitLineReceived = true;
-    const purchased = getSaleLineQty(row);
-    const received = Math.max(0, Math.round(parsePrice(row.ti_received_qty)));
-    purchasedTracked += purchased;
-    receivedTracked += received;
-    if (received > 0) anyReceived = true;
-    if (received < purchased) allReceived = false;
-  }
-  if (hasExplicitLineReceived) {
-    if (purchasedTracked > 0) {
-      if (receivedTracked <= 0) return "No";
-      if (receivedTracked >= purchasedTracked) return "Yes";
-      return "Partial";
-    }
-    if (allReceived) return "Yes";
-    if (!anyReceived) return "No";
-    return "Partial";
   }
 
   // No buyer-verified receipt evidence — do not infer received from escrow release.
@@ -6492,7 +6720,7 @@ function formatOrderDeliveredStatusLabel(saleRows, sellerLines = null, returnSta
 
   const inEscrow = Number(row.transaction_in_escrow ?? row.in_escrow) === 1;
   if (orderFulfillmentIsNotRequired(row) || !orderNeedsShipping(row)) {
-    return inEscrow ? "—" : "Delivered";
+    return "—";
   }
 
   const progress =
@@ -6503,7 +6731,7 @@ function formatOrderDeliveredStatusLabel(saleRows, sellerLines = null, returnSta
       ? shippingProgressOverride
       : getOrderShippingProgress([row]);
 
-  if (progress === "not_required") return inEscrow ? "—" : "Delivered";
+  if (progress === "not_required") return "—";
   if (progress === "unknown") return "—";
 
   const shipping = summarizeSaleRowShipping(row, sellerLines, returnStatusesByKey);
@@ -8649,16 +8877,25 @@ export default function AccountScreen({ navigation, route }) {
 
         const purchaseRows = Array.isArray(mapped.transactions) ? mapped.transactions : [];
         let normalizedPurchases = purchaseRows.map(normalizeListRowReturnRefundFields);
+        const bountyLines = Array.isArray(mapped.bounty?.data) ? mapped.bounty.data : [];
+        normalizedPurchases = enrichPurchasesFromBountyResults(normalizedPurchases, bountyLines);
 
         const listHydrationByOrderUid = extractOrderListHydrationMap(json);
         const hydrationOutcome = hydratePersonalPurchasesFromListMap(normalizedPurchases, listHydrationByOrderUid, {
           debugHydration: debugPurchases,
         });
+        const patchSetters = { setReturnStatuses, setOrderShippingProgressByKey };
         if (hydrationOutcome?.folded) {
-          normalizedPurchases = await applyPersonalPurchaseHydrationPatches(normalizedPurchases, hydrationOutcome.folded, {
-            setReturnStatuses,
-            setOrderShippingProgressByKey,
-          });
+          normalizedPurchases = await applyPersonalPurchaseHydrationPatches(normalizedPurchases, hydrationOutcome.folded, patchSetters);
+        }
+        const receivedUidsStillNeeded = collectOrderUidsNeedingBuyerPurchaseReceivedHydration(normalizedPurchases);
+        if (receivedUidsStillNeeded.length) {
+          normalizedPurchases = await hydratePersonalPurchasesReceivedFromOrderDetails(
+            normalizedPurchases,
+            receivedUidsStillNeeded,
+            { profileId },
+            patchSetters,
+          );
         }
         if (debugPurchases && hydrationOutcome?.missingCount) {
           console.warn(`[AccountScreen] purchase hydration: ${hydrationOutcome.missingCount} order(s) missing order_list_hydration`);
@@ -9665,21 +9902,25 @@ export default function AccountScreen({ navigation, route }) {
   const screenWidth = Dimensions.get("window").width - 40;
 
   // Process bounty data for Bounties chart with dual axes
-  const processBountyDataForChart = () => {
+  const processBountyDataForChart = (ledgerAvailabilityByTxnUid = {}, ledgerRows = [], purchaseRows = []) => {
     if (!bountyData || !bountyData.data || !Array.isArray(bountyData.data) || bountyData.data.length === 0) {
       return {
         dates: [],
         dailyBounty: [],
         cumulativeBounty: [],
+        cumulativePending: [],
+        cumulativeUseable: [],
         maxDaily: 0,
         maxCumulative: 0,
       };
     }
 
+    const enrichedRows = bountyData.data.map((row) => enrichBountyLineFromPurchases(row, purchaseRows));
+
     // Group bounty by date and calculate cumulative
     const bountyByDate = {};
 
-    bountyData.data.forEach((transaction) => {
+    enrichedRows.forEach((transaction) => {
       if (!transaction.transaction_datetime || transaction.bounty_earned == null) return;
 
       const date = parseTransactionDateTime(transaction);
@@ -9696,21 +9937,31 @@ export default function AccountScreen({ navigation, route }) {
 
     const dailyBounty = recentDates.map((date) => bountyByDate[date] || 0);
 
-    // Build cumulative bounty array (second line)
+    // Build cumulative bounty, pending, and useable (same right-axis scale)
     const cumulativeBounty = [];
+    const cumulativePending = [];
+    const cumulativeUseable = [];
     let runningTotal = 0;
     recentDates.forEach((date) => {
       runningTotal += bountyByDate[date] || 0;
       cumulativeBounty.push(runningTotal);
+      const pendingTotal = enrichedRows.reduce(
+        (sum, row) => sum + bountyAmountPendingOnChartDate(row, date, ledgerAvailabilityByTxnUid, ledgerRows),
+        0,
+      );
+      cumulativePending.push(pendingTotal);
+      cumulativeUseable.push(Math.max(0, runningTotal - pendingTotal));
     });
 
-    const maxDaily = Math.max(...dailyBounty, 0.01); // Use 0.01 instead of 1 to avoid division issues
-    const maxCumulative = Math.max(...cumulativeBounty, 0.01);
+    const maxDaily = Math.max(...dailyBounty, 0.01);
+    const maxCumulative = Math.max(...cumulativeBounty, ...cumulativePending, ...cumulativeUseable, 0.01);
 
     return {
       dates: recentDates,
       dailyBounty,
       cumulativeBounty,
+      cumulativePending,
+      cumulativeUseable,
       maxDaily,
       maxCumulative,
     };
@@ -9866,7 +10117,7 @@ export default function AccountScreen({ navigation, route }) {
   };
 
   const NetEarningChart = () => {
-    const chartData = processBountyDataForChart();
+    const chartData = processBountyDataForChart(ledgerAvailabilityByTxnUid, walletLedgerRows, transactionData);
     const screenWidth = Dimensions.get("window").width - 40;
     const chartWidth = screenWidth;
     const chartHeight = 200; // Increased from 180 to make room for x-axis label
@@ -9897,6 +10148,18 @@ export default function AccountScreen({ navigation, route }) {
 
     // Calculate Y positions for cumulative bounty (linear, right axis with different scale)
     const cumulativeYPositions = chartData.cumulativeBounty.map((value) => {
+      const normalized = Math.max(0, Math.min(1, value / chartData.maxCumulative));
+      const y = paddingTop + plotHeight - normalized * plotHeight;
+      return isFinite(y) ? y : paddingTop + plotHeight;
+    });
+
+    const cumulativePendingYPositions = (chartData.cumulativePending || []).map((value) => {
+      const normalized = Math.max(0, Math.min(1, value / chartData.maxCumulative));
+      const y = paddingTop + plotHeight - normalized * plotHeight;
+      return isFinite(y) ? y : paddingTop + plotHeight;
+    });
+
+    const cumulativeUseableYPositions = (chartData.cumulativeUseable || []).map((value) => {
       const normalized = Math.max(0, Math.min(1, value / chartData.maxCumulative));
       const y = paddingTop + plotHeight - normalized * plotHeight;
       return isFinite(y) ? y : paddingTop + plotHeight;
@@ -9933,11 +10196,13 @@ export default function AccountScreen({ navigation, route }) {
 
     const dailyPath = buildPath(dailyYPositions);
     const cumulativePath = buildPath(cumulativeYPositions);
+    const cumulativePendingPath = buildPath(cumulativePendingYPositions);
+    const cumulativeUseablePath = buildPath(cumulativeUseableYPositions);
 
     return (
       <View style={{ width: chartWidth, height: chartHeight, marginVertical: 8 }}>
         {/* Legend */}
-        <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
+        <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 16, flexWrap: "wrap" }}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
             <Text style={{ fontSize: 12, color: "#666", ...accountUiFontStyle }}>Daily Bounty</Text>
@@ -9945,6 +10210,14 @@ export default function AccountScreen({ navigation, route }) {
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
             <Text style={{ fontSize: 12, color: "#666", ...accountUiFontStyle }}>Cumulative Bounty</Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={{ width: 12, height: 3, backgroundColor: "#2E7D32", marginRight: 6 }} />
+            <Text style={{ fontSize: 12, color: "#666", ...accountUiFontStyle }}>Cumulative Useable</Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={{ width: 12, height: 3, backgroundColor: "#E65100", marginRight: 6 }} />
+            <Text style={{ fontSize: 12, color: "#666", ...accountUiFontStyle }}>Cumulative Pending</Text>
           </View>
         </View>
         <Svg width={chartWidth} height={chartHeight}>
@@ -10016,6 +10289,18 @@ export default function AccountScreen({ navigation, route }) {
           <Path d={cumulativePath} stroke='black' strokeWidth='3' fill='none' />
           {cumulativeYPositions.map((y, index) => (
             <Circle key={`cumulative-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='black' />
+          ))}
+
+          {/* Cumulative pending line (orange, right axis) */}
+          <Path d={cumulativePendingPath} stroke='#E65100' strokeWidth='3' fill='none' strokeDasharray='6,4' />
+          {cumulativePendingYPositions.map((y, index) => (
+            <Circle key={`pending-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='#E65100' />
+          ))}
+
+          {/* Cumulative useable line (green, right axis) */}
+          <Path d={cumulativeUseablePath} stroke='#2E7D32' strokeWidth='3' fill='none' />
+          {cumulativeUseableYPositions.map((y, index) => (
+            <Circle key={`useable-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='#2E7D32' />
           ))}
         </Svg>
       </View>
@@ -10180,11 +10465,23 @@ export default function AccountScreen({ navigation, route }) {
     if (personalWallet?.wallet_pending != null) return parsePrice(personalWallet.wallet_pending);
     if (!bountyData?.data || !Array.isArray(bountyData.data)) return 0;
     return bountyData.data.reduce((sum, item) => {
-      const status = bountyProceedsStatus(item, ledgerAvailabilityByTxnUid);
+      const status = bountyProceedsStatus(item, ledgerAvailabilityByTxnUid, walletLedgerRows);
       if (status === "useable") return sum;
       return sum + parseFloat(item.bounty_earned || 0);
     }, 0);
-  }, [personalWallet, bountyData, ledgerAvailabilityByTxnUid]);
+  }, [personalWallet, bountyData, ledgerAvailabilityByTxnUid, walletLedgerRows]);
+
+  const personalUseableBountyTotal = useMemo(() => {
+    if (!bountyData?.data || !Array.isArray(bountyData.data)) {
+      return Math.max(0, parsePrice(bountyData?.total_bounty_earned) - personalPendingBountyTotal);
+    }
+    return bountyData.data.reduce((sum, item) => {
+      if (bountyProceedsStatus(item, ledgerAvailabilityByTxnUid, walletLedgerRows) === "useable") {
+        return sum + parseFloat(item.bounty_earned || 0);
+      }
+      return sum;
+    }, 0);
+  }, [bountyData, ledgerAvailabilityByTxnUid, walletLedgerRows, personalPendingBountyTotal]);
 
   const businessNetEarningsTotal = businessTransactionData.reduce((s, t) => {
     if (t.proceeds_status && t.proceeds_status !== "useable") return s;
@@ -10616,13 +10913,22 @@ export default function AccountScreen({ navigation, route }) {
                         <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}</Text>
                       </View>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Useable</Text>
+                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on purchases</Text>
+                        </View>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>${personalUseableBountyTotal.toFixed(2)}</Text>
+                      </View>
                       {personalPendingBountyTotal > 0 ? (
-                        <View style={styles.balanceContainer}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
+                        <View style={styles.walletBalanceRow}>
+                          <View style={styles.walletBalanceLabelCol}>
+                            <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
+                            <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>
+                              Earned but not yet available — waiting for delivery confirmation or return window
+                            </Text>
+                          </View>
                           <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingBountyTotal.toFixed(2)}</Text>
-                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>
-                            Earned but not yet available — waiting for delivery confirmation or return window
-                          </Text>
                         </View>
                       ) : null}
                     </View>
@@ -10646,20 +10952,26 @@ export default function AccountScreen({ navigation, route }) {
                     <Text style={styles.errorText}>Unable to load wallet.</Text>
                   ) : personalWallet ? (
                     <View style={styles.balanceSectionBody}>
-                      <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to spend</Text>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to spend</Text>
+                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on purchases</Text>
+                        </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(personalWallet.wallet_useable_balance)}</Text>
-                        <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on purchases</Text>
                       </View>
-                      <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
+                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>
+                            Earned but not yet available — waiting for delivery confirmation or return window
+                          </Text>
+                        </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{formatWalletUsd(personalWallet.wallet_pending)}</Text>
-                        <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>
-                          Earned but not yet available — waiting for delivery confirmation or return window
-                        </Text>
                       </View>
-                      <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total on hand</Text>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total on hand</Text>
+                        </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(personalWallet.wallet_actual_balance)}</Text>
                       </View>
                     </View>
@@ -10711,9 +11023,10 @@ export default function AccountScreen({ navigation, route }) {
                                 ti_bs_qty: item.ti_bs_qty ?? linkedTxn.ti_bs_qty ?? linkedTxn.item_count,
                                 ti_bs_return_window_days: item.ti_bs_return_window_days ?? linkedTxn.ti_bs_return_window_days ?? linkedTxn.return_window_days,
                                 ti_bs_is_returnable: item.ti_bs_is_returnable ?? linkedTxn.ti_bs_is_returnable ?? linkedTxn.is_returnable,
+                                bounty_released_at: item.bounty_released_at ?? linkedTxn.bounty_released_at,
                               }
                             : item;
-                          const proceedsStatus = bountyProceedsStatus(enrichedItem, ledgerAvailabilityByTxnUid);
+                          const proceedsStatus = bountyProceedsStatus(enrichedItem, ledgerAvailabilityByTxnUid, walletLedgerRows);
                           const statusLabel = bountyProceedsStatusLabel(proceedsStatus);
                           const bountyDisplay = resolveBountyResultsRowDisplay(item);
                           const totalLabel = bountyDisplay?.lineBounty != null && bountyDisplay.lineBounty > 0 ? `$${bountyDisplay.lineBounty.toFixed(2)}` : "—";
@@ -10778,8 +11091,9 @@ export default function AccountScreen({ navigation, route }) {
                         </View>
                         {walletLedgerRows.map((entry, index) => {
                           const isPending = entry.availability === "pending";
+                          const isUseable = entry.availability === "useable";
                           const pendingAmount = isPending ? entry.amount : null;
-                          const useableAmount = !isPending ? entry.amount : null;
+                          const useableAmount = isUseable ? entry.amount : null;
                           const pendingColor = ledgerAmountColor(pendingAmount, darkMode);
                           const useableColor = ledgerAmountColor(useableAmount, darkMode);
                           const ledgerOrderUid = resolveOrderUidForTransactionUid(entry.transaction_uid, transactionData, bountyData?.data);
@@ -12392,9 +12706,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
+  walletBalanceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 20,
+  },
+  walletBalanceLabelCol: {
+    flex: 1,
+    paddingRight: 12,
+  },
   sectionLabel: { fontSize: 16, fontWeight: "600" },
   balanceAmount: { fontSize: 16, fontWeight: "600" },
-  walletBalanceHint: { fontSize: 12, color: "#666", marginTop: 4, lineHeight: 16 },
+  walletBalanceHint: { fontSize: 12, color: "#666", marginTop: 4, lineHeight: 16, flexShrink: 1 },
   balanceSectionBody: {
     paddingVertical: 8,
     paddingHorizontal: 4,
