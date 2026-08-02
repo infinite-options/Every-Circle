@@ -2019,6 +2019,48 @@ function hydrateBusinessSellerFromListMap(sellerRows, listHydrationByOrderUid, {
   return { folded: foldBusinessSellerHydrationResults(results), missingCount: missing.length };
 }
 
+/** Fallback when order_list_hydration is missing or stale — GET /orders/:uid for received unit totals. */
+function mergeSellerLineReceivedFromOrderDetail(sellerRows, orderUid, orderDetail) {
+  const sale = orderDetail?.sale || orderDetail;
+  const lines = Array.isArray(sale?.lines) ? sale.lines : [];
+  if (!lines.length || !Array.isArray(sellerRows)) return sellerRows;
+
+  const receivedByBsId = {};
+  for (const line of lines) {
+    const bsId = String(line.ti_bs_id || line.bs_uid || "").trim();
+    if (!bsId) continue;
+    const received = Math.max(0, Math.round(parsePrice(line.ti_received_qty ?? line.received_qty)));
+    receivedByBsId[bsId] = (receivedByBsId[bsId] || 0) + received;
+  }
+  if (!Object.keys(receivedByBsId).length) return sellerRows;
+
+  return sellerRows.map((row) => {
+    if (resolveListRowOrderUid(row) !== orderUid) return row;
+    const bsId = String(row.ti_bs_id || row.bs_uid || "").trim();
+    if (!bsId || receivedByBsId[bsId] == null) return row;
+    return { ...row, ti_received_qty: receivedByBsId[bsId] };
+  });
+}
+
+async function hydrateSellerRowsReceivedFromOrderDetails(sellerRows, orderUids, fetchCtx = {}) {
+  const targets = [...new Set((orderUids || []).filter((uid) => uid && uid !== "—"))];
+  if (!targets.length || !Array.isArray(sellerRows)) return sellerRows;
+
+  const results = [];
+  let nextRows = sellerRows;
+  for (const orderUid of targets) {
+    try {
+      const orderDetail = await fetchOrderDetailApi(orderUid, fetchCtx);
+      results.push(buildBusinessSellerHydrationResult(orderUid, orderDetail));
+      nextRows = mergeSellerLineReceivedFromOrderDetail(nextRows, orderUid, orderDetail);
+    } catch (err) {
+      console.warn(`[AccountScreen] seller received hydration fetch failed for ${orderUid}:`, err?.message || err);
+    }
+  }
+  if (!results.length) return nextRows;
+  return applyBusinessSellerHydrationPatches(nextRows, foldBusinessSellerHydrationResults(results));
+}
+
 /**
  * Prefer order-detail return/refund fields (and stripe_refund) over thin account-screen list rows.
  * Buyer list often shows Returned/Pending until Return Details is opened otherwise.
@@ -2630,7 +2672,7 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
   const total = parseFloat(row.transaction_total);
   const bountyPaid = resolveSellerOrderTableBounty(row);
   const delivered = getOrderDeliveredStatus([row], shippingProgressOverride);
-  const received = getOrderReceivedStatusFromSaleRows([row]);
+  const received = formatOrderReceivedStatusLabel([row]);
   return {
     key: String(row.transaction_uid || `${orderUid}-${dateMs}`),
     orderUid,
@@ -3025,7 +3067,7 @@ function buildOrderDetailUrl(orderUid, { profileId, businessUid, sellerId } = {}
   return withTimeZoneQuery(qs ? `${base}?${qs}` : base);
 }
 
-/** GET /orders/:uid — personal offering sellers authorize with profile_id; business sellers with business_uid. */
+/** GET /orders/:uid — personal offering sellers use profile_id + seller_id; business sellers use business_uid + seller_id. */
 function buildSellerOrderDetailFetchContext(sellerId, selectedAccount) {
   const sid = String(sellerId || "").trim();
   const ctx = {};
@@ -3427,7 +3469,7 @@ function getReturnModalQtyLabels(line) {
       notLeftShort: "Unreceived items to cancel",
       leftSimple: "How many received items are you returning?",
       notLeftSimple: "How many unreceived items are you cancelling?",
-      mixedIntro: "This item has both received and unreceived units. How many of each?",
+      mixedIntro: "This item has both received and unreceived units",
       hintMixed: (left, notLeft) => `${left} received · ${notLeft} unreceived`,
       hintAllLeft: (n) => `${n} received`,
       hintAllNotLeft: (n) => `${n} unreceived`,
@@ -4619,6 +4661,7 @@ function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, er
 
   const showSellerShipControls = isSellerView && needsShipping && unshippedItemUids.length > 0;
   const showFulfillmentColumns = needsShipping || saleLines.some((line) => lineRequiresShipping(line) || isLineFullyShipped(line) || getLineShippedQty(line) > 0 || !!getLineFulfillmentStatus(line));
+  const verifiedSummary = formatOrderDetailVerifiedSummary(orderDetail, isSellerView);
   const allUnshippedSelected = unshippedItemUids.length > 0 && unshippedItemUids.every((uid) => selectedShipItemUids.includes(uid));
   const canSaveShipSelection = selectedShipItemUids.some((uid) => unshippedItemUids.includes(uid));
 
@@ -4709,6 +4752,7 @@ function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, er
               {needsShipping ? <OrderDetailShippingCard shippingAddress={shippingAddress} darkMode={darkMode} /> : null}
 
               <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>Items purchased</Text>
+              {verifiedSummary ? <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }, { marginBottom: 8 }]}>{verifiedSummary}</Text> : null}
               <OrderDetailLinesTable
                 lines={saleLines}
                 darkMode={darkMode}
@@ -5241,7 +5285,15 @@ function shouldDisplayOrderDaysOpen(delivered, received) {
     .trim()
     .toLowerCase();
   // Cancelled - Refunded/Rejected are closed (—). Cancelled - Pending still counts via received=pending.
-  return deliveredStatus === "not shipped" || deliveredStatus === "returning" || deliveredStatus === "partial" || receivedStatus === "no" || receivedStatus === "pending";
+  return (
+    deliveredStatus === "not shipped" ||
+    deliveredStatus === "returning" ||
+    deliveredStatus === "partial" ||
+    receivedStatus === "no" ||
+    receivedStatus === "pending" ||
+    receivedStatus === "partial" ||
+    /^\d+\/\d+$/.test(receivedStatus)
+  );
 }
 
 /** Normalize shipping_address from order detail / list transaction payloads. */
@@ -5524,17 +5576,31 @@ function formatLineFulfillmentDisplay(line) {
   return { statusLabel: "—", trackingLabel: "—", trackingPairs: [], cancelNote: "" };
 }
 
-/** Sub-label under Qty in order detail when shipped/cancelled counts differ from purchased. */
+/** Sub-label under Qty in order detail when shipped/cancelled/verified counts differ from purchased. */
 function formatOrderDetailLineQtyNote(line) {
   if (!line || typeof line !== "object") return "";
   const purchased = getLinePurchasedQty(line);
   if (purchased <= 0) return "";
   const shipped = getLineShippedQty(line);
   const cancelled = getLineCancelledFromShipQty(line);
+  const verified = getPreviouslyReceivedQty(line);
   const parts = [];
   if (shipped > 0 && shipped < purchased) parts.push(`${shipped} shipped`);
   if (cancelled > 0) parts.push(`${cancelled} cancelled`);
+  if (verified > 0) {
+    parts.push(verified >= purchased ? "all verified" : `${verified} verified`);
+  }
   return parts.join(" · ");
+}
+
+/** Order-level buyer verification summary for Order Details header / section. */
+function formatOrderDetailVerifiedSummary(orderDetail, isSellerView = false) {
+  const totals = summarizeReceivedUnitsFromOrderDetail(orderDetail);
+  if (!totals || totals.received <= 0) return null;
+  if (totals.received >= totals.purchased) {
+    return isSellerView ? "Buyer verified all units" : "All units verified";
+  }
+  return isSellerView ? `Buyer verified ${totals.received} of ${totals.purchased} units` : `Verified ${totals.received} of ${totals.purchased} units`;
 }
 
 /**
@@ -5972,6 +6038,40 @@ function getOrderReceivedStatusFromSaleRows(saleRows) {
   return "No";
 }
 
+/** Seller order-table Received label — Partial becomes received/purchased when unit counts are known. */
+function formatOrderReceivedStatusLabel(saleRows) {
+  const status = getOrderReceivedStatusFromSaleRows(saleRows);
+  if (status !== "Partial") return status;
+
+  const first = saleRows?.[0] || {};
+  const hydratedReceived = parseInt(first.received_units ?? first.received_units_total, 10);
+  const hydratedPurchased = parseInt(first.purchased_units ?? first.purchased_units_total, 10);
+  if (Number.isFinite(hydratedReceived) && Number.isFinite(hydratedPurchased) && hydratedPurchased > 0 && hydratedReceived > 0 && hydratedReceived < hydratedPurchased) {
+    return `${hydratedReceived}/${hydratedPurchased}`;
+  }
+
+  let purchasedTracked = 0;
+  let receivedTracked = 0;
+  for (const row of saleRows || []) {
+    if (row?.ti_received_qty == null || String(row.ti_received_qty).trim() === "") continue;
+    purchasedTracked += getSaleLineQty(row);
+    receivedTracked += Math.max(0, Math.round(parsePrice(row.ti_received_qty)));
+  }
+  if (purchasedTracked > 0 && receivedTracked > 0 && receivedTracked < purchasedTracked) {
+    return `${receivedTracked}/${purchasedTracked}`;
+  }
+
+  const receivedCount = parseInt(first.received_item_count ?? first.delivered_item_count, 10);
+  const shippableCount = parseInt(first.shippable_item_count ?? first.items_requiring_shipping, 10);
+  const purchasedUnits = (saleRows || []).reduce((sum, row) => sum + getSaleLineQty(row), 0);
+  const totalItems = Number.isFinite(shippableCount) && shippableCount > 0 ? shippableCount : purchasedUnits;
+  if (Number.isFinite(receivedCount) && receivedCount > 0 && totalItems > receivedCount) {
+    return `${receivedCount}/${totalItems}`;
+  }
+
+  return "Partial";
+}
+
 /** Sum purchased vs received units from an order-detail sale.lines payload. */
 function summarizeReceivedUnitsFromOrderDetail(orderDetail) {
   const sale = orderDetail?.sale || orderDetail;
@@ -5980,7 +6080,7 @@ function summarizeReceivedUnitsFromOrderDetail(orderDetail) {
   let purchased = 0;
   let received = 0;
   for (const line of lines) {
-    purchased += Math.max(0, getSaleLineQty(line));
+    purchased += Math.max(0, getLinePurchasedQty(line) || getReceiptLineQty(line));
     received += Math.max(0, Math.round(parsePrice(line.ti_received_qty ?? line.received_qty)));
   }
   if (purchased <= 0) return null;
@@ -6173,7 +6273,7 @@ function getProductSaleStatusBadgeStyle(kind, label) {
   if (normalized === "verify") {
     return { badge: { backgroundColor: "#E3F2FD" }, text: { color: "#1565C0" } };
   }
-  if (normalized === "partial" || normalized === "pending") {
+  if (/^\d+\/\d+$/.test(normalized) || normalized === "partial" || normalized === "pending") {
     return { badge: { backgroundColor: "#FFF8E1" }, text: { color: "#F57F17" } };
   }
   if (normalized === "returning") {
@@ -6678,7 +6778,7 @@ export default function AccountScreen({ navigation, route }) {
   const expertiseCatalogRef = useRef([]);
   const [expertiseLoading, setExpertiseLoading] = useState(true);
   const [sellerTxData, setSellerTxData] = useState([]);
-  const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [] });
+  const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [], loading: false });
   const salesDeepLinkKeyRef = useRef("");
   const [productSalesModal, setProductSalesModal] = useState({
     visible: false,
@@ -8016,7 +8116,24 @@ export default function AccountScreen({ navigation, route }) {
           await fetchPersonalProfileData();
         }
 
-        const sellerTx = Array.isArray(mapped.sellerTransactions) ? mapped.sellerTransactions : [];
+        let sellerTx = (Array.isArray(mapped.sellerTransactions) ? mapped.sellerTransactions : []).map(normalizeListRowReturnRefundFields);
+        const sellerHydrationOutcome = hydrateBusinessSellerFromListMap(sellerTx, listHydrationByOrderUid, {
+          debugHydration: debugPurchases,
+        });
+        if (sellerHydrationOutcome?.folded) {
+          const { hydratedShipping } = sellerHydrationOutcome.folded;
+          if (Object.keys(hydratedShipping).length) {
+            setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
+          }
+          sellerTx = applyBusinessSellerHydrationPatches(sellerTx, sellerHydrationOutcome.folded);
+        }
+        const sellerUidsStillNeedingReceived = collectOrderUidsNeedingReceivedHydration(sellerTx);
+        if (sellerUidsStillNeedingReceived.length) {
+          sellerTx = await hydrateSellerRowsReceivedFromOrderDetails(sellerTx, sellerUidsStillNeedingReceived, buildSellerOrderDetailFetchContext(profileId, "personal"));
+        }
+        if (debugPurchases && sellerHydrationOutcome?.missingCount) {
+          console.warn(`[AccountScreen] offering seller hydration: ${sellerHydrationOutcome.missingCount} order(s) missing order_list_hydration`);
+        }
 
         const session = await getSessionProfile();
         const profileResult = session?.rawProfile;
@@ -8054,21 +8171,6 @@ export default function AccountScreen({ navigation, route }) {
     });
     return task;
   };
-
-  useEffect(() => {
-    const expertiseUid = String(route?.params?.offeringSalesUid || "").trim();
-    if (!expertiseUid || expertiseLoading) return;
-
-    const deepLinkKey = `${expertiseUid}:${String(route?.params?.offeringSalesToken || "")}`;
-    if (salesDeepLinkKeyRef.current === deepLinkKey) return;
-
-    const item = expertiseData.find((entry) => String(entry.expertiseUid || "").trim() === expertiseUid);
-    if (!item) return;
-
-    salesDeepLinkKeyRef.current = deepLinkKey;
-    const transactions = sellerTxData.filter((tx) => String(tx.ti_bs_id || "").trim() === expertiseUid);
-    setSalesModal({ visible: true, item, transactions });
-  }, [route?.params?.offeringSalesUid, route?.params?.offeringSalesToken, expertiseLoading, expertiseData, sellerTxData]);
 
   const resetDeliveryVerificationModal = () => {
     setShowReceiveItemModal(false);
@@ -8215,14 +8317,52 @@ export default function AccountScreen({ navigation, route }) {
   }, []);
 
   const openOfferingSalesHistory = useCallback(
-    (item) => {
+    async (item) => {
       if (!item) return;
       const expertiseUid = String(item.expertiseUid || "").trim();
       const transactions = sellerTxData.filter((tx) => String(tx.ti_bs_id || "").trim() === expertiseUid);
-      setSalesModal({ visible: true, item, transactions });
+      setSalesModal({ visible: true, item, transactions, loading: true });
+
+      try {
+        const profileId = String((await AsyncStorage.getItem("profile_uid")) || "").trim();
+        const inEscrowOrderUids = [
+          ...new Set(
+            transactions
+              .filter((row) => !isReturnListRow(row) && Number(row.transaction_in_escrow ?? row.in_escrow) === 1)
+              .map((row) => resolveListRowOrderUid(row))
+              .filter((uid) => uid && uid !== "—"),
+          ),
+        ];
+        let nextSellerTx = sellerTxData;
+        if (profileId && inEscrowOrderUids.length) {
+          nextSellerTx = await hydrateSellerRowsReceivedFromOrderDetails(sellerTxData, inEscrowOrderUids, buildSellerOrderDetailFetchContext(profileId, selectedAccount));
+          if (nextSellerTx !== sellerTxData) {
+            setSellerTxData(nextSellerTx);
+          }
+        }
+        const enrichedTransactions = nextSellerTx.filter((tx) => String(tx.ti_bs_id || "").trim() === expertiseUid);
+        setSalesModal({ visible: true, item, transactions: enrichedTransactions, loading: false });
+      } catch (error) {
+        console.warn("[AccountScreen] offering sales received hydration failed:", error?.message || error);
+        setSalesModal({ visible: true, item, transactions, loading: false });
+      }
     },
-    [sellerTxData],
+    [sellerTxData, selectedAccount],
   );
+
+  useEffect(() => {
+    const expertiseUid = String(route?.params?.offeringSalesUid || "").trim();
+    if (!expertiseUid || expertiseLoading) return;
+
+    const deepLinkKey = `${expertiseUid}:${String(route?.params?.offeringSalesToken || "")}`;
+    if (salesDeepLinkKeyRef.current === deepLinkKey) return;
+
+    const item = expertiseData.find((entry) => String(entry.expertiseUid || "").trim() === expertiseUid);
+    if (!item) return;
+
+    salesDeepLinkKeyRef.current = deepLinkKey;
+    openOfferingSalesHistory(item);
+  }, [route?.params?.offeringSalesUid, route?.params?.offeringSalesToken, expertiseLoading, expertiseData, openOfferingSalesHistory]);
 
   const openOfferingListing = useCallback(
     async (item) => {
@@ -11503,7 +11643,7 @@ export default function AccountScreen({ navigation, route }) {
       />
 
       {/* Sales Detail Modal */}
-      <Modal animationType='slide' transparent={true} visible={salesModal.visible} onRequestClose={() => setSalesModal({ visible: false, item: null, transactions: [] })}>
+      <Modal animationType='slide' transparent={true} visible={salesModal.visible} onRequestClose={() => setSalesModal({ visible: false, item: null, transactions: [], loading: false })}>
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }}>
           <View style={{ backgroundColor: "#fff", borderRadius: 12, padding: 20, width: "90%", maxHeight: "80%" }}>
             <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 4, color: "#222" }}>{salesModal.item?.name}</Text>
@@ -11511,7 +11651,9 @@ export default function AccountScreen({ navigation, route }) {
               {salesModal.transactions?.length ? `${salesModal.transactions.length} purchase${salesModal.transactions.length !== 1 ? "s" : ""}` : "No purchases yet"}
             </Text>
 
-            {salesModal.transactions?.length === 0 ? (
+            {salesModal.loading ? (
+              <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
+            ) : salesModal.transactions?.length === 0 ? (
               <Text style={{ color: "#888", fontStyle: "italic" }}>No one has purchased this offering yet.</Text>
             ) : (
               <BusinessOrdersTable
@@ -11530,7 +11672,7 @@ export default function AccountScreen({ navigation, route }) {
             )}
 
             <TouchableOpacity
-              onPress={() => setSalesModal({ visible: false, item: null, transactions: [] })}
+              onPress={() => setSalesModal({ visible: false, item: null, transactions: [], loading: false })}
               style={{ marginTop: 16, alignSelf: "center", paddingHorizontal: 32, paddingVertical: 10, backgroundColor: "#222", borderRadius: 8 }}
             >
               <Text style={{ color: "#fff", fontWeight: "600" }}>Close</Text>
