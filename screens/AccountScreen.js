@@ -937,11 +937,12 @@ function aggregateBusinessProductSales(bountyLines) {
   if (!Array.isArray(bountyLines)) return [];
   const byProduct = {};
   for (const row of bountyLines) {
-    if (isReturnListRow(row)) continue;
+    if (isPendingReturnListRow(row)) continue;
     const productUid = resolveProductUidFromSaleLine(row);
     if (!productUid) continue;
 
-    const qty = getSignedProductSalesLineQty(row);
+    let qty = getSignedProductSalesLineQty(row);
+    if (isReturnListRow(row) && qty > 0) qty = -qty;
     if (qty === 0) continue;
     const unitCost = getSaleLineUnitCost(row);
     const bountyPaid = parseFloat(row?.bounty_earned ?? row?.bounty_paid ?? 0) || 0;
@@ -971,6 +972,7 @@ function aggregateBusinessProductSales(bountyLines) {
   return Object.values(byProduct)
     .map((product) => ({
       ...product,
+      unitsSold: Math.max(0, product.unitsSold),
       sales: [...product.sales].sort((a, b) => (transactionDateMs(b) || 0) - (transactionDateMs(a) || 0)),
     }))
     .sort((a, b) => a.productName.localeCompare(b.productName));
