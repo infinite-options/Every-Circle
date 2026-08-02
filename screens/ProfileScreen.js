@@ -32,6 +32,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
+import { useTabRefresh } from "../hooks/useTabRefresh";
 import {
   API_BASE_URL,
   USER_PROFILE_INFO_ENDPOINT,
@@ -497,9 +498,8 @@ const ProfileScreen = ({ route, navigation }) => {
   // Define custom questions for the Account page
   const profileFeedbackQuestions = ["Profile - Question 1?", "Profile - Question 2?", "Profile - Question 3?"];
 
-  useFocusEffect(
-    React.useCallback(() => {
-      async function loadProfile() {
+  const reloadProfileScreen = React.useCallback(() => {
+    async function loadProfile() {
         // console.log("ProfileScreen - useFocusEffect triggered, reloading profile data");
         setLoading(true);
 
@@ -580,8 +580,15 @@ const ProfileScreen = ({ route, navigation }) => {
         Alert.alert("Error", "Failed to load profile data. Please log in again.");
       }
       loadProfile();
-    }, [routeProfileUID, JSON.stringify(route.params?.oauthPrefill ?? null)]), // oauthPrefill: OAuth → Profile → UserInfo prefill
+  }, [routeProfileUID, JSON.stringify(route.params?.oauthPrefill ?? null)]); // oauthPrefill: OAuth → Profile → UserInfo prefill
+
+  useFocusEffect(
+    React.useCallback(() => {
+      reloadProfileScreen();
+    }, [reloadProfileScreen]),
   );
+
+  useTabRefresh("Profile", reloadProfileScreen);
 
   useEffect(() => {
     if (loading || !user || !isCurrentUserProfile) return;

@@ -63,25 +63,41 @@ const writeLocalRespondedMap = async (profileUid, map) => {
   }
 };
 
+const offeringResponsesInflight = new Map();
+
 export const fetchMyOfferingMessageResponses = async (profileUid) => {
   const uid = String(profileUid || "").trim();
   if (!uid) return {};
 
-  const localMap = await readLocalRespondedMap(uid);
-  let apiMap = {};
+  const inflight = offeringResponsesInflight.get(uid);
+  if (inflight) return inflight;
 
+  const request = (async () => {
+    const localMap = await readLocalRespondedMap(uid);
+    let apiMap = {};
+
+    try {
+      const res = await fetch(`${PROFILE_EXPERTISE_RESPONSE_ENDPOINT}/${encodeURIComponent(uid)}`);
+      const json = await res.json();
+      const rows = Array.isArray(json?.data) ? json.data : [];
+      apiMap = rowsToRespondedOfferingsById(rows);
+    } catch (e) {
+      console.warn("[offeringMessageResponse] fetch API failed:", e);
+    }
+
+    const merged = mergeRespondedMaps(localMap, apiMap);
+    await writeLocalRespondedMap(uid, merged);
+    return merged;
+  })();
+
+  offeringResponsesInflight.set(uid, request);
   try {
-    const res = await fetch(`${PROFILE_EXPERTISE_RESPONSE_ENDPOINT}/${encodeURIComponent(uid)}`);
-    const json = await res.json();
-    const rows = Array.isArray(json?.data) ? json.data : [];
-    apiMap = rowsToRespondedOfferingsById(rows);
-  } catch (e) {
-    console.warn("[offeringMessageResponse] fetch API failed:", e);
+    return await request;
+  } finally {
+    if (offeringResponsesInflight.get(uid) === request) {
+      offeringResponsesInflight.delete(uid);
+    }
   }
-
-  const merged = mergeRespondedMaps(localMap, apiMap);
-  await writeLocalRespondedMap(uid, merged);
-  return merged;
 };
 
 const extractExpertiseResponseUid = (json) => {

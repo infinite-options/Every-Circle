@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useTabRefresh } from "../hooks/useTabRefresh";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -738,6 +739,8 @@ function itemPassesNetworkFilter(item, maxDegree) {
  * POSTs to `/api/v1/business_details` (ratings, connection degree, max bounty fields, product_count) and merges into rows with `itemType === "businesses"`.
  * Used for accurate stars, review count, connection degree, and bounty vs search-index guesses.
  */
+const businessDetailsInflight = new Map();
+
 async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
   const businessIds = [
     ...new Set(
@@ -756,26 +759,41 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
     /* ignore */
   }
 
+  const cacheKey = `${profileUid || ""}:${businessIds.slice().sort().join(",")}`;
+  let detailsPromise = businessDetailsInflight.get(cacheKey);
+  if (!detailsPromise) {
+    detailsPromise = (async () => {
+      const detailsByUid = {};
+      const DETAILS_BATCH_SIZE = 40;
+      for (let i = 0; i < businessIds.length; i += DETAILS_BATCH_SIZE) {
+        const chunk = businessIds.slice(i, i + DETAILS_BATCH_SIZE);
+        const ratingsRes = await fetch(BUSINESS_DETAILS_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            uids: chunk,
+            profile_uid: profileUid || null,
+          }),
+        });
+        const ratingsJson = await ratingsRes.json();
+        if (ratingsJson.result && typeof ratingsJson.result === "object") {
+          Object.assign(detailsByUid, ratingsJson.result);
+        }
+      }
+      return detailsByUid;
+    })();
+    businessDetailsInflight.set(cacheKey, detailsPromise);
+    detailsPromise.finally(() => {
+      if (businessDetailsInflight.get(cacheKey) === detailsPromise) {
+        businessDetailsInflight.delete(cacheKey);
+      }
+    });
+  }
+
   let merged = items;
 
   try {
-    const DETAILS_BATCH_SIZE = 40;
-    const detailsByUid = {};
-    for (let i = 0; i < businessIds.length; i += DETAILS_BATCH_SIZE) {
-      const chunk = businessIds.slice(i, i + DETAILS_BATCH_SIZE);
-      const ratingsRes = await fetch(BUSINESS_DETAILS_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          uids: chunk,
-          profile_uid: profileUid || null,
-        }),
-      });
-      const ratingsJson = await ratingsRes.json();
-      if (ratingsJson.result && typeof ratingsJson.result === "object") {
-        Object.assign(detailsByUid, ratingsJson.result);
-      }
-    }
+    const detailsByUid = await detailsPromise;
     if (Object.keys(detailsByUid).length > 0) {
       merged = merged.map((b) => {
         if (b.itemType !== "businesses") return b;
@@ -1160,12 +1178,6 @@ export default function SearchScreen({ route }) {
     }, [selectedSearchTabs.seeking, fetchMyWishResponses]),
   );
 
-  useEffect(() => {
-    if (selectedSearchTabs.seeking) {
-      fetchMyWishResponses();
-    }
-  }, [selectedSearchTabs.seeking, fetchMyWishResponses]);
-
   useFocusEffect(
     useCallback(() => {
       if (selectedSearchTabs.expertise) {
@@ -1173,12 +1185,6 @@ export default function SearchScreen({ route }) {
       }
     }, [selectedSearchTabs.expertise, fetchMyExpertiseResponses]),
   );
-
-  useEffect(() => {
-    if (selectedSearchTabs.expertise) {
-      fetchMyExpertiseResponses();
-    }
-  }, [selectedSearchTabs.expertise, fetchMyExpertiseResponses]);
 
   // Restore search state when returning from Profile, then refresh individual relationship badges
   useFocusEffect(
@@ -2538,6 +2544,20 @@ export default function SearchScreen({ route }) {
     dismissSearchSuggestions();
     await performSearch(searchQuery);
   };
+
+  useTabRefresh("Search", () => {
+    loadUserHomeCoords();
+    loadCartItems();
+    if (selectedSearchTabs.seeking) {
+      fetchMyWishResponses();
+    }
+    if (selectedSearchTabs.expertise) {
+      fetchMyExpertiseResponses();
+    }
+    if (hasLoadedInitialSearch) {
+      void performSearch(searchQuery);
+    }
+  });
 
   const tryAlternativeEndpoints = async (query) => {
     const alternativeEndpoints = [
