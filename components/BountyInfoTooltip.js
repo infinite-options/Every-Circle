@@ -6,11 +6,12 @@ import { Ionicons } from "@expo/vector-icons";
 export const BOUNTY_INFO_COPY = {
   seller:
     "Offer a bounty to reward people in your network who refer buyers. You pay it—not the buyer—so referrals can grow your sales without raising the price. Per item pays on each unit sold; single bounty is one payment for the sale.",
-  referrer: "Earn part of this bounty when someone you referred buys. Look for the 💰 and recommend offerings with bounties to your network—you get rewarded when they purchase.",
+  referrer:
+    "Earn part of this bounty when someone you referred buys. Bounty is pending until the buyer confirms receipt (and through any return window for returnable items). Look for the 💰 and recommend offerings with bounties to your network—you get rewarded when they purchase.",
 };
 
 export const ESCROW_INFO_COPY =
-  "If selected, everyCircle will hold on to the funds until you verify receipt of the product/service";
+  "If selected, everyCircle will hold payment until you verify receipt of the product or service. This does not change when bounty earnings become available.";
 
 const TOOLTIP_WIDTH = 260;
 const TOOLTIP_Z = 100000;

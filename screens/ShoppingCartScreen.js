@@ -1696,12 +1696,15 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       </View>
 
                       {bountyTotal > 0 ? (
-                        <View style={styles.cartBountyNoteRow}>
-                          <View style={styles.bountyNoteLabelRow}>
-                            <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
-                            <BountyInfoTooltip perspective='referrer' darkMode={false} placement='left' />
+                        <View style={styles.cartBountyNoteBlock}>
+                          <View style={styles.cartBountyNoteRow}>
+                            <View style={styles.bountyNoteLabelRow}>
+                              <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
+                              <BountyInfoTooltip perspective='referrer' darkMode={false} placement='left' />
+                            </View>
+                            <Text style={styles.bountyNoteValue}>{formatCartMoney(item, bountyTotal)}</Text>
                           </View>
-                          <Text style={styles.bountyNoteValue}>{formatCartMoney(item, bountyTotal)}</Text>
+                          <Text style={styles.cartBountyAvailabilityNote}>Available after the buyer confirms receipt</Text>
                         </View>
                       ) : null}
                     </View>
@@ -1765,7 +1768,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   <View style={styles.walletPaymentSection}>
                     <Text style={styles.walletPaymentTitle}>Pay with wallet</Text>
                     <Text style={styles.walletPaymentHint}>
-                      Useable balance: ${useableWalletBalance.toFixed(2)}. Apply any amount from $0.00 up to $
+                      Available to spend: ${useableWalletBalance.toFixed(2)}. Ready to use on purchases. Apply any amount from $0.00 up to $
                       {maxWalletApplicable.toFixed(2)}; the rest is charged to your card (card fee applies only to the card portion).
                     </Text>
                     <View style={styles.walletAmountRow}>
@@ -2191,12 +2194,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#9C45F7",
   },
+  cartBountyNoteBlock: {
+    marginTop: 10,
+    zIndex: 2,
+  },
   cartBountyNoteRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 10,
-    zIndex: 2,
+  },
+  cartBountyAvailabilityNote: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+    lineHeight: 16,
   },
   removeButton: {
     position: "absolute",

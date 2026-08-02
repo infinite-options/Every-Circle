@@ -7,6 +7,7 @@ import AppHeader from "../components/AppHeader";
 import {
   ACCOUNT_SCREEN_PERSONAL_ENDPOINT,
   ACCOUNT_SCREEN_BUSINESS_ENDPOINT,
+  WALLET_LEDGER_ENDPOINT,
   ORDERS_ENDPOINT,
   API_BASE_URL,
   TRANSACTION_RECEIPT_ENDPOINT,
@@ -688,6 +689,98 @@ function normalizePersonalBounty(bountyRaw, root, payload) {
 
 function formatWalletUsd(val) {
   return `$${parsePrice(val).toFixed(2)}`;
+}
+
+function formatLedgerAmount(val) {
+  const amount = parsePrice(val);
+  const prefix = amount >= 0 ? "+" : "−";
+  return `${prefix}$${Math.abs(amount).toFixed(2)}`;
+}
+
+function formatLedgerColumnAmount(val) {
+  if (val == null || val === "" || Math.abs(parsePrice(val)) < 0.0001) return "—";
+  return formatLedgerAmount(val);
+}
+
+function ledgerAmountColor(amount, darkMode) {
+  const n = parsePrice(amount);
+  if (Math.abs(n) < 0.0001) return undefined;
+  return n >= 0 ? (darkMode ? "#81c784" : "#2e7d32") : darkMode ? "#ef5350" : "#c62828";
+}
+
+function formatLedgerEntryDate(entry) {
+  if (!entry || typeof entry !== "object") return "N/A";
+  return formatTransactionDate({
+    transaction_datetime: entry.entry_datetime,
+    transaction_datetime_local: entry.entry_datetime_local,
+  });
+}
+
+/** Prefer wallet ledger availability when present; otherwise infer from line + wallet rules. */
+function bountyProceedsStatus(line, ledgerAvailabilityByTxnUid) {
+  const txnUid = String(line?.ti_transaction_id || line?.transaction_uid || "").trim();
+  const ledgerAvail = txnUid && ledgerAvailabilityByTxnUid ? ledgerAvailabilityByTxnUid[txnUid] : null;
+  if (ledgerAvail === "useable") return "useable";
+  if (ledgerAvail === "pending") {
+    const received = parsePrice(line?.ti_received_qty ?? 0);
+    const ordered = parsePrice(line?.ti_bs_qty ?? 0);
+    const verified = ordered > 0 && received >= ordered;
+    return verified ? "pending_until_window" : "pending";
+  }
+
+  const received = parsePrice(line?.ti_received_qty ?? 0);
+  const ordered = parsePrice(line?.ti_bs_qty ?? 0);
+  const verified = ordered > 0 && received >= ordered;
+  const returnWindowDays = parsePrice(line?.ti_bs_return_window_days ?? line?.return_window_days ?? 0);
+  const isReturnable = parseOptionalBoolean(line?.ti_bs_is_returnable ?? line?.is_returnable ?? line?.bs_is_returnable) !== false;
+  if (!verified) return "pending";
+  if (isReturnable && returnWindowDays > 0) return "pending_until_window";
+  return "useable";
+}
+
+function bountyProceedsStatusLabel(status) {
+  switch (status) {
+    case "useable":
+      return "Available";
+    case "pending_until_window":
+      return "Pending (return window)";
+    case "pending":
+    default:
+      return "Pending";
+  }
+}
+
+/** Latest ledger availability per transaction_uid (bounty + sale proceeds entries). */
+function buildLedgerAvailabilityByTxnUid(ledgerRows) {
+  const map = {};
+  if (!Array.isArray(ledgerRows)) return map;
+  for (const entry of ledgerRows) {
+    const txnUid = String(entry?.transaction_uid || "").trim();
+    if (!txnUid || !entry.availability) continue;
+    if (entry.availability === "useable") map[txnUid] = "useable";
+    else if (!map[txnUid]) map[txnUid] = "pending";
+  }
+  return map;
+}
+
+function resolveOrderUidForTransactionUid(txnUid, ...sources) {
+  const uid = String(txnUid || "").trim();
+  if (!uid) return null;
+  for (const list of sources) {
+    if (!Array.isArray(list)) continue;
+    for (const row of list) {
+      const rowTxn = String(row?.transaction_uid || row?.ti_transaction_id || "").trim();
+      if (rowTxn !== uid) continue;
+      const orderUid = resolveListRowOrderUid(row);
+      if (orderUid && orderUid !== "—") return orderUid;
+    }
+  }
+  return null;
+}
+
+/** Seller net earnings follow the same verification / return-window rules as bounty. */
+function sellerProceedsStatus(row, ledgerAvailabilityByTxnUid) {
+  return bountyProceedsStatus(row, ledgerAvailabilityByTxnUid);
 }
 
 /** Settings Debug Mode: log account-screen/personal purchase extraction (txRaw + duplicate txn uids). */
@@ -1836,6 +1929,8 @@ function buildPersonalPurchaseHydrationResult(orderUid, orderDetail) {
     hydrated: extractReturnRefundStateFromOrderDetail(orderDetail),
     itemHydration: extractReturnItemHydrationFromOrderDetail(orderDetail),
     progress: getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean)),
+    receivedSummary: summarizeReceivedUnitsFromOrderDetail(orderDetail),
+    shippingSummary: summarizeShippedUnitsFromOrderDetail(orderDetail),
   };
 }
 
@@ -1844,7 +1939,9 @@ function foldPersonalPurchaseHydrationResults(results) {
   const itemHydrationByOrderUid = {};
   const statusPatch = {};
   const hydratedShipping = {};
-  for (const { orderUid, orderDetail, hydrated, itemHydration, progress } of results) {
+  const hydratedReceivedByOrder = {};
+  const hydratedShippedByOrder = {};
+  for (const { orderUid, orderDetail, hydrated, itemHydration, progress, receivedSummary, shippingSummary } of results) {
     if (itemHydration) itemHydrationByOrderUid[orderUid] = itemHydration;
     if (hydrated) {
       stateByOrderUid[orderUid] = hydrated;
@@ -1876,13 +1973,23 @@ function foldPersonalPurchaseHydrationResults(results) {
       const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
       if (txnUid) hydratedShipping[txnUid] = progress;
     }
+    if (receivedSummary) {
+      hydratedReceivedByOrder[orderUid] = receivedSummary;
+      const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
+      if (txnUid) hydratedReceivedByOrder[txnUid] = receivedSummary;
+    }
+    if (shippingSummary) {
+      hydratedShippedByOrder[orderUid] = shippingSummary;
+      const txnUid = String(orderDetail?.sale?.transaction_uid || orderDetail?.transaction_uid || "").trim();
+      if (txnUid) hydratedShippedByOrder[txnUid] = shippingSummary;
+    }
   }
-  return { stateByOrderUid, itemHydrationByOrderUid, statusPatch, hydratedShipping };
+  return { stateByOrderUid, itemHydrationByOrderUid, statusPatch, hydratedShipping, hydratedReceivedByOrder, hydratedShippedByOrder };
 }
 
 async function applyPersonalPurchaseHydrationPatches(normalizedPurchases, folded, { setReturnStatuses, setOrderShippingProgressByKey }) {
   let nextRows = normalizedPurchases;
-  const { stateByOrderUid, itemHydrationByOrderUid, statusPatch, hydratedShipping } = folded;
+  const { stateByOrderUid, itemHydrationByOrderUid, statusPatch, hydratedShipping, hydratedReceivedByOrder, hydratedShippedByOrder } = folded;
   if (Object.keys(stateByOrderUid).length || Object.keys(itemHydrationByOrderUid).length) {
     nextRows = applyHydratedReturnStateToPurchaseRows(nextRows, stateByOrderUid, itemHydrationByOrderUid);
     if (Object.keys(statusPatch).length) {
@@ -1890,23 +1997,49 @@ async function applyPersonalPurchaseHydrationPatches(normalizedPurchases, folded
       await Promise.all(Object.keys(statusPatch).map((key) => AsyncStorage.setItem(`return_status_${key}`, JSON.stringify(statusPatch[key]))));
     }
   }
-  if (Object.keys(hydratedShipping).length) {
-    setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
+  if (Object.keys(hydratedShipping).length || Object.keys(hydratedReceivedByOrder || {}).length || Object.keys(hydratedShippedByOrder || {}).length) {
+    if (Object.keys(hydratedShipping).length) {
+      setOrderShippingProgressByKey((prev) => ({ ...prev, ...hydratedShipping }));
+    }
     nextRows = nextRows.map((row) => {
       if (isReturnListRow(row)) return row;
       const orderUid = resolveListRowOrderUid(row);
       const txnUid = String(row.transaction_uid || "").trim();
       const progress = hydratedShipping[orderUid] || hydratedShipping[txnUid];
+      const receivedSummary = hydratedReceivedByOrder?.[orderUid] || hydratedReceivedByOrder?.[txnUid];
+      const shippingSummary = hydratedShippedByOrder?.[orderUid] || hydratedShippedByOrder?.[txnUid];
+      let next = row;
       if (progress === "complete") {
-        return { ...row, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
+        next = { ...next, fulfillment_status: "in_transit", all_items_shipped: 1, unshipped_item_count: 0 };
+      } else if (progress === "partial") {
+        next = { ...next, fulfillment_status: "partial", all_items_shipped: 0 };
+      } else if (progress === "none") {
+        next = { ...next, fulfillment_status: "not_shipped", all_items_shipped: 0 };
       }
-      if (progress === "partial") {
-        return { ...row, fulfillment_status: "partial", all_items_shipped: 0 };
+      if (receivedSummary) {
+        next = {
+          ...next,
+          received_units: receivedSummary.received,
+          purchased_units: receivedSummary.purchased,
+          received_item_count: receivedSummary.received,
+        };
       }
-      if (progress === "none") {
-        return { ...row, fulfillment_status: "not_shipped", all_items_shipped: 0 };
+      if (shippingSummary) {
+        next = {
+          ...next,
+          shipped_item_count: shippingSummary.shipped,
+          shippable_item_count: shippingSummary.shippable,
+          unshipped_item_count: Math.max(0, shippingSummary.shippable - shippingSummary.shipped),
+          all_items_shipped: shippingSummary.shipped >= shippingSummary.shippable && shippingSummary.shippable > 0 ? 1 : next.all_items_shipped,
+          fulfillment_status:
+            shippingSummary.shipped >= shippingSummary.shippable && shippingSummary.shippable > 0
+              ? "in_transit"
+              : shippingSummary.shipped > 0
+                ? "partial"
+                : next.fulfillment_status,
+        };
       }
-      return row;
+      return next;
     });
   }
   return nextRows;
@@ -5951,6 +6084,38 @@ function collectOrderUidsNeedingSellerOrderDetailHydration(sellerLines) {
   return [...uids];
 }
 
+/** Prefer live row shipped counts over a stale hydration cache (e.g. partial → complete). */
+function resolveShippingProgressForDisplay(saleRows, shippingProgressOverride) {
+  const rows = Array.isArray(saleRows) ? saleRows.filter(Boolean) : [];
+  const fromRow = getOrderShippingProgress(rows);
+  if (fromRow === "complete" || fromRow === "none" || fromRow === "not_required") return fromRow;
+
+  const first = rows[0] || {};
+  const shipped = parseInt(first.shipped_item_count ?? first.shipped_count ?? first.items_shipped, 10);
+  const shippable = parseInt(first.shippable_item_count ?? first.items_requiring_shipping ?? first.shipping_required_count, 10);
+  const unshipped = parseInt(first.unshipped_item_count ?? first.unshipped_count ?? first.items_unshipped ?? first.open_shipping_count, 10);
+  const purchased = parseInt(first.purchased_units ?? first.purchased_units_total ?? first.ti_bs_qty, 10);
+  const total = Number.isFinite(shippable) && shippable > 0 ? shippable : Number.isFinite(purchased) && purchased > 0 ? purchased : 0;
+
+  if (Number.isFinite(unshipped) && unshipped <= 0 && Number.isFinite(shipped) && shipped > 0) return "complete";
+  if (Number.isFinite(shipped) && total > 0) {
+    if (shipped >= total) return "complete";
+    if (shipped > 0) return "partial";
+    return "none";
+  }
+  if (isTruthyShippingFlag(first.all_items_shipped)) return "complete";
+
+  if (
+    shippingProgressOverride === "complete" ||
+    shippingProgressOverride === "partial" ||
+    shippingProgressOverride === "none" ||
+    shippingProgressOverride === "not_required"
+  ) {
+    return shippingProgressOverride;
+  }
+  return fromRow;
+}
+
 function getOrderDeliveredStatus(saleRows, shippingProgressOverride) {
   if (!Array.isArray(saleRows) || !saleRows.length) return "—";
   const inEscrow = saleRows.some((row) => Number(row.transaction_in_escrow ?? row.in_escrow) === 1);
@@ -5960,10 +6125,7 @@ function getOrderDeliveredStatus(saleRows, shippingProgressOverride) {
     return inEscrow ? "—" : "Delivered";
   }
 
-  const progress =
-    shippingProgressOverride === "complete" || shippingProgressOverride === "partial" || shippingProgressOverride === "none" || shippingProgressOverride === "not_required"
-      ? shippingProgressOverride
-      : getOrderShippingProgress(saleRows);
+  const progress = resolveShippingProgressForDisplay(saleRows, shippingProgressOverride);
   if (progress === "not_required") return inEscrow ? "—" : "Delivered";
   if (progress === "none") return "Not Shipped";
   if (progress === "partial") return "Partial";
@@ -6010,6 +6172,23 @@ function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}, shippi
   const orderUid = resolveListRowOrderUid(transaction);
   const txnUid = String(transaction.transaction_uid || "").trim();
   const shippingProgressOverride = (shippingProgressByKey && ((orderUid && orderUid !== "—" && shippingProgressByKey[orderUid]) || (txnUid && shippingProgressByKey[txnUid]))) || null;
+  const progress = resolveShippingProgressForDisplay([transaction], shippingProgressOverride);
+  const inEscrow = Number(transaction.transaction_in_escrow ?? transaction.in_escrow) === 1;
+
+  if (progress === "complete") {
+    return inEscrow ? "Shipped" : "Delivered";
+  }
+  if (progress === "partial") {
+    const shipped = parseInt(transaction.shipped_item_count ?? transaction.shipped_count, 10);
+    const shippable = parseInt(transaction.shippable_item_count ?? transaction.items_requiring_shipping, 10);
+    const purchased = parseInt(transaction.purchased_units ?? transaction.ti_bs_qty, 10);
+    const total = Number.isFinite(shippable) && shippable > 0 ? shippable : purchased;
+    if (Number.isFinite(shipped) && total > 0 && shipped < total) {
+      return `${shipped}/${total}`;
+    }
+    return "Partial";
+  }
+
   return getOrderDeliveredStatus([transaction], shippingProgressOverride);
 }
 
@@ -6028,8 +6207,45 @@ function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}) {
   const fromRows = getOrderReceivedStatusFromSaleRows([transaction]);
   if (fromRows === "Yes" || fromRows === "Partial" || fromRows === "No") return fromRows;
 
-  if (Number(transaction.transaction_in_escrow) === 1) return "No";
-  return "Yes";
+  return "No";
+}
+
+/** True when the buyer can still open delivery verification for this purchase row. */
+function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel, shippingProgressByKey = null) {
+  if (!transaction || isReturnListRow(transaction)) return false;
+  if (receivedLabel === "Yes") return false;
+  if (receivedLabel !== "No" && receivedLabel !== "Partial") return false;
+
+  if (orderFulfillmentIsNotRequired(transaction)) return true;
+
+  const orderUid = resolveListRowOrderUid(transaction);
+  const txnUid = String(transaction.transaction_uid || "").trim();
+  const cachedProgress = (shippingProgressByKey && ((orderUid && orderUid !== "—" && shippingProgressByKey[orderUid]) || (txnUid && shippingProgressByKey[txnUid]))) || null;
+  const progress = resolveShippingProgressForDisplay([transaction], cachedProgress);
+
+  const delivered = String(deliveredLabel || "").trim();
+  const deliveredLower = delivered.toLowerCase();
+  const deliveredIndicatesShipped =
+    progress === "partial" ||
+    progress === "complete" ||
+    deliveredLower === "partial" ||
+    deliveredLower === "shipped" ||
+    deliveredLower === "delivered" ||
+    !!parseFractionStatusLabel(delivered);
+
+  if (!deliveredIndicatesShipped) return false;
+
+  const hydratedReceived = parseInt(transaction.received_units ?? transaction.received_units_total, 10);
+  const hydratedPurchased = parseInt(transaction.purchased_units ?? transaction.purchased_units_total, 10);
+  if (Number.isFinite(hydratedReceived) && Number.isFinite(hydratedPurchased) && hydratedPurchased > 0 && hydratedReceived < hydratedPurchased) {
+    return true;
+  }
+
+  const shipped = parseInt(transaction.shipped_item_count ?? transaction.shipped_count ?? transaction.items_shipped, 10);
+  const received = parseInt(transaction.received_units ?? transaction.received_item_count ?? transaction.ti_received_qty, 10);
+  if (Number.isFinite(shipped) && shipped > 0 && (!Number.isFinite(received) || received < shipped)) return true;
+
+  return deliveredIndicatesShipped;
 }
 
 /**
@@ -6040,13 +6256,12 @@ function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}) {
 function getOrderReceivedStatusFromSaleRows(saleRows) {
   if (!Array.isArray(saleRows) || !saleRows.length) return "—";
   const first = saleRows[0] || {};
-  const inEscrow = saleRows.some((row) => Number(row.transaction_in_escrow ?? row.in_escrow) === 1);
 
   // Hydrated unit totals from order-detail lines (most accurate for Partial).
   const hydratedReceived = parseInt(first.received_units ?? first.received_units_total, 10);
   const hydratedPurchased = parseInt(first.purchased_units ?? first.purchased_units_total, 10);
   if (Number.isFinite(hydratedReceived) && Number.isFinite(hydratedPurchased) && hydratedPurchased > 0) {
-    if (hydratedReceived <= 0) return inEscrow ? "No" : "Yes";
+    if (hydratedReceived <= 0) return "No";
     if (hydratedReceived >= hydratedPurchased) return "Yes";
     return "Partial";
   }
@@ -6093,9 +6308,7 @@ function getOrderReceivedStatusFromSaleRows(saleRows) {
     return "Partial";
   }
 
-  // Account-screen seller summary rows often omit received fields.
-  // Escrow released ⇒ Delivered shows Paid ⇒ treat as fully received for list display.
-  if (!inEscrow) return "Yes";
+  // No buyer-verified receipt evidence — do not infer received from escrow release.
   return "No";
 }
 
@@ -6106,7 +6319,7 @@ function formatOrderReceivedStatusLabel(saleRows, sellerLines = null, returnStat
     const inEscrow = Number(row.transaction_in_escrow ?? row.in_escrow) === 1;
     const totals = summarizeSaleRowVerification(row, sellerLines, returnStatusesByKey);
     if (totals.activePurchased > 0) {
-      if (totals.received <= 0) return inEscrow ? "No" : "Yes";
+      if (totals.received <= 0) return "No";
       if (totals.received >= totals.activePurchased) return "Yes";
       return `${totals.received}/${totals.activePurchased}`;
     }
@@ -7156,6 +7369,10 @@ export default function AccountScreen({ navigation, route }) {
   const [bountyData, setBountyData] = useState(null);
   const [bountyLoading, setBountyLoading] = useState(true);
   const [personalWallet, setPersonalWallet] = useState(null);
+  const [walletLedgerRows, setWalletLedgerRows] = useState([]);
+  const [walletLedgerTotalEntries, setWalletLedgerTotalEntries] = useState(0);
+  const [walletLedgerLoading, setWalletLedgerLoading] = useState(true);
+  const [walletLedgerError, setWalletLedgerError] = useState(null);
   const [transactionData, setTransactionData] = useState([]);
   const [transactionLoading, setTransactionLoading] = useState(true);
   const [expertiseData, setExpertiseData] = useState([]);
@@ -7228,6 +7445,7 @@ export default function AccountScreen({ navigation, route }) {
   const [showBusinessTransactionHistory, setShowBusinessTransactionHistory] = useState(true);
   const [showProductInventory, setShowProductInventory] = useState(true);
   const [showWallet, setShowWallet] = useState(true);
+  const [showWalletLedger, setShowWalletLedger] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [showReceiveItemModal, setShowReceiveItemModal] = useState(false);
@@ -7246,14 +7464,10 @@ export default function AccountScreen({ navigation, route }) {
   // Define custom questions for the Account page
   const accountFeedbackQuestions = ["Account - Question 1?", "Account - Question 2?", "Account - Question 3?"];
 
-  const [autoPaidTransactionIds, setAutoPaidTransactionIds] = useState(new Set());
-  const autoPayAttemptedRef = useRef(new Set());
+  const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false);
 
-  //for returns
   const [returnRequests, setReturnRequests] = useState({});
   const [receiptTransaction, setReceiptTransaction] = useState(null);
-  /** Settings → Debug Mode = Yes: show Transaction ID, Type, Purchased Item in PURCHASES (wide enough); Purchased Item on web also when width > 600. */
-  const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false);
 
   const handleAccountMiniCardPress = async () => {
     if (selectedAccount === "personal") {
@@ -7308,6 +7522,10 @@ export default function AccountScreen({ navigation, route }) {
     setSellerTxData([]);
     setBountyData(null);
     setPersonalWallet(null);
+    setWalletLedgerRows([]);
+    setWalletLedgerTotalEntries(0);
+    setWalletLedgerError(null);
+    setWalletLedgerLoading(true);
     setTransactionLoading(true);
     setBountyLoading(true);
     setExpertiseLoading(true);
@@ -8227,16 +8445,6 @@ export default function AccountScreen({ navigation, route }) {
     });
   };
 
-  const loadAutoPaidIds = async () => {
-    try {
-      const stored = await AsyncStorage.getItem("auto_paid_transaction_ids");
-      if (stored) {
-        setAutoPaidTransactionIds(new Set(JSON.parse(stored)));
-      }
-    } catch (e) {
-      console.error("Failed to load auto-paid IDs:", e);
-    }
-  };
 
   const loadReturnRequests = async () => {
     // Load persistent receipt choices saved at checkout time
@@ -8345,20 +8553,6 @@ export default function AccountScreen({ navigation, route }) {
     }
   };
 
-  const saveAutoPaidId = async (transactionUid) => {
-    try {
-      console.log("saveAutoPaidId called with:", transactionUid); // ← add
-      const stored = await AsyncStorage.getItem("auto_paid_transaction_ids");
-      console.log("existing stored value:", stored); // ← add
-      const existing = stored ? JSON.parse(stored) : [];
-      const updated = [...new Set([...existing, transactionUid])];
-      await AsyncStorage.setItem("auto_paid_transaction_ids", JSON.stringify(updated));
-      console.log("saved updated list:", updated); // ← add
-      setAutoPaidTransactionIds(new Set(updated));
-    } catch (e) {
-      console.error("Failed to save auto-paid ID:", e);
-    }
-  };
 
   const fetchPersonalProfileData = async () => {
     try {
@@ -8557,6 +8751,50 @@ export default function AccountScreen({ navigation, route }) {
     return task;
   };
 
+  /** GET /api/v1/wallet_ledger/:profile_id — bounty credits, sale proceeds, wallet payments/refunds. */
+  const refreshWalletLedger = async () => {
+    const fetchGen = personalFetchGenRef.current;
+    try {
+      setWalletLedgerLoading(true);
+      setWalletLedgerError(null);
+      const rawProfileId = await AsyncStorage.getItem("profile_uid");
+      const profileId = rawProfileId ? String(rawProfileId).trim() : "";
+      if (!profileId) {
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+        setWalletLedgerRows([]);
+        setWalletLedgerTotalEntries(0);
+        return;
+      }
+      const url = withTimeZoneQuery(`${WALLET_LEDGER_ENDPOINT}/${profileId}`);
+      const response = await fetch(url, { method: "GET" });
+      if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+      if (!response.ok) {
+        throw new Error(`wallet ledger HTTP ${response.status}`);
+      }
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("wallet ledger returned non-JSON");
+      }
+      const json = await response.json();
+      if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+      const rows = Array.isArray(json.data) ? json.data : [];
+      setWalletLedgerRows(rows);
+      setWalletLedgerTotalEntries(Number(json.total_entries) || rows.length);
+      const ledgerWallet = json?.wallet && typeof json.wallet === "object" && !Array.isArray(json.wallet) ? json.wallet : null;
+      if (ledgerWallet) setPersonalWallet(ledgerWallet);
+    } catch (error) {
+      if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+      console.warn("[AccountScreen] wallet ledger fetch failed:", error?.message || error);
+      setWalletLedgerError(error?.message || "Unable to load wallet ledger.");
+      setWalletLedgerRows([]);
+      setWalletLedgerTotalEntries(0);
+    } finally {
+      if (fetchGen === personalFetchGenRef.current && selectedAccountRef.current === "personal") {
+        setWalletLedgerLoading(false);
+      }
+    }
+  };
+
   const resetDeliveryVerificationModal = () => {
     setShowReceiveItemModal(false);
     setPendingTransactionForConfirm(null);
@@ -8622,9 +8860,14 @@ export default function AccountScreen({ navigation, route }) {
         return;
       }
       resetDeliveryVerificationModal();
-      await refreshAccountScreenPersonal();
+      await Promise.all([refreshAccountScreenPersonal(), refreshWalletLedger()]);
       if (!releaseEscrow) {
-        Alert.alert("Partial delivery recorded", "Escrow will release when all items in this order are confirmed received.");
+        Alert.alert("Partial delivery recorded", "Receipt confirmation saved. Earnings may remain pending until all items are verified and any return window ends.");
+      } else {
+        Alert.alert(
+          "Delivery confirmed",
+          "Receipt confirmed. Bounty and seller proceeds may stay pending until any return window ends before they become available to spend.",
+        );
       }
     } catch (error) {
       console.error("Error updating transaction escrow:", error);
@@ -9312,7 +9555,8 @@ export default function AccountScreen({ navigation, route }) {
           const total = parseFloat(item.transaction_total || 0);
           const taxes = parseFloat(item.transaction_taxes || 0);
           const bounty = bountyDataByTransaction[txnId]?.total_bounty || 0;
-          const netEarning = total - bounty - taxes;
+          const proceedsStatus = sellerProceedsStatus(item, null);
+          const netEarning = proceedsStatus === "useable" ? total - bounty - taxes : 0;
           transactionMap[txnId] = {
             transaction_uid: item.transaction_uid,
             transaction_datetime: item.transaction_datetime,
@@ -9322,6 +9566,7 @@ export default function AccountScreen({ navigation, route }) {
             transaction_taxes: taxes,
             bounty_paid: bounty,
             net_earning: netEarning,
+            proceeds_status: proceedsStatus,
             business_name: item.business_name,
             transaction_return_requested: item.transaction_return_requested || 0,
             transaction_return_note: item.transaction_return_note || "",
@@ -9360,12 +9605,12 @@ export default function AccountScreen({ navigation, route }) {
 
   const reloadAccountScreen = useCallback(() => {
     checkAuth();
-    loadAutoPaidIds();
     // Load cached return state first, then personal list (which may hydrate over thin API rows).
     void (async () => {
       await loadReturnRequests();
       await loadReturnStatuses();
       await refreshAccountScreenPersonal();
+      await refreshWalletLedger();
     })();
 
     const loadBusinessData = async () => {
@@ -9405,81 +9650,11 @@ export default function AccountScreen({ navigation, route }) {
       setSelectedBusinessFullData(null);
       setBusinessSellerTransactionList([]);
       refreshAccountScreenPersonal();
+      refreshWalletLedger();
       return;
     }
     refreshAccountScreenBusiness();
   }, [selectedAccount, businesses]);
-
-  // Silently releases escrow for aged-out / already-received no-ship transactions.
-  // Guarded so the same uid is only attempted once per session (never from render).
-  const triggerAutoPay = useCallback(async (transactionUid, { refresh = true } = {}) => {
-    const uid = String(transactionUid || "").trim();
-    if (!uid) return false;
-    if (autoPayAttemptedRef.current.has(uid)) return false;
-    autoPayAttemptedRef.current.add(uid);
-    try {
-      await saveAutoPaidId(uid);
-      const response = await fetch(TRANSACTIONS_ENDPOINT, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transaction_uid: uid, transaction_in_escrow: 0 }),
-      });
-      if (!response.ok) {
-        autoPayAttemptedRef.current.delete(uid);
-        console.error("Auto-pay failed for transaction:", uid, response.status);
-        return false;
-      }
-      if (refresh) await refreshAccountScreenPersonal();
-      return true;
-    } catch (error) {
-      console.error("Auto-pay failed for transaction:", uid, error);
-      autoPayAttemptedRef.current.delete(uid);
-      setAutoPaidTransactionIds((prev) => {
-        const next = new Set(prev);
-        next.delete(uid);
-        return next;
-      });
-      return false;
-    }
-  }, []);
-
-  // Run auto-pay once when purchase list loads — never from row render (that spam-fired PUTs).
-  useEffect(() => {
-    if (selectedAccount !== "personal") return;
-    if (!Array.isArray(transactionData) || transactionData.length === 0) return;
-
-    let cancelled = false;
-    (async () => {
-      const eligibleUids = [];
-      for (const transaction of transactionData) {
-        if (isReturnListRow(transaction)) continue;
-        if (Number(transaction.transaction_in_escrow) !== 1) continue;
-        const uid = String(transaction.transaction_uid || "").trim();
-        if (!uid) continue;
-        if (autoPayAttemptedRef.current.has(uid) || autoPaidTransactionIds.has(uid)) continue;
-
-        const purchaseDate = parseTransactionDateTime(transaction);
-        const isOlderThan5Days = Number.isFinite(purchaseDate?.getTime()) && (Date.now() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24) >= 5;
-        const shouldRelease = isOlderThan5Days || (orderFulfillmentIsNotRequired(transaction) && isPurchaseFullyReceivedByQty(transaction));
-        if (shouldRelease) eligibleUids.push(uid);
-      }
-      if (!eligibleUids.length || cancelled) return;
-
-      let anySuccess = false;
-      for (const uid of eligibleUids) {
-        if (cancelled) break;
-        const ok = await triggerAutoPay(uid, { refresh: false });
-        if (ok) anySuccess = true;
-      }
-      if (anySuccess && !cancelled) {
-        await refreshAccountScreenPersonal();
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [transactionData, selectedAccount, autoPaidTransactionIds, triggerAutoPay]);
 
   const budgetData = [
     { item: "per Impression", costPer: "$0.01", monthlyCap: "$10.00", currentSpend: "$0.50" },
@@ -9999,10 +10174,22 @@ export default function AccountScreen({ navigation, route }) {
     );
   };
 
-  const personalPendingEscrowBounty =
-    bountyData?.data && Array.isArray(bountyData.data) ? bountyData.data.filter((i) => i.in_escrow === 1).reduce((s, i) => s + parseFloat(i.bounty_earned || 0), 0) : 0;
+  const ledgerAvailabilityByTxnUid = useMemo(() => buildLedgerAvailabilityByTxnUid(walletLedgerRows), [walletLedgerRows]);
 
-  const businessNetEarningsTotal = businessTransactionData.reduce((s, t) => s + parseFloat(t.net_earning || 0), 0);
+  const personalPendingBountyTotal = useMemo(() => {
+    if (personalWallet?.wallet_pending != null) return parsePrice(personalWallet.wallet_pending);
+    if (!bountyData?.data || !Array.isArray(bountyData.data)) return 0;
+    return bountyData.data.reduce((sum, item) => {
+      const status = bountyProceedsStatus(item, ledgerAvailabilityByTxnUid);
+      if (status === "useable") return sum;
+      return sum + parseFloat(item.bounty_earned || 0);
+    }, 0);
+  }, [personalWallet, bountyData, ledgerAvailabilityByTxnUid]);
+
+  const businessNetEarningsTotal = businessTransactionData.reduce((s, t) => {
+    if (t.proceeds_status && t.proceeds_status !== "useable") return s;
+    return s + parseFloat(t.net_earning || 0);
+  }, 0);
   const productSalesSummary = useMemo(() => {
     const products = aggregateBusinessProductSales(businessBountyData?.data || []);
     const unitsAvailableByUid = buildUnitsAvailableByProductUid(businessServices);
@@ -10275,8 +10462,6 @@ export default function AccountScreen({ navigation, route }) {
                         const isReturnRow = isReturnListRow(transaction);
                         const isSyntheticReturn = !!transaction._isSyntheticReturn;
                         const orderUid = resolveListRowOrderUid(transaction);
-                        const isPending = !isReturnRow && Number(transaction.transaction_in_escrow) === 1;
-                        const showPendingLink = isPending;
                         const compactTx = compactPurchasesLayout;
                         const sellerId = resolvePurchaseSellerId(transaction);
                         const returnMoney = isReturnRow ? resolveReturnRowMoney(transaction, null, bountyData?.data || []) : null;
@@ -10350,7 +10535,7 @@ export default function AccountScreen({ navigation, route }) {
                               const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction, statusOverride, orderShippingProgressByKey);
                               const receivedLabel = getBuyerPurchaseReceivedLabel(transaction, statusOverride);
                               const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
-                              const canVerifyReceipt = !isReturnRow && showPendingLink && (receivedLabel === "No" || receivedLabel === "Partial");
+                              const canVerifyReceipt = buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel, orderShippingProgressByKey);
                               const receivedDisplayLabel = canVerifyReceipt ? "Verify" : receivedLabel;
                               const receivedBadge = getProductSaleStatusBadgeStyle("received", canVerifyReceipt ? "verify" : receivedLabel);
 
@@ -10362,11 +10547,17 @@ export default function AccountScreen({ navigation, route }) {
                                 </View>
                               );
 
+                              const openVerifyReceipt = () => openDeliveryVerification(transaction);
+
                               return (
                                 <>
                                   <View style={styles.transactionDeliveredCell}>
                                     {isReturnRow ? (
                                       <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7}>
+                                        {renderBadge(deliveredLabel, deliveredBadge)}
+                                      </TouchableOpacity>
+                                    ) : canVerifyReceipt ? (
+                                      <TouchableOpacity onPress={openVerifyReceipt} activeOpacity={0.7}>
                                         {renderBadge(deliveredLabel, deliveredBadge)}
                                       </TouchableOpacity>
                                     ) : (
@@ -10375,7 +10566,7 @@ export default function AccountScreen({ navigation, route }) {
                                   </View>
                                   <View style={styles.transactionReceivedCell}>
                                     {canVerifyReceipt ? (
-                                      <TouchableOpacity onPress={() => openDeliveryVerification(transaction)} activeOpacity={0.7}>
+                                      <TouchableOpacity onPress={openVerifyReceipt} activeOpacity={0.7}>
                                         {renderBadge(receivedDisplayLabel, receivedBadge)}
                                       </TouchableOpacity>
                                     ) : isReturnRow ? (
@@ -10425,10 +10616,13 @@ export default function AccountScreen({ navigation, route }) {
                         <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}</Text>
                       </View>
-                      {personalPendingEscrowBounty > 0 ? (
+                      {personalPendingBountyTotal > 0 ? (
                         <View style={styles.balanceContainer}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending (escrow)</Text>
-                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingEscrowBounty.toFixed(2)}</Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
+                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingBountyTotal.toFixed(2)}</Text>
+                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>
+                            Earned but not yet available — waiting for delivery confirmation or return window
+                          </Text>
                         </View>
                       ) : null}
                     </View>
@@ -10453,16 +10647,20 @@ export default function AccountScreen({ navigation, route }) {
                   ) : personalWallet ? (
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Useable Balance</Text>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to spend</Text>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(personalWallet.wallet_useable_balance)}</Text>
-                      </View>
-                      <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Actual Balance</Text>
-                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(personalWallet.wallet_actual_balance)}</Text>
+                        <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on purchases</Text>
                       </View>
                       <View style={styles.balanceContainer}>
                         <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{formatWalletUsd(personalWallet.wallet_pending)}</Text>
+                        <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>
+                          Earned but not yet available — waiting for delivery confirmation or return window
+                        </Text>
+                      </View>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total on hand</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(personalWallet.wallet_actual_balance)}</Text>
                       </View>
                     </View>
                   ) : (
@@ -10498,13 +10696,25 @@ export default function AccountScreen({ navigation, route }) {
                           <Text style={styles.transactionHeaderDate}>Date</Text>
                           <Text style={styles.transactionHeaderBusiness}>Purchaser</Text>
                           <Text style={styles.transactionHeaderPurchasedItem}>Business</Text>
-                          <Text style={styles.transactionHeaderPaid}>Paid</Text>
+                          <Text style={styles.transactionHeaderPaid}>Status</Text>
                           <Text style={styles.transactionHeaderTotalBounty}>Total</Text>
                           <Text style={styles.transactionHeaderSharePct}>%</Text>
                           <Text style={styles.transactionHeaderAmount}>Bounty</Text>
                         </View>
                         {bountyData.data.map((item, index) => {
-                          const paidLabel = item.in_escrow === 1 && (Date.now() - (transactionDateMs(item) || 0)) / (1000 * 60 * 60 * 24) >= 30 ? "Paid" : item.in_escrow === 1 ? "Pending" : "Paid";
+                          const linkedTxnUid = String(item.ti_transaction_id || item.transaction_uid || "").trim();
+                          const linkedTxn = linkedTxnUid ? transactionData.find((t) => String(t.transaction_uid || "").trim() === linkedTxnUid) : null;
+                          const enrichedItem = linkedTxn
+                            ? {
+                                ...item,
+                                ti_received_qty: item.ti_received_qty ?? linkedTxn.ti_received_qty ?? linkedTxn.received_item_count,
+                                ti_bs_qty: item.ti_bs_qty ?? linkedTxn.ti_bs_qty ?? linkedTxn.item_count,
+                                ti_bs_return_window_days: item.ti_bs_return_window_days ?? linkedTxn.ti_bs_return_window_days ?? linkedTxn.return_window_days,
+                                ti_bs_is_returnable: item.ti_bs_is_returnable ?? linkedTxn.ti_bs_is_returnable ?? linkedTxn.is_returnable,
+                              }
+                            : item;
+                          const proceedsStatus = bountyProceedsStatus(enrichedItem, ledgerAvailabilityByTxnUid);
+                          const statusLabel = bountyProceedsStatusLabel(proceedsStatus);
                           const bountyDisplay = resolveBountyResultsRowDisplay(item);
                           const totalLabel = bountyDisplay?.lineBounty != null && bountyDisplay.lineBounty > 0 ? `$${bountyDisplay.lineBounty.toFixed(2)}` : "—";
                           const percentLabel = formatBountySharePercentLabel(bountyDisplay?.percentage) || "—";
@@ -10520,7 +10730,7 @@ export default function AccountScreen({ navigation, route }) {
                                 {item.display_name || item.transaction_business_id || "N/A"}
                               </Text>
                               <View style={styles.transactionPaidCell}>
-                                <Text style={styles.transactionPaidText}>{paidLabel}</Text>
+                                <Text style={styles.transactionPaidText}>{statusLabel}</Text>
                               </View>
                               <Text style={styles.transactionTotalBounty}>{totalLabel}</Text>
                               <Text style={styles.transactionSharePct}>{percentLabel}</Text>
@@ -10532,6 +10742,77 @@ export default function AccountScreen({ navigation, route }) {
                     </View>
                   ) : (
                     <Text style={styles.noDataText}>No bounty data available.</Text>
+                  )}
+                </>
+              )}
+            </View>
+
+            {/* Wallet Ledger */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowWalletLedger(!showWalletLedger)}>
+                <Text style={styles.sectionHeaderText}>WALLET LEDGER</Text>
+                <Ionicons name={showWalletLedger ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showWalletLedger && (
+                <>
+                  {walletLedgerLoading ? (
+                    <Text style={styles.loadingText}>Loading wallet ledger...</Text>
+                  ) : walletLedgerError ? (
+                    <Text style={styles.errorText}>{walletLedgerError}</Text>
+                  ) : walletLedgerRows.length > 0 ? (
+                    <View>
+                      {walletLedgerTotalEntries > walletLedgerRows.length ? (
+                        <Text style={styles.bountyTotalText}>
+                          Showing {walletLedgerRows.length} of {walletLedgerTotalEntries} entries
+                        </Text>
+                      ) : null}
+                      <View style={styles.transactionsContainer}>
+                        <View style={styles.transactionHeaderRow}>
+                          <Text style={styles.transactionHeaderDate}>Date</Text>
+                          <Text style={[styles.transactionHeaderBusiness, { flex: 1 }]}>Type</Text>
+                          <Text style={[styles.transactionHeaderPurchasedItem, { flex: 1.2 }]}>Description</Text>
+                          <Text style={[styles.transactionHeaderAmount, { flex: 0.75 }]}>Pending</Text>
+                          <Text style={[styles.transactionHeaderAmount, { flex: 0.75 }]}>Useable</Text>
+                          <Text style={[styles.transactionHeaderAmount, { flex: 0.85 }]}>Total Balance</Text>
+                          <Text style={[styles.transactionHeaderAmount, { flex: 0.95 }]}>Spendable Balance</Text>
+                        </View>
+                        {walletLedgerRows.map((entry, index) => {
+                          const isPending = entry.availability === "pending";
+                          const pendingAmount = isPending ? entry.amount : null;
+                          const useableAmount = !isPending ? entry.amount : null;
+                          const pendingColor = ledgerAmountColor(pendingAmount, darkMode);
+                          const useableColor = ledgerAmountColor(useableAmount, darkMode);
+                          const ledgerOrderUid = resolveOrderUidForTransactionUid(entry.transaction_uid, transactionData, bountyData?.data);
+                          const openLedgerEntry = () => {
+                            if (!ledgerOrderUid) return;
+                            openOrderDetail({ orderUid: ledgerOrderUid });
+                          };
+                          const LedgerRowWrapper = ledgerOrderUid ? TouchableOpacity : View;
+                          const ledgerRowProps = ledgerOrderUid ? { onPress: openLedgerEntry, activeOpacity: 0.7 } : {};
+                          return (
+                            <LedgerRowWrapper key={entry.entry_id || `ledger-${index}`} style={styles.transactionRow} {...ledgerRowProps}>
+                              <Text style={styles.transactionDate}>{formatLedgerEntryDate(entry)}</Text>
+                              <Text style={[styles.transactionBusiness, { flex: 1 }]} numberOfLines={2}>
+                                {entry.entry_type_label || entry.entry_type || "—"}
+                              </Text>
+                              <Text style={[styles.transactionPurchasedItem, { flex: 1.2 }, ledgerOrderUid && styles.receiptLink]} numberOfLines={3}>
+                                {entry.description || entry.counterparty_name || "—"}
+                              </Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.75 }, pendingColor ? { color: pendingColor } : null]}>
+                                {formatLedgerColumnAmount(pendingAmount)}
+                              </Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.75 }, useableColor ? { color: useableColor } : null]}>
+                                {formatLedgerColumnAmount(useableAmount)}
+                              </Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.85 }]}>{formatWalletUsd(entry.balance_after)}</Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.95 }]}>{formatWalletUsd(entry.useable_balance_after)}</Text>
+                            </LedgerRowWrapper>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={styles.noDataText}>No wallet ledger entries.</Text>
                   )}
                 </>
               )}
@@ -10715,7 +10996,11 @@ export default function AccountScreen({ navigation, route }) {
                               >
                                 {showReturnCompletedRow ? `-$${transaction.transaction_taxes.toFixed(2)}` : `$${transaction.transaction_taxes.toFixed(2)}`}
                               </Text>
-                              <Text style={[styles.businessTransactionCell, { width: 55, flex: 0, textAlign: "right" }]}>${transaction.net_earning.toFixed(2)}</Text>
+                              <Text style={[styles.businessTransactionCell, { width: 55, flex: 0, textAlign: "right" }]}>
+                                {transaction.proceeds_status && transaction.proceeds_status !== "useable"
+                                  ? bountyProceedsStatusLabel(transaction.proceeds_status)
+                                  : `$${transaction.net_earning.toFixed(2)}`}
+                              </Text>
                             </TouchableOpacity>
 
                             {/* Expanded Services Details */}
@@ -12109,6 +12394,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: { fontSize: 16, fontWeight: "600" },
   balanceAmount: { fontSize: 16, fontWeight: "600" },
+  walletBalanceHint: { fontSize: 12, color: "#666", marginTop: 4, lineHeight: 16 },
   balanceSectionBody: {
     paddingVertical: 8,
     paddingHorizontal: 4,
