@@ -3129,13 +3129,20 @@ function collectReturnEventLinesFromRow(row) {
 
 function isReturnEventCancelUnshipped(eventRow) {
   if (!eventRow || typeof eventRow !== "object") return false;
-  return (
-    eventRow.cancel_unshipped === true ||
-    Number(eventRow.cancel_unshipped) === 1 ||
-    eventRow.pre_ship_cancel === true ||
-    eventRow.is_cancel_before_ship === true ||
-    String(eventRow.return_status || eventRow.trr_return_status || "").toLowerCase() === "cancelled"
-  );
+  if (eventRow.cancel_unshipped === true || Number(eventRow.cancel_unshipped) === 1) return true;
+  if (eventRow.pre_ship_cancel === true || eventRow.is_cancel_before_ship === true) return true;
+  const status = String(eventRow.return_status || eventRow.trr_return_status || "").toLowerCase();
+  if (status === "cancelled" || status === "canceled") return true;
+  if (/^cancell?ed\s*[-–]/i.test(String(eventRow.display_status || ""))) return true;
+  if (returnEventRefundedShipping(eventRow)) return true;
+  return false;
+}
+
+/** True when a completed return event refunded shipping — strong signal of pre-ship cancel. */
+function returnEventRefundedShipping(eventRow) {
+  if (!eventRow || typeof eventRow !== "object") return false;
+  const shipping = parseFloat(eventRow.transaction_shipping ?? eventRow.shipping_refund ?? 0);
+  return Number.isFinite(shipping) && shipping < 0;
 }
 
 /** Shipped vs unshipped split for one return line on a prior return request or ledger row. */
@@ -3157,7 +3164,7 @@ function parseReturnEventLineSplit(line, eventRow) {
   const qty = Math.abs(parseInt(line.return_quantity ?? line.ti_bs_qty ?? line.quantity, 10) || 0);
   if (qty <= 0) return { shipped: 0, unshipped: 0, total: 0, splitKnown: true };
 
-  if (isReturnEventCancelUnshipped(eventRow)) {
+  if (isReturnEventCancelUnshipped(eventRow) || returnEventRefundedShipping(eventRow)) {
     return { shipped: 0, unshipped: qty, total: qty, splitKnown: true };
   }
 
@@ -3493,14 +3500,29 @@ function getReturnModalLineFulfillmentCaps(row) {
   if (row?.returnSplitKnown) {
     returnedFromLeft = Math.max(0, parseInt(row.returnedShippedQty, 10) || 0);
     returnedFromNotLeft = Math.max(0, parseInt(row.returnedUnshippedQty, 10) || 0);
+    const splitTotal = returnedFromLeft + returnedFromNotLeft;
+    if (alreadyReturned > 0 && splitTotal > alreadyReturned) {
+      // Prefer unshipped when prior cancels were misclassified as shipped returns.
+      if (returnedFromNotLeft >= alreadyReturned) {
+        returnedFromNotLeft = alreadyReturned;
+        returnedFromLeft = 0;
+      } else {
+        returnedFromLeft = Math.min(returnedFromLeft, Math.max(0, alreadyReturned - returnedFromNotLeft));
+        returnedFromNotLeft = Math.max(0, alreadyReturned - returnedFromLeft);
+      }
+    }
   } else if (alreadyReturned > 0) {
     // Legacy rows without split metadata: assume unshipped/cancel units returned first.
     returnedFromNotLeft = Math.min(alreadyReturned, notLeftOnLine);
     returnedFromLeft = Math.max(0, alreadyReturned - returnedFromNotLeft);
   }
 
-  const remainingLeft = Math.max(0, leftOnLine - returnedFromLeft);
-  const remainingNotLeft = Math.max(0, notLeftOnLine - returnedFromNotLeft);
+  let remainingLeft = Math.max(0, leftOnLine - returnedFromLeft);
+  let remainingNotLeft = Math.max(0, notLeftOnLine - returnedFromNotLeft);
+  if (remainingLeft + remainingNotLeft > remainingQty && remainingQty > 0) {
+    remainingLeft = Math.min(remainingLeft, remainingQty);
+    remainingNotLeft = Math.min(remainingNotLeft, Math.max(0, remainingQty - remainingLeft));
+  }
   const hasMixedFulfillment = remainingLeft > 0 && remainingNotLeft > 0 && remainingQty > 0;
   return {
     purchasedQty,
@@ -3519,11 +3541,11 @@ function getReturnModalLineFulfillmentCaps(row) {
   };
 }
 
-/** Subtitle under item row, e.g. "2 shipped (1 verified) · 3 not shipped". */
+/** Subtitle under item row, e.g. "2 shipped (1 verified) · 1 not shipped" for remaining units. */
 function buildReturnModalFulfillmentSubtitle(row, caps) {
   const line = row?.line || row;
-  const shippedCount = Math.max(0, caps?.shippedOnLine ?? 0);
-  const notShippedCount = Math.max(0, caps?.unshippedOnLine ?? 0);
+  const shippedCount = Math.max(0, caps?.remainingLeft ?? 0);
+  const notShippedCount = Math.max(0, caps?.remainingNotLeft ?? 0);
   if (shippedCount < 1 && notShippedCount < 1) return null;
 
   const parts = [];
@@ -7599,10 +7621,6 @@ export default function AccountScreen({ navigation, route }) {
         }),
       );
       setShowReturnNoteViewModal(false);
-      // Refresh so ORDERS Total/Bounty pick up server pending_return / order_bounty_paid.
-      if (selectedAccountRef.current && selectedAccountRef.current !== "personal") {
-        void refreshAccountScreenBusiness();
-      }
       return {
         ok: true,
         state,
@@ -7702,9 +7720,10 @@ export default function AccountScreen({ navigation, route }) {
     const saleUid = String(pending.orderUid || pending.transactionUid || "").trim();
     const trrUid = String(pending.trrUid || returnDetailModal.trrUid || trrUids[0] || "").trim();
 
-    setShowConfirmReceiptNoteModal(false);
     setReturnDetailAccepting(true);
+    setShowConfirmReceiptNoteModal(false);
     let stripeRefundResult = null;
+    let confirmSucceeded = false;
     try {
       // Only refund the card portion to Stripe. Wallet-paid amounts are restored
       // to the buyer's useable balance by the backend confirm/ledger path.
@@ -7745,6 +7764,7 @@ export default function AccountScreen({ navigation, route }) {
 
       const outcome = await handleReturnAccept(saleUid, saleUid, sellerNote, stripeRefundResult, trrUid || null, trrUids, pending.restockItems || null);
       if (outcome?.ok) {
+        confirmSucceeded = true;
         const restockItems = Array.isArray(pending.restockItems) ? pending.restockItems.filter((item) => (parseInt(item.quantity, 10) || 0) > 0) : [];
         if (restockItems.length) {
           const sellerId = resolveSellerIdForReturn(saleUid);
@@ -7787,10 +7807,6 @@ export default function AccountScreen({ navigation, route }) {
                   ? "Return confirmed, but some product units could not be restocked. Update Product Inventory manually if needed."
                   : "Return confirmed, but some offering units could not be restocked. Update offering quantity on your profile if needed.",
             );
-          }
-
-          if (selectedAccountRef.current && selectedAccountRef.current !== "personal") {
-            void refreshAccountScreenBusiness();
           }
         }
         if (pending.listIdx != null) {
@@ -7852,6 +7868,19 @@ export default function AccountScreen({ navigation, route }) {
           }
         } catch (_) {
           /* keep local status update */
+        }
+        if (selectedAccountRef.current && selectedAccountRef.current !== "personal") {
+          try {
+            await refreshAccountScreenBusiness();
+          } catch (refreshErr) {
+            console.warn("Error refreshing business account after return confirm:", refreshErr);
+          }
+        } else if (confirmSucceeded) {
+          try {
+            await refreshAccountScreenPersonal();
+          } catch (refreshErr) {
+            console.warn("Error refreshing personal account after return confirm:", refreshErr);
+          }
         }
       }
     } finally {
@@ -10693,8 +10722,9 @@ export default function AccountScreen({ navigation, route }) {
                     const qtyLabels = getReturnModalQtyLabels(row.line);
                     const split = returnItemSplitQty[itemId] || initialReturnItemSplitQty(row);
                     const needsMixedQtyPicker = isSelected && caps.hasMixedFulfillment;
+                    const simplePickerMax = caps.allUnshipped ? caps.maxCancelUnshippedQty : caps.maxReturnShippedQty;
                     const needsSimpleQtyPicker =
-                      isSelected && !caps.hasMixedFulfillment && caps.purchasedQty > 1 && caps.remainingQty > 1;
+                      isSelected && !caps.hasMixedFulfillment && caps.remainingQty > 1 && simplePickerMax > 1;
                     const fulfillmentSubtitle = !alreadyReturned && !returnIneligible ? buildReturnModalFulfillmentSubtitle(row, caps) : null;
 
                     return (
@@ -10790,8 +10820,8 @@ export default function AccountScreen({ navigation, route }) {
                             <ReturnModalQtyStepper
                               label={caps.allUnshipped ? qtyLabels.notLeftSimple : qtyLabels.leftSimple}
                               value={caps.allUnshipped ? split.unshipped : split.shipped}
-                              max={caps.remainingQty}
-                              suffix={`of ${caps.remainingQty}`}
+                              max={simplePickerMax}
+                              suffix={`of ${simplePickerMax}`}
                               darkMode={darkMode}
                               onChange={(qty) =>
                                 setReturnItemSplitQty((prev) => ({
@@ -11049,6 +11079,7 @@ export default function AccountScreen({ navigation, route }) {
         transparent={true}
         visible={showConfirmReceiptNoteModal}
         onRequestClose={() => {
+          if (returnDetailAccepting) return;
           setShowConfirmReceiptNoteModal(false);
           setConfirmReceiptNote("");
           setPendingConfirmReceipt(null);
@@ -11082,6 +11113,7 @@ export default function AccountScreen({ navigation, route }) {
             <View style={{ flexDirection: "row", gap: 12 }}>
               <TouchableOpacity
                 style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                disabled={returnDetailAccepting}
                 onPress={() => {
                   setShowConfirmReceiptNoteModal(false);
                   setConfirmReceiptNote("");
@@ -11098,6 +11130,21 @@ export default function AccountScreen({ navigation, route }) {
                 {returnDetailAccepting ? <ActivityIndicator size='small' color='#fff' /> : <Text style={[styles.receiveItemModalButtonText, { color: "#fff" }]}>Confirm & refund</Text>}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Blocking overlay while confirm + inventory/sales refresh completes */}
+      <Modal animationType='fade' transparent visible={returnDetailAccepting} onRequestClose={() => {}}>
+        <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
+          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { alignItems: "center", maxWidth: 340 }]}>
+            <ActivityIndicator size='large' color='#18884A' />
+            <Text style={[styles.receiveItemModalHeader, { color: "#18884A", marginTop: 16, marginBottom: 8, textAlign: "center" }, darkMode && styles.darkTitle]}>
+              Confirming return…
+            </Text>
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", textAlign: "center", lineHeight: 20 }}>
+              Updating inventory and sales totals. Please wait a moment.
+            </Text>
           </View>
         </View>
       </Modal>
