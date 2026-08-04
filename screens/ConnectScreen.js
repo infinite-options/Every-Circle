@@ -9,6 +9,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { useFocusEffect, useRoute } from "@react-navigation/native";
+import { useTabRefresh } from "../hooks/useTabRefresh";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT, PROFILE_VIEWS_ENDPOINT, BLOCKED_USERS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
@@ -1095,32 +1096,40 @@ const ConnectScreen = ({ navigation }) => {
     }
   }, [profileUid, refreshFromSession, applyQrFromProfile]);
 
-  // Load settings + session profile when Connect tab is focused.
+  // Load settings + session profile when Connect tab is focused (or re-tapped in footer).
+  const reloadConnectScreen = useCallback(() => {
+    console.log("Connect screen focused - loading settings...");
+    loadNetworkSettings();
+    setFocusTick((t) => t + 1);
+
+    const syncProfileUidFromStorage = async () => {
+      let currentProfileUid = await AsyncStorage.getItem("profile_uid");
+      if (currentProfileUid) {
+        try {
+          const parsed = JSON.parse(currentProfileUid);
+          currentProfileUid = typeof parsed === "string" ? parsed : String(parsed);
+        } catch (e) {
+          currentProfileUid = String(currentProfileUid).trim();
+        }
+      } else {
+        currentProfileUid = "";
+      }
+      if (currentProfileUid && currentProfileUid !== profileUid) {
+        console.log("Updating profileUid from AsyncStorage:", currentProfileUid);
+        setProfileUid(currentProfileUid);
+      }
+    };
+    syncProfileUidFromStorage();
+    void hydrateMyProfileFromSession();
+  }, [hydrateMyProfileFromSession, profileUid]);
+
   useFocusEffect(
     React.useCallback(() => {
-      loadNetworkSettings();
-      setFocusTick((t) => t + 1);
-
-      const syncProfileUidFromStorage = async () => {
-        let currentProfileUid = await AsyncStorage.getItem("profile_uid");
-        if (currentProfileUid) {
-          try {
-            const parsed = JSON.parse(currentProfileUid);
-            currentProfileUid = typeof parsed === "string" ? parsed : String(parsed);
-          } catch (e) {
-            currentProfileUid = String(currentProfileUid).trim();
-          }
-        } else {
-          currentProfileUid = "";
-        }
-        if (currentProfileUid && currentProfileUid !== profileUid) {
-          setProfileUid(currentProfileUid);
-        }
-      };
-      syncProfileUidFromStorage();
-      void hydrateMyProfileFromSession();
-    }, [hydrateMyProfileFromSession, profileUid]),
+      reloadConnectScreen();
+    }, [reloadConnectScreen]),
   );
+
+  useTabRefresh("Connect", reloadConnectScreen);
 
   useEffect(() => {
     return subscribeSessionProfile((session) => {

@@ -220,25 +220,14 @@ export function getOfferingBountyTypeForCheckout(offering) {
 
 /** True when an offering explicitly allows returns. */
 export function isOfferingReturnable(offering) {
-  return (
-    offering?.profile_expertise_is_returnable === 1 ||
-    offering?.profile_expertise_is_returnable === "1" ||
-    offering?.profile_expertise_is_returnable === true
-  );
+  return offering?.profile_expertise_is_returnable === 1 || offering?.profile_expertise_is_returnable === "1" || offering?.profile_expertise_is_returnable === true;
 }
 
 /** True when a cart line (business product or offering) allows returns. */
 export function isCartItemReturnable(item) {
   if (!item || typeof item !== "object") return false;
   if (item.itemType === "expertise") return isOfferingReturnable(item);
-  return (
-    item.bs_is_returnable === 1 ||
-    item.bs_is_returnable === "1" ||
-    item.bs_is_returnable === true ||
-    item.is_returnable === 1 ||
-    item.is_returnable === "1" ||
-    item.is_returnable === true
-  );
+  return item.bs_is_returnable === 1 || item.bs_is_returnable === "1" || item.bs_is_returnable === true || item.is_returnable === 1 || item.is_returnable === "1" || item.is_returnable === true;
 }
 
 /** True when an offering has shipping (free or buyer pays). N/A otherwise. */
@@ -331,36 +320,16 @@ export function profileDataForCartModal(source) {
     firstName: source.firstName || personalInfo?.profile_personal_first_name || source.profile_personal_first_name || "",
     lastName: source.lastName || personalInfo?.profile_personal_last_name || source.profile_personal_last_name || "",
     email: source.email || source.user_email || personalInfo?.profile_personal_email || source.profile_personal_email || "",
-    phoneNumber:
-      source.phoneNumber ||
-      source.phone ||
-      personalInfo?.profile_personal_phone_number ||
-      source.profile_personal_phone_number ||
-      "",
+    phoneNumber: source.phoneNumber || source.phone || personalInfo?.profile_personal_phone_number || source.profile_personal_phone_number || "",
     profileImage: source.profileImage || source.image || personalInfo?.profile_personal_image || source.profile_personal_image || "",
     tagLine: source.tagLine || personalInfo?.profile_personal_tag_line || source.profile_personal_tag_line || "",
     city: source.city || personalInfo?.profile_personal_city || source.profile_personal_city || "",
     state: source.state || personalInfo?.profile_personal_state || source.profile_personal_state || "",
-    emailIsPublic: resolveProfileShowFieldPublic(
-      source.emailIsPublic,
-      personalInfo?.profile_personal_email_is_public ?? source.profile_personal_email_is_public
-    ),
-    phoneIsPublic: resolveProfileShowFieldPublic(
-      source.phoneIsPublic,
-      personalInfo?.profile_personal_phone_number_is_public ?? source.profile_personal_phone_number_is_public
-    ),
-    tagLineIsPublic: resolveProfileShowFieldPublic(
-      source.tagLineIsPublic,
-      personalInfo?.profile_personal_tag_line_is_public ?? source.profile_personal_tag_line_is_public
-    ),
-    imageIsPublic: resolveProfileShowFieldPublic(
-      source.imageIsPublic,
-      personalInfo?.profile_personal_image_is_public ?? source.profile_personal_image_is_public
-    ),
-    locationIsPublic: resolveProfileShowFieldPublic(
-      source.locationIsPublic,
-      personalInfo?.profile_personal_location_is_public ?? source.profile_personal_location_is_public
-    ),
+    emailIsPublic: resolveProfileShowFieldPublic(source.emailIsPublic, personalInfo?.profile_personal_email_is_public ?? source.profile_personal_email_is_public),
+    phoneIsPublic: resolveProfileShowFieldPublic(source.phoneIsPublic, personalInfo?.profile_personal_phone_number_is_public ?? source.profile_personal_phone_number_is_public),
+    tagLineIsPublic: resolveProfileShowFieldPublic(source.tagLineIsPublic, personalInfo?.profile_personal_tag_line_is_public ?? source.profile_personal_tag_line_is_public),
+    imageIsPublic: resolveProfileShowFieldPublic(source.imageIsPublic, personalInfo?.profile_personal_image_is_public ?? source.profile_personal_image_is_public),
+    locationIsPublic: resolveProfileShowFieldPublic(source.locationIsPublic, personalInfo?.profile_personal_location_is_public ?? source.profile_personal_location_is_public),
   };
 }
 
@@ -382,15 +351,9 @@ export function expertiseCartPersistedFields(expertiseData, modalData = {}) {
     profile_expertise_is_returnable: isOfferingReturnable(expertiseData) ? 1 : 0,
     profile_expertise_return_window_days: expertiseData?.profile_expertise_return_window_days ?? "",
     profile_expertise_free_shipping:
-      expertiseData?.profile_expertise_free_shipping === 1 ||
-      expertiseData?.profile_expertise_free_shipping === "1" ||
-      expertiseData?.profile_expertise_free_shipping === true
-        ? 1
-        : 0,
+      expertiseData?.profile_expertise_free_shipping === 1 || expertiseData?.profile_expertise_free_shipping === "1" || expertiseData?.profile_expertise_free_shipping === true ? 1 : 0,
     profile_expertise_buyer_pays_shipping:
-      expertiseData?.profile_expertise_buyer_pays_shipping === 1 ||
-      expertiseData?.profile_expertise_buyer_pays_shipping === "1" ||
-      expertiseData?.profile_expertise_buyer_pays_shipping === true
+      expertiseData?.profile_expertise_buyer_pays_shipping === 1 || expertiseData?.profile_expertise_buyer_pays_shipping === "1" || expertiseData?.profile_expertise_buyer_pays_shipping === true
         ? 1
         : 0,
   };

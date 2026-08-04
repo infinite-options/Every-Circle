@@ -2,13 +2,18 @@ import { parseExpertiseModeFlags } from "./expertiseMode";
 import {
   BS_SHIPPING_BUYER_ACTUAL,
   BS_SHIPPING_BUYER_FIXED,
+  applyBsShippingFromApi,
   getCartItemShippingCarrier,
-  isBusinessShippingApplicable,
-  isBuyerPaysShippingValue,
   parseBsShipping,
   parseBsShippingAmount,
+  isBuyerPaysShippingValue,
 } from "./businessServiceShipping";
-import { isOfferingShippingConfigured, offeringDeliveredModeSelected } from "./profileOfferingShipping";
+import { isOfferingShippingConfigured } from "./profileOfferingShipping";
+import {
+  getListingModeString,
+  listingDeliveredFulfillmentAllowed,
+  parseListingModeFlags,
+} from "./listingFulfillmentMode";
 
 export const FULFILLMENT_VIRTUAL = "virtual";
 export const FULFILLMENT_SHIP = "ship";
@@ -27,30 +32,19 @@ function skipsShippingForMethod(method) {
   return method === FULFILLMENT_PICKUP || method === FULFILLMENT_VIRTUAL;
 }
 
-/** True when the offering listing allows buyer delivery (Delivered mode). */
-export function isOfferingDeliveryAllowed(item) {
-  if (!item || item.itemType !== "expertise") return false;
-  return offeringDeliveredModeSelected(item);
+function buildAvailableFulfillmentMethods(item) {
+  const flags = parseListingModeFlags(item);
+  const methods = [];
+  if (flags.virtual) methods.push(FULFILLMENT_VIRTUAL);
+  if (listingDeliveredFulfillmentAllowed(item)) methods.push(FULFILLMENT_SHIP);
+  if (flags.inPerson) methods.push(FULFILLMENT_PICKUP);
+  return methods;
 }
 
-/** Buyer-selectable fulfillment methods for a cart line based on offering modes. */
+/** Buyer-selectable fulfillment methods for a cart line based on listing modes. */
 export function getCartItemAvailableFulfillmentMethods(item) {
-  if (!item || typeof item !== "object") return [FULFILLMENT_SHIP];
-
-  if (item.itemType !== "expertise") {
-    return isBusinessShippingApplicable(item) ? [FULFILLMENT_SHIP] : [FULFILLMENT_PICKUP];
-  }
-
-  const { virtual, inPerson } = parseExpertiseModeFlags(item.profile_expertise_mode);
-  const delivered = isOfferingDeliveryAllowed(item);
-  const methods = [];
-  if (virtual) methods.push(FULFILLMENT_VIRTUAL);
-  if (delivered) methods.push(FULFILLMENT_SHIP);
-  if (inPerson) methods.push(FULFILLMENT_PICKUP);
-
-  if (methods.length > 0) return methods;
-
-  return [FULFILLMENT_VIRTUAL];
+  if (!item || typeof item !== "object") return [];
+  return buildAvailableFulfillmentMethods(item);
 }
 
 /** True when buyer must choose among multiple fulfillment methods. */
@@ -58,21 +52,17 @@ export function cartItemNeedsFulfillmentChoice(item) {
   return getCartItemAvailableFulfillmentMethods(item).length > 1;
 }
 
-/** Listing has a delivery/shipping option (even if buyer chose pickup or virtual). */
+/** Listing has a delivery option configured (even if buyer chose pickup or virtual). */
 function cartItemHasConfiguredDeliveryOption(item) {
   if (!item || typeof item !== "object") return false;
   if (item.itemType === "expertise") {
-    const { delivered } = parseExpertiseModeFlags(item.profile_expertise_mode);
+    const { delivered } = parseListingModeFlags(item);
     if (delivered) return true;
     return isOfferingShippingConfigured(item);
   }
-  return isBusinessShippingApplicable(item);
+  return listingDeliveredFulfillmentAllowed(item) || parseListingModeFlags(item).delivered;
 }
 
-/**
- * Buyer-paid shipping charge for one cart line at a known fulfillment method.
- * Never resolves fulfillment — callers pass the method explicitly.
- */
 function buyerShippingChargeForMethod(item, method) {
   if (!item || typeof item !== "object" || skipsShippingForMethod(method)) return null;
 
@@ -114,41 +104,33 @@ function buildDeliveryDisplay(item, method, charge) {
 }
 
 function pickDefaultFulfillmentMethod(item, available) {
-  if (item.itemType === "expertise" && available.includes(FULFILLMENT_SHIP)) {
+  if (available.includes(FULFILLMENT_SHIP)) {
     const charge = buyerShippingChargeForMethod(item, FULFILLMENT_SHIP);
     const lineShipping = charge?.type === "fixed" ? charge.amount : 0;
     if (lineShipping > 0 || (available.includes(FULFILLMENT_PICKUP) && !available.includes(FULFILLMENT_VIRTUAL))) {
       return FULFILLMENT_SHIP;
     }
   }
-  return available[0] || FULFILLMENT_SHIP;
-}
-
-/** Full listing mode string for transaction line snapshot. */
-function expertiseModeForTransactionApi(item) {
-  if (item?.itemType !== "expertise") return "";
-  return String(item.profile_expertise_mode || "").trim();
+  return available[0] || FULFILLMENT_PICKUP;
 }
 
 const EMPTY_CART_LINE = {
-  fulfillment_method: FULFILLMENT_SHIP,
-  availableMethods: [FULFILLMENT_SHIP],
+  fulfillment_method: FULFILLMENT_PICKUP,
+  availableMethods: [],
   needsChoice: false,
   buyerShippingCharge: null,
   lineShippingAmount: 0,
   deliveryDisplay: { showRow: false, amount: 0, isActual: false, waived: false },
-  skipsShippingCharge: false,
-  requiresShippingAddress: true,
+  skipsShippingCharge: true,
+  requiresShippingAddress: false,
 };
 
-/**
- * Single pass: available methods, effective fulfillment, and delivery charge for a cart line.
- * All cart fulfillment + delivery helpers should use this (or item.fulfillment_method after normalize).
- */
 export function resolveCartLine(item) {
   if (!item || typeof item !== "object") return { ...EMPTY_CART_LINE };
 
   const availableMethods = getCartItemAvailableFulfillmentMethods(item);
+  if (!availableMethods.length) return { ...EMPTY_CART_LINE };
+
   const existing = normalizeFulfillmentMethodValue(item.fulfillment_method);
   const fulfillment_method =
     existing && availableMethods.includes(existing) ? existing : pickDefaultFulfillmentMethod(item, availableMethods);
@@ -174,16 +156,20 @@ function fulfillmentMethodOf(item) {
   return resolveCartLine(item).fulfillment_method;
 }
 
-/** Resolve effective fulfillment method for a cart line. */
 export function resolveDefaultFulfillmentMethod(item) {
   return fulfillmentMethodOf(item);
 }
 
-/** Ensure cart line has fulfillment_method set. */
+function normalizeBusinessCartItemShipping(item) {
+  if (!item || typeof item !== "object" || item.itemType === "expertise") return item;
+  return { ...item, ...applyBsShippingFromApi(item) };
+}
+
 export function normalizeCartItemFulfillment(item) {
   if (!item || typeof item !== "object") return item;
-  const { fulfillment_method } = resolveCartLine(item);
-  return fulfillment_method === item.fulfillment_method ? item : { ...item, fulfillment_method };
+  const normalized = normalizeBusinessCartItemShipping(item);
+  const { fulfillment_method } = resolveCartLine(normalized);
+  return fulfillment_method === normalized.fulfillment_method ? normalized : { ...normalized, fulfillment_method };
 }
 
 export function normalizeCartItemsFulfillment(items) {
@@ -203,32 +189,24 @@ export function isCartItemPickupFulfillment(item) {
   return fulfillmentMethodOf(item) === FULFILLMENT_PICKUP;
 }
 
-/** True when this line requires a ship-to address at checkout (Delivery mode). */
 export function cartItemRequiresShippingAddress(item) {
   return fulfillmentMethodOf(item) === FULFILLMENT_SHIP;
 }
 
-/** True when shipping charges should be skipped for this cart line. */
 export function cartItemSkipsShippingCharge(item) {
   return skipsShippingForMethod(fulfillmentMethodOf(item));
 }
 
-/** True when a cart line requires the buyer to pay shipping (fixed or actual) and ships. */
 export function isCartItemBuyerPaysShipping(item) {
   if (!item || typeof item !== "object" || cartItemSkipsShippingCharge(item)) return false;
   return isBuyerPaysShippingValue(getCartItemShippingCarrier(item));
 }
 
-/**
- * Buyer-paid shipping charge for one cart line.
- * @returns {null | { type: 'fixed'|'actual', unitAmount: number, amount: number, quantity: number }}
- */
 export function getCartItemBuyerShippingCharge(item) {
   if (!item || typeof item !== "object") return null;
   return resolveCartLine(item).buyerShippingCharge;
 }
 
-/** Cart UI: whether to show a delivery/shipping row and at what amount. */
 export function getCartItemDeliveryChargeDisplay(item) {
   if (!item || typeof item !== "object") {
     return { showRow: false, amount: 0, isActual: false, waived: false };
@@ -236,13 +214,11 @@ export function getCartItemDeliveryChargeDisplay(item) {
   return resolveCartLine(item).deliveryDisplay;
 }
 
-/** Charged shipping $ for one line (for transaction POST line_shipping_amount). */
 export function getCartItemLineShippingAmount(item) {
   if (!item || typeof item !== "object") return 0;
   return resolveCartLine(item).lineShippingAmount;
 }
 
-/** Sum charged buyer shipping (fixed only) across cart lines. */
 export function sumBuyerShippingCharges(items) {
   if (!Array.isArray(items)) {
     return { shippingSubtotal: 0, hasFixedShipping: false, hasActualShipping: false, hasWaivedDeliveryCharge: false };
@@ -273,7 +249,6 @@ export function sumBuyerShippingCharges(items) {
   };
 }
 
-/** Fields for POST /api/v1/transactions items[]. */
 export function buildFulfillmentApiFields(item) {
   const line = resolveCartLine(item);
   const fields = {
@@ -284,21 +259,36 @@ export function buildFulfillmentApiFields(item) {
     fields.shipping_not_required = 1;
   }
 
+  const modeStr = getListingModeString(item);
   if (item?.itemType === "expertise") {
-    const mode = expertiseModeForTransactionApi(item);
-    if (mode) fields.profile_expertise_mode = mode;
+    if (modeStr) fields.profile_expertise_mode = modeStr;
+  } else if (modeStr) {
+    fields.bs_mode = modeStr;
   }
 
   return fields;
 }
 
-/** Pickup location hint for offerings (seller address on the listing). */
 export function formatCartPickupLocationHint(item) {
-  if (!item || item.itemType !== "expertise") return null;
-  const street = String(item.profile_expertise_location || "").trim();
-  const city = String(item.profile_expertise_city || "").trim();
-  const state = String(item.profile_expertise_state || "").trim();
-  const zip = String(item.profile_expertise_zip || "").trim();
+  if (!item || typeof item !== "object") return null;
+
+  const street =
+    item.itemType === "expertise"
+      ? String(item.profile_expertise_location || "").trim()
+      : String(item.business_location || "").trim();
+  const city =
+    item.itemType === "expertise"
+      ? String(item.profile_expertise_city || "").trim()
+      : String(item.business_city || "").trim();
+  const state =
+    item.itemType === "expertise"
+      ? String(item.profile_expertise_state || "").trim()
+      : String(item.business_state || "").trim();
+  const zip =
+    item.itemType === "expertise"
+      ? String(item.profile_expertise_zip || "").trim()
+      : String(item.business_zip || "").trim();
+
   const cityStateZip = [city, state, zip].filter(Boolean).join(", ");
   if (street && cityStateZip) return `${street}, ${cityStateZip}`;
   if (street && city && state) return `${street}, ${city}, ${state}`;
@@ -308,4 +298,10 @@ export function formatCartPickupLocationHint(item) {
   if (city) return city;
   if (state) return state;
   return null;
+}
+
+/** @deprecated Use listingDeliveredFulfillmentAllowed */
+export function isOfferingDeliveryAllowed(item) {
+  if (!item || item.itemType !== "expertise") return false;
+  return listingDeliveredFulfillmentAllowed(item);
 }

@@ -105,6 +105,7 @@ export function normalizeBusinessServiceFromApi(service) {
   const next = {
     ...service,
     bs_uid: service.bs_uid || "",
+    bs_mode: String(service.bs_mode || "").trim(),
     bs_tags: service.bs_tags || "",
     bs_image_key: imgKey,
     bs_condition_detail,

@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Ale
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { useTabRefresh } from "../hooks/useTabRefresh";
 import { CommonActions } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import FeedbackPopup from "../components/FeedbackPopup";
@@ -535,68 +536,79 @@ export default function SettingsScreen() {
     }
   };
 
-  useEffect(() => {
-    const applyProfileToSettings = (result) => {
-      if (!result?.personal_info) return;
-      setPersonalProfileData({
-        firstName: result.personal_info.profile_personal_first_name || "",
-        lastName: result.personal_info.profile_personal_last_name || "",
-        email: result.user_email || "",
-        phoneNumber: result.personal_info.profile_personal_phone_number || "",
-        tagLine: result.personal_info.profile_personal_tag_line || "",
-        city: result.personal_info.profile_personal_city || "",
-        state: result.personal_info.profile_personal_state || "",
-        profileImage: result.personal_info.profile_personal_image || "",
-        emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
-        phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
-        tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
-        locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
-        imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
-      });
-      const nearbyLat = parseCoordinateValue(result.personal_info.profile_personal_nearby_lat);
-      const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
-      const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
-      if (nearbyLat != null && nearbyLng != null) {
-        setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
-      }
-      const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
-      const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
-      if (homeLat != null && homeLng != null) {
-        setHomeAddressCoords({ lat: homeLat, lng: homeLng });
-      }
-      setMessagesSettings({
-        receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
-        receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
-      });
-      setMessagesOff(
-        result.personal_info.profile_personal_messages_off === 1 ||
-          result.personal_info.profile_personal_messages_off === "1" ||
-          result.personal_info.profile_personal_messages_off === true,
-      );
-    };
-
-    const loadProfileForSettings = async () => {
-      try {
-        let session = null;
-        try {
-          session = await refreshSessionProfileFromNetwork();
-        } catch (networkErr) {
-          console.warn("SettingsScreen - network profile refresh failed, using cache:", networkErr);
-        }
-        if (!session?.rawProfile) {
-          session = await getSessionProfile({ forceRefresh: true });
-        }
-        applyProfileToSettings(session?.rawProfile);
-        if (!session?.rawProfile) {
-          session = await getSessionProfile({ forceRefresh: true });
-        }
-        applyProfileToSettings(session?.rawProfile);
-      } catch (e) {
-        console.error("Error loading profile for settings:", e);
-      }
-    };
-    loadProfileForSettings();
+  const applyProfileToSettings = useCallback((result) => {
+    if (!result?.personal_info) return;
+    setPersonalProfileData({
+      firstName: result.personal_info.profile_personal_first_name || "",
+      lastName: result.personal_info.profile_personal_last_name || "",
+      email: result.user_email || "",
+      phoneNumber: result.personal_info.profile_personal_phone_number || "",
+      tagLine: result.personal_info.profile_personal_tag_line || "",
+      city: result.personal_info.profile_personal_city || "",
+      state: result.personal_info.profile_personal_state || "",
+      profileImage: result.personal_info.profile_personal_image || "",
+      emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
+      phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
+      tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
+      locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
+      imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+    });
+    const nearbyLat = parseCoordinateValue(result.personal_info.profile_personal_nearby_lat);
+    const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
+    const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
+    if (nearbyLat != null && nearbyLng != null) {
+      setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
+    }
+    const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
+    const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
+    if (homeLat != null && homeLng != null) {
+      setHomeAddressCoords({ lat: homeLat, lng: homeLng });
+    }
+    setMessagesSettings({
+      receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
+      receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
+    });
+    setMessagesOff(
+      result.personal_info.profile_personal_messages_off === 1 ||
+        result.personal_info.profile_personal_messages_off === "1" ||
+        result.personal_info.profile_personal_messages_off === true,
+    );
   }, []);
+
+  const loadProfileForSettings = useCallback(async () => {
+    try {
+      let session = null;
+      try {
+        session = await refreshSessionProfileFromNetwork();
+      } catch (networkErr) {
+        console.warn("SettingsScreen - network profile refresh failed, using cache:", networkErr);
+      }
+      if (!session?.rawProfile) {
+        session = await getSessionProfile({ forceRefresh: true });
+      }
+      applyProfileToSettings(session?.rawProfile);
+      if (!session?.rawProfile) {
+        session = await getSessionProfile({ forceRefresh: true });
+      }
+      applyProfileToSettings(session?.rawProfile);
+    } catch (e) {
+      console.error("Error loading profile for settings:", e);
+    }
+  }, [applyProfileToSettings]);
+
+  useEffect(() => {
+    loadProfileForSettings();
+  }, [loadProfileForSettings]);
+
+  const reloadSettingsScreen = useCallback(() => {
+    void getLiveLocationSharingStatus().then(({ active, until }) => {
+      setShareLocationActive(active);
+      setShareLocationUntil(until);
+    });
+    void loadProfileForSettings();
+  }, [loadProfileForSettings]);
+
+  useTabRefresh("Settings", reloadSettingsScreen);
 
   useEffect(() => {
     return subscribeNearbySettings((settings) => {

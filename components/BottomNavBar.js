@@ -4,6 +4,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
+import { triggerTabRefresh } from "../utils/tabRefreshRegistry";
+
+const getFocusedRoute = (nav) => {
+  try {
+    const state = nav.getState?.();
+    if (!state?.routes?.length) return null;
+    return state.routes[state.index] ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const getFocusedRouteName = (nav) => getFocusedRoute(nav)?.name ?? null;
 
 const { width, height } = Dimensions.get("window");
 
@@ -11,11 +24,29 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
   const { darkMode } = useDarkMode();
   const { hasUnread } = useUnread();
 
-  // Helper function to handle navigation with interceptor
+  // Navigate to a tab, or refresh if already on that tab (footer "tap again to refresh").
   const handleNavigate = (destination) => {
     if (onBeforeNavigate) {
       const shouldNavigate = onBeforeNavigate(destination);
       if (!shouldNavigate) return; // Navigation intercepted
+    }
+    const currentRoute = getFocusedRouteName(navigation);
+    const focusedRoute = getFocusedRoute(navigation);
+
+    // Profile tab always shows the logged-in user's profile.
+    if (destination === "Profile") {
+      const viewingOtherProfile = focusedRoute?.name === "Profile" && focusedRoute?.params?.profile_uid;
+      if (viewingOtherProfile || currentRoute !== "Profile") {
+        navigation.navigate({ name: "Profile", params: {}, merge: false });
+        return;
+      }
+      triggerTabRefresh("Profile");
+      return;
+    }
+
+    if (currentRoute === destination) {
+      triggerTabRefresh(destination);
+      return;
     }
     navigation.navigate(destination);
   };
@@ -57,7 +88,8 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
             <TouchableOpacity
               style={styles.navButton}
               onPress={() => {
-                if (onSharePress) onSharePress();
+                const currentRoute = getFocusedRouteName(navigation);
+                if (currentRoute !== "Connect" && onSharePress) onSharePress();
                 handleNavigate("Connect");
               }}
             >

@@ -7,25 +7,40 @@ import {
   isBuyerPaysShippingValue,
 } from "./businessServiceShipping";
 import { parseExpertiseModeFlags } from "./expertiseMode";
+import { businessDeliveredModeSelected } from "./listingFulfillmentMode";
 
-/** Buyer-facing label for offering delivery fees (replaces "Ship" / "Shipping" on offerings). */
+/** Buyer-facing label for delivery fees (offerings + business products/services). */
 export const OFFERING_DELIVERY_CHARGE_LABEL = "Delivery charge";
 
-/** Offering card badge / detail row label (describes the delivery setting, not the dollar amount). */
+/** Card badge / detail row label (describes the delivery setting, not the dollar amount). */
 export const OFFERING_DELIVERY_OPTION_CARD_LABEL = "Delivery option";
 
-/** Cart / checkout line label — offerings use delivery charge; business services keep Shipping. */
-export function cartLineDeliveryChargeLabel(item) {
-  return item?.itemType === "expertise" ? OFFERING_DELIVERY_CHARGE_LABEL : "Shipping";
+/** Fixed-amount field label in product/offering edit forms. */
+export const FIXED_DELIVERY_CHARGE_AMOUNT_LABEL = "Fixed delivery charge";
+
+const DELIVERY_CHARGE_DROPDOWN_OPTIONS = [
+  { label: "Not applicable", value: "na" },
+  { label: "Free delivery charge", value: "free" },
+  { label: "Buyer pays (fixed)", value: "buyer_fixed" },
+  { label: "Buyer pays (actual)", value: "buyer_actual" },
+];
+
+/** Business product/service edit form — same delivery charge options as offerings. */
+export function getBusinessServiceShippingDropdownOptions(form = null) {
+  if (businessDeliveredModeSelected(form)) {
+    return DELIVERY_CHARGE_DROPDOWN_OPTIONS.filter((option) => option.value !== "na");
+  }
+  return DELIVERY_CHARGE_DROPDOWN_OPTIONS;
 }
 
-/** Seller-group checkout label when all lines are offerings. */
-export function sellerGroupDeliveryChargeLabel(group) {
-  const items = Array.isArray(group?.items) ? group.items : [];
-  if (items.length > 0 && items.every((it) => it?.itemType === "expertise")) {
-    return OFFERING_DELIVERY_CHARGE_LABEL;
-  }
-  return "Shipping";
+/** Cart / checkout line label. */
+export function cartLineDeliveryChargeLabel(_item) {
+  return OFFERING_DELIVERY_CHARGE_LABEL;
+}
+
+/** Seller-group checkout summary label. */
+export function sellerGroupDeliveryChargeLabel(_group) {
+  return OFFERING_DELIVERY_CHARGE_LABEL;
 }
 
 /** Map offering fields onto the shape expected by business shipping helpers. */
@@ -89,14 +104,8 @@ export function validateOfferingDeliveredShipping(item) {
 }
 
 export function getOfferingShippingDropdownOptions(item) {
-  const options = [
-    { label: "Not applicable", value: "na" },
-    { label: "Free delivery charge", value: "free" },
-    { label: "Buyer pays (fixed)", value: "buyer_fixed" },
-    { label: "Buyer pays (actual)", value: "buyer_actual" },
-  ];
-  if (!offeringDeliveredModeSelected(item)) return options;
-  return options.filter((option) => option.value !== "na");
+  if (!offeringDeliveredModeSelected(item)) return DELIVERY_CHARGE_DROPDOWN_OPTIONS;
+  return DELIVERY_CHARGE_DROPDOWN_OPTIONS.filter((option) => option.value !== "na");
 }
 
 export function getOfferingShippingDropdownValue(item) {

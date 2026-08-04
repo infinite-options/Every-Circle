@@ -31,7 +31,7 @@ export const PROFILE_CONDITION_OPTIONS = [
 
 export const PROFILE_OFFERING_SHIPPING_OPTIONS = [
   { label: "Not applicable", value: "na" },
-  { label: "Free shipping", value: "free" },
+  { label: "Free delivery charge", value: "free" },
   { label: "Buyer pays (fixed)", value: "buyer_fixed" },
   { label: "Buyer pays (actual)", value: "buyer_actual" },
 ];

@@ -1,5 +1,5 @@
 // ScannedProfilePopup.js - Popup to display scanned profile information
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView, Dimensions, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -42,6 +42,24 @@ const dateToCircleDate = (date) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
+const resolveInitialRelationship = (initialData) => {
+  if (!initialData) return "friend";
+  const r = initialData.relationship;
+  if (r && REL_TYPES.includes(r)) return r;
+  return null;
+};
+
+const resetConnectionForm = (setters) => {
+  setters.setSelectedRelationship("friend");
+  setters.setEvent("");
+  setters.setNote("");
+  setters.setCity("");
+  setters.setState("");
+  setters.setIntroducedBy("");
+  setters.setDate(getTodayCircleDate());
+  setters.setShowDatePicker(false);
+};
+
 const ScannedProfilePopup = ({
   visible,
   profileData,
@@ -61,37 +79,40 @@ const ScannedProfilePopup = ({
   const [introducedBy, setIntroducedBy] = useState("");
   const [date, setDate] = useState(getTodayCircleDate());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const wasVisibleRef = useRef(false);
 
-  // QR flow: no initialData → default friend. Profile / edit flow: pass initialData; unknown/null → none selected.
-  const normalizedRelationship = (() => {
-    if (!initialData) return "friend";
-    const r = initialData.relationship;
-    if (r && REL_TYPES.includes(r)) return r;
-    return null;
-  })();
-
-  // Initialize/reset form values when popup visibility changes
+  // Hydrate only when the modal opens/closes — not when parent relationship data arrives later.
+  // Re-syncing mid-edit reset TextInput values and can crash Android while the user is typing.
   useEffect(() => {
     if (visible) {
-      setSelectedRelationship(normalizedRelationship);
-      setEvent(initialData?.event || "");
-      setNote(initialData?.note || "");
-      setCity(initialData?.city || "");
-      setState(initialData?.state || "");
-      setIntroducedBy(initialData?.introducedBy || "");
-      setDate(initialData?.date || getTodayCircleDate());
-      setShowDatePicker(false);
-    } else {
-      setSelectedRelationship("friend");
-      setEvent("");
-      setNote("");
-      setCity("");
-      setState("");
-      setIntroducedBy("");
-      setDate(getTodayCircleDate());
-      setShowDatePicker(false);
+      if (!wasVisibleRef.current) {
+        setSelectedRelationship(resolveInitialRelationship(initialData));
+        setEvent(initialData?.event || "");
+        setNote(initialData?.note || "");
+        setCity(initialData?.city || "");
+        setState(initialData?.state || "");
+        setIntroducedBy(initialData?.introducedBy || "");
+        setDate(initialData?.date || getTodayCircleDate());
+        setShowDatePicker(false);
+      }
+      wasVisibleRef.current = true;
+      return;
     }
-  }, [visible, normalizedRelationship]);
+
+    if (wasVisibleRef.current) {
+      resetConnectionForm({
+        setSelectedRelationship,
+        setEvent,
+        setNote,
+        setCity,
+        setState,
+        setIntroducedBy,
+        setDate,
+        setShowDatePicker,
+      });
+    }
+    wasVisibleRef.current = false;
+  }, [visible]);
 
   if (!profileData) return null;
 
@@ -137,6 +158,8 @@ const ScannedProfilePopup = ({
             contentContainerStyle={styles.scrollContent}
             scrollEnabled={Platform.OS !== "web"}
             showsVerticalScrollIndicator={Platform.OS !== "web"}
+            keyboardShouldPersistTaps='handled'
+            nestedScrollEnabled
           >
             <View style={styles.content}>
               <MiniCard user={profileData} />

@@ -28,15 +28,10 @@ import { getHeaderColors } from "../config/headerColors";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ReviewImageStrip from "../components/ReviewImageStrip";
 import FlagBusinessModal from "../components/FlagBusinessModal";
-import {
-  buildBusinessModerationItem,
-  getBusinessModerationStatusLabel,
-  isBusinessOwnerRestricted,
-  isBusinessVisibilityBlocked,
-} from "../utils/businessModeration";
-import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
-import { isBusinessShippingApplicable } from "../utils/businessServiceShipping";
-import { FULFILLMENT_PICKUP, FULFILLMENT_SHIP } from "../utils/cartFulfillmentMethod";
+import { buildBusinessModerationItem, getBusinessModerationStatusLabel, isBusinessOwnerRestricted, isBusinessVisibilityBlocked } from "../utils/businessModeration";
+import { normalizeBusinessServiceFromApi } from "../utils/normalizeBusinessServiceFromApi";
+import { businessCcFeePayerFromSource } from "../utils/businessCcFeePayer";
+import { businessCartPersistedFields } from "../utils/businessCartUtils";
 import { fetchServiceChoiceGroups, parseServiceOptionsResponse } from "../utils/parseServiceOptionsResponse";
 import {
   parseBusinessGooglePhotos,
@@ -54,7 +49,14 @@ import { getSessionProfile, getViewerProfilePersonalPath, refreshSessionProfileF
 import { enrichReviewWithConnectionDegree } from "../utils/profilePathConnectionDegree";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
 import * as DocumentPicker from "expo-document-picker";
-import { bountyPickerRequiresSelection, getDefaultBountyRecipient, isBountyReviewDisabled, isReviewVerified, mergeBountyEligibleReviews, resolveBountyRecommenderProfileId } from "../utils/bountyRecipientUtils";
+import {
+  bountyPickerRequiresSelection,
+  getDefaultBountyRecipient,
+  isBountyReviewDisabled,
+  isReviewVerified,
+  mergeBountyEligibleReviews,
+  resolveBountyRecommenderProfileId,
+} from "../utils/bountyRecipientUtils";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
@@ -374,302 +376,302 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
     const fetchPromise = (async () => {
       try {
-      setLoading(true);
-      setBusinessViewers([]);
-      setCanViewBusinessViewers(false);
-      setClaimStatus(null);
-      setClaimSubmittedAt(null);
+        setLoading(true);
+        setBusinessViewers([]);
+        setCanViewBusinessViewers(false);
+        setClaimStatus(null);
+        setClaimSubmittedAt(null);
 
-      let cachedViewerPath = await getViewerProfilePersonalPath();
-      if (!cachedViewerPath) {
-        try {
-          const refreshed = await refreshSessionProfileFromNetwork();
-          cachedViewerPath = refreshed?.personalInfo?.profile_personal_path ?? refreshed?.rawProfile?.personal_info?.profile_personal_path ?? (await getViewerProfilePersonalPath());
-        } catch (_) {}
-      }
-      if (cachedViewerPath) setViewerProfilePath(cachedViewerPath);
-
-      console.log("[BusinessProfileScreen] fetchBusinessInfo - business_uid from route params:", business_uid);
-      const endpoint = `${BusinessProfileApi}/${business_uid}`;
-      console.log("BusinessProfileScreen GET endpoint:", endpoint);
-
-      // Always fetch businessinfo first
-      const response = await fetch(endpoint);
-      const result = await response.json();
-
-      if (!result || !result.business) {
-        throw new Error("Business not found or malformed response");
-      }
-
-      if (Array.isArray(result.ratings) && result.ratings.length > 0) {
-        const sample = result.ratings[0];
-        console.log("[BusinessProfileScreen] businessinfo rating profile_personal_path:", sample.profile_personal_path ?? "(missing)");
-        console.log("[BusinessProfileScreen] viewer profile_personal_path:", cachedViewerPath ?? "(missing)");
-      }
-
-      const rawBusiness = result.business;
-
-      // Handle social_links
-      let socialLinksData = {};
-      let websiteShortName = rawBusiness.bl_short_name || "";
-      const socialLinksSource = result.social_links || rawBusiness.social_links;
-      if (socialLinksSource) {
-        if (Array.isArray(socialLinksSource)) {
-          socialLinksSource.forEach((link) => {
-            const platformName = link.social_link_name || link.bl_social_link_id;
-            const platformUrl = link.business_link_url || link.bl_url;
-            if (platformName && platformUrl && platformUrl.trim() !== "") {
-              socialLinksData[platformName] = platformUrl;
-            }
-            if (String(platformName || "").toLowerCase() === "website" && link.bl_short_name) {
-              websiteShortName = link.bl_short_name;
-            }
-          });
-        } else if (typeof socialLinksSource === "string") {
+        let cachedViewerPath = await getViewerProfilePersonalPath();
+        if (!cachedViewerPath) {
           try {
-            socialLinksData = JSON.parse(socialLinksSource);
-          } catch (e) {
-            console.log("Failed to parse social_links as JSON");
-            socialLinksData = {};
-          }
+            const refreshed = await refreshSessionProfileFromNetwork();
+            cachedViewerPath = refreshed?.personalInfo?.profile_personal_path ?? refreshed?.rawProfile?.personal_info?.profile_personal_path ?? (await getViewerProfilePersonalPath());
+          } catch (_) {}
         }
-      }
+        if (cachedViewerPath) setViewerProfilePath(cachedViewerPath);
 
-      let googlePhotos = parseBusinessGooglePhotos(rawBusiness.business_google_photos);
-      const needsPhotoRefresh = googlePhotos.some(isEphemeralGooglePhotoUrl) || isEphemeralGooglePhotoUrl(rawBusiness.business_favorite_image);
-      if (needsPhotoRefresh && rawBusiness.business_google_id) {
-        try {
-          const pd = await getPlaceDetails(rawBusiness.business_google_id);
-          googlePhotos = resolveGooglePhotosForDisplay(googlePhotos, pd.photo_urls);
-        } catch (e) {
-          console.warn("BusinessProfileScreen - could not refresh Google photo URLs:", e);
-        }
-      }
-      let businessImages = [...googlePhotos];
+        console.log("[BusinessProfileScreen] fetchBusinessInfo - business_uid from route params:", business_uid);
+        const endpoint = `${BusinessProfileApi}/${business_uid}`;
+        console.log("BusinessProfileScreen GET endpoint:", endpoint);
 
-      // Handle business_images_url - other/gallery images only (profile image comes from business_profile_img)
-      if (rawBusiness.business_images_url) {
-        let uploadedImages = [];
-        if (typeof rawBusiness.business_images_url === "string") {
-          try {
-            uploadedImages = JSON.parse(rawBusiness.business_images_url);
-          } catch (e) {
-            console.log("Failed to parse business_images_url as JSON");
-            uploadedImages = [];
-          }
-        } else if (Array.isArray(rawBusiness.business_images_url)) {
-          uploadedImages = rawBusiness.business_images_url;
+        // Always fetch businessinfo first
+        const response = await fetch(endpoint);
+        const result = await response.json();
+
+        if (!result || !result.business) {
+          throw new Error("Business not found or malformed response");
         }
-        uploadedImages = uploadedImages
-          .map((img) => {
-            if (img && typeof img === "string") {
-              if (img.startsWith("http://") || img.startsWith("https://")) {
-                return img;
+
+        if (Array.isArray(result.ratings) && result.ratings.length > 0) {
+          const sample = result.ratings[0];
+          console.log("[BusinessProfileScreen] businessinfo rating profile_personal_path:", sample.profile_personal_path ?? "(missing)");
+          console.log("[BusinessProfileScreen] viewer profile_personal_path:", cachedViewerPath ?? "(missing)");
+        }
+
+        const rawBusiness = result.business;
+
+        // Handle social_links
+        let socialLinksData = {};
+        let websiteShortName = rawBusiness.bl_short_name || "";
+        const socialLinksSource = result.social_links || rawBusiness.social_links;
+        if (socialLinksSource) {
+          if (Array.isArray(socialLinksSource)) {
+            socialLinksSource.forEach((link) => {
+              const platformName = link.social_link_name || link.bl_social_link_id;
+              const platformUrl = link.business_link_url || link.bl_url;
+              if (platformName && platformUrl && platformUrl.trim() !== "") {
+                socialLinksData[platformName] = platformUrl;
               }
-              return `https://s3-us-west-1.amazonaws.com/every-circle/business_personal/${rawBusiness.business_uid}/${img}`;
+              if (String(platformName || "").toLowerCase() === "website" && link.bl_short_name) {
+                websiteShortName = link.bl_short_name;
+              }
+            });
+          } else if (typeof socialLinksSource === "string") {
+            try {
+              socialLinksData = JSON.parse(socialLinksSource);
+            } catch (e) {
+              console.log("Failed to parse social_links as JSON");
+              socialLinksData = {};
             }
-            return null;
-          })
-          .filter(Boolean);
-        businessImages = [...uploadedImages, ...businessImages];
-      }
-
-      let businessProfileImgUrl = resolveBusinessProfileImgUrl(
-        {
-          ...rawBusiness,
-          business_google_photos: googlePhotos,
-        },
-        rawBusiness.business_uid,
-      );
-      if (!businessProfileImgUrl) {
-        businessProfileImgUrl = resolveBusinessProfileImage({
-          ...rawBusiness,
-          business_google_photos: googlePhotos,
-        });
-      }
-      if (isEphemeralGooglePhotoUrl(businessProfileImgUrl) && googlePhotos.length > 0) {
-        const favorite = rawBusiness.business_favorite_image ? String(rawBusiness.business_favorite_image).trim() : "";
-        const favoriteIdx = favorite ? googlePhotos.findIndex((url) => googlePhotoUrlsMatch(url, favorite)) : -1;
-        businessProfileImgUrl = googlePhotos[favoriteIdx >= 0 ? favoriteIdx : 0];
-      }
-
-      businessImages = businessImages.filter((uri) => {
-        if (!uri || typeof uri !== "string" || uri.trim() === "" || uri === "null" || uri === "undefined") {
-          return false;
+          }
         }
-        return uri.startsWith("http://") || uri.startsWith("https://");
-      });
 
-      // Handle custom tags
-      let customTags = [];
-      if (result.tags && Array.isArray(result.tags)) {
-        customTags = result.tags;
-      } else if (rawBusiness.custom_tags) {
-        if (typeof rawBusiness.custom_tags === "string") {
+        let googlePhotos = parseBusinessGooglePhotos(rawBusiness.business_google_photos);
+        const needsPhotoRefresh = googlePhotos.some(isEphemeralGooglePhotoUrl) || isEphemeralGooglePhotoUrl(rawBusiness.business_favorite_image);
+        if (needsPhotoRefresh && rawBusiness.business_google_id) {
           try {
-            customTags = JSON.parse(rawBusiness.custom_tags);
+            const pd = await getPlaceDetails(rawBusiness.business_google_id);
+            googlePhotos = resolveGooglePhotosForDisplay(googlePhotos, pd.photo_urls);
           } catch (e) {
-            customTags = [];
+            console.warn("BusinessProfileScreen - could not refresh Google photo URLs:", e);
           }
-        } else if (Array.isArray(rawBusiness.custom_tags)) {
-          customTags = rawBusiness.custom_tags;
         }
-      }
+        let businessImages = [...googlePhotos];
 
-      // Fetch category name if business_category_id is present (cached per session)
-      let categoryName = rawBusiness.business_category || null;
-      if (rawBusiness.business_category_id && !categoryName) {
-        try {
-          if (!_categoryListCache) {
-            const categoryResponse = await fetch(CATEGORY_LIST_ENDPOINT);
-            const categoryResult = await categoryResponse.json();
-            _categoryListCache = categoryResult?.result ?? null;
-          }
-          if (_categoryListCache) {
-            const categoryIds = rawBusiness.business_category_id.split(",").map((id) => id.trim());
-            const categoryNames = categoryIds
-              .map((id) => {
-                const category = _categoryListCache.find((cat) => cat.category_uid === id);
-                return category ? category.category_name : null;
-              })
-              .filter(Boolean);
-            categoryName = categoryNames.length > 0 ? categoryNames.join(", ") : null;
-          }
-        } catch (e) {
-          console.log("Failed to fetch category name:", e);
-        }
-      }
-
-      const profileCcFeePayer = canonicalBusinessCcFeePayer(rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer);
-
-      const businessWithRatings = {
-        ...rawBusiness,
-        business_user_id: rawBusiness.business_user_id || "",
-        business_email_id: rawBusiness.business_email_id || "",
-        business_phone_number: rawBusiness.business_phone_number || "",
-        business_location: rawBusiness.business_location || "",
-        business_address_line_1: rawBusiness.business_address_line_1 || "",
-        tagline: rawBusiness.business_tag_line || rawBusiness.tagline || "",
-        business_short_bio: rawBusiness.business_short_bio || rawBusiness.short_bio || "",
-        business_role: rawBusiness.business_role || rawBusiness.role || rawBusiness.bu_role || "",
-        business_ein_number: rawBusiness.business_ein_number || "",
-        ein_number: rawBusiness.business_ein_number || "",
-        facebook: socialLinksData.facebook || "",
-        instagram: socialLinksData.instagram || "",
-        linkedin: socialLinksData.linkedin || "",
-        youtube: socialLinksData.youtube || "",
-        bl_short_name: websiteShortName || "",
-        images: businessImages,
-        businessGooglePhotos: googlePhotos,
-        business_favorite_image: rawBusiness.business_favorite_image || null,
-        customTags: customTags,
-        business_category: categoryName || rawBusiness.business_category || null,
-        business_category_id: rawBusiness.business_category_id || null,
-        ratings: result.ratings,
-        emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
-        phoneIsPublic:
-          rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
-        taglineIsPublic:
-          rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
-        shortBioIsPublic:
-          rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
-        locationIsPublic: rawBusiness.business_location_is_public === "1" || rawBusiness.business_location_is_public === 1,
-        imageIsPublic:
-          rawBusiness.business_profile_img_is_public === "1" ||
-          rawBusiness.business_profile_img_is_public === 1 ||
-          rawBusiness.business_image_is_public === "1" ||
-          rawBusiness.business_image_is_public === 1 ||
-          rawBusiness.image_is_public === "1" ||
-          rawBusiness.image_is_public === 1,
-        business_profile_img: businessProfileImgUrl,
-        business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
-        business_cc_fee_payer: profileCcFeePayer,
-        business_services: buildBusinessServicesList(rawBusiness, result.services, profileCcFeePayer),
-        business_updated_at: rawBusiness.business_updated_at ?? rawBusiness.updated_at,
-      };
-
-      setBusiness(businessWithRatings);
-
-      const businessUsersData = result.business_users ?? rawBusiness.business_users;
-      if (businessUsersData && Array.isArray(businessUsersData)) {
-        setBusinessUsers(businessUsersData);
-      } else {
-        setBusinessUsers([]);
-      }
-
-      // Determine ownership immediately (so we can gate follow-up endpoints deterministically)
-      let owner = false;
-      try {
-        owner = await resolveIsOwnerForBusiness(businessUsersData);
-      } catch (e) {
-        console.warn("BusinessProfileScreen - could not resolve ownership inline:", e);
-      }
-      setIsOwner(owner);
-
-      let canViewViewers = false;
-      try {
-        canViewViewers = await resolveCanViewBusinessViewers(businessUsersData);
-      } catch (e) {
-        console.warn("BusinessProfileScreen - could not resolve viewer access:", e);
-      }
-      setCanViewBusinessViewers(canViewViewers);
-
-      if (canViewViewers) {
-        try {
-          const viewersResponse = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${business_uid}`);
-          if (viewersResponse.ok) {
-            const d = await viewersResponse.json();
-            setBusinessViewers(d.viewers || []);
-          }
-        } catch (e) {
-          console.warn("BusinessProfileScreen - could not load business viewers:", e);
-        }
-      }
-
-      if (!owner) {
-        // Non-owners: check claim status (if logged in)
-        try {
-          const profileId = await AsyncStorage.getItem("profile_uid");
-          if (profileId) {
-            const res = await fetch(`${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}`);
-            const data = await res.json();
-            const claims = data?.result ?? [];
-            const pending = claims.find((c) => (c.claim_status || c.status || "").toLowerCase() === "pending");
-            if (pending) {
-              setClaimStatus("pending");
-              setClaimSubmittedAt(pending.claim_created_at ? new Date(pending.claim_created_at) : new Date());
-            } else {
-              const approved = claims.find((c) => (c.claim_status || c.status || "").toLowerCase() === "approved");
-              if (approved) setClaimStatus("approved");
+        // Handle business_images_url - other/gallery images only (profile image comes from business_profile_img)
+        if (rawBusiness.business_images_url) {
+          let uploadedImages = [];
+          if (typeof rawBusiness.business_images_url === "string") {
+            try {
+              uploadedImages = JSON.parse(rawBusiness.business_images_url);
+            } catch (e) {
+              console.log("Failed to parse business_images_url as JSON");
+              uploadedImages = [];
             }
+          } else if (Array.isArray(rawBusiness.business_images_url)) {
+            uploadedImages = rawBusiness.business_images_url;
           }
-        } catch (e) {
-          console.warn("BusinessProfileScreen - could not check existing claim:", e);
+          uploadedImages = uploadedImages
+            .map((img) => {
+              if (img && typeof img === "string") {
+                if (img.startsWith("http://") || img.startsWith("https://")) {
+                  return img;
+                }
+                return `https://s3-us-west-1.amazonaws.com/every-circle/business_personal/${rawBusiness.business_uid}/${img}`;
+              }
+              return null;
+            })
+            .filter(Boolean);
+          businessImages = [...uploadedImages, ...businessImages];
         }
 
-        // Non-owners: record profile view if viewer is not one of the owners
-        try {
-          const viewerProfileId = await AsyncStorage.getItem("profile_uid");
-          const viewerUserId = await AsyncStorage.getItem("user_uid");
-          if (viewerProfileId || viewerUserId) {
-            const list = Array.isArray(businessUsersData) ? businessUsersData : [];
-            const viewerIsOwner = list.some((bu) => businessUserMatchesViewer(bu, viewerUserId, viewerProfileId));
-            if (!viewerIsOwner) {
-              const viewPayload = {
-                profile_view_profile_id: business_uid,
-                profile_view_viewer_id: viewerProfileId,
-              };
-              fetch(PROFILE_VIEWS_ENDPOINT, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(viewPayload),
-              }).catch((e) => console.warn("BusinessProfileScreen - failed to record view:", e));
-            }
-          }
-        } catch (e) {
-          console.warn("BusinessProfileScreen - error recording profile view:", e);
+        let businessProfileImgUrl = resolveBusinessProfileImgUrl(
+          {
+            ...rawBusiness,
+            business_google_photos: googlePhotos,
+          },
+          rawBusiness.business_uid,
+        );
+        if (!businessProfileImgUrl) {
+          businessProfileImgUrl = resolveBusinessProfileImage({
+            ...rawBusiness,
+            business_google_photos: googlePhotos,
+          });
         }
-      }
+        if (isEphemeralGooglePhotoUrl(businessProfileImgUrl) && googlePhotos.length > 0) {
+          const favorite = rawBusiness.business_favorite_image ? String(rawBusiness.business_favorite_image).trim() : "";
+          const favoriteIdx = favorite ? googlePhotos.findIndex((url) => googlePhotoUrlsMatch(url, favorite)) : -1;
+          businessProfileImgUrl = googlePhotos[favoriteIdx >= 0 ? favoriteIdx : 0];
+        }
+
+        businessImages = businessImages.filter((uri) => {
+          if (!uri || typeof uri !== "string" || uri.trim() === "" || uri === "null" || uri === "undefined") {
+            return false;
+          }
+          return uri.startsWith("http://") || uri.startsWith("https://");
+        });
+
+        // Handle custom tags
+        let customTags = [];
+        if (result.tags && Array.isArray(result.tags)) {
+          customTags = result.tags;
+        } else if (rawBusiness.custom_tags) {
+          if (typeof rawBusiness.custom_tags === "string") {
+            try {
+              customTags = JSON.parse(rawBusiness.custom_tags);
+            } catch (e) {
+              customTags = [];
+            }
+          } else if (Array.isArray(rawBusiness.custom_tags)) {
+            customTags = rawBusiness.custom_tags;
+          }
+        }
+
+        // Fetch category name if business_category_id is present (cached per session)
+        let categoryName = rawBusiness.business_category || null;
+        if (rawBusiness.business_category_id && !categoryName) {
+          try {
+            if (!_categoryListCache) {
+              const categoryResponse = await fetch(CATEGORY_LIST_ENDPOINT);
+              const categoryResult = await categoryResponse.json();
+              _categoryListCache = categoryResult?.result ?? null;
+            }
+            if (_categoryListCache) {
+              const categoryIds = rawBusiness.business_category_id.split(",").map((id) => id.trim());
+              const categoryNames = categoryIds
+                .map((id) => {
+                  const category = _categoryListCache.find((cat) => cat.category_uid === id);
+                  return category ? category.category_name : null;
+                })
+                .filter(Boolean);
+              categoryName = categoryNames.length > 0 ? categoryNames.join(", ") : null;
+            }
+          } catch (e) {
+            console.log("Failed to fetch category name:", e);
+          }
+        }
+
+        const profileCcFeePayer = businessCcFeePayerFromSource(rawBusiness);
+
+        const businessWithRatings = {
+          ...rawBusiness,
+          business_user_id: rawBusiness.business_user_id || "",
+          business_email_id: rawBusiness.business_email_id || "",
+          business_phone_number: rawBusiness.business_phone_number || "",
+          business_location: rawBusiness.business_location || "",
+          business_address_line_1: rawBusiness.business_address_line_1 || "",
+          tagline: rawBusiness.business_tag_line || rawBusiness.tagline || "",
+          business_short_bio: rawBusiness.business_short_bio || rawBusiness.short_bio || "",
+          business_role: rawBusiness.business_role || rawBusiness.role || rawBusiness.bu_role || "",
+          business_ein_number: rawBusiness.business_ein_number || "",
+          ein_number: rawBusiness.business_ein_number || "",
+          facebook: socialLinksData.facebook || "",
+          instagram: socialLinksData.instagram || "",
+          linkedin: socialLinksData.linkedin || "",
+          youtube: socialLinksData.youtube || "",
+          bl_short_name: websiteShortName || "",
+          images: businessImages,
+          businessGooglePhotos: googlePhotos,
+          business_favorite_image: rawBusiness.business_favorite_image || null,
+          customTags: customTags,
+          business_category: categoryName || rawBusiness.business_category || null,
+          business_category_id: rawBusiness.business_category_id || null,
+          ratings: result.ratings,
+          emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
+          phoneIsPublic:
+            rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
+          taglineIsPublic:
+            rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
+          shortBioIsPublic:
+            rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
+          locationIsPublic: rawBusiness.business_location_is_public === "1" || rawBusiness.business_location_is_public === 1,
+          imageIsPublic:
+            rawBusiness.business_profile_img_is_public === "1" ||
+            rawBusiness.business_profile_img_is_public === 1 ||
+            rawBusiness.business_image_is_public === "1" ||
+            rawBusiness.business_image_is_public === 1 ||
+            rawBusiness.image_is_public === "1" ||
+            rawBusiness.image_is_public === 1,
+          business_profile_img: businessProfileImgUrl,
+          business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
+          business_cc_fee_payer: profileCcFeePayer,
+          business_services: buildBusinessServicesList(rawBusiness, result.services, profileCcFeePayer),
+          business_updated_at: rawBusiness.business_updated_at ?? rawBusiness.updated_at,
+        };
+
+        setBusiness(businessWithRatings);
+
+        const businessUsersData = result.business_users ?? rawBusiness.business_users;
+        if (businessUsersData && Array.isArray(businessUsersData)) {
+          setBusinessUsers(businessUsersData);
+        } else {
+          setBusinessUsers([]);
+        }
+
+        // Determine ownership immediately (so we can gate follow-up endpoints deterministically)
+        let owner = false;
+        try {
+          owner = await resolveIsOwnerForBusiness(businessUsersData);
+        } catch (e) {
+          console.warn("BusinessProfileScreen - could not resolve ownership inline:", e);
+        }
+        setIsOwner(owner);
+
+        let canViewViewers = false;
+        try {
+          canViewViewers = await resolveCanViewBusinessViewers(businessUsersData);
+        } catch (e) {
+          console.warn("BusinessProfileScreen - could not resolve viewer access:", e);
+        }
+        setCanViewBusinessViewers(canViewViewers);
+
+        if (canViewViewers) {
+          try {
+            const viewersResponse = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${business_uid}`);
+            if (viewersResponse.ok) {
+              const d = await viewersResponse.json();
+              setBusinessViewers(d.viewers || []);
+            }
+          } catch (e) {
+            console.warn("BusinessProfileScreen - could not load business viewers:", e);
+          }
+        }
+
+        if (!owner) {
+          // Non-owners: check claim status (if logged in)
+          try {
+            const profileId = await AsyncStorage.getItem("profile_uid");
+            if (profileId) {
+              const res = await fetch(`${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}`);
+              const data = await res.json();
+              const claims = data?.result ?? [];
+              const pending = claims.find((c) => (c.claim_status || c.status || "").toLowerCase() === "pending");
+              if (pending) {
+                setClaimStatus("pending");
+                setClaimSubmittedAt(pending.claim_created_at ? new Date(pending.claim_created_at) : new Date());
+              } else {
+                const approved = claims.find((c) => (c.claim_status || c.status || "").toLowerCase() === "approved");
+                if (approved) setClaimStatus("approved");
+              }
+            }
+          } catch (e) {
+            console.warn("BusinessProfileScreen - could not check existing claim:", e);
+          }
+
+          // Non-owners: record profile view if viewer is not one of the owners
+          try {
+            const viewerProfileId = await AsyncStorage.getItem("profile_uid");
+            const viewerUserId = await AsyncStorage.getItem("user_uid");
+            if (viewerProfileId || viewerUserId) {
+              const list = Array.isArray(businessUsersData) ? businessUsersData : [];
+              const viewerIsOwner = list.some((bu) => businessUserMatchesViewer(bu, viewerUserId, viewerProfileId));
+              if (!viewerIsOwner) {
+                const viewPayload = {
+                  profile_view_profile_id: business_uid,
+                  profile_view_viewer_id: viewerProfileId,
+                };
+                fetch(PROFILE_VIEWS_ENDPOINT, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(viewPayload),
+                }).catch((e) => console.warn("BusinessProfileScreen - failed to record view:", e));
+              }
+            }
+          } catch (e) {
+            console.warn("BusinessProfileScreen - error recording profile view:", e);
+          }
+        }
       } catch (err) {
         console.error("Error fetching business data:", err);
       } finally {
@@ -793,7 +795,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           if (!cancelled) setIsAdminViewer(false);
           return;
         }
-        const row = Array.isArray(result?.result) ? result.result[0] : result?.result ?? result?.data ?? result;
+        const row = Array.isArray(result?.result) ? result.result[0] : (result?.result ?? result?.data ?? result);
         if (!cancelled) setIsAdminViewer(row?.user_role === "ADMIN");
       } catch (_) {
         if (!cancelled) setIsAdminViewer(false);
@@ -916,7 +918,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       eligibleReviews: bountyEligible,
     });
     try {
-      const ccPayer = canonicalBusinessCcFeePayer(business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer);
+      const ccPayer = businessCcFeePayerFromSource(business);
 
       const selectedChoiceItems = buildSelectedChoiceItems(serviceOptions, selectedChoices);
       const choicesExtraCost = sumChoiceExtraCost(selectedChoiceItems);
@@ -943,7 +945,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         business_uid: business_uid,
         business_name: sanitizeText(business?.business_name || "") || "",
         business_cc_fee_payer: ccPayer,
-        fulfillment_method: isBusinessShippingApplicable(selectedService) ? FULFILLMENT_SHIP : FULFILLMENT_PICKUP,
+        ...businessCartPersistedFields(selectedService, business),
       };
 
       const choicesKey = JSON.stringify(selectedChoices);
@@ -1286,12 +1288,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 marginBottom: 14,
               }}
             >
-              <Text style={{ fontSize: 13, fontWeight: "700", color: darkMode ? "#ff8a80" : "#B71C1C", marginBottom: 4 }}>
-                Admin view · {getBusinessModerationStatusLabel(businessModerationItem)}
-              </Text>
-              <Text style={{ fontSize: 12, lineHeight: 17, color: darkMode ? "#ccc" : "#555" }}>
-                This business is hidden from other users (taken down, pending review, or acknowledged).
-              </Text>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: darkMode ? "#ff8a80" : "#B71C1C", marginBottom: 4 }}>Admin view · {getBusinessModerationStatusLabel(businessModerationItem)}</Text>
+              <Text style={{ fontSize: 12, lineHeight: 17, color: darkMode ? "#ccc" : "#555" }}>This business is hidden from other users (taken down, pending review, or acknowledged).</Text>
             </View>
           ) : null}
 
@@ -2141,12 +2139,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         questions={businessFeedbackQuestions}
       />
 
-      <FlagBusinessModal
-        visible={showFlagBusinessModal}
-        onClose={() => setShowFlagBusinessModal(false)}
-        targetUid={business_uid}
-        businessName={business?.business_name || ""}
-      />
+      <FlagBusinessModal visible={showFlagBusinessModal} onClose={() => setShowFlagBusinessModal(false)} targetUid={business_uid} businessName={business?.business_name || ""} />
 
       <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -2297,8 +2290,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
                         textAlignVertical: "top",
                         backgroundColor: "#fafafa",
                         width: "95%",
-                        marginLeft: 'auto',
-                        marginRight: 'auto',
+                        marginLeft: "auto",
+                        marginRight: "auto",
                       }}
                       value={specialInstructions}
                       onChangeText={(t) => {

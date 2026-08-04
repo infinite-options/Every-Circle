@@ -182,7 +182,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     expertiseIsPublic: user?.expertiseIsPublic || false,
     wishesIsPublic: user?.wishesIsPublic || false,
     businessIsPublic: user?.businessIsPublic || false,
-    socialLinksIsPublic: user?.socialLinksIsPublic ?? true,
+    socialLinksIsPublic: user?.socialLinksIsPublic || false,
     imageIsPublic: user?.imageIsPublic || false,
     businesses: Array.isArray(user?.businesses)
       ? user.businesses.map(mapBusinessEntryForEdit)
@@ -281,7 +281,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         const name = String(row.social_link_name || "").toLowerCase();
         linksMap[name] = {
           url: row.social_link_url || "",
-          isPublic: row.social_link_is_public !== 0,
+          isPublic: row.social_link_is_public === 1 || row.social_link_is_public === "1" || row.social_link_is_public === true,
         };
       });
       const result = fixed.map(({ platform, label, icon }) => ({
@@ -289,7 +289,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         label,
         icon,
         url: linksMap[platform]?.url || "",
-        isPublic: linksMap[platform]?.isPublic ?? true,
+        isPublic: linksMap[platform]?.isPublic ?? false,
         isFixed: true,
       }));
       Object.entries(linksMap).forEach(([platform, { url, isPublic }]) => {
@@ -841,7 +841,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         const key = (platform || "").trim().toLowerCase();
         if (key) {
           socialLinksPayload[key] = (url || "").trim();
-          socialPublicPayload[key] = isPublic !== false;
+          socialPublicPayload[key] = isPublic === true;
         }
       });
       payload.append("social_links", JSON.stringify(socialLinksPayload));
@@ -1688,7 +1688,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             {/* Add link button */}
             <TouchableOpacity
               onPress={() => {
-                const updated = [...(formData.socialLinks || []), { platform: "", label: "", icon: "link-outline", url: "", isPublic: true, isFixed: false }];
+                const updated = [...(formData.socialLinks || []), { platform: "", label: "", icon: "link-outline", url: "", isPublic: false, isFixed: false }];
                 setFormData((prev) => ({ ...prev, socialLinks: updated }));
                 setIsChanged(true);
               }}

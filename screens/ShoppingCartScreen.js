@@ -21,7 +21,7 @@ if (!isWeb) {
   }
 }
 
-import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, BOUNTY_RESULTS_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
 import StripeNativeProvider from "../components/StripeNativeProvider";
@@ -42,8 +42,8 @@ import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
 import { parsePrice } from "../utils/priceUtils";
 import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines, normalizeSelectedChoiceItemsForApi } from "../utils/selectedChoiceItems";
-import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { recordServicePurchase } from "../utils/purchaseService";
+import { invalidateCachedSearchResults } from "../utils/clearAppAsyncStorage";
 import { expertiseLineMerchandiseAndTax, roundCartMoney, taxRatePercentForCalculation } from "../utils/cartLineTax";
 import {
   getOfferingBountyLineTotal,
@@ -82,7 +82,8 @@ import {
   resolveDefaultFulfillmentMethod,
   sumBuyerShippingCharges,
 } from "../utils/cartFulfillmentMethod";
-import { cartLineDeliveryChargeLabel, OFFERING_DELIVERY_CHARGE_LABEL, sellerGroupDeliveryChargeLabel } from "../utils/profileOfferingShipping";
+import { cartLineDeliveryChargeLabel, sellerGroupDeliveryChargeLabel } from "../utils/profileOfferingShipping";
+import { businessCcFeePayerFromSource, cartItemBuyerPaysCardFee, groupBuyerPaysCardFee } from "../utils/businessCcFeePayer";
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
 
@@ -179,7 +180,7 @@ function formatCartMoney(item, amountNum) {
 }
 
 /** Per-line charge breakdown shown on each cart card (matches checkout grouping math). */
-function getCartLineChargeBreakdown(item, processingFeeOverride) {
+function getCartLineChargeBreakdown(item, processingFeeOverride, ccFeePayerByBusinessUid = null) {
   const qty = parseInt(item.quantity, 10) || 1;
   const { pretax, tax, taxable, ratePercentUsed } = lineMerchandiseAndTax(item);
   const unitPrice = qty > 0 ? roundMoney(pretax / qty) : pretax;
@@ -187,13 +188,12 @@ function getCartLineChargeBreakdown(item, processingFeeOverride) {
   const shippingAmount = deliveryDisplay.showRow ? roundMoney(deliveryDisplay.amount) : 0;
   const shippingIsActual = deliveryDisplay.isActual;
   const shippingApplicable = deliveryDisplay.showRow;
-  const buyerPaysCardFee = groupBuyerPaysCardFee([item]);
+  const buyerPaysCardFee = cartItemBuyerPaysCardFee(item, ccFeePayerByBusinessUid);
   const feeBase = getCreditCardFeeBase({ merchandise: pretax, tax, shipping: shippingAmount });
-  const processingFee =
-    processingFeeOverride != null
-      ? roundMoney(processingFeeOverride)
-      : computeCreditCardProcessingFee(feeBase, buyerPaysCardFee);
-  const totalCharge = roundMoney(feeBase + processingFee);
+  const fullProcessingFee = computeCreditCardProcessingFee(feeBase, buyerPaysCardFee);
+  const chargedProcessingFee =
+    buyerPaysCardFee && processingFeeOverride != null ? roundMoney(processingFeeOverride) : fullProcessingFee;
+  const totalCharge = roundMoney(feeBase + (buyerPaysCardFee ? chargedProcessingFee : 0));
   return {
     qty,
     unitPrice,
@@ -201,7 +201,7 @@ function getCartLineChargeBreakdown(item, processingFeeOverride) {
     shippingAmount,
     shippingIsActual,
     shippingApplicable,
-    processingFee,
+    processingFee: buyerPaysCardFee ? fullProcessingFee : 0,
     buyerPaysCardFee,
     tax,
     taxable,
@@ -306,9 +306,7 @@ function CartFulfillmentChoice({ item, onSelect }) {
       {method === FULFILLMENT_VIRTUAL ? <Text style={styles.fulfillmentPickupHint}>No shipping required · verify immediately</Text> : null}
       {method === FULFILLMENT_PICKUP && pickupHint ? <Text style={styles.fulfillmentPickupHint}>Pickup location: {pickupHint}</Text> : null}
       {method === FULFILLMENT_SHIP ? (
-        <Text style={styles.fulfillmentPickupHint}>
-          {item?.itemType === "expertise" ? "Delivery address required at checkout" : "Shipping address required at checkout"}
-        </Text>
+        <Text style={styles.fulfillmentPickupHint}>Delivery address required at checkout</Text>
       ) : null}
     </View>
   );
@@ -394,21 +392,10 @@ function calculateSubtotalForCartItems(items) {
   return items.reduce((sum, item) => sum + lineMerchandiseAndTax(item).pretax, 0);
 }
 
-/** True when buyer pays Stripe card fees (business_cc_fee_payer === buyer). */
-function groupBuyerPaysCardFee(items) {
-  if (!items || items.length === 0) return false;
-  // Expertise lines don't carry business_cc_fee_payer; AddToCartDetailsModal always quotes 3% to the buyer.
-  if (items.some((it) => it && it.itemType === "expertise")) {
-    return true;
-  }
-  const raw = items[0]?.business_cc_fee_payer ?? items[0]?.bs_cc_fee_payer;
-  return canonicalBusinessCcFeePayer(raw) === "buyer";
-}
-
 /**
  * One entry per seller: merchandise, sales tax, buyer shipping, optional 3% card fee, Stripe total.
  */
-function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
+function buildSellerCheckoutGroups(cartItems, resolveBusinessName, ccFeePayerByBusinessUid = null) {
   if (!Array.isArray(cartItems)) return [];
   const normalizedItems = normalizeCartItemsFulfillment(cartItems);
   const map = new Map();
@@ -432,7 +419,7 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
     const shippingSubtotal = roundMoney(shippingInfo.shippingSubtotal);
     const subtotalAfterTax = roundMoney(merchandiseSubtotal + salesTaxTotal);
     const subtotalWithShipping = roundMoney(subtotalAfterTax + shippingSubtotal);
-    const buyerPaysCardFee = groupBuyerPaysCardFee(items);
+    const buyerPaysCardFee = groupBuyerPaysCardFee(items, ccFeePayerByBusinessUid);
     const processingFee = computeCreditCardProcessingFee(subtotalWithShipping, buyerPaysCardFee);
     const total = computeCreditCardChargeTotal(subtotalWithShipping, buyerPaysCardFee);
     const first = items[0];
@@ -536,6 +523,56 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const [walletAmountToApply, setWalletAmountToApply] = useState(0);
   const [walletAmountDraft, setWalletAmountDraft] = useState("0.00");
   const walletInitializedRef = useRef(false);
+  /** business_uid → "buyer" | "seller" from live businessinfo (cart lines may lack this). */
+  const [ccFeePayerByBusinessUid, setCcFeePayerByBusinessUid] = useState({});
+  const ccFeeHydrateStartedRef = useRef(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    const businessUids = [
+      ...new Set(
+        (cartItems || [])
+          .filter((it) => it && it.itemType !== "expertise")
+          .map((it) => String(it.business_uid || "").trim())
+          .filter(Boolean),
+      ),
+    ].filter((uid) => !ccFeeHydrateStartedRef.current.has(uid));
+    if (!businessUids.length) return undefined;
+
+    (async () => {
+      const fetched = {};
+      for (const uid of businessUids) {
+        ccFeeHydrateStartedRef.current.add(uid);
+        try {
+          const response = await fetch(`${BUSINESS_INFO_ENDPOINT}/${uid}`);
+          if (!response.ok) continue;
+          const result = await response.json();
+          const rawBusiness = result?.business;
+          if (!rawBusiness) continue;
+          fetched[uid] = businessCcFeePayerFromSource(rawBusiness);
+        } catch (e) {
+          console.warn("Could not load business card-fee setting for cart:", uid, e?.message || e);
+        }
+      }
+
+      if (cancelled || Object.keys(fetched).length === 0) return;
+
+      setCcFeePayerByBusinessUid((prev) => ({ ...prev, ...fetched }));
+      setCartItems((prev) =>
+        prev.map((item) => {
+          if (item?.itemType === "expertise") return item;
+          const uid = String(item.business_uid || "").trim();
+          const payer = fetched[uid];
+          if (!payer || item.business_cc_fee_payer === payer) return item;
+          return { ...item, business_cc_fee_payer: payer };
+        }),
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cartItems]);
 
   const handleReturnPress = () => {
     if (returnTo === "BusinessProfile") {
@@ -640,8 +677,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           // Default to max wallet on first load; buyer can lower to $0.
           if (!walletInitializedRef.current) {
             walletInitializedRef.current = true;
-            setWalletAmountToApply(balance);
-            setWalletAmountDraft(formatWalletAmountInput(balance));
           }
         } catch (e) {
           console.warn("Could not load wallet balance for cart:", e);
@@ -657,7 +692,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       setShowFeesDialog(false);
       setLoading(true);
 
-      const groups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+      const groups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName, ccFeePayerByBusinessUid);
       if (!groups.length) {
         Alert.alert("Error", "No billable items in your cart (missing seller information).");
         setLoading(false);
@@ -729,14 +764,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const cartKeys = keys.filter((key) => key.startsWith("cart_"));
       await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
       setCartItems([]);
-      Alert.alert("Success", "Payment successful! Your order has been placed.", [
-        {
-          text: "OK",
-          onPress: () => {
-            navigation.navigate("Search", { refreshCart: true });
-          },
-        },
-      ]);
+      await invalidateCachedSearchResults();
+      Alert.alert("Success", "Payment successful! Your order has been placed.", [{ text: "OK" }]);
     } catch (error) {
       console.error("Error clearing cart data:", error);
       Alert.alert("Error", "There was an error clearing your cart. Please try again.");
@@ -877,24 +906,22 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         zip: shippingZip,
       })
     ) {
-      Alert.alert("Shipping address required", "Please complete First Name, Last Name, Street Address, City, State, and Zip for items being shipped.");
+      Alert.alert("Delivery address required", "Please complete First Name, Last Name, Street Address, City, State, and Zip for items being delivered.");
       return;
     }
 
     // Web Stripe flow
     if (isWeb) {
       try {
-        setLoading(true);
         setShowFeesDialog(true);
       } catch (error) {
         console.error("Error starting web checkout:", error);
         Alert.alert("Error", "An error occurred. Please try again.");
-        setLoading(false);
       }
       return;
     }
 
-    const groups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+    const groups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName, ccFeePayerByBusinessUid);
     if (!groups.length) {
       Alert.alert("Error", "No billable items in your cart (missing seller information).");
       return;
@@ -992,15 +1019,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         const cartKeys = keys.filter((key) => key.startsWith("cart_"));
         await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
         setCartItems([]);
+        await invalidateCachedSearchResults();
 
-        Alert.alert("Success", "Payment successful! Your order has been placed.", [
-          {
-            text: "OK",
-            onPress: () => {
-              navigation.navigate("Search", { refreshCart: true });
-            },
-          },
-        ]);
+        Alert.alert("Success", "Payment successful! Your order has been placed.", [{ text: "OK" }]);
 
         await decrementStockForPurchasedItems();
       } catch (error) {
@@ -1170,7 +1191,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     }
   };
 
-  // Add this helper alongside the other handlers (e.g. after recordTransactions)
+  // Decrement business-product stock via separate endpoint (offerings: inventory in POST /transactions).
   const decrementStockForPurchasedItems = async () => {
     const eligibleItems = cartItems.filter((item) => {
       if (item.itemType === "expertise") return false;
@@ -1446,6 +1467,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       if (!response.ok) {
         throw new Error(`Failed to record transaction: ${result.message || "Unknown error"}`);
       }
+
     } catch (error) {
       console.error("Error recording transactions:", error);
       throw error;
@@ -1507,7 +1529,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const checkoutSellerGroups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+  const checkoutSellerGroups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName, ccFeePayerByBusinessUid);
   const maxWalletApplicable = getMaxApplicableWalletAmount(checkoutSellerGroups, useableWalletBalance);
   const clampedWalletAmount = roundMoney(Math.min(Math.max(0, walletAmountToApply), maxWalletApplicable));
   const sellerGroupsPreview = applyWalletToCheckoutGroups(checkoutSellerGroups, clampedWalletAmount);
@@ -1592,7 +1614,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                 const itemTitle = item.itemType === "expertise" ? String(item.title || "Offering").trim() : productName || "Item";
                 const lineFeeKey = cartLineProcessingFeeKey(item);
                 const allocatedProcessingFee = cartLineProcessingFeeMap.has(lineFeeKey) ? cartLineProcessingFeeMap.get(lineFeeKey) : undefined;
-                const breakdown = getCartLineChargeBreakdown(item, allocatedProcessingFee);
+                const breakdown = getCartLineChargeBreakdown(item, allocatedProcessingFee, ccFeePayerByBusinessUid);
                 const bountyTotal = getCartLineBountyTotal(item);
                 const remainingAddQty = getCartLineRemainingAddQuantity(item);
                 return (
@@ -1662,12 +1684,15 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       </View>
 
                       {bountyTotal > 0 ? (
-                        <View style={styles.cartBountyNoteRow}>
-                          <View style={styles.bountyNoteLabelRow}>
-                            <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
-                            <BountyInfoTooltip perspective='referrer' darkMode={false} placement='left' />
+                        <View style={styles.cartBountyNoteBlock}>
+                          <View style={styles.cartBountyNoteRow}>
+                            <View style={styles.bountyNoteLabelRow}>
+                              <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
+                              <BountyInfoTooltip perspective='referrer' darkMode={false} placement='left' />
+                            </View>
+                            <Text style={styles.bountyNoteValue}>{formatCartMoney(item, bountyTotal)}</Text>
                           </View>
-                          <Text style={styles.bountyNoteValue}>{formatCartMoney(item, bountyTotal)}</Text>
+                          <Text style={styles.cartBountyAvailabilityNote}>Available after the buyer confirms receipt</Text>
                         </View>
                       ) : null}
                     </View>
@@ -1676,7 +1701,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
               })}
               {cartHasShipFulfillmentLines ? (
                 <View style={styles.shippingCard}>
-                  <Text style={styles.shippingSectionTitle}>Shipping address</Text>
+                  <Text style={styles.shippingSectionTitle}>Delivery address</Text>
                   {cartRequiresBuyerPaysShipping ? (
                     <Text style={styles.shippingRequiredNote}>Required for items being shipped to you.</Text>
                   ) : null}
@@ -1731,7 +1756,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   <View style={styles.walletPaymentSection}>
                     <Text style={styles.walletPaymentTitle}>Pay with wallet</Text>
                     <Text style={styles.walletPaymentHint}>
-                      Useable balance: ${useableWalletBalance.toFixed(2)}. Apply any amount from $0.00 up to $
+                      Available to spend: ${useableWalletBalance.toFixed(2)}. Ready to use on purchases. Apply any amount from $0.00 up to $
                       {maxWalletApplicable.toFixed(2)}; the rest is charged to your card (card fee applies only to the card portion).
                     </Text>
                     <View style={styles.walletAmountRow}>
@@ -1802,13 +1827,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                     {g.hasFixedShipping || g.hasWaivedDeliveryCharge ? (
                       <View style={styles.totalRow}>
                         <Text style={styles.totalLabel}>
-                          {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
-                            ? g.hasWaivedDeliveryCharge && !g.hasFixedShipping
-                              ? "Delivery charge"
-                              : "Delivery charge (buyer fixed)"
-                            : g.hasWaivedDeliveryCharge && !g.hasFixedShipping
-                              ? "Shipping"
-                              : "Shipping (buyer fixed)"}
+                          {g.hasWaivedDeliveryCharge && !g.hasFixedShipping ? "Delivery charge" : "Delivery charge (buyer fixed)"}
                         </Text>
                         <Text style={styles.totalValue}>${g.shippingSubtotal.toFixed(2)}</Text>
                       </View>
@@ -1816,18 +1835,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                     {g.hasActualShipping ? (
                       <View style={styles.shippingActualBlock}>
                         <View style={styles.totalRow}>
-                          <Text style={styles.totalLabel}>
-                            {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
-                              ? "Delivery charge (actual cost)"
-                              : "Shipping (actual cost)"}
-                          </Text>
+                          <Text style={styles.totalLabel}>Delivery charge (actual cost)</Text>
                           <Text style={styles.totalValue}>$0.00</Text>
                         </View>
-                        <Text style={styles.shippingActualNote}>
-                          {sellerGroupDeliveryChargeLabel(g) === OFFERING_DELIVERY_CHARGE_LABEL
-                            ? "Seller will contact the buyer directly for actual delivery charge."
-                            : "Seller will contact the buyer directly for actual shipping cost."}
-                        </Text>
+                        <Text style={styles.shippingActualNote}>Seller will contact the buyer directly for actual delivery charge.</Text>
                       </View>
                     ) : null}
                     <View style={styles.totalRow}>
@@ -1835,9 +1846,13 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <Text style={styles.totalValue}>${g.processingFee.toFixed(2)}</Text>
                     </View>
                     {!g.buyerPaysCardFee ? <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text> : null}
+                    <View style={[styles.totalRow, styles.perBusinessTotalRow]}>
+                      <Text style={styles.totalLabel}>Total Charge</Text>
+                      <Text style={styles.totalValue}>${g.total.toFixed(2)}</Text>
+                    </View>
                     {showWalletPaymentControls ? (
                       <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Wallet balance</Text>
+                        <Text style={styles.totalLabel}>Paid from Wallet</Text>
                         <Text style={styles.totalValue}>-${(g.walletApplied || 0).toFixed(2)}</Text>
                       </View>
                     ) : null}
@@ -1847,10 +1862,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                         <Text style={styles.totalValue}>${(g.cardCharge || 0).toFixed(2)}</Text>
                       </View>
                     ) : null}
-                    <View style={[styles.totalRow, styles.perBusinessTotalRow]}>
-                      <Text style={styles.totalLabel}>Business total</Text>
-                      <Text style={styles.totalValue}>${g.total.toFixed(2)}</Text>
-                    </View>
                     <View style={styles.escrowSection}>
                       <View style={styles.escrowRow}>
                         <TouchableOpacity
@@ -1981,7 +1992,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
             setShow={setShowPaymentFailure}
             onGoToDashboard={() => {
               setShowPaymentFailure(false);
-              navigation.navigate("Search", { refreshCart: true });
+              navigation.navigate("Search");
             }}
           />
         </>
@@ -2171,12 +2182,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#9C45F7",
   },
+  cartBountyNoteBlock: {
+    marginTop: 10,
+    zIndex: 2,
+  },
   cartBountyNoteRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 10,
-    zIndex: 2,
+  },
+  cartBountyAvailabilityNote: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+    lineHeight: 16,
   },
   removeButton: {
     position: "absolute",

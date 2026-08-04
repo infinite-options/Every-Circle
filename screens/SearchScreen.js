@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useTabRefresh } from "../hooks/useTabRefresh";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -63,6 +64,7 @@ import { mapBusinessToMiniCard, mapBusinessToMicroCard } from "../utils/mapBusin
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
 import { searchReferralProfiles, loadReferralNetworkByUid, mapReferralProfileToSearchItem, enrichSearchItemsWithReferralRelationships } from "../utils/searchReferralProfiles";
+import { consumeSearchResultsStaleFlag } from "../utils/clearAppAsyncStorage";
 import {
   SEARCH_LOCATION_HOME,
   SEARCH_LOCATION_CUSTOM,
@@ -739,6 +741,8 @@ function itemPassesNetworkFilter(item, maxDegree) {
  * POSTs to `/api/v1/business_details` (ratings, connection degree, max bounty fields, product_count) and merges into rows with `itemType === "businesses"`.
  * Used for accurate stars, review count, connection degree, and bounty vs search-index guesses.
  */
+const businessDetailsInflight = new Map();
+
 async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
   const businessIds = [
     ...new Set(
@@ -757,26 +761,41 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
     /* ignore */
   }
 
+  const cacheKey = `${profileUid || ""}:${businessIds.slice().sort().join(",")}`;
+  let detailsPromise = businessDetailsInflight.get(cacheKey);
+  if (!detailsPromise) {
+    detailsPromise = (async () => {
+      const detailsByUid = {};
+      const DETAILS_BATCH_SIZE = 40;
+      for (let i = 0; i < businessIds.length; i += DETAILS_BATCH_SIZE) {
+        const chunk = businessIds.slice(i, i + DETAILS_BATCH_SIZE);
+        const ratingsRes = await fetch(BUSINESS_DETAILS_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            uids: chunk,
+            profile_uid: profileUid || null,
+          }),
+        });
+        const ratingsJson = await ratingsRes.json();
+        if (ratingsJson.result && typeof ratingsJson.result === "object") {
+          Object.assign(detailsByUid, ratingsJson.result);
+        }
+      }
+      return detailsByUid;
+    })();
+    businessDetailsInflight.set(cacheKey, detailsPromise);
+    detailsPromise.finally(() => {
+      if (businessDetailsInflight.get(cacheKey) === detailsPromise) {
+        businessDetailsInflight.delete(cacheKey);
+      }
+    });
+  }
+
   let merged = items;
 
   try {
-    const DETAILS_BATCH_SIZE = 40;
-    const detailsByUid = {};
-    for (let i = 0; i < businessIds.length; i += DETAILS_BATCH_SIZE) {
-      const chunk = businessIds.slice(i, i + DETAILS_BATCH_SIZE);
-      const ratingsRes = await fetch(BUSINESS_DETAILS_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          uids: chunk,
-          profile_uid: profileUid || null,
-        }),
-      });
-      const ratingsJson = await ratingsRes.json();
-      if (ratingsJson.result && typeof ratingsJson.result === "object") {
-        Object.assign(detailsByUid, ratingsJson.result);
-      }
-    }
+    const detailsByUid = await detailsPromise;
     if (Object.keys(detailsByUid).length > 0) {
       merged = merged.map((b) => {
         if (b.itemType !== "businesses") return b;
@@ -934,6 +953,8 @@ export default function SearchScreen({ route }) {
   const connectionDegreeMapRef = useRef({});
   // Stores pre-client-sort results so bounty / alphabetical can re-sort without re-fetching
   const rawResultsRef = useRef([]);
+  const searchQueryRef = useRef("");
+  const hasLoadedInitialSearchRef = useRef(false);
   const bountyRef = useRef(bounty);
   const sortAlphabeticalRef = useRef(sortAlphabetical);
   const browseAllActiveRef = useRef(false);
@@ -1002,6 +1023,14 @@ export default function SearchScreen({ route }) {
       }),
     );
   }, []);
+
+  useEffect(() => {
+    searchQueryRef.current = searchQuery;
+  }, [searchQuery]);
+
+  useEffect(() => {
+    hasLoadedInitialSearchRef.current = hasLoadedInitialSearch;
+  }, [hasLoadedInitialSearch]);
 
   useEffect(() => {
     AsyncStorage.getItem("profile_uid").then((uid) => setCurrentProfileUid(uid));
@@ -1317,10 +1346,17 @@ export default function SearchScreen({ route }) {
     const unsubscribe = navigation.addListener("focus", () => {
       logDistinct("search-focus-cart", "SearchScreen focused - refreshing cart");
       loadCartItems();
+      (async () => {
+        const stale = await consumeSearchResultsStaleFlag();
+        if (stale && hasLoadedInitialSearchRef.current) {
+          console.log("Search inventory stale after checkout — refetching from search API");
+          await performSearch(String(searchQueryRef.current || "").trim());
+        }
+      })();
     });
 
     return unsubscribe;
-  }, [navigation, loadCartItems, route.params?.refreshCart]);
+  }, [navigation, loadCartItems]);
 
   // Load saved search state or perform initial "Chinese" search
   useEffect(() => {
@@ -1407,6 +1443,27 @@ export default function SearchScreen({ route }) {
               console.error("Could not enrich cached search results:", e);
               rawResultsRef.current = [...parsedResults];
             });
+        } else if (savedSearchQuery) {
+          console.log("📋 Cached query without results — refetching from search API:", savedSearchQuery);
+          setSearchQuery(savedSearchQuery);
+          if (savedSearchType) {
+            try {
+              const parsedTabs = JSON.parse(savedSearchType);
+              if (parsedTabs && typeof parsedTabs === "object") {
+                setSelectedSearchTabs(normalizeSearchTabs(parsedTabs));
+              } else {
+                setSelectedSearchTabs(searchTabsFromLegacyType(savedSearchType));
+              }
+            } catch {
+              setSelectedSearchTabs(searchTabsFromLegacyType(savedSearchType));
+            }
+          }
+          setIsFirstVisit(false);
+          setHasLoadedInitialSearch(true);
+          setLoading(true);
+          setTimeout(() => {
+            performSearch(savedSearchQuery);
+          }, 100);
         } else {
           // First time user, search for "Chinese"
           console.log("🆕 First visit for user:", userUid, "- searching for 'Chinese'");
@@ -1507,6 +1564,7 @@ export default function SearchScreen({ route }) {
   }, [route.params?.refreshCart]);
 
   // Log results changes for debugging (skips identical length repeats from enrich/save churn)
+  // Log results changes for debugging (runs only when results change, not on every render)
   useEffect(() => {
     if (!loading && results.length > 0) {
       logDistinct("search-render-results", "🎨 Rendering results:", results.length, "items");
@@ -2558,6 +2616,20 @@ export default function SearchScreen({ route }) {
     dismissSearchSuggestions();
     await performSearch(searchQuery);
   };
+
+  useTabRefresh("Search", () => {
+    loadUserHomeCoords();
+    loadCartItems();
+    if (selectedSearchTabs.seeking) {
+      fetchMyWishResponses();
+    }
+    if (selectedSearchTabs.expertise) {
+      fetchMyExpertiseResponses();
+    }
+    if (hasLoadedInitialSearch) {
+      void performSearch(searchQuery);
+    }
+  });
 
   const tryAlternativeEndpoints = async (query) => {
     const alternativeEndpoints = [

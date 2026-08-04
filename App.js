@@ -919,6 +919,7 @@ export default function App() {
     Connect: "network",
     Search: "search",
     Settings: "settings",
+    Account: "account",
     Inbox: "inbox",
     Chat: {
       path: "chat",

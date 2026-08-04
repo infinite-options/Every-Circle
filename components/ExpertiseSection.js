@@ -46,6 +46,7 @@ import {
   validateOfferingDeliveredShipping,
   getOfferingShippingDropdownOptions,
   OFFERING_DELIVERY_CHARGE_LABEL,
+  FIXED_DELIVERY_CHARGE_AMOUNT_LABEL,
 } from "../utils/profileOfferingShipping";
 import { BS_SHIPPING_BUYER_FIXED, parseBsShippingAmount } from "../utils/businessServiceShipping";
 
@@ -1404,7 +1405,7 @@ const ExpertiseSection = ({
                       {isFixedOfferingShipping(item) ? (
                         <View style={formStyles.fulfillmentExtra}>
                           <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>
-                            Fixed shipping amount
+                            {FIXED_DELIVERY_CHARGE_AMOUNT_LABEL}
                           </Text>
                           <View
                             style={[
@@ -1455,7 +1456,7 @@ const ExpertiseSection = ({
                                   amount == null ? "0" : String(amount)
                                 );
                               }}
-                              placeholder='Fixed shipping amount'
+                              placeholder='Fixed delivery charge'
                               keyboardType='decimal-pad'
                               placeholderTextColor={darkMode ? "#888" : "#999"}
                             />
