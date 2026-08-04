@@ -2615,6 +2615,26 @@ function resolveAccountBountyRowsForReturn(isSellerView, selectedAccount, bounty
   return personalRows;
 }
 
+/** Order detail line bounty lookup — buyer uses referrer bounty_results; seller uses seller transaction lines. */
+function resolveOrderDetailBountyRows(isSellerView, selectedAccount, bountyData, businessBountyData, sellerTxData, businessSellerTransactionList, transactionUid) {
+  if (!isSellerView) return bountyData?.data || [];
+  if (selectedAccount && selectedAccount !== "personal") return businessBountyData?.data || [];
+  const sellerLines = Array.isArray(sellerTxData) ? sellerTxData : [];
+  const txnUid = String(transactionUid || "").trim();
+  if (txnUid) {
+    const scoped = sellerLines.filter((row) => String(row?.transaction_uid || "").trim() === txnUid);
+    if (scoped.length) return scoped;
+  }
+  return sellerLines;
+}
+
+function resolveOrderDetailBountyPaidFallback(orderRow) {
+  const fromTable = parseFloat(orderRow?.bountyPaid);
+  if (Number.isFinite(fromTable) && fromTable !== 0) return Math.abs(fromTable);
+  const raw = orderRow?.rawRow && typeof orderRow.rawRow === "object" ? orderRow.rawRow : orderRow;
+  return resolveSaleOrderBountyPaid(raw);
+}
+
 /**
  * Pending (or just-completed) return money from seller_transactions.pending_return(s).
  * Total = estimated customer credit (subtotal + tax + shipping; card fees excluded); Bounty = bounty_to_reclaim.
@@ -4944,11 +4964,25 @@ function OrderDetailShippingCard({ shippingAddress, darkMode }) {
 
 const SHIPPING_CARRIER_OPTIONS = ["USPS", "UPS", "FedEx", "DHL", "Other"];
 
-function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, error, darkMode, isSellerView, onSaveFulfillment, bountyRows = [] }) {
+function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, error, darkMode, isSellerView, onSaveFulfillment, bountyRows = [], bountyPaidFallback = 0 }) {
   const sale = orderDetail?.sale || null;
   const returns = Array.isArray(orderDetail?.returns) ? orderDetail.returns : [];
   const summary = orderDetail?.summary || null;
   const saleLines = Array.isArray(sale?.lines) ? sale.lines : [];
+  const saleBountyPaid = useMemo(() => {
+    const fromSale = resolveSaleOrderBountyPaid(sale);
+    if (fromSale > 0) return fromSale;
+    const fallback = Math.abs(parseFloat(bountyPaidFallback) || 0);
+    return fallback > 0 ? fallback : 0;
+  }, [sale, bountyPaidFallback]);
+  const salePurchasedQty = useMemo(() => {
+    if (!sale) return null;
+    const fromLines = saleLines.reduce((sum, line) => sum + Math.max(0, parseInt(line?.ti_bs_qty, 10) || 0), 0);
+    return Math.max(
+      1,
+      parseInt(sale?.ti_bs_qty ?? (fromLines > 0 ? fromLines : null) ?? NaN, 10) || 1,
+    );
+  }, [sale, saleLines]);
   const orderReturnLogistics = resolveReturnLogisticsLabels(sale || orderDetail || {}, {
     return_status: sale?.return_status || orderDetail?.return_status,
     refund_status: sale?.refund_status || orderDetail?.refund_status,
@@ -5117,6 +5151,8 @@ function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, er
                 showFulfillmentColumns={showFulfillmentColumns}
                 bountyRows={bountyRows}
                 transactionUid={transactionUid}
+                saleBountyPaid={saleBountyPaid}
+                salePurchasedQty={salePurchasedQty}
                 isSellerView={isSellerView}
               />
 
@@ -5265,6 +5301,8 @@ function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, er
                         signedRows
                         bountyRows={bountyRows}
                         transactionUid={String(ret.transaction_uid || transactionUid || "").trim()}
+                        saleBountyPaid={saleBountyPaid}
+                        salePurchasedQty={salePurchasedQty}
                         isSellerView={isSellerView}
                       />
                     </View>
@@ -7721,6 +7759,7 @@ export default function AccountScreen({ navigation, route }) {
     error: null,
     isSellerView: false,
     sellerId: null,
+    bountyPaidFallback: 0,
   });
   const [returnDetailModal, setReturnDetailModal] = useState({
     visible: false,
@@ -9355,6 +9394,7 @@ export default function AccountScreen({ navigation, route }) {
       error: null,
       isSellerView: false,
       sellerId: null,
+      bountyPaidFallback: 0,
     });
   }, []);
 
@@ -9514,6 +9554,7 @@ export default function AccountScreen({ navigation, route }) {
         error: null,
         isSellerView,
         sellerId: sellerId || null,
+        bountyPaidFallback: resolveOrderDetailBountyPaidFallback(orderRow),
       });
 
       try {
@@ -12653,7 +12694,16 @@ export default function AccountScreen({ navigation, route }) {
         isSellerView={orderDetailModal.isSellerView}
         darkMode={darkMode}
         onSaveFulfillment={saveOrderFulfillmentUpdates}
-        bountyRows={orderDetailModal.isSellerView && selectedAccount !== "personal" ? businessBountyData?.data || [] : bountyData?.data || []}
+        bountyPaidFallback={orderDetailModal.bountyPaidFallback}
+        bountyRows={resolveOrderDetailBountyRows(
+          orderDetailModal.isSellerView,
+          selectedAccount,
+          bountyData,
+          businessBountyData,
+          sellerTxData,
+          businessSellerTransactionList,
+          orderDetailModal.orderDetail?.sale?.transaction_uid,
+        )}
       />
 
       <ReturnDetailsModal
