@@ -6,15 +6,17 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { triggerTabRefresh } from "../utils/tabRefreshRegistry";
 
-const getFocusedRouteName = (nav) => {
+const getFocusedRoute = (nav) => {
   try {
     const state = nav.getState?.();
     if (!state?.routes?.length) return null;
-    return state.routes[state.index]?.name ?? null;
+    return state.routes[state.index] ?? null;
   } catch {
     return null;
   }
 };
+
+const getFocusedRouteName = (nav) => getFocusedRoute(nav)?.name ?? null;
 
 const { width, height } = Dimensions.get("window");
 
@@ -29,6 +31,19 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
       if (!shouldNavigate) return; // Navigation intercepted
     }
     const currentRoute = getFocusedRouteName(navigation);
+    const focusedRoute = getFocusedRoute(navigation);
+
+    // Profile tab always shows the logged-in user's profile.
+    if (destination === "Profile") {
+      const viewingOtherProfile = focusedRoute?.name === "Profile" && focusedRoute?.params?.profile_uid;
+      if (viewingOtherProfile || currentRoute !== "Profile") {
+        navigation.navigate({ name: "Profile", params: {}, merge: false });
+        return;
+      }
+      triggerTabRefresh("Profile");
+      return;
+    }
+
     if (currentRoute === destination) {
       triggerTabRefresh(destination);
       return;

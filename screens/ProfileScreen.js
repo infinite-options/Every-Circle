@@ -74,6 +74,7 @@ import BusinessModerationBanner from "../components/BusinessModerationBanner";
 import { expertiseCartPersistedFields, expertiseDataForCartModal, profileDataForCartModal } from "../utils/offeringCartUtils";
 import { upsertExpertiseCartItem } from "../utils/expertiseCartStorage";
 import { getHeaderColors } from "../config/headerColors";
+import { isPublicSocialLinkRow, isSocialLinksSectionPublic } from "../utils/profileSectionDefaults";
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED, MODERATED_TAKEN_DOWN, normalizeOfferingModeration } from "../utils/offeringModeration";
 import { buildOfferingCardModel } from "../utils/offeringResubmission";
 import { getSeekingModeratedState, isSeekingModeratedBlocked, normalizeSeekingModeration } from "../utils/seekingModeration";
@@ -242,10 +243,6 @@ function resolveScrollTargetNode(targetRef) {
 function isProfileOfferingVisible(exp, isCurrentUserProfile) {
   if (getOfferingModeratedState(exp) === MODERATED_ACKNOWLEDGED) return false;
   return isCurrentUserProfile ? exp.isPublic || isOfferingModeratedBlocked(exp) : exp.isPublic;
-}
-
-function isProfileSectionPublicFlag(value) {
-  return value === 1 || value === "1" || value === true;
 }
 
 const ProfileScreen = ({ route, navigation }) => {
@@ -771,7 +768,7 @@ const ProfileScreen = ({ route, navigation }) => {
         expertiseIsPublic: apiUser.personal_info?.profile_personal_expertise_is_public === 1,
         wishesIsPublic: apiUser.personal_info?.profile_personal_wishes_is_public === 1,
         businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
-        socialLinksIsPublic: isProfileSectionPublicFlag(apiUser.personal_info?.profile_personal_social_is_public),
+        socialLinksIsPublic: isSocialLinksSectionPublic(apiUser.personal_info, apiUser.links_info),
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
         profilePersonalPath: apiUser.personal_info?.profile_personal_path || null,
         profileModerationItem: buildProfileModerationItem(apiUser),
@@ -1920,9 +1917,14 @@ const ProfileScreen = ({ route, navigation }) => {
                     accessibilityRole='button'
                     accessibilityLabel={connectionLabel}
                   >
-                    <Ionicons name='add' size={20} color='#fff' style={{ marginRight: 6 }} />
-                    <Text style={styles.connectionActionButtonText} numberOfLines={1}>
-                      {connectionLabel}
+                    <Ionicons
+                      name={hasAssignedRelationship ? "eye-outline" : "person-add-outline"}
+                      size={14}
+                      color='#fff'
+                      style={styles.profileActionButtonIcon}
+                    />
+                    <Text style={styles.connectionActionButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                      {hasAssignedRelationship ? "View" : "Connect"}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -1938,8 +1940,10 @@ const ProfileScreen = ({ route, navigation }) => {
                     accessibilityRole='button'
                     accessibilityLabel='Message'
                   >
-                    <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
-                    <Text style={styles.chatButtonText}>Message</Text>
+                    <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={styles.profileActionButtonIcon} />
+                    <Text style={styles.chatButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                      Message
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.profileActionButtonPill, { backgroundColor: "#B71C1C" }]}
@@ -1948,8 +1952,10 @@ const ProfileScreen = ({ route, navigation }) => {
                     accessibilityRole='button'
                     accessibilityLabel='Report profile'
                   >
-                    <Ionicons name='flag-outline' size={17} color='#fff' style={{ marginRight: 6 }} />
-                    <Text style={styles.connectionActionButtonText}>Report</Text>
+                    <Ionicons name='flag-outline' size={14} color='#fff' style={styles.profileActionButtonIcon} />
+                    <Text style={styles.connectionActionButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                      Report
+                    </Text>
                   </TouchableOpacity>
                 </View>
               );
@@ -2036,20 +2042,6 @@ const ProfileScreen = ({ route, navigation }) => {
                                     ) : null}
                                   </View>
                                 )}
-                                {routeProfileUID && !isCurrentUserProfile ? (
-                                  <TouchableOpacity
-                                    onPress={() =>
-                                      setFlagModalOffering({
-                                        uid: exp.profile_expertise_uid,
-                                        title: sanitizeText(exp.name) || "Offering",
-                                      })
-                                    }
-                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                    accessibilityLabel='Report offering'
-                                  >
-                                    <Ionicons name='flag-outline' size={18} color={darkMode ? "#ff8a80" : "#B71C1C"} />
-                                  </TouchableOpacity>
-                                ) : null}
                               </View>
                               {sanitizeText(exp.description) ? (
                                 <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
@@ -2061,9 +2053,9 @@ const ProfileScreen = ({ route, navigation }) => {
                       );
                       const messageAboutOfferingBtn =
                         routeProfileUID && !isCurrentUserProfile && !offeringModeratedBlocked ? (
-                          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                          <View style={styles.offeringActionRow}>
                             <TouchableOpacity
-                              style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
+                              style={[styles.contextChatButton, styles.contextChatButtonInRow, darkMode && styles.darkContextChatButton]}
                               activeOpacity={0.8}
                               onPress={async () => {
                                 const expertiseUid = String(exp.profile_expertise_uid || "").trim();
@@ -2093,7 +2085,7 @@ const ProfileScreen = ({ route, navigation }) => {
                               <Text style={styles.contextChatButtonText}>Message about this offering</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                              style={[styles.contextChatButton, { backgroundColor: "#009e98" }, darkMode && { backgroundColor: "#009e98" }]}
+                              style={[styles.contextChatButton, styles.contextChatButtonInRow, { backgroundColor: "#009e98" }, darkMode && { backgroundColor: "#009e98" }]}
                               activeOpacity={0.8}
                               onPress={() =>
                                 setOfferingCartModalItem({
@@ -2105,6 +2097,19 @@ const ProfileScreen = ({ route, navigation }) => {
                             >
                               <Ionicons name='cart-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
                               <Text style={styles.contextChatButtonText}>Add to Cart</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.offeringFlagButton}
+                              onPress={() =>
+                                setFlagModalOffering({
+                                  uid: exp.profile_expertise_uid,
+                                  title: sanitizeText(exp.name) || "Offering",
+                                })
+                              }
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              accessibilityLabel='Report offering'
+                            >
+                              <Ionicons name='flag-outline' size={20} color={darkMode ? "#ff8a80" : "#B71C1C"} />
                             </TouchableOpacity>
                           </View>
                         ) : null;
@@ -2242,20 +2247,6 @@ const ProfileScreen = ({ route, navigation }) => {
                                     <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Responses: {wish.wish_responses || 0}</Text>
                                   </TouchableOpacity>
                                 )}
-                                {routeProfileUID && !isCurrentUserProfile ? (
-                                  <TouchableOpacity
-                                    onPress={() =>
-                                      setFlagModalSeeking({
-                                        uid: wish.profile_wish_uid,
-                                        title: sanitizeText(wish.helpNeeds) || "Seeking",
-                                      })
-                                    }
-                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                    accessibilityLabel='Report seeking'
-                                  >
-                                    <Ionicons name='flag-outline' size={18} color={darkMode ? "#ff8a80" : "#B71C1C"} />
-                                  </TouchableOpacity>
-                                ) : null}
                               </View>
                               {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text> : null}
                             </View>
@@ -2308,39 +2299,54 @@ const ProfileScreen = ({ route, navigation }) => {
 
                       const messageAboutSeekingBtn =
                         routeProfileUID && !isCurrentUserProfile && !seekingModeratedBlocked ? (
-                          <TouchableOpacity
-                            style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
-                            activeOpacity={0.8}
-                            onPress={async () => {
-                              const wishUid = String(wish.profile_wish_uid || "").trim();
-                              const responderUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
-                              const seekingLabel = sanitizeText(wish.helpNeeds) || "Seeking";
-                              let wishResponseUid = null;
-                              if (wishUid && responderUid && routeProfileUID !== responderUid) {
-                                try {
-                                  const recordResult = await recordWishMessageResponse(wishUid, responderUid, {
-                                    responderNote: `Message about: ${seekingLabel}`,
-                                  });
-                                  wishResponseUid = recordResult?.wish_response_uid || null;
-                                } catch (e) {
-                                  console.warn("[ProfileScreen] recordWishMessageResponse failed:", e);
+                          <View style={styles.seekingActionRow}>
+                            <TouchableOpacity
+                              style={[styles.contextChatButton, styles.contextChatButtonInRow, darkMode && styles.darkContextChatButton]}
+                              activeOpacity={0.8}
+                              onPress={async () => {
+                                const wishUid = String(wish.profile_wish_uid || "").trim();
+                                const responderUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+                                const seekingLabel = sanitizeText(wish.helpNeeds) || "Seeking";
+                                let wishResponseUid = null;
+                                if (wishUid && responderUid && routeProfileUID !== responderUid) {
+                                  try {
+                                    const recordResult = await recordWishMessageResponse(wishUid, responderUid, {
+                                      responderNote: `Message about: ${seekingLabel}`,
+                                    });
+                                    wishResponseUid = recordResult?.wish_response_uid || null;
+                                  } catch (e) {
+                                    console.warn("[ProfileScreen] recordWishMessageResponse failed:", e);
+                                  }
                                 }
+                                navigation.navigate("Chat", {
+                                  other_uid: routeProfileUID || profileUID,
+                                  other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
+                                  other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
+                                  reply_context: buildSeekingReplyContext({
+                                    label: `Seeking: ${seekingLabel}`,
+                                    profileWishUid: wish.profile_wish_uid,
+                                    wishResponseUid,
+                                  }),
+                                });
+                              }}
+                            >
+                              <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
+                              <Text style={styles.contextChatButtonText}>Message about this seeking</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.offeringFlagButton}
+                              onPress={() =>
+                                setFlagModalSeeking({
+                                  uid: wish.profile_wish_uid,
+                                  title: sanitizeText(wish.helpNeeds) || "Seeking",
+                                })
                               }
-                              navigation.navigate("Chat", {
-                                other_uid: routeProfileUID || profileUID,
-                                other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
-                                other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
-                                reply_context: buildSeekingReplyContext({
-                                  label: `Seeking: ${seekingLabel}`,
-                                  profileWishUid: wish.profile_wish_uid,
-                                  wishResponseUid,
-                                }),
-                              });
-                            }}
-                          >
-                            <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
-                            <Text style={styles.contextChatButtonText}>Message about this seeking</Text>
-                          </TouchableOpacity>
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              accessibilityLabel='Report seeking'
+                            >
+                              <Ionicons name='flag-outline' size={20} color={darkMode ? "#ff8a80" : "#B71C1C"} />
+                            </TouchableOpacity>
+                          </View>
                         ) : null;
 
                       if (routeProfileUID && !isCurrentUserProfile) {
@@ -2392,13 +2398,7 @@ const ProfileScreen = ({ route, navigation }) => {
                 youtube: { label: "YouTube", icon: "logo-youtube", color: "#FF0000" },
               };
               const linksInfo = user.links_info || [];
-              const socialItems = linksInfo
-                .filter((row) => {
-                  if (!row.social_link_url) return false;
-                  if (!isCurrentUserProfile && row.social_link_is_public === 0) return false;
-                  return true;
-                })
-                .map((row) => {
+              const socialItems = linksInfo.filter(isPublicSocialLinkRow).map((row) => {
                   const name = String(row.social_link_name || "").toLowerCase();
                   const meta = defaults[name];
                   return {
@@ -2409,7 +2409,7 @@ const ProfileScreen = ({ route, navigation }) => {
                     url: String(row.social_link_url).trim(),
                   };
                 });
-              if (socialItems.length === 0 && !isCurrentUserProfile) return null;
+              if (socialItems.length === 0) return null;
               return (
                 <View style={styles.fieldContainer}>
                   <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowSocial(!showSocial)}>
@@ -2417,23 +2417,19 @@ const ProfileScreen = ({ route, navigation }) => {
                     <Ionicons name={showSocial ? "chevron-up" : "chevron-down"} size={20} color='#000' />
                   </TouchableOpacity>
                   {showSocial &&
-                    (socialItems.length > 0 ? (
-                      socialItems.map(({ key, label, icon, color, url }) => (
-                        <TouchableOpacity key={key} onPress={() => Linking.openURL(url)} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]} activeOpacity={0.7}>
-                          <View style={{ flexDirection: "row", alignItems: "center" }}>
-                            <Ionicons name={icon} size={22} color={color} style={{ marginRight: 12 }} />
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "600" }]}>{label}</Text>
-                              <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: darkMode ? "#aaa" : "#666", fontSize: 12 }]} numberOfLines={1}>
-                                {url}
-                              </Text>
-                            </View>
-                            <Ionicons name='open-outline' size={16} color={darkMode ? "#aaa" : "#999"} />
+                    socialItems.map(({ key, label, icon, color, url }) => (
+                      <TouchableOpacity key={key} onPress={() => Linking.openURL(url)} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]} activeOpacity={0.7}>
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <Ionicons name={icon} size={22} color={color} style={{ marginRight: 12 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "600" }]}>{label}</Text>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: darkMode ? "#aaa" : "#666", fontSize: 12 }]} numberOfLines={1}>
+                              {url}
+                            </Text>
                           </View>
-                        </TouchableOpacity>
-                      ))
-                    ) : (
-                      <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666", padding: 12 }]}>No social media links added yet</Text>
+                          <Ionicons name='open-outline' size={16} color={darkMode ? "#aaa" : "#999"} />
+                        </View>
+                      </TouchableOpacity>
                     ))}
                 </View>
               );
@@ -3193,25 +3189,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
+    gap: 8,
     marginTop: 14,
     marginBottom: 4,
-    alignSelf: "center",
+    alignSelf: "stretch",
+    width: "100%",
   },
-  /** Same padding/radius as the original single Message button; minWidth keeps both pills equal. */
   profileActionButtonPill: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 28,
-    borderRadius: 24,
-    minWidth: 192,
+    paddingVertical: 9,
+    paddingHorizontal: 6,
+    borderRadius: 20,
+    minWidth: 0,
+  },
+  profileActionButtonIcon: {
+    marginRight: 4,
+    flexShrink: 0,
   },
   connectionActionButtonText: {
     color: "#fff",
     fontWeight: "600",
-    fontSize: 15,
+    fontSize: 13,
+    textAlign: "center",
+    flexShrink: 1,
   },
   chatButton: {
     flexDirection: "row",
@@ -3222,7 +3225,9 @@ const styles = StyleSheet.create({
   chatButtonText: {
     color: "#fff",
     fontWeight: "600",
-    fontSize: 15,
+    fontSize: 13,
+    textAlign: "center",
+    flexShrink: 1,
   },
   contextChatButton: {
     flexDirection: "row",
@@ -3241,6 +3246,28 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 12,
+  },
+  offeringActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 14,
+  },
+  seekingActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 14,
+    gap: 8,
+  },
+  contextChatButtonInRow: {
+    marginTop: 0,
+  },
+  offeringFlagButton: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 4,
   },
   sectionHeader: {
     flexDirection: "row",
