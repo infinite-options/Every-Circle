@@ -63,6 +63,7 @@ import { mapBusinessToMiniCard, mapBusinessToMicroCard } from "../utils/mapBusin
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
 import { searchReferralProfiles, loadReferralNetworkByUid, mapReferralProfileToSearchItem, enrichSearchItemsWithReferralRelationships } from "../utils/searchReferralProfiles";
+import { consumeSearchResultsStaleFlag } from "../utils/clearAppAsyncStorage";
 import {
   SEARCH_LOCATION_HOME,
   SEARCH_LOCATION_CUSTOM,
@@ -947,6 +948,8 @@ export default function SearchScreen({ route }) {
   const connectionDegreeMapRef = useRef({});
   // Stores pre-client-sort results so bounty / alphabetical can re-sort without re-fetching
   const rawResultsRef = useRef([]);
+  const searchQueryRef = useRef("");
+  const hasLoadedInitialSearchRef = useRef(false);
   const bountyRef = useRef(bounty);
   const sortAlphabeticalRef = useRef(sortAlphabetical);
   const browseAllActiveRef = useRef(false);
@@ -1015,6 +1018,14 @@ export default function SearchScreen({ route }) {
       }),
     );
   }, []);
+
+  useEffect(() => {
+    searchQueryRef.current = searchQuery;
+  }, [searchQuery]);
+
+  useEffect(() => {
+    hasLoadedInitialSearchRef.current = hasLoadedInitialSearch;
+  }, [hasLoadedInitialSearch]);
 
   useEffect(() => {
     AsyncStorage.getItem("profile_uid").then((uid) => setCurrentProfileUid(uid));
@@ -1310,10 +1321,17 @@ export default function SearchScreen({ route }) {
     const unsubscribe = navigation.addListener("focus", () => {
       console.log("SearchScreen focused - refreshing cart");
       loadCartItems();
+      (async () => {
+        const stale = await consumeSearchResultsStaleFlag();
+        if (stale && hasLoadedInitialSearchRef.current) {
+          console.log("Search inventory stale after checkout — refetching from search API");
+          await performSearch(String(searchQueryRef.current || "").trim());
+        }
+      })();
     });
 
     return unsubscribe;
-  }, [navigation, loadCartItems, route.params?.refreshCart]);
+  }, [navigation, loadCartItems]);
 
   // Load saved search state or perform initial "Chinese" search
   useEffect(() => {
@@ -1400,6 +1418,27 @@ export default function SearchScreen({ route }) {
               console.error("Could not enrich cached search results:", e);
               rawResultsRef.current = [...parsedResults];
             });
+        } else if (savedSearchQuery) {
+          console.log("📋 Cached query without results — refetching from search API:", savedSearchQuery);
+          setSearchQuery(savedSearchQuery);
+          if (savedSearchType) {
+            try {
+              const parsedTabs = JSON.parse(savedSearchType);
+              if (parsedTabs && typeof parsedTabs === "object") {
+                setSelectedSearchTabs(normalizeSearchTabs(parsedTabs));
+              } else {
+                setSelectedSearchTabs(searchTabsFromLegacyType(savedSearchType));
+              }
+            } catch {
+              setSelectedSearchTabs(searchTabsFromLegacyType(savedSearchType));
+            }
+          }
+          setIsFirstVisit(false);
+          setHasLoadedInitialSearch(true);
+          setLoading(true);
+          setTimeout(() => {
+            performSearch(savedSearchQuery);
+          }, 100);
         } else {
           // First time user, search for "Chinese"
           console.log("🆕 First visit for user:", userUid, "- searching for 'Chinese'");
@@ -1477,27 +1516,6 @@ export default function SearchScreen({ route }) {
 
     saveSearchState();
   }, [results, searchQuery, selectedSearchTabs, hasLoadedInitialSearch, loading]);
-
-  // Clear cart data when refreshCart is true
-  useEffect(() => {
-    const clearCartData = async () => {
-      if (route.params?.refreshCart) {
-        console.log("Clearing cart data due to refreshCart parameter");
-        try {
-          const keys = await AsyncStorage.getAllKeys();
-          const cartKeys = keys.filter((key) => key.startsWith("cart_"));
-          await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
-          setCartCount(0);
-          setCartItems([]);
-          console.log("Cart data cleared successfully");
-        } catch (error) {
-          console.error("Error clearing cart data:", error);
-        }
-      }
-    };
-
-    clearCartData();
-  }, [route.params?.refreshCart]);
 
   // Log results changes for debugging (runs only when results change, not on every render)
   useEffect(() => {

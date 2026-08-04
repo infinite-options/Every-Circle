@@ -566,8 +566,7 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
 
   const purchaseType = String(fallback.purchase_type || first.purchase_type || "").toLowerCase();
   const ccPayer = businessCcFeePayerFromSource(fallback) || businessCcFeePayerFromSource(first);
-  const buyerPaysCardFee =
-    purchaseType === "expertise" || purchaseType === "offering" || ccPayer === "buyer" || (ccPayer !== "seller" && txnFeesReported != null && txnFeesReported > 0);
+  const buyerPaysCardFee = purchaseType === "expertise" || purchaseType === "offering" || ccPayer === "buyer" || (ccPayer !== "seller" && txnFeesReported != null && txnFeesReported > 0);
 
   const merchForFee = txnMerch != null ? txnMerch : fromLines;
   const creditCardFeeBase = roundCreditCardMoney((merchForFee || 0) + (txnTaxes || 0) + (txnShipping || 0) + (txnOtherFees || 0));
@@ -813,7 +812,9 @@ function resolveLedgerAvailabilityForBountyLine(line, ledgerRows) {
   const earned = parsePrice(line?.bounty_earned ?? line?.tb_amount);
   const candidates = ledgerRows.filter((entry) => {
     if (String(entry?.transaction_uid || "").trim() !== txnUid) return false;
-    const type = String(entry?.entry_type || "").trim().toLowerCase();
+    const type = String(entry?.entry_type || "")
+      .trim()
+      .toLowerCase();
     return type === "bounty_earned" || type === "bounty_reversal";
   });
   if (!candidates.length) return null;
@@ -2171,12 +2172,7 @@ async function applyPersonalPurchaseHydrationPatches(normalizedPurchases, folded
           shippable_item_count: shippingSummary.shippable,
           unshipped_item_count: Math.max(0, shippingSummary.shippable - shippingSummary.shipped),
           all_items_shipped: shippingSummary.shipped >= shippingSummary.shippable && shippingSummary.shippable > 0 ? 1 : next.all_items_shipped,
-          fulfillment_status:
-            shippingSummary.shipped >= shippingSummary.shippable && shippingSummary.shippable > 0
-              ? "in_transit"
-              : shippingSummary.shipped > 0
-                ? "partial"
-                : next.fulfillment_status,
+          fulfillment_status: shippingSummary.shipped >= shippingSummary.shippable && shippingSummary.shippable > 0 ? "in_transit" : shippingSummary.shipped > 0 ? "partial" : next.fulfillment_status,
         };
       }
       return next;
@@ -2289,16 +2285,11 @@ function auditPurchaseRowAccountScreenGaps(row, { shippingProgressByKey = {}, re
   if (!row) return gaps;
 
   if (isReturnListRow(row)) {
-    const needsChip =
-      Number(row.transaction_return_requested) === 1 ||
-      row.return_status ||
-      row.refund_status ||
-      row.display_status ||
-      row.pending_return;
+    const needsChip = Number(row.transaction_return_requested) === 1 || row.return_status || row.refund_status || row.display_status || row.pending_return;
     if (!needsChip) return gaps;
     const logistics = resolveReturnLogisticsLabels(row, returnStatusesByKey);
     if (!logistics?.delivered || !logistics?.received) {
-      gaps.push('Purchases return row chip text (Delivered/Received on return row): display_status or return_status + refund_status');
+      gaps.push("Purchases return row chip text (Delivered/Received on return row): display_status or return_status + refund_status");
     }
     return gaps;
   }
@@ -2322,11 +2313,7 @@ function auditPurchaseRowAccountScreenGaps(row, { shippingProgressByKey = {}, re
     const progress = resolveShippingProgressForDisplay([row], shippingProgressByKey[resolveListRowOrderUid(row)] || null);
     if (progress === "partial" || progress === "complete") {
       const received = getBuyerPurchaseReceivedLabel(row, returnStatusesByKey);
-      const hasReceivedSignal =
-        row.ti_received_qty != null ||
-        row.received_units != null ||
-        row.received_item_count != null ||
-        getUnitReceivedStatusFromSaleRows([row]) != null;
+      const hasReceivedSignal = row.ti_received_qty != null || row.received_units != null || row.received_item_count != null || getUnitReceivedStatusFromSaleRows([row]) != null;
       if (received === "Partial" && !hasReceivedSignal) {
         gaps.push('Purchases Received column may be wrong ("Partial" without ti_received_qty / received_units): need line received qty on list row or order_list_hydration');
       }
@@ -2349,12 +2336,10 @@ function auditPersonalExpertiseLoadGaps(row, sellerLines, returnStatusesByKey, s
     const shipping = summarizeSaleRowShipping(row, sellerLines || [row], returnStatusesByKey);
     const total = shipping.shippableTotal > 0 ? shipping.shippableTotal : shipping.activeTotal;
     const progress =
-      progressOverride === "complete" || progressOverride === "partial" || progressOverride === "none" || progressOverride === "not_required"
-        ? progressOverride
-        : getOrderShippingProgress([row]);
+      progressOverride === "complete" || progressOverride === "partial" || progressOverride === "none" || progressOverride === "not_required" ? progressOverride : getOrderShippingProgress([row]);
 
     if (total > 0 && shipping.shipped <= 0 && progress !== "none" && progress !== "not_required") {
-      gaps.push('SALES Sold highlight: in-transit order but cannot compute shipped count — need shipped_item_count or sale.lines[].ti_shipped_qty');
+      gaps.push("SALES Sold highlight: in-transit order but cannot compute shipped count — need shipped_item_count or sale.lines[].ti_shipped_qty");
     }
   }
 
@@ -2371,9 +2356,7 @@ function auditSellerOrdersTableGaps(row, sellerLines, returnStatusesByKey, shipp
   if (orderNeedsShipping(row) && !orderFulfillmentIsNotRequired(row)) {
     const delivered = formatOrderDeliveredStatusLabel([row], sellerLines, returnStatusesByKey, progressOverride);
     const progress =
-      progressOverride === "complete" || progressOverride === "partial" || progressOverride === "none" || progressOverride === "not_required"
-        ? progressOverride
-        : getOrderShippingProgress([row]);
+      progressOverride === "complete" || progressOverride === "partial" || progressOverride === "none" || progressOverride === "not_required" ? progressOverride : getOrderShippingProgress([row]);
 
     if (delivered === "—" && (progress === "unknown" || progress === "partial" || progress === "complete")) {
       gaps.push('Orders Delivered column shows "—": need shipped_item_count + unshipped/shippable counts or sale.lines ship qty');
@@ -2812,10 +2795,7 @@ function resolveReturnBountyFromSaleRow(returnRow, saleRow) {
   const purchasedQty = Math.max(1, parseInt(saleRow?.ti_bs_qty ?? saleRow?.transaction_qty ?? NaN, 10) || 1);
   let returnQty = parseInt(returnRow?.return_quantity_total ?? NaN, 10);
   if (!Number.isFinite(returnQty) || returnQty <= 0) {
-    const lineSources = [
-      ...(Array.isArray(returnRow?.return_lines) ? returnRow.return_lines : []),
-      ...collectItemsFromPendingReturns(returnRow),
-    ];
+    const lineSources = [...(Array.isArray(returnRow?.return_lines) ? returnRow.return_lines : []), ...collectItemsFromPendingReturns(returnRow)];
     returnQty = lineSources.reduce((sum, line) => sum + Math.max(0, parseInt(line.return_quantity ?? line.ti_bs_qty ?? line.quantity ?? 0, 10) || 0), 0);
   }
   if (!(returnQty > 0)) returnQty = Math.max(1, parseInt(returnRow?.ti_bs_qty ?? 1, 10) || 1);
@@ -2868,17 +2848,14 @@ function resolveOrderDetailBountyRows(isSellerView, selectedAccount, bountyData,
 
   if (!isSellerView) return filterRowsForTxn(bountyData?.data || []);
 
-  const accountBountyRows =
-    selectedAccount && selectedAccount !== "personal" ? businessBountyData?.data || [] : bountyData?.data || [];
+  const accountBountyRows = selectedAccount && selectedAccount !== "personal" ? businessBountyData?.data || [] : bountyData?.data || [];
   const scopedBounty = filterRowsForTxn(accountBountyRows);
 
   const sellerLines = Array.isArray(sellerTxData) ? sellerTxData : [];
   const scopedSeller = txnUid ? sellerLines.filter((row) => String(row?.transaction_uid || "").trim() === txnUid) : sellerLines;
 
   if (scopedBounty.length && scopedSeller.length) {
-    const bountyKeys = new Set(
-      scopedBounty.map((row) => String(row?.ti_uid || row?.tb_ti_id || row?.transaction_uid || row?.ti_transaction_id || "").trim()).filter(Boolean),
-    );
+    const bountyKeys = new Set(scopedBounty.map((row) => String(row?.ti_uid || row?.tb_ti_id || row?.transaction_uid || row?.ti_transaction_id || "").trim()).filter(Boolean));
     const extraSeller = scopedSeller.filter((row) => {
       const key = String(row?.ti_uid || row?.transaction_item_uid || row?.transaction_uid || "").trim();
       return !key || !bountyKeys.has(key);
@@ -2935,10 +2912,7 @@ function resolveReturnLineBountyAmounts(line, returnQty, bountyRows, transaction
   const bountyRow = findBountyResultForReceiptLine(bountyRows, line, transactionUid);
   const purchasedQty = Math.max(
     qty,
-    parseInt(
-      salePurchasedQty ?? line?.purchased_qty ?? line?.ti_purchased_qty ?? line?.original_qty ?? bountyRow?.ti_bs_qty ?? bountyRow?.purchased_qty ?? NaN,
-      10,
-    ) || qty,
+    parseInt(salePurchasedQty ?? line?.purchased_qty ?? line?.ti_purchased_qty ?? line?.original_qty ?? bountyRow?.ti_bs_qty ?? bountyRow?.purchased_qty ?? NaN, 10) || qty,
   );
   const lineForDisplay = {
     ...line,
@@ -3041,10 +3015,7 @@ function resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines) {
   const saleTxnUid = String(row?.original_transaction_uid || row?.order_uid || orderUid || "").trim();
   // Real return txns may omit bounty_paid — derive from matching sale bounty lines / return lines.
   if ((!Number.isFinite(bountyPaid) || bountyPaid === 0) && Array.isArray(bountyLines) && bountyLines.length) {
-    const returnLines = [
-      ...(Array.isArray(row?.return_lines) ? row.return_lines : []),
-      ...(Array.isArray(row?.lines) ? row.lines : []),
-    ];
+    const returnLines = [...(Array.isArray(row?.return_lines) ? row.return_lines : []), ...(Array.isArray(row?.lines) ? row.lines : [])];
     const pendingItems = row?.pending_return?.items || row?.transaction_return_items || returnLines || [];
     if (Array.isArray(pendingItems) && pendingItems.length) {
       bountyPaid = pendingItems.reduce((sum, item) => {
@@ -3189,10 +3160,7 @@ function estimatePendingReturnMoney(saleRow, returnRequestData, bountyLines = []
       const saleBounty = resolveSaleOrderBountyPaid(saleRow);
       if (saleBounty > 0) {
         const purchasedQty = Math.max(1, parseInt(saleRow?.ti_bs_qty ?? NaN, 10) || 1);
-        const returnQty = itemsForMoney.reduce(
-          (sum, item) => sum + Math.max(0, parseInt(item.return_quantity ?? item.quantity ?? item.qty ?? item.ti_bs_qty ?? 0, 10) || 0),
-          0,
-        );
+        const returnQty = itemsForMoney.reduce((sum, item) => sum + Math.max(0, parseInt(item.return_quantity ?? item.quantity ?? item.qty ?? item.ti_bs_qty ?? 0, 10) || 0), 0);
         const scaled = returnQty > 0 ? scaleAmountForReturnQty(saleBounty, purchasedQty, returnQty) : saleBounty;
         if (scaled > 0) bountyPaid = -Math.abs(scaled);
       }
@@ -3353,10 +3321,7 @@ function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines,
           );
           if (!money.total && est.total) {
             money = { ...money, total: est.total };
-          } else if (
-            !money.total &&
-            (isPreShipCancelReturn(row, saleSibling) || isPreShipCancelReturn(row.pending_return, saleSibling))
-          ) {
+          } else if (!money.total && (isPreShipCancelReturn(row, saleSibling) || isPreShipCancelReturn(row.pending_return, saleSibling))) {
             const saleTotal = parseFloat(saleSibling.transaction_total ?? saleSibling.transaction_amount);
             if (Number.isFinite(saleTotal) && saleTotal > 0) {
               money = { ...money, total: -Math.abs(saleTotal) };
@@ -4709,14 +4674,7 @@ function buildReturnDetailDisplayItems(orderDetail, bountyRows = [], scope = nul
     saleBountyPool != null && saleBountyPool > 0 ? saleBountyPool : resolveReturnDetailBountyPool(sale, bountyRows, transactionUid, { sourceReturnRow: scope?.sourceReturnRow || null });
   const salePurchasedQty = Math.max(
     1,
-    parseInt(
-      sale?.ti_bs_qty ??
-        (Array.isArray(sale?.lines) && sale.lines.length
-          ? Math.max(...sale.lines.map((l) => parseInt(l?.ti_bs_qty ?? 0, 10) || 0))
-          : null) ??
-        NaN,
-      10,
-    ) || 1,
+    parseInt(sale?.ti_bs_qty ?? (Array.isArray(sale?.lines) && sale.lines.length ? Math.max(...sale.lines.map((l) => parseInt(l?.ti_bs_qty ?? 0, 10) || 0)) : null) ?? NaN, 10) || 1,
   );
   const lines = splitByKind ? collectReturnDetailSplitLines(orderDetail, scope) : collectReturnDetailLines(orderDetail, scope);
   return lines.map((line, index) => {
@@ -4993,15 +4951,7 @@ function resolveOrderDetailBuyerLabel({ orderDetail, sale, walletLedgerEntries =
     if (fromLedger) return fromLedger;
   }
   const src = sale || orderDetail || {};
-  const fromSale = String(
-    src.purchaser_name ||
-      src.buyer_name ||
-      src.transaction_profile_name ||
-      src.profile_name ||
-      src.customer_name ||
-      src.buyer_profile_name ||
-      "",
-  ).trim();
+  const fromSale = String(src.purchaser_name || src.buyer_name || src.transaction_profile_name || src.profile_name || src.customer_name || src.buyer_profile_name || "").trim();
   if (fromSale) return fromSale;
   const shipping = extractShippingAddress(sale) || extractShippingAddress(orderDetail);
   if (shipping) {
@@ -5031,12 +4981,7 @@ function resolveOrderDetailPendingReturn(orderDetail) {
     (Array.isArray(orderDetail.pending_returns) && orderDetail.pending_returns.length ? orderDetail.pending_returns : null) ||
     (Array.isArray(sale?.pending_returns) && sale.pending_returns.length ? sale.pending_returns : null) ||
     null;
-  return (
-    (pendingReturns && pendingReturns[0]) ||
-    orderDetail.pending_return ||
-    sale?.pending_return ||
-    null
-  );
+  return (pendingReturns && pendingReturns[0]) || orderDetail.pending_return || sale?.pending_return || null;
 }
 
 function OrderDetailPendingReturnSummary({ pendingReturn, darkMode }) {
@@ -5127,17 +5072,8 @@ function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, 
   }
   shippingTotal = Math.round(Math.abs(Number(shippingTotal) || 0) * 100) / 100;
 
-  const purchasedQty = Math.max(
-    1,
-    salePurchasedQty ||
-      merchandiseRows.reduce((sum, row) => sum + row.qty, 0) ||
-      parseInt(sale?.ti_bs_qty, 10) ||
-      1,
-  );
-  const bountyTotal =
-    saleBountyPaid > 0
-      ? saleBountyPaid
-      : sumBountyPaidForTransaction(bountyRows, transactionUid) || resolveSaleOrderBountyPaid(sale) || sumBountyFromSaleLines(sale?.lines);
+  const purchasedQty = Math.max(1, salePurchasedQty || merchandiseRows.reduce((sum, row) => sum + row.qty, 0) || parseInt(sale?.ti_bs_qty, 10) || 1);
+  const bountyTotal = saleBountyPaid > 0 ? saleBountyPaid : sumBountyPaidForTransaction(bountyRows, transactionUid) || resolveSaleOrderBountyPaid(sale) || sumBountyFromSaleLines(sale?.lines);
   const bountyAbs = Math.round(Math.abs(Number(bountyTotal) || 0) * 100) / 100;
   const bountyUnit = purchasedQty > 0 ? Math.round((-bountyAbs / purchasedQty) * 100) / 100 : 0;
 
@@ -5214,10 +5150,10 @@ function OrderDetailWalletLedgerBreakdownTable({ breakdown, darkMode }) {
       {merchandiseRows.map((row) => (
         <DataRow key={row.key} description={row.description} qty={row.qty} unitCost={row.unitCost} total={row.total} statusNote={row.statusNote} />
       ))}
-      {shippingTotal > 0 ? <DataRow description="Shipping" total={shippingTotal} /> : null}
+      {shippingTotal > 0 ? <DataRow description='Shipping' total={shippingTotal} /> : null}
       {bounty ? <DataRow description={bounty.description} qty={bounty.qty} unitCost={bounty.unitCost} total={bounty.total} /> : null}
       <View style={{ borderTopWidth: 1, borderTopColor: borderColor, marginTop: 4, paddingTop: 6 }}>
-        <DataRow description="Total" total={ledgerAmount || computedTotal} emphasize />
+        <DataRow description='Total' total={ledgerAmount || computedTotal} emphasize />
       </View>
       {Math.abs(computedTotal - ledgerAmount) > 0.02 ? (
         <Text style={{ fontSize: 10, color: "#B71C1C", marginTop: 4 }}>
@@ -5401,8 +5337,7 @@ function OrderDetailLinesTable({
     const fulfillment = includeFulfillment ? formatLineFulfillmentDisplay(line) : null;
     const qtyNote = signedRows ? "" : formatOrderDetailLineQtyNote(line);
     const returnKind = line.return_kind === "cancel" ? "cancel" : line.return_kind === "return" ? "return" : null;
-    const typeLabel =
-      returnKind === "cancel" ? "Cancellation · not shipped" : returnKind === "return" ? "Return · must receive" : "";
+    const typeLabel = returnKind === "cancel" ? "Cancellation · not shipped" : returnKind === "return" ? "Return · must receive" : "";
     const rowKey = String(line._splitKey || line.ti_uid || line.transaction_item_uid || `${line.ti_bs_id}-${index}`).trim();
     const rowSelectable = selectable && returnKind !== "cancel";
     return {
@@ -5540,11 +5475,7 @@ function OrderDetailLinesTable({
               </View>
               <View style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty, { alignItems: "flex-end" }]}>
                 <Text style={[signedCellStyle, darkMode && !signedRows && { color: "#ccc" }, { fontSize: 13 }]}>{row.qty}</Text>
-                {row.qtyNote ? (
-                  <Text style={{ fontSize: 10, color: noteTextColor, marginTop: 2, textAlign: "right", lineHeight: 13 }}>
-                    {row.qtyNote}
-                  </Text>
-                ) : null}
+                {row.qtyNote ? <Text style={{ fontSize: 10, color: noteTextColor, marginTop: 2, textAlign: "right", lineHeight: 13 }}>{row.qtyNote}</Text> : null}
               </View>
               <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
                 {formatCellAmount(row.unitCost)}
@@ -5727,10 +5658,7 @@ function OrderDetailModal({
   const salePurchasedQty = useMemo(() => {
     if (!sale) return null;
     const fromLines = saleLines.reduce((sum, line) => sum + Math.max(0, parseInt(line?.ti_bs_qty, 10) || 0), 0);
-    return Math.max(
-      1,
-      parseInt(sale?.ti_bs_qty ?? (fromLines > 0 ? fromLines : null) ?? NaN, 10) || 1,
-    );
+    return Math.max(1, parseInt(sale?.ti_bs_qty ?? (fromLines > 0 ? fromLines : null) ?? NaN, 10) || 1);
   }, [sale, saleLines]);
   const orderReturnLogistics = resolveReturnLogisticsLabels(sale || orderDetail || {}, {
     return_status: sale?.return_status || orderDetail?.return_status,
@@ -5799,16 +5727,10 @@ function OrderDetailModal({
 
   const orderWalletEntries = Array.isArray(walletLedgerEntries) && walletLedgerEntries.length ? walletLedgerEntries : [];
   const buyerLabel = useMemo(
-    () =>
-      isSellerView || orderWalletEntries.length
-        ? resolveOrderDetailBuyerLabel({ orderDetail, sale, walletLedgerEntries: orderWalletEntries })
-        : "",
+    () => (isSellerView || orderWalletEntries.length ? resolveOrderDetailBuyerLabel({ orderDetail, sale, walletLedgerEntries: orderWalletEntries }) : ""),
     [isSellerView, orderDetail, sale, orderWalletEntries],
   );
-  const orderDetailSubtitle = useMemo(
-    () => formatOrderDetailModalSubtitle({ orderUid, orderDetail, sale, buyerLabel }),
-    [orderUid, orderDetail, sale, buyerLabel],
-  );
+  const orderDetailSubtitle = useMemo(() => formatOrderDetailModalSubtitle({ orderUid, orderDetail, sale, buyerLabel }), [orderUid, orderDetail, sale, buyerLabel]);
 
   if (!visible) return null;
 
@@ -5890,9 +5812,7 @@ function OrderDetailModal({
       <View style={[styles.productSalesModalOverlay, darkMode && styles.darkModalOverlay]}>
         <View style={[styles.productSalesModalContent, styles.businessOrderDetailModalContent, darkMode && styles.darkModalContent]}>
           <Text style={[styles.productSalesModalTitle, darkMode && styles.darkTitle]}>Order Details</Text>
-          <Text style={[styles.productSalesModalSubtitle, darkMode && { color: "#aaa" }]}>
-            {orderDetailSubtitle}
-          </Text>
+          <Text style={[styles.productSalesModalSubtitle, darkMode && { color: "#aaa" }]}>{orderDetailSubtitle}</Text>
 
           {loading ? (
             <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
@@ -5938,9 +5858,7 @@ function OrderDetailModal({
                               <Text style={[styles.orderDetailSectionText, darkMode && { color: "#ddd" }]} numberOfLines={2}>
                                 {row.itemName}
                               </Text>
-                              <Text style={[styles.orderDetailShipTrackingMeta, darkMode && { color: "#aaa" }]}>
-                                {formatOrderDetailShipLineMeta(row)}
-                              </Text>
+                              <Text style={[styles.orderDetailShipTrackingMeta, darkMode && { color: "#aaa" }]}>{formatOrderDetailShipLineMeta(row)}</Text>
                             </View>
                           </TouchableOpacity>
                           {needsQtyPicker ? (
@@ -6146,12 +6064,7 @@ function ReturnDetailsModal({
   const saleBountyPool = resolveReturnDetailBountyPool(sale, bountyRows, transactionUid, { bountyPaidFallback, sourceReturnRow });
   const salePurchasedQty = Math.max(
     1,
-    parseInt(
-      sale?.ti_bs_qty ??
-        (Array.isArray(sale?.lines) && sale.lines.length ? Math.max(...sale.lines.map((l) => parseInt(l?.ti_bs_qty ?? 0, 10) || 0)) : null) ??
-        NaN,
-      10,
-    ) || 1,
+    parseInt(sale?.ti_bs_qty ?? (Array.isArray(sale?.lines) && sale.lines.length ? Math.max(...sale.lines.map((l) => parseInt(l?.ti_bs_qty ?? 0, 10) || 0)) : null) ?? NaN, 10) || 1,
   );
   const returns = scoped.hasScope ? scoped.matchedReturns : Array.isArray(orderDetail?.returns) ? orderDetail.returns : [];
   const returnLines = collectReturnDetailSplitLines(orderDetail, scope);
@@ -6165,7 +6078,11 @@ function ReturnDetailsModal({
     refundTotalFallback,
   });
   const statusSource = sourceReturnRow || (scoped.hasScope && (scoped.scopedPending || scoped.matchedReturns[0])) || sale || orderDetail || {};
-  const preShipCancel = splitInfo.cancelOnly || (areScopedReturnItemsUnshipped(orderDetail, returnLines) && !splitInfo.hasReturn) || isPreShipCancelReturn(statusSource, sale) || isPreShipCancelReturn(sourceReturnRow, sale);
+  const preShipCancel =
+    splitInfo.cancelOnly ||
+    (areScopedReturnItemsUnshipped(orderDetail, returnLines) && !splitInfo.hasReturn) ||
+    isPreShipCancelReturn(statusSource, sale) ||
+    isPreShipCancelReturn(sourceReturnRow, sale);
   const logistics = resolveReturnLogisticsLabels(statusSource, {
     returnRequested: true,
     ...(preShipCancel && !splitInfo.isHybrid ? { cancel_unshipped: true, saleSibling: sale } : { saleSibling: sale }),
@@ -6669,10 +6586,7 @@ function getLineCancelledQty(line) {
 /** Post-shipment physical returns — does not reduce remaining_to_ship. */
 function getLineReturnedQty(line) {
   if (!line || typeof line !== "object") return 0;
-  const explicit = parseInt(
-    line.returned_qty ?? line.returned_quantity ?? line.return_quantity_completed ?? line.return_shipped_qty ?? line.ti_return_shipped_qty ?? line.shipped_return_qty,
-    10,
-  );
+  const explicit = parseInt(line.returned_qty ?? line.returned_quantity ?? line.return_quantity_completed ?? line.return_shipped_qty ?? line.ti_return_shipped_qty ?? line.shipped_return_qty, 10);
   return Number.isFinite(explicit) && explicit > 0 ? explicit : 0;
 }
 
@@ -7165,17 +7079,13 @@ function collectOrderUidsNeedingReceivedHydration(sellerLines) {
 
 /** Orders missing line-level shipped counts (list row often has received_units but not shipped_item_count). */
 function collectOrderUidsNeedingSellerOrderDetailHydration(sellerLines) {
-  const uids = new Set([
-    ...collectOrderUidsNeedingShippingProgressHydration(sellerLines),
-    ...collectOrderUidsNeedingReceivedHydration(sellerLines),
-  ]);
+  const uids = new Set([...collectOrderUidsNeedingShippingProgressHydration(sellerLines), ...collectOrderUidsNeedingReceivedHydration(sellerLines)]);
   for (const row of sellerLines || []) {
     if (isReturnListRow(row)) continue;
     if (!orderNeedsShipping(row)) continue;
     const orderUid = resolveListRowOrderUid(row);
     if (!orderUid || orderUid === "—") continue;
-    const hasDetailLines =
-      (Array.isArray(row._sale_detail_lines) && row._sale_detail_lines.length > 0) || (Array.isArray(row.lines) && row.lines.length > 0);
+    const hasDetailLines = (Array.isArray(row._sale_detail_lines) && row._sale_detail_lines.length > 0) || (Array.isArray(row.lines) && row.lines.length > 0);
     const shippedCount = parseInt(row.shipped_item_count ?? row.shipped_count ?? row.items_shipped, 10);
     const receivedUnits = Math.max(0, parseInt(row.received_units ?? row.received_item_count ?? row.ti_received_qty, 10) || 0);
     const progress = getOrderShippingProgress([row]);
@@ -7199,7 +7109,9 @@ function collectOrderUidsNeedingSellerOrderDetailHydration(sellerLines) {
 function purchaseRowDeliveredNotApplicable(row) {
   if (!row || typeof row !== "object") return true;
   if (row.has_shippable_items === 0 || row.has_shippable_items === "0" || row.has_shippable_items === false) return true;
-  const status = String(row.fulfillment_status || row.ti_fulfillment_status || row.shipping_status || "").trim().toLowerCase();
+  const status = String(row.fulfillment_status || row.ti_fulfillment_status || row.shipping_status || "")
+    .trim()
+    .toLowerCase();
   if (status === "not_required") return true;
   return orderFulfillmentIsNotRequired(row);
 }
@@ -7241,12 +7153,7 @@ function resolveShippingProgressForDisplay(saleRows, shippingProgressOverride) {
     return shippedUnits >= purchasedUnits ? "complete" : "partial";
   }
 
-  if (
-    shippingProgressOverride === "complete" ||
-    shippingProgressOverride === "partial" ||
-    shippingProgressOverride === "none" ||
-    shippingProgressOverride === "not_required"
-  ) {
+  if (shippingProgressOverride === "complete" || shippingProgressOverride === "partial" || shippingProgressOverride === "none" || shippingProgressOverride === "not_required") {
     return shippingProgressOverride;
   }
   return fromRow;
@@ -7389,12 +7296,7 @@ function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliv
   const delivered = String(deliveredLabel || "").trim();
   const deliveredLower = delivered.toLowerCase();
   const deliveredIndicatesShipped =
-    progress === "partial" ||
-    progress === "complete" ||
-    deliveredLower === "partial" ||
-    deliveredLower === "shipped" ||
-    deliveredLower === "delivered" ||
-    !!parseFractionStatusLabel(delivered);
+    progress === "partial" || progress === "complete" || deliveredLower === "partial" || deliveredLower === "shipped" || deliveredLower === "delivered" || !!parseFractionStatusLabel(delivered);
 
   if (!deliveredIndicatesShipped) return false;
 
@@ -7572,9 +7474,7 @@ function sumCompletedReturnUnitsForOrder(orderUid, sellerLines, expertiseUid, re
     const override = getReturnStatusOverrideForRow(returnStatusesByKey, row, orderUid, txnUid);
     const logistics = resolveReturnLogisticsLabels(row, override);
     if (!logistics) continue;
-    const completed =
-      (logistics.return_status === "returned" && logistics.refund_status === "refunded") ||
-      (logistics.return_status === "cancelled" && logistics.refund_status === "refunded");
+    const completed = (logistics.return_status === "returned" && logistics.refund_status === "refunded") || (logistics.return_status === "cancelled" && logistics.refund_status === "refunded");
     if (completed) total += getReturnRowUnits(row);
   }
   return total;
@@ -7668,10 +7568,7 @@ function formatOrderDeliveredStatusLabel(saleRows, sellerLines = null, returnSta
   }
 
   const progress =
-    shippingProgressOverride === "complete" ||
-    shippingProgressOverride === "partial" ||
-    shippingProgressOverride === "none" ||
-    shippingProgressOverride === "not_required"
+    shippingProgressOverride === "complete" || shippingProgressOverride === "partial" || shippingProgressOverride === "none" || shippingProgressOverride === "not_required"
       ? shippingProgressOverride
       : getOrderShippingProgress([row]);
 
@@ -7719,10 +7616,7 @@ function sellerOrderNeedsShippingAction(row, shippingProgressOverride, sellerLin
   }
 
   const progress =
-    shippingProgressOverride === "complete" ||
-    shippingProgressOverride === "partial" ||
-    shippingProgressOverride === "none" ||
-    shippingProgressOverride === "not_required"
+    shippingProgressOverride === "complete" || shippingProgressOverride === "partial" || shippingProgressOverride === "none" || shippingProgressOverride === "not_required"
       ? shippingProgressOverride
       : getOrderShippingProgress([row]);
 
@@ -8137,8 +8031,21 @@ function mapAccountScreenBusinessResponse(json) {
 
   const businessForMiniCardRaw = extractBusinessRawFromAccountScreenPayload(root, payload);
   const businessServices = extractBusinessServicesFromAccountScreenPayload(root, payload);
+  let offerings = [];
+  for (const bag of [payload, root]) {
+    if (!bag || typeof bag !== "object") continue;
+    if (Array.isArray(bag.offerings)) {
+      offerings = bag.offerings;
+      break;
+    }
+    const info = bag.business_info;
+    if (info && typeof info === "object" && Array.isArray(info.offerings)) {
+      offerings = info.offerings;
+      break;
+    }
+  }
 
-  return { bountyResult, sellerLines, businessForMiniCardRaw, businessServices };
+  return { bountyResult, sellerLines, businessForMiniCardRaw, businessServices, offerings };
 }
 
 /** Services list from account-screen/business (business_info.services or top-level services). */
@@ -8375,12 +8282,17 @@ function buildProductInventoryRows(services) {
     .sort((a, b) => a.productName.localeCompare(b.productName));
 }
 
-function buildUnitsAvailableByProductUid(services) {
+function buildUnitsAvailableByProductUid(services, offerings) {
   const map = {};
   for (const service of services || []) {
     const uid = String(service?.bs_uid || service?.ti_bs_id || "").trim();
     if (!uid) continue;
     map[uid] = formatBusinessServiceUnitsAvailableFromService(service);
+  }
+  for (const offering of offerings || []) {
+    const uid = String(offering?.profile_expertise_uid || "").trim();
+    if (!uid || map[uid]) continue;
+    map[uid] = formatOfferingUnitsAvailable(offering);
   }
   return map;
 }
@@ -8465,7 +8377,9 @@ function mergeExpertiseListWithCatalog(incoming, catalog) {
     if (!cat) return exp;
     const profileQty = parseInt(exp.profile_expertise_quantity, 10);
     const catalogQty = parseInt(cat.profile_expertise_quantity, 10);
-    if (Number.isFinite(catalogQty) && (!Number.isFinite(profileQty) || catalogQty > profileQty)) {
+    // API is authoritative after fetch; only fill from cached catalog when API omitted qty.
+    if (Number.isFinite(profileQty)) return exp;
+    if (Number.isFinite(catalogQty)) {
       return { ...exp, profile_expertise_quantity: catalogQty };
     }
     return exp;
@@ -9632,7 +9546,6 @@ export default function AccountScreen({ navigation, route }) {
     });
   };
 
-
   const loadReturnRequests = async () => {
     // Load persistent receipt choices saved at checkout time
     try {
@@ -9739,7 +9652,6 @@ export default function AccountScreen({ navigation, route }) {
       console.error("Failed to load return statuses:", e);
     }
   };
-
 
   const fetchPersonalProfileData = async () => {
     try {
@@ -10073,10 +9985,7 @@ export default function AccountScreen({ navigation, route }) {
       if (!releaseEscrow) {
         Alert.alert("Partial delivery recorded", "Receipt confirmation saved. Earnings may remain pending until all items are verified and any return window ends.");
       } else {
-        Alert.alert(
-          "Delivery confirmed",
-          "Receipt confirmed. Bounty and seller proceeds may stay pending until any return window ends before they become available to spend.",
-        );
+        Alert.alert("Delivery confirmed", "Receipt confirmed. Bounty and seller proceeds may stay pending until any return window ends before they become available to spend.");
       }
     } catch (error) {
       console.error("Error updating transaction escrow:", error);
@@ -10278,10 +10187,7 @@ export default function AccountScreen({ navigation, route }) {
       const transactionUid = String(
         orderRow?.original_transaction_uid || raw?.original_transaction_uid || (!trrUid || String(raw?.transaction_uid || "").trim() !== trrUid ? raw?.transaction_uid : null) || saleUid,
       ).trim();
-      const saleSibling =
-        (selectedAccount === "personal" ? sellerTxData : businessSellerTransactionList).find(
-          (row) => !isReturnListRow(row) && resolveListRowOrderUid(row) === saleUid,
-        ) || null;
+      const saleSibling = (selectedAccount === "personal" ? sellerTxData : businessSellerTransactionList).find((row) => !isReturnListRow(row) && resolveListRowOrderUid(row) === saleUid) || null;
       const bountyPaidFallback = resolveSaleOrderBountyPaid(saleSibling);
       const refundTotalFallback = Math.abs(Number(orderRow?.total ?? orderRow?.transaction_total ?? raw?.transaction_total ?? 0) || 0);
       const isSellerView = options.isSellerView ?? selectedAccount !== "personal";
@@ -10378,9 +10284,7 @@ export default function AccountScreen({ navigation, route }) {
       const orderUid = orderRow?.orderUid || resolveListRowOrderUid(orderRow?.rawRow || orderRow);
       if (!orderUid || orderUid === "—") return;
 
-      const isSellerView =
-        options.isSellerView ??
-        (selectedAccount !== "personal" || (Array.isArray(options.walletLedgerEntries) && options.walletLedgerEntries.length > 0));
+      const isSellerView = options.isSellerView ?? (selectedAccount !== "personal" || (Array.isArray(options.walletLedgerEntries) && options.walletLedgerEntries.length > 0));
       let sellerId = String(options.sellerId || "").trim();
       if (isSellerView && !sellerId) {
         if (selectedAccount !== "personal") {
@@ -10390,9 +10294,7 @@ export default function AccountScreen({ navigation, route }) {
         }
       }
       const ledgerEntries =
-        Array.isArray(options.walletLedgerEntries) && options.walletLedgerEntries.length
-          ? options.walletLedgerEntries
-          : filterWalletLedgerEntriesForOrder(walletLedgerRows, orderUid);
+        Array.isArray(options.walletLedgerEntries) && options.walletLedgerEntries.length ? options.walletLedgerEntries : filterWalletLedgerEntriesForOrder(walletLedgerRows, orderUid);
       setOrderDetailModal({
         visible: true,
         orderUid,
@@ -10416,15 +10318,7 @@ export default function AccountScreen({ navigation, route }) {
         }
         const orderDetail = await fetchOrderDetailApi(orderUid, ctx);
         const txnUid = String(orderDetail?.sale?.transaction_uid || "").trim();
-        const bountyRowsForOrder = resolveOrderDetailBountyRows(
-          isSellerView,
-          selectedAccount,
-          bountyData,
-          businessBountyData,
-          sellerTxData,
-          businessSellerTransactionList,
-          txnUid,
-        );
+        const bountyRowsForOrder = resolveOrderDetailBountyRows(isSellerView, selectedAccount, bountyData, businessBountyData, sellerTxData, businessSellerTransactionList, txnUid);
         const bountyPaidFallback =
           resolveOrderDetailBountyPaidFallback(orderRow) ||
           resolveOrderDetailSaleBountyPaid(orderDetail?.sale, bountyRowsForOrder, txnUid, {
@@ -10536,9 +10430,7 @@ export default function AccountScreen({ navigation, route }) {
             : priorSale
               ? { ...priorSale, fulfillment_status: "in_transit", all_items_shipped: 1 }
               : { transaction_uid: transactionUid, fulfillment_status: "in_transit", all_items_shipped: 1 };
-        const optimisticOrderDetail = priorDetail
-          ? { ...priorDetail, sale: optimisticSale }
-          : { order_uid: orderUid, sale: optimisticSale };
+        const optimisticOrderDetail = priorDetail ? { ...priorDetail, sale: optimisticSale } : { order_uid: orderUid, sale: optimisticSale };
         setOrderDetailModal((prev) => ({
           ...prev,
           orderDetail: optimisticOrderDetail,
@@ -10590,18 +10482,12 @@ export default function AccountScreen({ navigation, route }) {
               const profileId = (await AsyncStorage.getItem("profile_uid")) || "";
               if (profileId) ctx.profileId = String(profileId).trim();
             }
-            const ledgerRefreshPromise =
-              selectedAccount === "personal" || !selectedAccount ? refreshWalletLedger() : Promise.resolve(null);
+            const ledgerRefreshPromise = selectedAccount === "personal" || !selectedAccount ? refreshWalletLedger() : Promise.resolve(null);
             const [orderDetail, ledgerRows] = await Promise.all([fetchOrderDetailApi(orderUid, ctx), ledgerRefreshPromise]);
             refreshedLedgerRows = ledgerRows;
-            const sumShippedQty = (detail) =>
-              (Array.isArray(detail?.sale?.lines) ? detail.sale.lines : []).reduce((sum, line) => sum + getLineShippedQty(line), 0);
-            const detailToApply =
-              sumShippedQty(orderDetail) >= sumShippedQty(optimisticOrderDetail) ? orderDetail : optimisticOrderDetail;
-            const ledgerEntriesForOrder =
-              Array.isArray(refreshedLedgerRows) && refreshedLedgerRows.length
-                ? filterWalletLedgerEntriesForOrder(refreshedLedgerRows, orderUid)
-                : null;
+            const sumShippedQty = (detail) => (Array.isArray(detail?.sale?.lines) ? detail.sale.lines : []).reduce((sum, line) => sum + getLineShippedQty(line), 0);
+            const detailToApply = sumShippedQty(orderDetail) >= sumShippedQty(optimisticOrderDetail) ? orderDetail : optimisticOrderDetail;
+            const ledgerEntriesForOrder = Array.isArray(refreshedLedgerRows) && refreshedLedgerRows.length ? filterWalletLedgerEntriesForOrder(refreshedLedgerRows, orderUid) : null;
             setOrderDetailModal((prev) => ({
               ...prev,
               orderDetail: detailToApply,
@@ -10742,8 +10628,11 @@ export default function AccountScreen({ navigation, route }) {
       if (!shouldApplyBusinessResponse()) return;
       if (!accountScreenResponseMatches(json, "business", targetBusinessUID)) return;
 
-      const { bountyResult, sellerLines, businessForMiniCardRaw, businessServices: servicesFromPayload } = mapAccountScreenBusinessResponse(json);
+      const { bountyResult, sellerLines, businessForMiniCardRaw, businessServices: servicesFromPayload, offerings: offeringsFromPayload } = mapAccountScreenBusinessResponse(json);
       setBusinessServices(Array.isArray(servicesFromPayload) ? servicesFromPayload : []);
+      if (Array.isArray(offeringsFromPayload) && offeringsFromPayload.length) {
+        setExpertiseCatalog(offeringsFromPayload);
+      }
 
       const selectedBusiness = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
 
@@ -10815,8 +10704,7 @@ export default function AccountScreen({ navigation, route }) {
         screenContext: "business / ORDERS table",
         rows: patchedSellerLines,
         listHydrationByOrderUid,
-        auditRowGaps: (row, opts) =>
-          auditSellerOrdersTableGaps(row, patchedSellerLines, {}, opts.shippingProgressByKey || {}),
+        auditRowGaps: (row, opts) => auditSellerOrdersTableGaps(row, patchedSellerLines, {}, opts.shippingProgressByKey || {}),
         auditOptions: {
           shippingProgressByKey: hydrationOutcome?.folded?.hydratedShipping || {},
         },
@@ -10991,10 +10879,7 @@ export default function AccountScreen({ navigation, route }) {
     recentDates.forEach((date) => {
       runningTotal += bountyByDate[date] || 0;
       cumulativeBounty.push(runningTotal);
-      const pendingTotal = enrichedRows.reduce(
-        (sum, row) => sum + bountyAmountPendingOnChartDate(row, date, ledgerAvailabilityByTxnUid, ledgerRows),
-        0,
-      );
+      const pendingTotal = enrichedRows.reduce((sum, row) => sum + bountyAmountPendingOnChartDate(row, date, ledgerAvailabilityByTxnUid, ledgerRows), 0);
       cumulativePending.push(pendingTotal);
       cumulativeUseable.push(Math.max(0, runningTotal - pendingTotal));
     });
@@ -11535,12 +11420,12 @@ export default function AccountScreen({ navigation, route }) {
   }, 0);
   const productSalesSummary = useMemo(() => {
     const products = aggregateBusinessProductSales(businessBountyData?.data || []);
-    const unitsAvailableByUid = buildUnitsAvailableByProductUid(businessServices);
+    const unitsAvailableByUid = buildUnitsAvailableByProductUid(businessServices, expertiseCatalog);
     return products.map((product) => ({
       ...product,
       unitsAvailable: unitsAvailableByUid[product.productUid] ?? "—",
     }));
-  }, [businessBountyData, businessServices]);
+  }, [businessBountyData, businessServices, expertiseCatalog]);
   const productInventorySummary = useMemo(() => buildProductInventoryRows(businessServices), [businessServices]);
   const returnDetailBountyRows = useMemo(
     () => resolveAccountBountyRowsForReturn(returnDetailModal.isSellerView, selectedAccount, bountyData, businessBountyData),
@@ -11733,39 +11618,32 @@ export default function AccountScreen({ navigation, route }) {
                       {expertiseData.map((item, idx) => {
                         const soldAttention = resolveOfferingSoldQtyAttentionLevel(item.expertiseUid, sellerTxData, orderShippingProgressByKey, returnStatuses);
                         return (
-                        <View key={item.expertiseUid || idx} style={styles.tableRow}>
-                          <TouchableOpacity style={{ flex: 1.5 }} onPress={() => openOfferingListing(item)} activeOpacity={0.7}>
-                            <Text style={[styles.tableCell, styles.receiptLink]} numberOfLines={2}>
-                              {item.name}
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.salesTableDataPressable} onPress={() => openOfferingSalesHistory(item)} activeOpacity={0.7}>
-                            <Text style={[styles.tableCell, { flex: 0.9, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
-                            <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
-                            <Text
-                              style={[
-                                styles.tableCell,
-                                {
-                                  flex: 0.7,
-                                  marginLeft: 12,
-                                  color:
-                                    soldAttention === "red"
-                                      ? "#B71C1C"
-                                      : soldAttention === "orange"
-                                        ? "#E65100"
-                                        : soldAttention === "purple"
-                                          ? "#7B1FA2"
-                                          : "#777",
-                                  fontWeight: soldAttention ? "600" : "400",
-                                },
-                              ]}
-                            >
-                              {item.soldQty}
-                            </Text>
-                            <Text style={[styles.tableCell, { flex: 0.7, color: item.remaining === 0 ? "#c00" : "#777", marginLeft: 12 }]}>{item.remaining === null ? "∞" : item.remaining}</Text>
-                            <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
-                          </TouchableOpacity>
-                        </View>
+                          <View key={item.expertiseUid || idx} style={styles.tableRow}>
+                            <TouchableOpacity style={{ flex: 1.5 }} onPress={() => openOfferingListing(item)} activeOpacity={0.7}>
+                              <Text style={[styles.tableCell, styles.receiptLink]} numberOfLines={2}>
+                                {item.name}
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.salesTableDataPressable} onPress={() => openOfferingSalesHistory(item)} activeOpacity={0.7}>
+                              <Text style={[styles.tableCell, { flex: 0.9, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
+                              <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
+                              <Text
+                                style={[
+                                  styles.tableCell,
+                                  {
+                                    flex: 0.7,
+                                    marginLeft: 12,
+                                    color: soldAttention === "red" ? "#B71C1C" : soldAttention === "orange" ? "#E65100" : soldAttention === "purple" ? "#7B1FA2" : "#777",
+                                    fontWeight: soldAttention ? "600" : "400",
+                                  },
+                                ]}
+                              >
+                                {item.soldQty}
+                              </Text>
+                              <Text style={[styles.tableCell, { flex: 0.7, color: item.remaining === 0 ? "#c00" : "#777", marginLeft: 12 }]}>{item.remaining === null ? "∞" : item.remaining}</Text>
+                              <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
+                            </TouchableOpacity>
+                          </View>
                         );
                       })}
                     </View>
@@ -11970,9 +11848,7 @@ export default function AccountScreen({ navigation, route }) {
                         <View style={styles.walletBalanceRow}>
                           <View style={styles.walletBalanceLabelCol}>
                             <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
-                            <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>
-                              Earned but not yet available — waiting for delivery confirmation or return window
-                            </Text>
+                            <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Earned but not yet available — waiting for delivery confirmation or return window</Text>
                           </View>
                           <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingBountyTotal.toFixed(2)}</Text>
                         </View>
@@ -12008,9 +11884,7 @@ export default function AccountScreen({ navigation, route }) {
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
                           <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
-                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>
-                            Earned but not yet available — waiting for delivery confirmation or return window
-                          </Text>
+                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Earned but not yet available — waiting for delivery confirmation or return window</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{formatWalletUsd(personalWallet.wallet_pending)}</Text>
                       </View>
@@ -12173,12 +12047,8 @@ export default function AccountScreen({ navigation, route }) {
                               <Text style={[styles.transactionPurchasedItem, { flex: 1.2 }, ledgerOrderUid && styles.receiptLink]} numberOfLines={3}>
                                 {entry.description || entry.counterparty_name || "—"}
                               </Text>
-                              <Text style={[styles.transactionAmount, { flex: 0.75 }, pendingColor ? { color: pendingColor } : null]}>
-                                {formatLedgerColumnAmount(pendingAmount)}
-                              </Text>
-                              <Text style={[styles.transactionAmount, { flex: 0.75 }, useableColor ? { color: useableColor } : null]}>
-                                {formatLedgerColumnAmount(useableAmount)}
-                              </Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.75 }, pendingColor ? { color: pendingColor } : null]}>{formatLedgerColumnAmount(pendingAmount)}</Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.75 }, useableColor ? { color: useableColor } : null]}>{formatLedgerColumnAmount(useableAmount)}</Text>
                               <Text style={[styles.transactionAmount, { flex: 0.85 }]}>{formatWalletUsd(entry.balance_after)}</Text>
                               <Text style={[styles.transactionAmount, { flex: 0.95 }]}>{formatWalletUsd(entry.useable_balance_after)}</Text>
                             </LedgerRowWrapper>
