@@ -1,6 +1,15 @@
 // WebTextInput.web.js - Web-only version (no React Native dependencies)
 import React from "react";
 
+// Flatten RN-style arrays / nested styles so backgroundColor etc. actually apply on web.
+function flattenStyle(style) {
+  if (!style) return {};
+  if (Array.isArray(style)) {
+    return style.reduce((acc, item) => Object.assign(acc, flattenStyle(item)), {});
+  }
+  return typeof style === "object" ? style : {};
+}
+
 // Inject global CSS to remove native input styling when borderless (used for inputs that sit inside styled wrappers)
 function ensureBorderlessStyles() {
   const BORDERLESS_STYLE_ID = "webtextinput-borderless-style";
@@ -96,24 +105,29 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     ...(accessibilityHint != null && typeof accessibilityHint === "string" && accessibilityHint ? { title: accessibilityHint } : {}),
   };
   // On web, use a native HTML input element
+  const flatStyle = flattenStyle(style);
+  const solidBackground = flatStyle.backgroundColor || "#fff";
   const webStyle = {
-    borderWidth: style?.borderWidth || 1,
-    borderColor: style?.borderColor || "#ccc",
-    borderRadius: style?.borderRadius || 8,
-    padding: style?.padding || 8,
-    paddingVertical: style?.paddingVertical || 8,
-    paddingHorizontal: style?.paddingHorizontal || 4,
-    backgroundColor: style?.backgroundColor || "#fff",
-    color: style?.color || "#000",
-    fontSize: style?.fontSize || 14,
-    width: style?.width || "auto",
-    height: style?.height || "auto",
-    minHeight: style?.minHeight || "auto",
-    textAlign: style?.textAlign || "left",
+    borderWidth: flatStyle.borderWidth || 1,
+    borderColor: flatStyle.borderColor || "#ccc",
+    borderRadius: flatStyle.borderRadius || 8,
+    padding: flatStyle.padding || 8,
+    paddingVertical: flatStyle.paddingVertical || 8,
+    paddingHorizontal: flatStyle.paddingHorizontal || 4,
+    // Use both background + backgroundColor so browsers can't keep a default gradient (e.g. date inputs).
+    background: solidBackground,
+    backgroundImage: "none",
+    backgroundColor: solidBackground,
+    color: flatStyle.color || "#000",
+    fontSize: flatStyle.fontSize || 14,
+    width: flatStyle.width || "auto",
+    height: flatStyle.height || "auto",
+    minHeight: flatStyle.minHeight || "auto",
+    textAlign: flatStyle.textAlign || "left",
     // Note: outline, WebkitAppearance, etc. are applied directly to the DOM element via React.createElement
     // They're not React Native style properties, so we apply them as HTML attributes
     boxSizing: "border-box",
-    fontFamily: style?.fontFamily || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+    fontFamily: flatStyle.fontFamily || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   };
 
   // Map keyboardType to input type
@@ -148,7 +162,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
         ...webStyle,
         outline: "none",
         resize: "vertical",
-        fontFamily: style?.fontFamily || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+        fontFamily: flatStyle.fontFamily || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
         ...(placeholderTextColor && {
           // Use CSS custom property for placeholder color
           "--placeholder-color": placeholderTextColor,
@@ -185,14 +199,16 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
         boxShadow: "none",
         outline: "none",
         background: "transparent",
+        backgroundImage: "none",
+        backgroundColor: "transparent",
         width: "100%",
-        paddingVertical: style?.paddingVertical ?? 0,
-        paddingHorizontal: style?.paddingHorizontal ?? 0,
-        fontSize: style?.fontSize ?? 14,
-        color: style?.color ?? "#333",
-        lineHeight: style?.lineHeight ?? 18,
-        height: style?.height ?? 18,
-        minHeight: style?.minHeight ?? 18,
+        paddingVertical: flatStyle.paddingVertical ?? 0,
+        paddingHorizontal: flatStyle.paddingHorizontal ?? 0,
+        fontSize: flatStyle.fontSize ?? 14,
+        color: flatStyle.color ?? "#333",
+        lineHeight: flatStyle.lineHeight ?? 18,
+        height: flatStyle.height ?? 18,
+        minHeight: flatStyle.minHeight ?? 18,
         ...(placeholderTextColor && { "--placeholder-color": placeholderTextColor }),
       }
     : {

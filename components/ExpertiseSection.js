@@ -74,6 +74,27 @@ const clampReturnWindowDays = (value) => {
 
 export const RETURN_WINDOW_VALIDATION_MESSAGE = `Return window must be between ${RETURN_WINDOW_MIN_DAYS} and ${RETURN_WINDOW_MAX_DAYS} days.`;
 
+const getOfferingCostUnit = (cost) => {
+  if (!cost) return null;
+  return cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i);
+};
+
+/** True when a single offering has all fields required to finish editing (Done). */
+export const isOfferingItemReadyToFinish = (item) => {
+  if (!item) return false;
+  const hasTitle = !!String(item.name || "").trim();
+  const hasDescription = !!String(item.description || "").trim();
+  const hasUnit = !!getOfferingCostUnit(item.cost);
+  if (!hasTitle || !hasDescription || !hasUnit) return false;
+  if (!validateOfferingDeliveredShipping(item)) return false;
+  if (!validateTaxableRate(item.profile_expertise_is_taxable, item.profile_expertise_tax_rate)) return false;
+  if (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") {
+    const n = parseInt(String(item.profile_expertise_return_window_days ?? "").trim(), 10);
+    if (!Number.isFinite(n) || n < RETURN_WINDOW_MIN_DAYS || n > RETURN_WINDOW_MAX_DAYS) return false;
+  }
+  return true;
+};
+
 /** Numeric cost amount from an offering cost string (ignores unit suffix). */
 export const getOfferingCostAmount = (cost) => {
   if (!cost || String(cost).trim().toLowerCase() === "free") return 0;
@@ -162,6 +183,38 @@ const ExpertiseSection = ({
   };
 
   const doneEditOffering = () => {
+    if (editingIndex === null) {
+      closeOfferingForm();
+      scrollToSectionHeader();
+      return;
+    }
+    const item = expertise[editingIndex];
+    if (!isOfferingItemReadyToFinish(item)) {
+      const hasTitle = !!String(item?.name || "").trim();
+      const hasDescription = !!String(item?.description || "").trim();
+      const hasUnit = !!getOfferingCostUnit(item?.cost);
+      if (!hasTitle || !hasDescription || !hasUnit) {
+        Alert.alert("Required Field", "Please fill in title, description, and unit before finishing this Offering.");
+        return;
+      }
+      if (!validateOfferingDeliveredShipping(item)) {
+        Alert.alert(
+          "Required Field",
+          "Offerings with Delivered mode must have Delivery charge set (Free delivery charge, Buyer pays fixed, or Buyer pays actual). Fixed delivery charge also requires an amount.",
+        );
+        return;
+      }
+      if (!validateTaxableRate(item?.profile_expertise_is_taxable, item?.profile_expertise_tax_rate)) {
+        Alert.alert("Required Field", TAX_RATE_VALIDATION_MESSAGE);
+        return;
+      }
+      if (item?.profile_expertise_is_returnable === 1 || item?.profile_expertise_is_returnable === "1") {
+        Alert.alert("Validation", RETURN_WINDOW_VALIDATION_MESSAGE);
+        return;
+      }
+      Alert.alert("Required Field", "Please complete all required fields before finishing this Offering.");
+      return;
+    }
     closeOfferingForm();
     scrollToSectionHeader();
   };
@@ -848,6 +901,7 @@ const ExpertiseSection = ({
 
       {expertise.map((item, index) => {
         const isEditing = showForm && editingIndex === index;
+        const canFinishOffering = isEditing && isOfferingItemReadyToFinish(item);
         return (
         <View
           key={item.profile_expertise_uid || `offering-${index}`}
@@ -1570,8 +1624,26 @@ const ExpertiseSection = ({
             <TouchableOpacity style={[styles.formCancelButton, darkMode && styles.formCancelButtonDark]} onPress={cancelEditOffering} activeOpacity={0.8}>
               <Text style={[styles.formCancelButtonText, darkMode && styles.formCancelButtonTextDark]}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.formDoneButton, darkMode && styles.formDoneButtonDark]} onPress={doneEditOffering} activeOpacity={0.8}>
-              <Text style={[styles.formDoneButtonText, darkMode && styles.formDoneButtonTextDark]}>Done</Text>
+            <TouchableOpacity
+              style={[
+                styles.formDoneButton,
+                darkMode && styles.formDoneButtonDark,
+                !canFinishOffering && styles.formDoneButtonDisabled,
+                !canFinishOffering && darkMode && styles.formDoneButtonDisabledDark,
+              ]}
+              onPress={doneEditOffering}
+              disabled={!canFinishOffering}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.formDoneButtonText,
+                  darkMode && styles.formDoneButtonTextDark,
+                  !canFinishOffering && styles.formDoneButtonTextDisabled,
+                ]}
+              >
+                Done
+              </Text>
             </TouchableOpacity>
           </View>
           </View>
@@ -1658,8 +1730,17 @@ const styles = StyleSheet.create({
   formDoneButtonDark: {
     backgroundColor: SEEKING_FORM_ACCENT_DARK,
   },
+  formDoneButtonDisabled: {
+    backgroundColor: "#e5e7eb",
+    opacity: 0.7,
+  },
+  formDoneButtonDisabledDark: {
+    backgroundColor: "#4b5563",
+    opacity: 0.7,
+  },
   formDoneButtonText: { fontSize: 14, fontWeight: "600", color: "#111827" },
   formDoneButtonTextDark: { color: "#fff" },
+  formDoneButtonTextDisabled: { color: "#9ca3af" },
   titleBarActions: {
     flexDirection: "row",
     alignItems: "center",
@@ -1673,18 +1754,13 @@ const styles = StyleSheet.create({
   togglePillTextActive: { color: "#fff", fontWeight: "bold" },
 });
 
-const getOfferingCostUnit = (cost) => {
-  if (!cost) return null;
-  return cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i);
-};
-
 export const validateExpertise = (expertise) => {
   return (expertise || []).every((e) => {
     const hasTitle = !!String(e.name || "").trim();
     const hasDescription = !!String(e.description || "").trim();
-    const hasUnit = !!getOfferingCostUnit(e.cost);
-    const hasDeliveredShipping = validateOfferingDeliveredShipping(e);
-    return hasTitle && hasDescription && hasUnit && hasDeliveredShipping;
+    // Skip blank placeholder entries (same as Seeking — empty cards should not block Submit).
+    if (!hasTitle && !hasDescription && !String(e.cost || "").trim()) return true;
+    return isOfferingItemReadyToFinish(e);
   });
 };
 

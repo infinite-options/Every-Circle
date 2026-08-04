@@ -472,7 +472,7 @@ const styles = StyleSheet.create({
   },
   darkTextInput: {
     borderColor: "#555",
-    backgroundColor: "#333",
+    backgroundColor: "#000",
     color: "#fff",
     textAlign: "left",
   },
@@ -492,7 +492,7 @@ const styles = StyleSheet.create({
   },
   darkDateButton: {
     borderColor: "#555",
-    backgroundColor: "#333",
+    backgroundColor: "#000",
   },
   dateButtonText: {
     fontSize: 14,

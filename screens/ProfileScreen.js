@@ -771,7 +771,15 @@ const ProfileScreen = ({ route, navigation }) => {
         expertiseIsPublic: apiUser.personal_info?.profile_personal_expertise_is_public === 1,
         wishesIsPublic: apiUser.personal_info?.profile_personal_wishes_is_public === 1,
         businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
-        socialLinksIsPublic: isProfileSectionPublicFlag(apiUser.personal_info?.profile_personal_social_is_public),
+        // Section stays hidden unless explicitly public AND at least one link URL exists
+        // (avoids showing an empty SOCIAL MEDIA block from legacy default-public saves).
+        socialLinksIsPublic: (() => {
+          const hasSocialUrl =
+            Array.isArray(apiUser.links_info) &&
+            apiUser.links_info.some((row) => String(row?.social_link_url || "").trim());
+          if (!hasSocialUrl) return false;
+          return isProfileSectionPublicFlag(apiUser.personal_info?.profile_personal_social_is_public);
+        })(),
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
         profilePersonalPath: apiUser.personal_info?.profile_personal_path || null,
         profileModerationItem: buildProfileModerationItem(apiUser),
@@ -2394,9 +2402,13 @@ const ProfileScreen = ({ route, navigation }) => {
               const linksInfo = user.links_info || [];
               const socialItems = linksInfo
                 .filter((row) => {
-                  if (!row.social_link_url) return false;
-                  if (!isCurrentUserProfile && row.social_link_is_public === 0) return false;
-                  return true;
+                  if (!String(row.social_link_url || "").trim()) return false;
+                  // Same as experience/education: only explicitly public items appear on the profile.
+                  return (
+                    row.social_link_is_public === 1 ||
+                    row.social_link_is_public === "1" ||
+                    row.social_link_is_public === true
+                  );
                 })
                 .map((row) => {
                   const name = String(row.social_link_name || "").toLowerCase();
@@ -2409,7 +2421,7 @@ const ProfileScreen = ({ route, navigation }) => {
                     url: String(row.social_link_url).trim(),
                   };
                 });
-              if (socialItems.length === 0 && !isCurrentUserProfile) return null;
+              if (socialItems.length === 0) return null;
               return (
                 <View style={styles.fieldContainer}>
                   <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowSocial(!showSocial)}>
@@ -2417,23 +2429,19 @@ const ProfileScreen = ({ route, navigation }) => {
                     <Ionicons name={showSocial ? "chevron-up" : "chevron-down"} size={20} color='#000' />
                   </TouchableOpacity>
                   {showSocial &&
-                    (socialItems.length > 0 ? (
-                      socialItems.map(({ key, label, icon, color, url }) => (
-                        <TouchableOpacity key={key} onPress={() => Linking.openURL(url)} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]} activeOpacity={0.7}>
-                          <View style={{ flexDirection: "row", alignItems: "center" }}>
-                            <Ionicons name={icon} size={22} color={color} style={{ marginRight: 12 }} />
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "600" }]}>{label}</Text>
-                              <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: darkMode ? "#aaa" : "#666", fontSize: 12 }]} numberOfLines={1}>
-                                {url}
-                              </Text>
-                            </View>
-                            <Ionicons name='open-outline' size={16} color={darkMode ? "#aaa" : "#999"} />
+                    socialItems.map(({ key, label, icon, color, url }) => (
+                      <TouchableOpacity key={key} onPress={() => Linking.openURL(url)} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]} activeOpacity={0.7}>
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <Ionicons name={icon} size={22} color={color} style={{ marginRight: 12 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "600" }]}>{label}</Text>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: darkMode ? "#aaa" : "#666", fontSize: 12 }]} numberOfLines={1}>
+                              {url}
+                            </Text>
                           </View>
-                        </TouchableOpacity>
-                      ))
-                    ) : (
-                      <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666", padding: 12 }]}>No social media links added yet</Text>
+                          <Ionicons name='open-outline' size={16} color={darkMode ? "#aaa" : "#999"} />
+                        </View>
+                      </TouchableOpacity>
                     ))}
                 </View>
               );

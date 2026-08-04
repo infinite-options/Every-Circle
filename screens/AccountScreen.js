@@ -7423,7 +7423,19 @@ function applyLocalInventoryRestock(setter, results) {
   );
 }
 
-function applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, results) {
+function nextOfferingRemainingAfterRestock(currentRemaining, hit) {
+  if (hit?.remaining != null && Number.isFinite(hit.remaining)) {
+    return Math.max(0, hit.remaining);
+  }
+  const current = currentRemaining != null && Number.isFinite(Number(currentRemaining)) ? Number(currentRemaining) : 0;
+  return Math.max(0, current + (parseInt(hit?.quantity, 10) || 0));
+}
+
+/**
+ * Optimistic SALES "Left" update after restock. Writes overrides synchronously so a following
+ * refreshAccountScreenPersonal merge still sees them before React re-renders the catalog.
+ */
+function applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, results, restockOverridesRef, catalogRef) {
   if (!Array.isArray(results) || !results.length) return;
   const byUid = {};
   for (const row of results) {
@@ -7432,17 +7444,27 @@ function applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, result
   }
   if (!Object.keys(byUid).length) return;
 
+  const overrides = restockOverridesRef?.current && typeof restockOverridesRef.current === "object" ? restockOverridesRef.current : null;
+  const catalog = catalogRef?.current;
+
+  // Sync overrides before any await/refresh so mergeExpertiseListWithRestockOverrides can see them.
+  if (overrides) {
+    for (const [uid, hit] of Object.entries(byUid)) {
+      const catalogRow = Array.isArray(catalog) ? catalog.find((row) => String(row?.profile_expertise_uid || "").trim() === uid) : null;
+      const catalogQty = parseInt(catalogRow?.profile_expertise_quantity, 10);
+      const base = Number.isFinite(catalogQty) ? catalogQty : 0;
+      overrides[uid] = nextOfferingRemainingAfterRestock(base, hit);
+    }
+  }
+
   setExpertiseCatalog((prev) =>
     (prev || []).map((offering) => {
       const uid = String(offering?.profile_expertise_uid || "").trim();
       const hit = byUid[uid];
       if (!hit) return offering;
-      if (hit.remaining != null && Number.isFinite(hit.remaining)) {
-        return { ...offering, profile_expertise_quantity: hit.remaining };
-      }
       const current = parseInt(offering.profile_expertise_quantity, 10);
-      const base = Number.isFinite(current) ? current : 0;
-      return { ...offering, profile_expertise_quantity: base + (parseInt(hit.quantity, 10) || 0) };
+      const nextQty = nextOfferingRemainingAfterRestock(Number.isFinite(current) ? current : 0, hit);
+      return { ...offering, profile_expertise_quantity: nextQty };
     }),
   );
 
@@ -7451,11 +7473,7 @@ function applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, result
       const uid = String(row?.expertiseUid || "").trim();
       const hit = byUid[uid];
       if (!hit) return row;
-      if (hit.remaining != null && Number.isFinite(hit.remaining)) {
-        return { ...row, remaining: hit.remaining };
-      }
-      const current = row.remaining != null && Number.isFinite(Number(row.remaining)) ? Number(row.remaining) : 0;
-      return { ...row, remaining: current + (parseInt(hit.quantity, 10) || 0) };
+      return { ...row, remaining: nextOfferingRemainingAfterRestock(row.remaining, hit) };
     }),
   );
 }
@@ -7573,23 +7591,26 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
   });
 }
 
-/** Keep locally restocked offering qty when account-screen profile expertise_info lags the DB. */
-function mergeExpertiseListWithCatalog(incoming, catalog) {
-  const byUid = {};
-  for (const row of catalog || []) {
-    const uid = String(row?.profile_expertise_uid || "").trim();
-    if (uid) byUid[uid] = row;
-  }
+/**
+ * Prefer live profile expertise qty so SALES "Left" drops after sales.
+ * Only keep an optimistic restock override while the account-screen/profile payload still lags.
+ */
+function mergeExpertiseListWithRestockOverrides(incoming, restockOverrides) {
+  const overrides = restockOverrides && typeof restockOverrides === "object" ? restockOverrides : null;
   return (incoming || []).map((exp) => {
     const uid = String(exp?.profile_expertise_uid || "").trim();
-    const cat = byUid[uid];
-    if (!cat) return exp;
-    const profileQty = parseInt(exp.profile_expertise_quantity, 10);
-    const catalogQty = parseInt(cat.profile_expertise_quantity, 10);
-    if (Number.isFinite(catalogQty) && (!Number.isFinite(profileQty) || catalogQty > profileQty)) {
-      return { ...exp, profile_expertise_quantity: catalogQty };
+    if (!uid || !overrides || !Object.prototype.hasOwnProperty.call(overrides, uid)) return exp;
+    const overrideQty = parseInt(overrides[uid], 10);
+    if (!Number.isFinite(overrideQty)) {
+      delete overrides[uid];
+      return exp;
     }
-    return exp;
+    const profileQty = parseInt(exp.profile_expertise_quantity, 10);
+    if (Number.isFinite(profileQty) && profileQty >= overrideQty) {
+      delete overrides[uid];
+      return exp;
+    }
+    return { ...exp, profile_expertise_quantity: overrideQty };
   });
 }
 
@@ -7676,6 +7697,8 @@ export default function AccountScreen({ navigation, route }) {
   const [expertiseData, setExpertiseData] = useState([]);
   const [expertiseCatalog, setExpertiseCatalog] = useState([]);
   const expertiseCatalogRef = useRef([]);
+  /** uid -> remaining qty after local restock; cleared once profile payload catches up */
+  const expertiseRestockOverridesRef = useRef({});
   const [expertiseLoading, setExpertiseLoading] = useState(true);
   const [sellerTxData, setSellerTxData] = useState([]);
   const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [], loading: false });
@@ -7817,6 +7840,7 @@ export default function AccountScreen({ navigation, route }) {
     setTransactionData([]);
     setExpertiseData([]);
     setExpertiseCatalog([]);
+    expertiseRestockOverridesRef.current = {};
     setSellerTxData([]);
     setBountyData(null);
     setPersonalWallet(null);
@@ -8631,9 +8655,9 @@ export default function AccountScreen({ navigation, route }) {
           if (offeringRestockItems.length) {
             const offeringOutcome = await restockReturnedOfferingItems(offeringRestockItems, restockCtx);
             if (offeringOutcome.ok) {
-              applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, offeringOutcome.results);
+              applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, offeringOutcome.results, expertiseRestockOverridesRef, expertiseCatalogRef);
             } else if (offeringOutcome.partial) {
-              applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, offeringOutcome.results);
+              applyLocalOfferingRestock(setExpertiseData, setExpertiseCatalog, offeringOutcome.results, expertiseRestockOverridesRef, expertiseCatalogRef);
               offeringRestockFailed = true;
             } else {
               offeringRestockFailed = true;
@@ -8887,7 +8911,6 @@ export default function AccountScreen({ navigation, route }) {
     }
     const fetchGen = personalFetchGenRef.current;
     const task = (async () => {
-      const catalogSnapshot = expertiseCatalogRef.current;
       try {
         setTransactionData([]);
         setExpertiseData([]);
@@ -8906,6 +8929,7 @@ export default function AccountScreen({ navigation, route }) {
           setPersonalWallet(null);
           setExpertiseData([]);
           setExpertiseCatalog([]);
+          expertiseRestockOverridesRef.current = {};
           return;
         }
         const url = withTimeZoneQuery(`${ACCOUNT_SCREEN_PERSONAL_ENDPOINT}/${profileId}`);
@@ -8920,7 +8944,7 @@ export default function AccountScreen({ navigation, route }) {
           const session = await getSessionProfile();
           const profileResult = session?.rawProfile;
           const expertiseList = profileResult?.expertise_info ? parseExpertiseInfo(profileResult.expertise_info) : [];
-          const mergedExpertiseList = mergeExpertiseListWithCatalog(expertiseList, catalogSnapshot);
+          const mergedExpertiseList = mergeExpertiseListWithRestockOverrides(expertiseList, expertiseRestockOverridesRef.current);
           setExpertiseCatalog(mergedExpertiseList);
           setExpertiseData(buildExpertiseRows(mergedExpertiseList, []));
           await fetchPersonalProfileData();
@@ -9030,7 +9054,7 @@ export default function AccountScreen({ navigation, route }) {
           expertiseList = parseExpertiseInfo(profileResult.expertise_info);
         }
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
-        const mergedExpertiseList = mergeExpertiseListWithCatalog(expertiseList, catalogSnapshot);
+        const mergedExpertiseList = mergeExpertiseListWithRestockOverrides(expertiseList, expertiseRestockOverridesRef.current);
         setSellerTxData(sellerTx);
         setExpertiseCatalog(mergedExpertiseList);
         setExpertiseData(buildExpertiseRows(mergedExpertiseList, sellerTx));

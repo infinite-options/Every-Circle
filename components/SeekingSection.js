@@ -36,6 +36,20 @@ if (Platform.OS !== "web") {
   }
 }
 
+const getSeekingCostUnit = (cost) => {
+  if (!cost) return null;
+  return String(cost).match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i);
+};
+
+/** True when a single seeking has all fields required to finish editing (Done). */
+export const isSeekingItemReadyToFinish = (item) => {
+  if (!item) return false;
+  const hasTitle = !!String(item.helpNeeds || "").trim();
+  const hasDescription = !!String(item.details || "").trim();
+  const hasUnit = !!getSeekingCostUnit(item.cost);
+  return hasTitle && hasDescription && hasUnit;
+};
+
 const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", profileDefaultAddress = null, darkMode = false }) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
@@ -81,6 +95,16 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   };
 
   const doneEditSeeking = () => {
+    if (editingIndex === null) {
+      closeSeekingForm();
+      scrollToSectionHeader();
+      return;
+    }
+    const item = wishes[editingIndex];
+    if (!isSeekingItemReadyToFinish(item)) {
+      Alert.alert("Required Field", "Please fill in title, description, and unit before finishing this Seeking.");
+      return;
+    }
     closeSeekingForm();
     scrollToSectionHeader();
   };
@@ -179,7 +203,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     const flags = { virtual: !!prev.virtual, delivered: !!prev.delivered, inPerson: !!prev.inPerson };
     flags[key] = !flags[key];
     updated[index] = { ...item, profile_wish_mode: serializeExpertiseMode(flags) };
-    if (key === "inPerson" && flags.inPerson && profileDefaultAddress) {
+    if (key === "delivered" && flags.delivered && profileDefaultAddress) {
       if (!String(updated[index].profile_wish_location || "").trim() && profileDefaultAddress.homeAddress) {
         updated[index].profile_wish_location = profileDefaultAddress.homeAddress;
       }
@@ -469,7 +493,8 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     // Check if it ends with "total" (no leading /)
     if (cleaned.toLowerCase().endsWith("total")) {
       const amount = cleaned.replace(/total$/i, "").trim();
-      return { amount: amount || "Free", unit: "total" };
+      // Empty amount + "total" unit must stay blank — do not coerce to "Free"
+      return { amount, unit: "total" };
     }
 
     // Try to split by / to get unit
@@ -496,7 +521,8 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     // Check if it ends with "total" (no leading /)
     if (cleaned.toLowerCase().endsWith("total")) {
       const amount = cleaned.replace(/total$/i, "").trim();
-      return { amount: amount || "Free", unit: "total" };
+      // Empty amount + "total" unit must stay blank — do not coerce to "Free"
+      return { amount, unit: "total" };
     }
 
     // Try to split by / to get unit
@@ -748,6 +774,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
 
       {wishes.map((item, index) => {
         const isEditing = showForm && editingIndex === index;
+        const canFinishSeeking = isEditing && isSeekingItemReadyToFinish(item);
         return (
         <View
           key={item.profile_wish_uid || `seeking-${index}`}
@@ -1019,10 +1046,10 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                 })()}
               </View>
             </View>
-            {parseExpertiseModeFlags(item.profile_wish_mode).inPerson ? (
+            {parseExpertiseModeFlags(item.profile_wish_mode).delivered ? (
               <>
                 <View style={formStyles.fieldStack}>
-                  <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Pickup address</Text>
+                  <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Delivery address</Text>
                   {renderWishAddressField(index, item)}
                 </View>
                 <View style={formStyles.fieldRow}>
@@ -1189,8 +1216,26 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             <TouchableOpacity style={[styles.formCancelButton, darkMode && styles.formCancelButtonDark]} onPress={cancelEditSeeking} activeOpacity={0.8}>
               <Text style={[styles.formCancelButtonText, darkMode && styles.formCancelButtonTextDark]}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.formDoneButton, darkMode && styles.formDoneButtonDark]} onPress={doneEditSeeking} activeOpacity={0.8}>
-              <Text style={[styles.formDoneButtonText, darkMode && styles.formDoneButtonTextDark]}>Done</Text>
+            <TouchableOpacity
+              style={[
+                styles.formDoneButton,
+                darkMode && styles.formDoneButtonDark,
+                !canFinishSeeking && styles.formDoneButtonDisabled,
+                !canFinishSeeking && darkMode && styles.formDoneButtonDisabledDark,
+              ]}
+              onPress={doneEditSeeking}
+              disabled={!canFinishSeeking}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.formDoneButtonText,
+                  darkMode && styles.formDoneButtonTextDark,
+                  !canFinishSeeking && styles.formDoneButtonTextDisabled,
+                ]}
+              >
+                Done
+              </Text>
             </TouchableOpacity>
           </View>
           </View>
@@ -1272,8 +1317,17 @@ const styles = StyleSheet.create({
   formDoneButtonDark: {
     backgroundColor: SEEKING_FORM_ACCENT_DARK,
   },
+  formDoneButtonDisabled: {
+    backgroundColor: "#e5e7eb",
+    opacity: 0.7,
+  },
+  formDoneButtonDisabledDark: {
+    backgroundColor: "#4b5563",
+    opacity: 0.7,
+  },
   formDoneButtonText: { fontSize: 14, fontWeight: "600", color: "#111827" },
   formDoneButtonTextDark: { color: "#fff" },
+  formDoneButtonTextDisabled: { color: "#9ca3af" },
   labelRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1296,10 +1350,9 @@ export const validateSeeking = (wishes) => {
   return (wishes || []).every((w) => {
     const hasTitle = !!String(w.helpNeeds || "").trim();
     const hasDescription = !!String(w.details || "").trim();
-    const hasUnit = !!(w.cost && w.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i));
     // Skip blank placeholder entries (Seeking seeds one empty card when the user has none).
     if (!hasTitle && !hasDescription && !String(w.cost || "").trim()) return true;
-    return hasTitle && hasDescription && hasUnit;
+    return isSeekingItemReadyToFinish(w);
   });
 };
 
