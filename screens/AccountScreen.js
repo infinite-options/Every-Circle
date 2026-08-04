@@ -4138,10 +4138,12 @@ function getReturnModalLineFulfillmentCaps(row) {
   };
 }
 
-/** Subtitle under item row, e.g. "2 shipped (1 verified) · 1 not shipped" for remaining units. */
+/** Subtitle under item row, e.g. "3 shipped (1 verified) · 5 not shipped" — actual fulfillment, not returnable caps. */
 function buildReturnModalFulfillmentSubtitle(row, caps) {
   const line = row?.line || row;
-  const shippedCount = Math.max(0, caps?.remainingLeft ?? 0);
+  const shippedOnOrder = Math.max(0, caps?.shippedOnLine ?? 0);
+  const returnedFromLeft = Math.max(0, caps?.returnedFromLeft ?? 0);
+  const shippedCount = Math.max(0, shippedOnOrder - returnedFromLeft);
   const notShippedCount = Math.max(0, caps?.remainingNotLeft ?? 0);
   if (shippedCount < 1 && notShippedCount < 1) return null;
 
@@ -5043,6 +5045,61 @@ function parseWalletLedgerEntryStatusNote(description) {
   return paren ? `(${paren[1].trim()})` : "";
 }
 
+/** Unit count for a partial sale-proceeds ledger row (e.g. "1 unit(s) returned"). */
+function parseWalletLedgerEntryItemizeQty(entry, purchasedQty) {
+  if (!entry || purchasedQty <= 0) return null;
+
+  for (const key of ["itemize_qty", "units", "unit_count", "item_qty", "return_quantity", "quantity"]) {
+    const v = parseInt(entry[key], 10);
+    if (Number.isFinite(v) && v > 0 && v <= purchasedQty) return v;
+  }
+
+  const text = String(entry.description || entry.entry_type_label || "").trim();
+  const unitMatch = text.match(/(\d+)\s+unit\(s\)\s+(returned|cancelled|canceled)/i);
+  if (unitMatch) {
+    const qty = parseInt(unitMatch[1], 10);
+    if (Number.isFinite(qty) && qty > 0) return Math.min(qty, purchasedQty);
+  }
+
+  return null;
+}
+
+/** Scale a full-order proceeds breakdown to a partial ledger entry (return/cancel). */
+function scaleWalletLedgerProceedsBreakdown(breakdown, itemizeQty, purchasedQty) {
+  if (!breakdown || !itemizeQty || itemizeQty >= purchasedQty) return breakdown;
+
+  const scaledMerchandiseRows = breakdown.merchandiseRows.map((row) => {
+    const lineShare = purchasedQty > 0 ? row.qty / purchasedQty : 0;
+    const qty =
+      breakdown.merchandiseRows.length === 1
+        ? itemizeQty
+        : Math.max(0, Math.min(row.qty, Math.round(itemizeQty * lineShare) || (itemizeQty > 0 && row.qty > 0 ? 1 : 0)));
+    const total = Math.round(row.unitCost * qty * 100) / 100;
+    return { ...row, qty, total };
+  });
+
+  const scaledShipping = Math.round((breakdown.shippingTotal / purchasedQty) * itemizeQty * 100) / 100;
+  const scaledBounty = breakdown.bounty
+    ? {
+        ...breakdown.bounty,
+        qty: itemizeQty,
+        total: Math.round(breakdown.bounty.unitCost * itemizeQty * 100) / 100,
+      }
+    : null;
+
+  const merchandiseTotal = Math.round(scaledMerchandiseRows.reduce((sum, row) => sum + row.total, 0) * 100) / 100;
+  const bountyAbs = scaledBounty ? Math.abs(scaledBounty.total) : 0;
+  const computedTotal = Math.round((merchandiseTotal + scaledShipping - bountyAbs) * 100) / 100;
+
+  return {
+    ...breakdown,
+    merchandiseRows: scaledMerchandiseRows,
+    shippingTotal: scaledShipping,
+    bounty: scaledBounty,
+    computedTotal,
+  };
+}
+
 /** Itemized seller sale-proceeds breakdown that should sum to a wallet ledger entry. */
 function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, saleBountyPaid, salePurchasedQty, entry }) {
   const saleLines = Array.isArray(sale?.lines) ? sale.lines : [];
@@ -5081,7 +5138,7 @@ function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, 
   const computedTotal = Math.round((merchandiseTotal + shippingTotal - bountyAbs) * 100) / 100;
   const ledgerAmount = Math.round(parsePrice(entry?.amount) * 100) / 100;
 
-  return {
+  const fullBreakdown = {
     merchandiseRows,
     shippingTotal,
     bounty:
@@ -5096,6 +5153,9 @@ function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, 
     computedTotal,
     ledgerAmount,
   };
+
+  const itemizeQty = parseWalletLedgerEntryItemizeQty(entry, purchasedQty);
+  return scaleWalletLedgerProceedsBreakdown(fullBreakdown, itemizeQty, purchasedQty);
 }
 
 function OrderDetailWalletLedgerBreakdownTable({ breakdown, darkMode }) {
@@ -5155,7 +5215,7 @@ function OrderDetailWalletLedgerBreakdownTable({ breakdown, darkMode }) {
       <View style={{ borderTopWidth: 1, borderTopColor: borderColor, marginTop: 4, paddingTop: 6 }}>
         <DataRow description='Total' total={ledgerAmount || computedTotal} emphasize />
       </View>
-      {Math.abs(computedTotal - ledgerAmount) > 0.02 ? (
+      {Math.abs((ledgerAmount < 0 ? -Math.abs(computedTotal) : computedTotal) - ledgerAmount) > 0.02 ? (
         <Text style={{ fontSize: 10, color: "#B71C1C", marginTop: 4 }}>
           Itemized total ({formatSignedOrderMoney(computedTotal)}) differs from ledger entry ({formatSignedOrderMoney(ledgerAmount)}).
         </Text>
