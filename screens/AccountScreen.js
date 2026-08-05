@@ -12245,16 +12245,15 @@ export default function AccountScreen({ navigation, route }) {
                     <Text style={styles.loadingText}>Loading business transaction data...</Text>
                   ) : businessTransactionData.length > 0 ? (
                     <View style={styles.transactionsContainer}>
-                      {/* Table Header */}
-                      <View style={styles.transactionHeaderRow}>
-                        <Text style={styles.transactionHeaderDate}>Date</Text>
-                        <Text style={styles.transactionHeaderId}>Transaction ID</Text>
-                        <Text style={styles.transactionHeaderPurchaseType}>Type</Text>
-                        <Text style={styles.transactionHeaderBusiness}>Seller</Text>
-                        <Text style={styles.transactionHeaderPurchasedItem}>Item</Text>
-                        <Text style={styles.transactionHeaderQty}>Qty</Text>
-                        <Text style={styles.transactionHeaderPaid}>Paid</Text>
-                        <Text style={styles.transactionHeaderAmount}>Amount</Text>
+                      {/* Table Header — must match businessTransactionCell columns below */}
+                      <View style={styles.businessTransactionHeaderRow}>
+                        <Text style={styles.businessTransactionHeaderCell}>Date</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Transaction ID</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Buyer</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Total</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Bounty</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Tax</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Net Earning</Text>
                       </View>
                       {/* Table Rows */}
                       {businessTransactionData.map((transaction, i) => {
@@ -12306,11 +12305,12 @@ export default function AccountScreen({ navigation, route }) {
                               activeOpacity={0.7}
                             >
                               <Text style={styles.businessTransactionCell}>{formatTransactionDate(transaction)}</Text>
-                              <Text style={styles.businessTransactionCell}>
+                              <Text style={styles.businessTransactionCell} numberOfLines={1}>
                                 {transaction.transaction_uid || "N/A"} {isExpanded ? "▲" : "▼"}
                               </Text>
-
-                              <Text style={styles.businessTransactionCell}>{transaction.transaction_profile_id?.substring(0, 10) || "N/A"}</Text>
+                              <Text style={styles.businessTransactionCell} numberOfLines={1}>
+                                {transaction.transaction_profile_id?.substring(0, 10) || "N/A"}
+                              </Text>
                               <Text style={styles.businessTransactionCell}>${transaction.transaction_total.toFixed(2)}</Text>
                               <Text style={styles.businessTransactionCell}>${transaction.bounty_paid.toFixed(2)}</Text>
                               <Text
@@ -12323,7 +12323,7 @@ export default function AccountScreen({ navigation, route }) {
                               >
                                 {showReturnCompletedRow ? `-$${transaction.transaction_taxes.toFixed(2)}` : `$${transaction.transaction_taxes.toFixed(2)}`}
                               </Text>
-                              <Text style={[styles.businessTransactionCell, { width: 55, flex: 0, textAlign: "right" }]}>
+                              <Text style={styles.businessTransactionCell}>
                                 {transaction.proceeds_status && transaction.proceeds_status !== "useable"
                                   ? bountyProceedsStatusLabel(transaction.proceeds_status)
                                   : `$${transaction.net_earning.toFixed(2)}`}
@@ -12340,9 +12340,7 @@ export default function AccountScreen({ navigation, route }) {
                                       <Text style={styles.servicesHeaderCell}>Product UID</Text>
                                       <Text style={styles.servicesHeaderCell}>Product Name</Text>
                                       <Text style={styles.servicesHeaderCell}>Cost</Text>
-                                      <Text style={styles.servicesHeaderCell}>Bounty</Text>
                                       <Text style={styles.servicesHeaderCell}>Qty</Text>
-                                      <Text style={styles.servicesHeaderCell}>Bounty Paid</Text>
                                     </View>
                                     {/* Services Rows */}
                                     {transactionServices.map((service, idx) => (
@@ -12401,8 +12399,8 @@ export default function AccountScreen({ navigation, route }) {
                                     <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>Refund</Text>
                                     <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
                                     <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
+                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>-${transaction.transaction_taxes.toFixed(2)}</Text>
                                     <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
-                                    <Text style={{ width: 55, flex: 0, fontSize: 11, color: "#B71C1C", textAlign: "right" }}>-${transaction.transaction_taxes.toFixed(2)}</Text>
                                   </View>
                                 )}
                               </View>
@@ -14551,12 +14549,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
     marginBottom: 2,
-    minWidth: 770,
     width: "100%",
-    flex: 1,
+    alignSelf: "stretch",
   },
   businessTransactionHeaderCell: {
-    //width: 110,
     flex: 1,
     fontSize: 12,
     color: "#fff",
@@ -14571,10 +14567,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
     width: "100%",
-    flex: 1,
+    alignSelf: "stretch",
   },
   businessTransactionCell: {
-    //width: 110,
     flex: 1,
     fontSize: 11,
     color: "#333",
