@@ -83,6 +83,7 @@ import {
   isProfileOwnerRestricted,
   isProfileVisibilityBlocked,
   normalizeProfileModeration,
+  MODERATED_TAKEN_DOWN as PROFILE_MODERATED_TAKEN_DOWN,
 } from "../utils/profileModeration";
 import {
   getBusinessModeratedState,
@@ -705,10 +706,21 @@ const ProfileScreen = ({ route, navigation }) => {
       apiUser.message === "Profile not found for this user" ||
       (apiUser.code === 404 && apiUser.message === "Profile not found for this user")
     ) {
-      const currentUserUid = await AsyncStorage.getItem("user_uid");
-      const currentProfileUid = await AsyncStorage.getItem("profile_uid");
+      const currentUserUid = ((await AsyncStorage.getItem("user_uid")) || "").trim();
+      const currentProfileUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      const requestedUid = String(profileUID || "").trim();
+      const routeUid = String(routeProfileUID || "").trim();
 
-      if (isCurrentUserProfile || profileUID === currentUserUid || profileUID === currentProfileUid) {
+      // Ownership must come from storage + requested id — NOT React state.
+      // Profile stays mounted across navigations; isCurrentUserProfile can still be
+      // true from the previous (own) visit when fetch runs after setState(false).
+      const isOwnProfileRequest =
+        !!requestedUid &&
+        ((currentProfileUid && requestedUid === currentProfileUid) || (currentUserUid && requestedUid === currentUserUid));
+      const viewingOtherViaRoute =
+        !!routeUid && routeUid !== currentProfileUid && routeUid !== currentUserUid;
+
+      if (isOwnProfileRequest && !viewingOtherViaRoute) {
         setLoading(false);
         await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number", "referral_uid", "referral_email"]);
         await clearUserProfileCacheStorage();
@@ -719,8 +731,27 @@ const ProfileScreen = ({ route, navigation }) => {
         return;
       }
 
+      // Taken-down / hidden profiles often 404 for other viewers — show unavailable, never SignUp.
       console.log("No profile data found for user (viewing other user's profile)");
-      setUser(null);
+      setIsCurrentUserProfile(false);
+      setUser({
+        profile_uid: requestedUid || routeUid,
+        firstName: "",
+        lastName: "",
+        email: "",
+        phoneNumber: "",
+        tagLine: "",
+        city: "",
+        state: "",
+        shortBio: "",
+        profileImage: "",
+        expertise: [],
+        wishes: [],
+        experience: [],
+        education: [],
+        profileModerationItem: { profile_personal_moderated: PROFILE_MODERATED_TAKEN_DOWN },
+        moderation: { moderated: PROFILE_MODERATED_TAKEN_DOWN, status: "taken_down" },
+      });
       setLoading(false);
       return;
     }

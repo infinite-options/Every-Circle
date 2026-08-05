@@ -29,6 +29,21 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
       if (!shouldNavigate) return; // Navigation intercepted
     }
     const currentRoute = getFocusedRouteName(navigation);
+
+    // Profile is a single stack screen. Viewing another user sets route.params.profile_uid;
+    // a bare navigate("Profile") reuses that route and keeps the other user. Always open
+    // the logged-in user's profile from the footer (merge: false clears sticky params).
+    if (destination === "Profile") {
+      const profileRoute = navigation.getState?.()?.routes?.find((r) => r.name === "Profile");
+      const viewingOtherProfile = !!profileRoute?.params?.profile_uid;
+      if (currentRoute === "Profile" && !viewingOtherProfile) {
+        triggerTabRefresh("Profile");
+        return;
+      }
+      navigation.navigate({ name: "Profile", params: {}, merge: false });
+      return;
+    }
+
     if (currentRoute === destination) {
       triggerTabRefresh(destination);
       return;

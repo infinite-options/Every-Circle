@@ -46,6 +46,7 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import { isOfferingModeratedBlocked } from "../utils/offeringModeration";
 import { isSeekingModeratedBlocked } from "../utils/seekingModeration";
 import { isProfileVisibilityBlocked } from "../utils/profileModeration";
+import { isBusinessModeratedBlocked } from "../utils/businessModeration";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
@@ -391,10 +392,13 @@ function filterPublicSearchModeratedResults(items) {
       return !isSearchOwnerProfileBlocked(item) && !isSearchOwnerProfileBlocked(item.wishData);
     }
     if (item?.itemType === "individuals") {
-      return !isProfileVisibilityBlocked({
-        profile_personal_moderated: item.profile_personal_moderated,
-        moderation: item.moderation,
-      });
+      // Prefer the broader owner-block check (status strings + alternate field names).
+      return !isSearchOwnerProfileBlocked(item) && !isProfileVisibilityBlocked(item);
+    }
+    if (item?.itemType === "businesses") {
+      if (isBusinessModeratedBlocked(item)) return false;
+      // Hide businesses whose owner profile is taken down / under review.
+      return !isSearchOwnerProfileBlocked(item);
     }
     return true;
   });
@@ -2079,7 +2083,9 @@ export default function SearchScreen({ route }) {
         return str === "." ? "" : str;
       };
 
-      const mappedBusinesses = businessResults.map((b, i) => ({
+      const mappedBusinesses = businessResults
+        .filter((b) => !isBusinessModeratedBlocked(b) && !isSearchOwnerProfileBlocked(b))
+        .map((b, i) => ({
         ...b,
         id: `${b.business_uid || i}`,
         business_uid: b.business_uid ? String(b.business_uid).trim() : null,
@@ -2102,6 +2108,9 @@ export default function SearchScreen({ route }) {
         passes_relevance_cutoff: b.passes_relevance_cutoff !== false,
         itemType: "businesses",
         profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+        business_moderated: b.business_moderated ?? b.moderation?.moderated ?? null,
+        profile_personal_moderated: b.profile_personal_moderated ?? b.owner_profile_moderated ?? null,
+        moderation: b.moderation ?? null,
         ...searchBusinessLocationFieldsFromApi(b),
         ...locationFieldsFromApi(b),
       }));

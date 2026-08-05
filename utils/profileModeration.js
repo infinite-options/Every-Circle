@@ -90,7 +90,24 @@ export function getProfileModerationStatus(item) {
 export function isProfileModeratedBlocked(item) {
   // 1 taken_down | 2 pending_review | 3 acknowledged — all hide content from other users
   const state = getProfileModeratedState(item);
-  return state === MODERATED_TAKEN_DOWN || state === MODERATED_PENDING_REVIEW || state === MODERATED_ACKNOWLEDGED;
+  if (state === MODERATED_TAKEN_DOWN || state === MODERATED_PENDING_REVIEW || state === MODERATED_ACKNOWLEDGED) {
+    return true;
+  }
+  // Some search/list payloads only send status strings without a moderated integer.
+  const { status, resubmissionStatus } = getRawModerationFields(item);
+  const topLevelStatus = String(
+    item?.profile_moderation_status ?? item?.owner_profile_status ?? item?.status ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const effectiveStatus = status || topLevelStatus;
+  return (
+    effectiveStatus === MODERATION_STATUS.TAKEN_DOWN ||
+    effectiveStatus === MODERATION_STATUS.PENDING_REVIEW ||
+    effectiveStatus === MODERATION_STATUS.ACKNOWLEDGED ||
+    effectiveStatus === MODERATION_STATUS.REJECTED ||
+    resubmissionStatus === MODERATION_STATUS.REJECTED
+  );
 }
 
 /**

@@ -185,12 +185,8 @@ export async function searchReferralProfiles(query) {
     const data = await response.json();
     const profile = data.personal_info;
     if (!profile?.profile_personal_uid) return [];
-    if (
-      isProfileVisibilityBlocked({
-        profile_personal_moderated: profile?.profile_personal_moderated,
-        moderation: profile?.moderation,
-      })
-    ) {
+    // Pass full row so alternate fields (profile_moderated, status strings) are honored.
+    if (isProfileVisibilityBlocked(profile)) {
       return [];
     }
     return [profile];
@@ -200,12 +196,7 @@ export async function searchReferralProfiles(query) {
   const response = await fetch(url);
   const data = await response.json();
   if (data.code === 200) {
-    return (data.results || []).filter((profile) =>
-      !isProfileVisibilityBlocked({
-        profile_personal_moderated: profile?.profile_personal_moderated,
-        moderation: profile?.moderation,
-      }),
-    );
+    return (data.results || []).filter((profile) => !isProfileVisibilityBlocked(profile));
   }
   return [];
 }
@@ -247,7 +238,8 @@ export function mapReferralProfileToSearchItem(profile, networkNode = null) {
     company: displayName,
     microCardUser,
     profileData: microCardUser,
-    profile_personal_moderated: profile.profile_personal_moderated,
+    profile_personal_moderated: profile.profile_personal_moderated ?? profile.profile_moderated ?? null,
+    profile_moderated: profile.profile_moderated ?? profile.profile_personal_moderated ?? null,
     moderation: profile.moderation,
   };
 }
