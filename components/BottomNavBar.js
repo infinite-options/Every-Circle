@@ -6,15 +6,17 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { triggerTabRefresh } from "../utils/tabRefreshRegistry";
 
-const getFocusedRouteName = (nav) => {
+const getFocusedRoute = (nav) => {
   try {
     const state = nav.getState?.();
     if (!state?.routes?.length) return null;
-    return state.routes[state.index]?.name ?? null;
+    return state.routes[state.index] ?? null;
   } catch {
     return null;
   }
 };
+
+const getFocusedRouteName = (nav) => getFocusedRoute(nav)?.name ?? null;
 
 const { width, height } = Dimensions.get("window");
 
@@ -29,18 +31,21 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
       if (!shouldNavigate) return; // Navigation intercepted
     }
     const currentRoute = getFocusedRouteName(navigation);
+    const focusedRoute = getFocusedRoute(navigation);
 
     // Profile is a single stack screen. Viewing another user sets route.params.profile_uid;
     // a bare navigate("Profile") reuses that route and keeps the other user. Always open
     // the logged-in user's profile from the footer (merge: false clears sticky params).
     if (destination === "Profile") {
       const profileRoute = navigation.getState?.()?.routes?.find((r) => r.name === "Profile");
-      const viewingOtherProfile = !!profileRoute?.params?.profile_uid;
-      if (currentRoute === "Profile" && !viewingOtherProfile) {
-        triggerTabRefresh("Profile");
+      const viewingOtherProfile =
+        !!profileRoute?.params?.profile_uid ||
+        (focusedRoute?.name === "Profile" && !!focusedRoute?.params?.profile_uid);
+      if (viewingOtherProfile || currentRoute !== "Profile") {
+        navigation.navigate({ name: "Profile", params: {}, merge: false });
         return;
       }
-      navigation.navigate({ name: "Profile", params: {}, merge: false });
+      triggerTabRefresh("Profile");
       return;
     }
 

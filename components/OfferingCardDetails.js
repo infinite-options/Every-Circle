@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { formatDateTimeForDisplay } from "../utils/profileDateTime";
 import { formatExpertiseModeForDisplay } from "../utils/expertiseMode";
@@ -12,6 +12,7 @@ function MetricBox({ columnLabel, value, subtext, darkMode, align = "left" }) {
   const showNoBounty = columnLabel === "Bounty" && !value && !subtext;
   if (!value && !subtext && !showNoBounty) return null;
   const alignStyle = align === "center" ? styles.metricAlignCenter : align === "right" ? styles.metricAlignRight : null;
+  const alignTextStyle = align === "center" ? styles.metricTextCenter : align === "right" ? styles.metricTextRight : null;
   const isBounty = columnLabel === "Bounty";
   return (
     <View style={[styles.metricBox, darkMode && styles.metricBoxDark, alignStyle]}>
@@ -24,7 +25,12 @@ function MetricBox({ columnLabel, value, subtext, darkMode, align = "left" }) {
       {showNoBounty ? (
         <NoBountyIcon darkMode={darkMode} />
       ) : value ? (
-        <Text style={[styles.metricValue, darkMode && styles.metricValueDark, alignStyle]} numberOfLines={2}>
+        <Text
+          style={[styles.metricValue, darkMode && styles.metricValueDark, alignStyle, alignTextStyle]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+        >
           {value}
         </Text>
       ) : null}
@@ -141,15 +147,15 @@ const styles = StyleSheet.create({
   metricsRow: {
     flexDirection: "row",
     alignItems: "stretch",
-    gap: 10,
+    gap: Platform.OS === "web" ? 10 : 6,
   },
   metricBox: {
     flex: 1,
     minWidth: 0,
     backgroundColor: "#f7f7f8",
     borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === "web" ? 12 : 10,
+    paddingHorizontal: Platform.OS === "web" ? 14 : 8,
   },
   metricBoxDark: {
     backgroundColor: "#2a2a2a",
@@ -159,6 +165,14 @@ const styles = StyleSheet.create({
   },
   metricAlignRight: {
     alignItems: "flex-end",
+  },
+  metricTextCenter: {
+    width: "100%",
+    textAlign: "center",
+  },
+  metricTextRight: {
+    width: "100%",
+    textAlign: "right",
   },
   metricLabel: {
     fontSize: 12,
@@ -179,10 +193,10 @@ const styles = StyleSheet.create({
     color: "#aaa",
   },
   metricValue: {
-    fontSize: 22,
+    fontSize: Platform.OS === "web" ? 22 : 20,
     fontWeight: "700",
     color: "#111",
-    lineHeight: 28,
+    lineHeight: Platform.OS === "web" ? 28 : 24,
   },
   metricValueDark: {
     color: "#f5f5f5",

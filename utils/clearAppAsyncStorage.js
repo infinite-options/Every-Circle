@@ -246,3 +246,23 @@ export async function maybeClearAllStorageOnColdStartFromEnv() {
   console.log("App.js - EXPO_PUBLIC_CLEAR_ASYNC_STORAGE_ON_COLD_START: full AsyncStorage purge");
   await clearAppAsyncStorage();
 }
+
+const SEARCH_RESULTS_STALE_PREFIX = "search_results_stale_";
+
+/** Drop cached search rows after checkout; next Search visit should call the search API. */
+export async function invalidateCachedSearchResults(userUid) {
+  const uid = String(userUid || (await AsyncStorage.getItem("user_uid")) || "").trim();
+  if (!uid) return;
+  await AsyncStorage.removeItem(`last_search_results_${uid}`);
+  await AsyncStorage.setItem(`${SEARCH_RESULTS_STALE_PREFIX}${uid}`, "1");
+}
+
+/** True once after checkout — cleared when consumed on Search focus. */
+export async function consumeSearchResultsStaleFlag(userUid) {
+  const uid = String(userUid || (await AsyncStorage.getItem("user_uid")) || "").trim();
+  if (!uid) return false;
+  const key = `${SEARCH_RESULTS_STALE_PREFIX}${uid}`;
+  if ((await AsyncStorage.getItem(key)) !== "1") return false;
+  await AsyncStorage.removeItem(key);
+  return true;
+}

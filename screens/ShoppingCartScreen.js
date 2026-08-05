@@ -43,6 +43,7 @@ import PaymentFailure from "../components/PaymentFailure";
 import { parsePrice } from "../utils/priceUtils";
 import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines, normalizeSelectedChoiceItemsForApi } from "../utils/selectedChoiceItems";
 import { recordServicePurchase } from "../utils/purchaseService";
+import { invalidateCachedSearchResults } from "../utils/clearAppAsyncStorage";
 import { expertiseLineMerchandiseAndTax, roundCartMoney, taxRatePercentForCalculation } from "../utils/cartLineTax";
 import {
   getOfferingBountyLineTotal,
@@ -763,14 +764,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const cartKeys = keys.filter((key) => key.startsWith("cart_"));
       await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
       setCartItems([]);
-      Alert.alert("Success", "Payment successful! Your order has been placed.", [
-        {
-          text: "OK",
-          onPress: () => {
-            navigation.navigate("Search", { refreshCart: true });
-          },
-        },
-      ]);
+      await invalidateCachedSearchResults();
+      Alert.alert("Success", "Payment successful! Your order has been placed.", [{ text: "OK" }]);
     } catch (error) {
       console.error("Error clearing cart data:", error);
       Alert.alert("Error", "There was an error clearing your cart. Please try again.");
@@ -918,12 +913,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     // Web Stripe flow
     if (isWeb) {
       try {
-        setLoading(true);
         setShowFeesDialog(true);
       } catch (error) {
         console.error("Error starting web checkout:", error);
         Alert.alert("Error", "An error occurred. Please try again.");
-        setLoading(false);
       }
       return;
     }
@@ -1026,15 +1019,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         const cartKeys = keys.filter((key) => key.startsWith("cart_"));
         await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
         setCartItems([]);
+        await invalidateCachedSearchResults();
 
-        Alert.alert("Success", "Payment successful! Your order has been placed.", [
-          {
-            text: "OK",
-            onPress: () => {
-              navigation.navigate("Search", { refreshCart: true });
-            },
-          },
-        ]);
+        Alert.alert("Success", "Payment successful! Your order has been placed.", [{ text: "OK" }]);
 
         await decrementStockForPurchasedItems();
       } catch (error) {
@@ -1204,7 +1191,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     }
   };
 
-  // Add this helper alongside the other handlers (e.g. after recordTransactions)
+  // Decrement business-product stock via separate endpoint (offerings: inventory in POST /transactions).
   const decrementStockForPurchasedItems = async () => {
     const eligibleItems = cartItems.filter((item) => {
       if (item.itemType === "expertise") return false;
@@ -1480,6 +1467,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       if (!response.ok) {
         throw new Error(`Failed to record transaction: ${result.message || "Unknown error"}`);
       }
+
     } catch (error) {
       console.error("Error recording transactions:", error);
       throw error;
@@ -2004,7 +1992,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
             setShow={setShowPaymentFailure}
             onGoToDashboard={() => {
               setShowPaymentFailure(false);
-              navigation.navigate("Search", { refreshCart: true });
+              navigation.navigate("Search");
             }}
           />
         </>
