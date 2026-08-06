@@ -4826,6 +4826,7 @@ function scaleWalletLedgerProceedsBreakdown(breakdown, itemizeQty, purchasedQty)
   });
 
   const scaledShipping = Math.round((breakdown.shippingTotal / purchasedQty) * itemizeQty * 100) / 100;
+  const scaledTax = Math.round((breakdown.taxTotal / purchasedQty) * itemizeQty * 100) / 100;
   const scaledBounty = breakdown.bounty
     ? {
         ...breakdown.bounty,
@@ -4836,19 +4837,33 @@ function scaleWalletLedgerProceedsBreakdown(breakdown, itemizeQty, purchasedQty)
 
   const merchandiseTotal = Math.round(scaledMerchandiseRows.reduce((sum, row) => sum + row.total, 0) * 100) / 100;
   const bountyAbs = scaledBounty ? Math.abs(scaledBounty.total) : 0;
-  const computedTotal = Math.round((merchandiseTotal + scaledShipping - bountyAbs) * 100) / 100;
+  const computedTotal = computeWalletLedgerItemizedTotal({
+    merchandiseTotal,
+    taxTotal: scaledTax,
+    shippingTotal: scaledShipping,
+    bountyAbs,
+    isSellerView: breakdown.isSellerView !== false,
+  });
 
   return {
     ...breakdown,
     merchandiseRows: scaledMerchandiseRows,
     shippingTotal: scaledShipping,
+    taxTotal: scaledTax,
     bounty: scaledBounty,
     computedTotal,
   };
 }
 
-/** Itemized seller sale-proceeds breakdown that should sum to a wallet ledger entry. */
-function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, saleBountyPaid, salePurchasedQty, entry }) {
+function computeWalletLedgerItemizedTotal({ merchandiseTotal, taxTotal, shippingTotal, bountyAbs, isSellerView }) {
+  const tax = Math.abs(Number(taxTotal) || 0);
+  const shipping = Math.abs(Number(shippingTotal) || 0);
+  const bounty = isSellerView ? Math.abs(Number(bountyAbs) || 0) : 0;
+  return Math.round((merchandiseTotal + tax + shipping - bounty) * 100) / 100;
+}
+
+/** Itemized wallet-ledger breakdown that should sum to a ledger entry (seller proceeds or buyer refund). */
+function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, saleBountyPaid, salePurchasedQty, entry, isSellerView = true }) {
   const saleLines = Array.isArray(sale?.lines) ? sale.lines : [];
   const merchandiseRows = saleLines.map((line, index) => {
     const qty = Math.max(0, parseInt(line?.ti_bs_qty, 10) || 0);
@@ -4874,20 +4889,41 @@ function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, 
   }
   shippingTotal = Math.round(Math.abs(Number(shippingTotal) || 0) * 100) / 100;
 
-  const purchasedQty = Math.max(1, salePurchasedQty || merchandiseRows.reduce((sum, row) => sum + row.qty, 0) || parseInt(sale?.ti_bs_qty, 10) || 1);
-  const bountyTotal = saleBountyPaid > 0 ? saleBountyPaid : sumBountyPaidForTransaction(bountyRows, transactionUid) || resolveSaleOrderBountyPaid(sale) || sumBountyFromSaleLines(sale?.lines);
+  const taxTotal = Math.round(Math.abs(parseOrderMoneyField(sale?.transaction_taxes) ?? 0) * 100) / 100;
+
+  const purchasedQty = Math.max(
+    1,
+    parseInt(entry?.purchased_qty, 10) ||
+      salePurchasedQty ||
+      merchandiseRows.reduce((sum, row) => sum + row.qty, 0) ||
+      parseInt(sale?.ti_bs_qty, 10) ||
+      1,
+  );
+  const bountyTotal = isSellerView
+    ? saleBountyPaid > 0
+      ? saleBountyPaid
+      : sumBountyPaidForTransaction(bountyRows, transactionUid) || resolveSaleOrderBountyPaid(sale) || sumBountyFromSaleLines(sale?.lines)
+    : 0;
   const bountyAbs = Math.round(Math.abs(Number(bountyTotal) || 0) * 100) / 100;
   const bountyUnit = purchasedQty > 0 ? Math.round((-bountyAbs / purchasedQty) * 100) / 100 : 0;
 
   const merchandiseTotal = Math.round(merchandiseRows.reduce((sum, row) => sum + row.total, 0) * 100) / 100;
-  const computedTotal = Math.round((merchandiseTotal + shippingTotal - bountyAbs) * 100) / 100;
+  const computedTotal = computeWalletLedgerItemizedTotal({
+    merchandiseTotal,
+    taxTotal,
+    shippingTotal,
+    bountyAbs,
+    isSellerView,
+  });
   const ledgerAmount = Math.round(parsePrice(entry?.amount) * 100) / 100;
 
   const fullBreakdown = {
     merchandiseRows,
     shippingTotal,
+    taxTotal,
+    isSellerView,
     bounty:
-      bountyAbs > 0
+      isSellerView && bountyAbs > 0
         ? {
             description: "Bounty",
             qty: purchasedQty,
@@ -4905,7 +4941,7 @@ function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, 
 
 function OrderDetailWalletLedgerBreakdownTable({ breakdown, darkMode }) {
   if (!breakdown) return null;
-  const { merchandiseRows, shippingTotal, bounty, computedTotal, ledgerAmount } = breakdown;
+  const { merchandiseRows, shippingTotal, taxTotal, bounty, computedTotal, ledgerAmount } = breakdown;
   const headerColor = darkMode ? "#ccc" : "#555";
   const cellColor = darkMode ? "#ddd" : "#333";
   const metaColor = darkMode ? "#aaa" : "#777";
@@ -4955,6 +4991,7 @@ function OrderDetailWalletLedgerBreakdownTable({ breakdown, darkMode }) {
       {merchandiseRows.map((row) => (
         <DataRow key={row.key} description={row.description} qty={row.qty} unitCost={row.unitCost} total={row.total} statusNote={row.statusNote} />
       ))}
+      {taxTotal > 0 ? <DataRow description='Sales tax' total={taxTotal} /> : null}
       {shippingTotal > 0 ? <DataRow description='Shipping' total={shippingTotal} /> : null}
       {bounty ? <DataRow description={bounty.description} qty={bounty.qty} unitCost={bounty.unitCost} total={bounty.total} /> : null}
       <View style={{ borderTopWidth: 1, borderTopColor: borderColor, marginTop: 4, paddingTop: 6 }}>
@@ -4969,16 +5006,20 @@ function OrderDetailWalletLedgerBreakdownTable({ breakdown, darkMode }) {
   );
 }
 
-function OrderDetailWalletLedgerSummary({ entries, highlightEntryId, darkMode, sale, bountyRows = [], transactionUid = "", saleBountyPaid = 0, salePurchasedQty = null }) {
+function OrderDetailWalletLedgerSummary({ entries, highlightEntryId, darkMode, sale, bountyRows = [], transactionUid = "", saleBountyPaid = 0, salePurchasedQty = null, isSellerView = true }) {
   if (!Array.isArray(entries) || !entries.length) return null;
   const labelStyle = [styles.orderDetailSectionText, darkMode && { color: "#ddd" }];
   const valueStyle = [styles.orderDetailSummaryValue, darkMode && { color: "#eee" }];
 
   return (
     <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
-      <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>Wallet ledger (your sale proceeds)</Text>
+      <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>
+        {isSellerView ? "Wallet ledger (your sale proceeds)" : "Wallet ledger"}
+      </Text>
       <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
-        Itemized below is how your sale proceeds are calculated. This is separate from the buyer refund — see pending return above for the customer credit.
+        {isSellerView
+          ? "Itemized below is how your sale proceeds are calculated. This is separate from the buyer refund — see pending return above for the customer credit."
+          : "Itemized below is how this wallet entry is calculated (items + tax + shipping). Bounty is tracked separately in your wallet."}
       </Text>
       {entries.map((entry, index) => {
         const isHighlight = highlightEntryId != null && String(entry.entry_id || "") === String(highlightEntryId);
@@ -4994,6 +5035,7 @@ function OrderDetailWalletLedgerSummary({ entries, highlightEntryId, darkMode, s
               saleBountyPaid,
               salePurchasedQty,
               entry,
+              isSellerView,
             })
           : null;
 
@@ -5806,6 +5848,7 @@ function OrderDetailModal({
                   transactionUid={transactionUid}
                   saleBountyPaid={saleBountyPaid}
                   salePurchasedQty={salePurchasedQty}
+                  isSellerView={isSellerView}
                 />
               ) : null}
 
@@ -8626,7 +8669,7 @@ export default function AccountScreen({ navigation, route }) {
       setReturnItemQuantities({});
       setReturnItemSplitQty({});
       if (selectedAccountRef.current === "personal") {
-        await refreshAccountScreenPersonal();
+        await Promise.all([refreshAccountScreenPersonal(), refreshWalletLedger()]);
       }
       return true;
     } catch (error) {
@@ -9822,7 +9865,7 @@ export default function AccountScreen({ navigation, route }) {
       const orderUid = orderRow?.orderUid || resolveListRowOrderUid(orderRow?.rawRow || orderRow);
       if (!orderUid || orderUid === "—") return;
 
-      const isSellerView = options.isSellerView ?? (selectedAccount !== "personal" || (Array.isArray(options.walletLedgerEntries) && options.walletLedgerEntries.length > 0));
+      const isSellerView = options.isSellerView ?? selectedAccount !== "personal";
       let sellerId = String(options.sellerId || "").trim();
       if (isSellerView && !sellerId) {
         if (selectedAccount !== "personal") {
@@ -9901,6 +9944,9 @@ export default function AccountScreen({ navigation, route }) {
 
   const saveOrderFulfillmentUpdates = useCallback(
     async (requestBody) => {
+      if (!orderDetailModal.isSellerView) {
+        return false;
+      }
       if (!requestBody?.transaction_uid || !Array.isArray(requestBody.fulfillment_updates) || !requestBody.fulfillment_updates.length) {
         return false;
       }
@@ -11249,7 +11295,7 @@ export default function AccountScreen({ navigation, route }) {
                             });
                             return;
                           }
-                          openOrderDetail({ orderUid });
+                          openOrderDetail({ orderUid }, { isSellerView: false });
                         };
 
                         return (
@@ -11562,13 +11608,14 @@ export default function AccountScreen({ navigation, route }) {
                             (String(entry.transaction_uid || "").startsWith("500-") ? String(entry.transaction_uid).trim() : null);
                           const openLedgerEntry = () => {
                             if (!ledgerOrderUid) return;
-                            const scopedLedgerEntries = filterWalletLedgerEntriesForOrder(walletLedgerRows, ledgerOrderUid);
+                            const isSellerLedgerEntry = isWalletLedgerSaleProceedsEntry(entry);
+                            const scopedLedgerEntries = isSellerLedgerEntry ? filterWalletLedgerEntriesForOrder(walletLedgerRows, ledgerOrderUid) : [];
                             openOrderDetail(
                               { orderUid: ledgerOrderUid },
                               {
-                                isSellerView: true,
-                                walletLedgerEntries: scopedLedgerEntries.length ? scopedLedgerEntries : [entry],
-                                highlightLedgerEntryId: entry.entry_id || null,
+                                isSellerView: isSellerLedgerEntry,
+                                walletLedgerEntries: scopedLedgerEntries.length ? scopedLedgerEntries : isSellerLedgerEntry ? [entry] : [],
+                                highlightLedgerEntryId: isSellerLedgerEntry ? entry.entry_id || null : null,
                                 ledgerEntry: entry,
                               },
                             );
@@ -11660,7 +11707,7 @@ export default function AccountScreen({ navigation, route }) {
                   ) : businessBountyData?.error ? (
                     <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
                   ) : businessOrdersSummary.length > 0 ? (
-                    <BusinessOrdersTable rows={businessOrdersSummary} darkMode={darkMode} maxBodyHeight={360} onOrderPress={openOrderDetail} onReturnPress={openReturnDetails} />
+                    <BusinessOrdersTable rows={businessOrdersSummary} darkMode={darkMode} maxBodyHeight={360} onOrderPress={(row) => openOrderDetail(row, { isSellerView: true })} onReturnPress={openReturnDetails} />
                   ) : (
                     <Text style={styles.noDataText}>No orders available.</Text>
                   )}
@@ -12820,7 +12867,7 @@ export default function AccountScreen({ navigation, route }) {
               <BusinessOrdersTable
                 rows={buildProductSalesOrderRows(productSalesModal.product, businessSellerTransactionList, sellerOrderBountyRows, orderShippingProgressByKey)}
                 darkMode={darkMode}
-                onOrderPress={openOrderDetail}
+                onOrderPress={(row) => openOrderDetail(row, { isSellerView: true })}
                 onReturnPress={(row) => openReturnDetails(row, { isSellerView: true })}
               />
             )}
