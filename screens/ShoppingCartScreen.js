@@ -41,7 +41,7 @@ import StripePayment from "../components/StripePaymentWeb";
 import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
 import { parsePrice } from "../utils/priceUtils";
-import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines, normalizeSelectedChoiceItemsForApi } from "../utils/selectedChoiceItems";
+import { getItemizedChoiceLines, normalizeSelectedChoiceItemsForApi } from "../utils/selectedChoiceItems";
 import { recordServicePurchase } from "../utils/purchaseService";
 import { invalidateCachedSearchResults } from "../utils/clearAppAsyncStorage";
 import { expertiseLineMerchandiseAndTax, roundCartMoney, taxRatePercentForCalculation } from "../utils/cartLineTax";
@@ -744,22 +744,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     setWebCheckoutSession(null);
 
     try {
-      const choicesRecord = {};
-      cartItems.forEach((item) => {
-        if (item.itemType === "expertise" && item.expertise_uid && item.cost) {
-          choicesRecord[item.expertise_uid] = { offeringCostString: item.cost };
-        } else {
-          const enrichment = cartChoiceEnrichmentFromItem(item);
-          if (enrichment) {
-            choicesRecord[item.bs_uid] = enrichment;
-          }
-        }
-      });
-      if (Object.keys(choicesRecord).length > 0) {
-        const existing = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
-        const existingParsed = existing ? JSON.parse(existing) : {};
-        await AsyncStorage.setItem("receipt_choices_by_bs_uid", JSON.stringify({ ...existingParsed, ...choicesRecord }));
-      }
+      webCheckoutSessionRef.current = null;
+      setWebCheckoutSession(null);
+
       const keys = await AsyncStorage.getAllKeys();
       const cartKeys = keys.filter((key) => key.startsWith("cart_"));
       await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
@@ -997,23 +984,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       }
 
       try {
-        const choicesRecord = {};
-        cartItems.forEach((item) => {
-          if (item.itemType === "expertise" && item.expertise_uid && item.cost) {
-            choicesRecord[item.expertise_uid] = { offeringCostString: item.cost };
-          } else {
-            const enrichment = cartChoiceEnrichmentFromItem(item);
-            if (enrichment) {
-              choicesRecord[item.bs_uid] = enrichment;
-            }
-          }
-        });
-        if (Object.keys(choicesRecord).length > 0) {
-          const existing = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
-          const existingParsed = existing ? JSON.parse(existing) : {};
-          await AsyncStorage.setItem("receipt_choices_by_bs_uid", JSON.stringify({ ...existingParsed, ...choicesRecord }));
-          console.log("Saved receipt choices:", JSON.stringify(choicesRecord));
-        }
         console.log("Clearing all cart data...");
         const keys = await AsyncStorage.getAllKeys();
         const cartKeys = keys.filter((key) => key.startsWith("cart_"));
