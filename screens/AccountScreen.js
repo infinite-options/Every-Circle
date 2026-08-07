@@ -6603,21 +6603,37 @@ function getOrderDeliveredStatus(saleRows, shippingProgressOverride) {
 function isPurchaseFullyReceivedByQty(transaction) {
   if (!transaction || typeof transaction !== "object") return false;
   if (isTruthyShippingFlag(transaction.all_items_received)) return true;
+
   const hydratedReceived = parseInt(transaction.received_units ?? transaction.received_units_total, 10);
   const hydratedPurchased = parseInt(transaction.purchased_units ?? transaction.purchased_units_total, 10);
-  if (Number.isFinite(hydratedReceived) && Number.isFinite(hydratedPurchased) && hydratedPurchased > 0 && hydratedReceived >= hydratedPurchased) {
-    return true;
+  if (Number.isFinite(hydratedReceived) && Number.isFinite(hydratedPurchased) && hydratedPurchased > 0) {
+    return hydratedReceived >= hydratedPurchased;
   }
+
   const purchased = Math.max(0, parseInt(transaction.ti_bs_qty, 10) || 0);
-  if (purchased > 0 && transaction.ti_received_qty != null && String(transaction.ti_received_qty).trim() !== "") {
+  const unitTotal = hydratedPurchased > 0 ? hydratedPurchased : purchased;
+
+  if (unitTotal > 0 && transaction.ti_received_qty != null && String(transaction.ti_received_qty).trim() !== "") {
     const received = Math.max(0, Math.round(parsePrice(transaction.ti_received_qty)));
-    if (received >= purchased) return true;
+    if (received >= unitTotal) return true;
   }
-  const receivedCount = parseInt(transaction.received_item_count ?? transaction.delivered_item_count, 10);
-  const totalItems = parseInt(transaction.item_count ?? transaction.total_item_count ?? transaction.shippable_item_count ?? purchased, 10);
-  if (Number.isFinite(receivedCount) && Number.isFinite(totalItems) && totalItems > 0 && receivedCount >= totalItems) {
+
+  const receivedCount = parseInt(transaction.received_item_count ?? transaction.delivered_item_count ?? transaction.items_received, 10);
+  const shippableCount = parseInt(transaction.shippable_item_count ?? transaction.items_requiring_shipping ?? transaction.shipping_required_count, 10);
+  const itemCount = parseInt(transaction.item_count ?? transaction.total_item_count, 10);
+
+  // shippable_item_count is often line-item count (1) while ti_bs_qty / purchased_units is unit count (3).
+  let totalItems = unitTotal > 0 ? unitTotal : 0;
+  if (Number.isFinite(itemCount) && itemCount > totalItems) totalItems = itemCount;
+  if (Number.isFinite(shippableCount) && shippableCount > 0) {
+    if (shippableCount >= totalItems) totalItems = shippableCount;
+    else if (totalItems <= 0) totalItems = shippableCount;
+  }
+
+  if (Number.isFinite(receivedCount) && totalItems > 0 && receivedCount >= totalItems) {
     return true;
   }
+
   return false;
 }
 
@@ -6705,11 +6721,18 @@ function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}, purchas
 }
 
 /** True when the buyer can still open delivery verification for this purchase row. */
-function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel, shippingProgressByKey = null) {
+function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel, shippingProgressByKey = null, purchaseRows = null) {
   if (!transaction || isReturnListRow(transaction)) return false;
   if (receivedLabel === "Yes") return false;
-  if (isPurchaseFullyReceivedByQty(transaction)) return false;
-  if (receivedLabel !== "No" && receivedLabel !== "Partial") return false;
+
+  const receivedFraction = parseFractionStatusLabel(receivedLabel);
+  const receivedNeedsVerify = receivedLabel === "No" || receivedLabel === "Partial" || !!receivedFraction;
+  if (!receivedNeedsVerify) return false;
+
+  // Display label is authoritative — list row line-item counts can falsely imply "fully received".
+  if (receivedLabel !== "Partial" && receivedLabel !== "No" && !receivedFraction && isPurchaseFullyReceivedByQty(transaction)) {
+    return false;
+  }
 
   if (orderFulfillmentIsNotRequired(transaction)) {
     const purchased = Math.max(0, parseInt(transaction.ti_bs_qty, 10) || 0);
@@ -6718,14 +6741,21 @@ function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliv
     return purchased <= 0 || received < purchased;
   }
 
-  const purchasedUnits = resolvePurchaseRowShippableUnits(transaction);
-  const receivedUnits = Math.max(0, Math.round(parsePrice(transaction.ti_received_qty ?? transaction.received_units ?? transaction.received_item_count)));
-  const shippedUnits = resolvePurchaseRowShippedUnits(transaction);
+  const orderUid = resolveListRowOrderUid(transaction);
+  const orderSiblings = filterListRowsForOrder(orderUid, purchaseRows);
+  const shipping = summarizeSaleRowShipping(transaction, orderSiblings || purchaseRows, null);
+  const verification = summarizeSaleRowVerification(transaction, orderSiblings || purchaseRows, null);
+  const purchasedUnits = verification.activePurchased > 0 ? verification.activePurchased : verification.purchased || resolvePurchaseRowShippableUnits(transaction);
+  const receivedUnits =
+    verification.received > 0 || verification.purchased > 0
+      ? verification.received
+      : Math.max(0, Math.round(parsePrice(transaction.ti_received_qty ?? transaction.received_units ?? transaction.received_item_count)));
+  const shippedUnits = shipping.shipped > 0 ? shipping.shipped : resolvePurchaseRowShippedUnits(transaction);
+
   if (purchasedUnits > 0 && receivedUnits < purchasedUnits && shippedUnits > receivedUnits) {
     return true;
   }
 
-  const orderUid = resolveListRowOrderUid(transaction);
   const txnUid = String(transaction.transaction_uid || "").trim();
   const cachedProgress = (shippingProgressByKey && ((orderUid && orderUid !== "—" && shippingProgressByKey[orderUid]) || (txnUid && shippingProgressByKey[txnUid]))) || null;
   const progress = resolveShippingProgressForDisplay([transaction], cachedProgress);
@@ -6737,21 +6767,11 @@ function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliv
 
   if (!deliveredIndicatesShipped) return false;
 
-  const hydratedReceived = parseInt(transaction.received_units ?? transaction.received_units_total, 10);
-  const hydratedPurchased = parseInt(transaction.purchased_units ?? transaction.purchased_units_total, 10);
-  if (Number.isFinite(hydratedReceived) && Number.isFinite(hydratedPurchased) && hydratedPurchased > 0) {
-    if (hydratedReceived >= hydratedPurchased) return false;
-    const shipped = shippedUnits;
-    if (shipped > 0) {
-      return hydratedReceived < shipped;
-    }
-    return hydratedReceived < hydratedPurchased;
-  }
+  if (shippedUnits > 0 && receivedUnits < shippedUnits) return true;
 
-  if (shippedUnits > 0) {
-    if (receivedUnits < shippedUnits) return true;
-    if (purchasedUnits > shippedUnits) return false;
-    return false;
+  if (receivedUnits < purchasedUnits && (deliveredLower === "shipped" || deliveredLower === "delivered" || progress === "complete")) {
+    // Delivered says fully shipped but received still partial — trust delivered + allow verify when counts lag.
+    return shippedUnits <= receivedUnits ? purchasedUnits > receivedUnits : true;
   }
 
   return receivedLabel === "No" || receivedLabel === "Partial";
@@ -6962,6 +6982,25 @@ function summarizeSaleRowVerification(row, sellerLines, returnStatusesByKey) {
   return { purchased, received, cancelled, returned, activePurchased };
 }
 
+/**
+ * True when shippable_item_count is a line-item count, not unit count.
+ * Post-cancel rows often have shippable=2 with purchased=3 — trust those when unit fields reconcile.
+ */
+function listRowShippableCountLooksLikeLineItems({ shippableCount, purchasedUnits, shipped, unshippedCount, cancelled }) {
+  if (!Number.isFinite(shippableCount) || shippableCount <= 0) return false;
+  if (purchasedUnits <= shippableCount) return false;
+
+  const unshipped = Number.isFinite(unshippedCount) ? Math.max(0, unshippedCount) : null;
+  const cancel = Math.max(0, cancelled || 0);
+  const ship = Math.max(0, shipped || 0);
+  // Unit-level aggregates agree — shippable_item_count is already in units (e.g. 3 ordered, 1 cancelled → 2).
+  if (unshipped != null && ship + unshipped + cancel === purchasedUnits && shippableCount === ship + unshipped) {
+    return false;
+  }
+  // Typical mismatch: one line item row, multi-qty purchase (shippable=1, purchased=3).
+  return shippableCount < purchasedUnits;
+}
+
 /** Shipped vs active shippable units (returns reduce the ship obligation). */
 function summarizeSaleRowShipping(row, sellerLines, returnStatusesByKey) {
   const verification = summarizeSaleRowVerification(row, sellerLines, returnStatusesByKey);
@@ -6983,20 +7022,35 @@ function summarizeSaleRowShipping(row, sellerLines, returnStatusesByKey) {
 
   if (!hasLineData) {
     const shippedCount = parseInt(row?.shipped_item_count ?? row?.shipped_count ?? row?.items_shipped, 10);
+    const tiShippedQty = parseInt(row?.ti_shipped_qty, 10);
     const shippableCount = parseInt(row?.shippable_item_count ?? row?.items_requiring_shipping ?? row?.shipping_required_count, 10);
     const unshippedCount = parseInt(row?.unshipped_item_count ?? row?.unshipped_count ?? row?.items_unshipped ?? row?.open_shipping_count, 10);
     if (Number.isFinite(shippedCount) && shippedCount >= 0) shipped = shippedCount;
-    if (Number.isFinite(shippableCount) && shippableCount > 0) {
+    if (Number.isFinite(tiShippedQty) && tiShippedQty >= 0 && tiShippedQty > shipped) shipped = tiShippedQty;
+
+    const shippableLooksLikeLineItems = listRowShippableCountLooksLikeLineItems({
+      shippableCount,
+      purchasedUnits: verification.purchased,
+      shipped,
+      unshippedCount,
+      cancelled: verification.cancelled,
+    });
+    if (shippableLooksLikeLineItems) {
+      // activeTotal = purchased minus cancelled/returned when line split is known.
+      shippableTotal = activeTotal;
+    } else if (Number.isFinite(shippableCount) && shippableCount > 0) {
       shippableTotal = Math.max(0, shippableCount - verification.cancelled);
     } else {
       shippableTotal = activeTotal;
     }
+
     if (shipped <= 0 && Number.isFinite(unshippedCount) && shippableTotal > unshippedCount) {
       shipped = Math.max(0, shippableTotal - unshippedCount);
     }
   }
 
   if (shippableTotal <= 0 && orderNeedsShipping(row)) shippableTotal = activeTotal;
+  shipped = Math.min(Math.max(0, shipped), shippableTotal > 0 ? shippableTotal : Math.max(0, shipped));
 
   return { shipped: Math.max(0, shipped), shippableTotal: Math.max(0, shippableTotal), activeTotal, returned: verification.returned };
 }
@@ -9603,37 +9657,8 @@ export default function AccountScreen({ navigation, route }) {
           orderDetail: optimisticOrderDetail,
           walletLedgerEntries: patchWalletLedgerEntriesPendingShipment(prev.walletLedgerEntries, optimisticSale),
         }));
-        const optimisticProgress = getOrderShippingProgress([optimisticSale]);
-        const keysToUpdate = [transactionUid, orderUid, priorDetail?.order_uid, priorSale?.transaction_uid].map((k) => String(k || "").trim()).filter(Boolean);
-        setOrderShippingProgressByKey((prev) => {
-          const next = { ...prev };
-          for (const key of keysToUpdate) next[key] = optimisticProgress;
-          return next;
-        });
-        setBusinessSellerTransactionList((prev) =>
-          (prev || []).map((row) => {
-            const rowTxn = String(row.transaction_uid || "").trim();
-            const rowOrder = resolveListRowOrderUid(row);
-            if (rowTxn !== transactionUid && !keysToUpdate.includes(rowOrder)) return row;
-            if (optimisticProgress === "complete") {
-              return {
-                ...row,
-                fulfillment_status: "in_transit",
-                all_items_shipped: 1,
-                unshipped_item_count: 0,
-              };
-            }
-            if (optimisticProgress === "partial") {
-              return {
-                ...row,
-                fulfillment_status: "partial",
-                all_items_shipped: 0,
-              };
-            }
-            return row;
-          }),
-        );
 
+        // Product Sales / ORDERS read seller_transactions from account-screen — wait for refresh (spinner via businessTransactionLoading).
         if (selectedAccount !== "personal") {
           await refreshAccountScreenBusiness();
         } else {
@@ -9662,36 +9687,6 @@ export default function AccountScreen({ navigation, route }) {
               error: null,
               ...(ledgerEntriesForOrder?.length ? { walletLedgerEntries: ledgerEntriesForOrder } : {}),
             }));
-            const refreshedProgress = getOrderShippingProgress([detailToApply?.sale || detailToApply].filter(Boolean));
-            const refreshKeys = [transactionUid, orderUid, detailToApply?.order_uid, detailToApply?.sale?.transaction_uid].map((k) => String(k || "").trim()).filter(Boolean);
-            setOrderShippingProgressByKey((prev) => {
-              const next = { ...prev };
-              for (const key of refreshKeys) next[key] = refreshedProgress;
-              return next;
-            });
-            setBusinessSellerTransactionList((prev) =>
-              (prev || []).map((row) => {
-                const rowTxn = String(row.transaction_uid || "").trim();
-                const rowOrder = resolveListRowOrderUid(row);
-                if (rowTxn !== transactionUid && !refreshKeys.includes(rowOrder)) return row;
-                if (refreshedProgress === "complete") {
-                  return {
-                    ...row,
-                    fulfillment_status: "in_transit",
-                    all_items_shipped: 1,
-                    unshipped_item_count: 0,
-                  };
-                }
-                if (refreshedProgress === "partial") {
-                  return {
-                    ...row,
-                    fulfillment_status: "partial",
-                    all_items_shipped: 0,
-                  };
-                }
-                return row;
-              }),
-            );
           } catch (reloadError) {
             console.warn("Could not reload order detail after fulfillment save:", reloadError);
           }
@@ -10902,7 +10897,7 @@ export default function AccountScreen({ navigation, route }) {
                               const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction, statusOverride, orderShippingProgressByKey, personalPurchasesDisplayList);
                               const receivedLabel = getBuyerPurchaseReceivedLabel(transaction, statusOverride, personalPurchasesDisplayList);
                               const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
-                              const canVerifyReceipt = buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel, orderShippingProgressByKey);
+                              const canVerifyReceipt = buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel, orderShippingProgressByKey, personalPurchasesDisplayList);
                               const receivedDisplayLabel = canVerifyReceipt ? "Verify" : receivedLabel;
                               const receivedBadge = getProductSaleStatusBadgeStyle("received", canVerifyReceipt ? "verify" : receivedLabel);
 
@@ -12419,7 +12414,7 @@ export default function AccountScreen({ navigation, route }) {
               {productSalesModal.product?.productName || "Product"} · {productSalesModal.product?.productUid || "—"}
             </Text>
 
-            {productSalesModal.loading ? (
+            {productSalesModal.loading || (selectedAccount !== "personal" && businessTransactionLoading) ? (
               <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
             ) : productSalesModal.sales?.length === 0 ? (
               <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No orders recorded for this product yet.</Text>
