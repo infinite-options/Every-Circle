@@ -77,6 +77,37 @@ function formatFilterButtonLabel(value) {
   return s.length > 28 ? `${s.slice(0, 28)}…` : s;
 }
 
+function toYmd(date) {
+  if (!date || !(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/** Parse circle_date / YYYY-MM-DD (or datetime prefix) to local calendar Date at midnight. */
+function parseFilterDate(value) {
+  if (value == null || value === "") return null;
+  const trimmed = String(value).trim();
+  const m = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(trimmed);
+  return Number.isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function formatFilterDateLabel(ymd) {
+  const d = parseFilterDate(ymd);
+  if (!d) return "Any";
+  return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}-${d.getFullYear()}`;
+}
+
+// DateTimePicker only works on native (not web)
+let DateTimePicker = null;
+if (Platform.OS !== "web") {
+  try {
+    DateTimePicker = require("@react-native-community/datetimepicker").default;
+  } catch (e) {
+    console.warn("DateTimePicker not available:", e.message);
+  }
+}
+
 function viewerToCardUser(viewer) {
   return {
     firstName: viewer.viewer_first_name || "",
@@ -236,10 +267,10 @@ function BlockedPeopleModal({ visible, blockedList, onUnblock, onClose, darkMode
 }
 
 const RELATIONSHIP_FILTER_OPTIONS = ["All", "Colleagues", "Friends", "Family"];
-const DATE_FILTER_OPTIONS = ["All", "This Week", "This Month", "This Year"];
 const EVERY_CIRCLE_ZERO_NODE_UID = "110-000001";
 const NETWORK_GRAPH_PURPLE = "#9C45F7";
 const NETWORK_GRAPH_PURPLE_FILL_50 = "rgba(156, 69, 247, 0.5)";
+const LEGACY_DATE_FILTER_PRESETS = new Set(["All", "This Week", "This Month", "This Year"]);
 
 function escapeVisHtmlLabel(text) {
   return String(text)
@@ -294,7 +325,8 @@ function groupNetworkByDegree(data) {
 function applyConnectionFilters(nodes, filters) {
   const {
     relationshipFilter,
-    dateFilter,
+    dateFrom = "",
+    dateTo = "",
     locationFilter,
     eventFilter,
     notesFilter,
@@ -314,36 +346,26 @@ function applyConnectionFilters(nodes, filters) {
     });
   }
 
-  if (dateFilter !== "All") {
-    const now = new Date();
-    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-    const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-
+  const fromDate = parseFilterDate(dateFrom);
+  const toDate = parseFilterDate(dateTo);
+  if (fromDate || toDate) {
     filtered = filtered.filter((node) => {
-      const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
-      if (!circleDateStr) return false;
-      try {
-        const circleDate = new Date(circleDateStr);
-        if (dateFilter === "This Week") return circleDate >= oneWeekAgo;
-        if (dateFilter === "This Month") return circleDate >= oneMonthAgo;
-        if (dateFilter === "This Year") return circleDate >= oneYearAgo;
-      } catch (e) {
-        return false;
-      }
+      const circleDate = parseFilterDate(node.circle_date || node.profile_personal_joined_timestamp);
+      if (!circleDate) return false;
+      if (fromDate && circleDate < fromDate) return false;
+      if (toDate && circleDate > toDate) return false;
       return true;
     });
   }
 
-  if (locationFilter !== "All") {
+  const locationQuery = String(locationFilter || "").trim().toLowerCase();
+  if (locationQuery) {
     filtered = filtered.filter((node) => {
-      const city = node.circle_city || "";
-      const state = node.circle_state || "";
-      let nodeLocation = "";
-      if (city && state) nodeLocation = `${city.trim()}, ${state.trim()}`;
-      else if (city) nodeLocation = city.trim();
-      else if (state) nodeLocation = state.trim();
-      return nodeLocation === locationFilter;
+      const city = (node.circle_city || "").trim();
+      const state = (node.circle_state || "").trim();
+      const combined = [city, state].filter(Boolean).join(", ");
+      const haystack = [city, state, combined].join(" ").toLowerCase();
+      return haystack.includes(locationQuery);
     });
   }
 
@@ -351,34 +373,46 @@ function applyConnectionFilters(nodes, filters) {
     filtered = filtered.filter((node) => (node.circle_event || "").trim() === eventFilter);
   }
 
-  if (notesFilter !== "All") {
-    filtered = filtered.filter((node) => (node.circle_note || "").trim() === notesFilter);
+  const notesQuery = String(notesFilter || "").trim().toLowerCase();
+  if (notesQuery) {
+    filtered = filtered.filter((node) => (node.circle_note || "").toLowerCase().includes(notesQuery));
   }
 
   if (introducedByFilter !== "All") {
     filtered = filtered.filter((node) => (node.circle_introduced_by || "").trim() === introducedByFilter);
   }
 
-  if (searchQuery.trim() !== "") {
-    const query = searchQuery.toLowerCase();
+  const tokens = String(searchQuery || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length > 0) {
     filtered = filtered.filter((node) => {
+      const firstName = node.__mc?.firstName || node.profile_personal_first_name || "";
+      const lastName = node.__mc?.lastName || node.profile_personal_last_name || "";
       const searchableText = [
-        node.__mc?.firstName || "",
-        node.__mc?.lastName || "",
+        firstName,
+        lastName,
+        `${firstName} ${lastName}`.trim(),
         node.__mc?.tagLine || "",
         node.__mc?.city || "",
         node.__mc?.state || "",
         node.__mc?.phoneNumber || "",
+        node.__mc?.email || "",
+        node.circle_city || "",
+        node.circle_state || "",
         node.circle_event || "",
         node.circle_note || "",
         node.circle_introduced_by || "",
         node.circle_relationship || "",
+        node.circle_date || "",
         node.network_profile_personal_uid || "",
       ]
         .join(" ")
         .toLowerCase();
 
-      return searchableText.includes(query);
+      return tokens.every((token) => searchableText.includes(token));
     });
   }
 
@@ -595,16 +629,16 @@ const ConnectScreen = ({ navigation }) => {
   /** Per-key expand/collapse for Async Storage debug rows (key → expanded). */
   const [expandedStorageKeys, setExpandedStorageKeys] = useState({});
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
-  const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
-  const [locationFilter, setLocationFilter] = useState("All");
+  const [dateFrom, setDateFrom] = useState(""); // YYYY-MM-DD or ""
+  const [dateTo, setDateTo] = useState(""); // YYYY-MM-DD or ""
+  const [activeDatePicker, setActiveDatePicker] = useState(null); // "from" | "to" | null
+  const [locationFilter, setLocationFilter] = useState("");
   const [eventFilter, setEventFilter] = useState("All");
   const [availableEvents, setAvailableEvents] = useState([]);
-  const [availableCities, setAvailableCities] = useState([]);
-  const [notesFilter, setNotesFilter] = useState("All");
+  const [notesFilter, setNotesFilter] = useState("");
   const [introducedByFilter, setIntroducedByFilter] = useState("All");
-  const [availableNotes, setAvailableNotes] = useState([]);
   const [availableIntroducedBy, setAvailableIntroducedBy] = useState([]);
-  /** Which single filter list is open: relationship | date | location | event | notes | introduced */
+  /** Which single filter list is open: relationship | event | introduced */
   const [filterModalKind, setFilterModalKind] = useState(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -711,6 +745,8 @@ const ConnectScreen = ({ navigation }) => {
         activeViewValue,
         showViewMyNetworkValue,
         dateFilterValue,
+        dateFromValue,
+        dateToValue,
         locationFilterValue,
         eventFilterValue,
         notesFilterValue,
@@ -729,6 +765,8 @@ const ConnectScreen = ({ navigation }) => {
         AsyncStorage.getItem("network_activeView"),
         AsyncStorage.getItem("network_showViewMyNetwork"),
         AsyncStorage.getItem("network_dateFilter"),
+        AsyncStorage.getItem("network_dateFrom"),
+        AsyncStorage.getItem("network_dateTo"),
         AsyncStorage.getItem("network_locationFilter"),
         AsyncStorage.getItem("network_eventFilter"),
         AsyncStorage.getItem("network_notesFilter"),
@@ -770,18 +808,19 @@ const ConnectScreen = ({ navigation }) => {
         console.log("📥 No persisted viewMode value, using default: list");
       }
 
-      if (dateFilterValue !== null) {
-        console.log("📥 Setting dateFilter to:", dateFilterValue);
-        setDateFilter(dateFilterValue);
-      } else {
-        console.log("📥 No persisted dateFilter value, using default: All");
+      if (dateFromValue != null && dateFromValue !== "" && !LEGACY_DATE_FILTER_PRESETS.has(dateFromValue)) {
+        setDateFrom(dateFromValue);
+      } else if (dateFilterValue != null && dateFilterValue !== "" && !LEGACY_DATE_FILTER_PRESETS.has(dateFilterValue) && parseFilterDate(dateFilterValue)) {
+        // Migrate accidental single YYYY-MM-DD stored in old key
+        setDateFrom(dateFilterValue);
+      }
+      if (dateToValue != null && dateToValue !== "" && !LEGACY_DATE_FILTER_PRESETS.has(dateToValue)) {
+        setDateTo(dateToValue);
       }
 
       if (locationFilterValue !== null) {
-        console.log("📥 Setting locationFilter to:", locationFilterValue);
-        setLocationFilter(locationFilterValue);
-      } else {
-        console.log("📥 No persisted locationFilter value, using default: All");
+        // Legacy exact-match dropdown stored "All"; treat that as empty searchable text.
+        setLocationFilter(locationFilterValue === "All" ? "" : locationFilterValue);
       }
 
       if (eventFilterValue !== null) {
@@ -792,7 +831,7 @@ const ConnectScreen = ({ navigation }) => {
       }
 
       if (notesFilterValue !== null) {
-        setNotesFilter(notesFilterValue);
+        setNotesFilter(notesFilterValue === "All" ? "" : notesFilterValue);
       }
       if (introducedByFilterValue !== null) {
         setIntroducedByFilter(introducedByFilterValue);
@@ -929,7 +968,8 @@ const ConnectScreen = ({ navigation }) => {
           AsyncStorage.setItem("network_degree", degree),
           AsyncStorage.setItem("network_viewMode", viewMode),
           AsyncStorage.setItem("network_showViewMyNetwork", JSON.stringify(showViewMyNetwork)),
-          AsyncStorage.setItem("network_dateFilter", dateFilter),
+          AsyncStorage.setItem("network_dateFrom", dateFrom),
+          AsyncStorage.setItem("network_dateTo", dateTo),
           AsyncStorage.setItem("network_locationFilter", locationFilter),
           AsyncStorage.setItem("network_eventFilter", eventFilter),
           AsyncStorage.setItem("network_notesFilter", notesFilter),
@@ -941,7 +981,7 @@ const ConnectScreen = ({ navigation }) => {
       }
     };
     saveSettings();
-  }, [showAsyncStorage, degree, viewMode, showViewMyNetwork, dateFilter, locationFilter, eventFilter, notesFilter, introducedByFilter, settingsLoaded]);
+  }, [showAsyncStorage, degree, viewMode, showViewMyNetwork, dateFrom, dateTo, locationFilter, eventFilter, notesFilter, introducedByFilter, settingsLoaded]);
 
   // Debounced GET /api/network: settings ready, panel open, connections view, and on focus (focusTick) or degree change.
   // useFocusEffect no longer calls fetchNetwork — avoids duplicate with this effect. activeView via ref so Circles→Connections does not schedule twice.
@@ -987,61 +1027,29 @@ const ConnectScreen = ({ navigation }) => {
     }
   }, [networkData]);
 
-  // Extract unique cities from circle data
+  // Unique circle_introduced_by values for introduced-by dropdown
   useEffect(() => {
     if (networkData && networkData.length > 0) {
-      const locations = new Set();
-      networkData.forEach((node) => {
-        const city = node.circle_city || "";
-        const state = node.circle_state || "";
-
-        // Create location string
-        if (city && state) {
-          locations.add(`${city.trim()}, ${state.trim()}`);
-        } else if (city) {
-          locations.add(city.trim());
-        } else if (state) {
-          locations.add(state.trim());
-        }
-      });
-      const sortedLocations = Array.from(locations).sort();
-      setAvailableCities(sortedLocations);
-      console.log("📋 Available locations:", sortedLocations);
-    } else {
-      setAvailableCities([]);
-    }
-  }, [networkData]);
-
-  // Unique circle_note / circle_introduced_by values for filters 7–8
-  useEffect(() => {
-    if (networkData && networkData.length > 0) {
-      const notes = new Set();
       const intros = new Set();
       networkData.forEach((node) => {
-        const n = (node.circle_note || "").trim();
-        if (n) notes.add(n);
         const i = (node.circle_introduced_by || "").trim();
         if (i) intros.add(i);
       });
-      setAvailableNotes(Array.from(notes).sort());
       setAvailableIntroducedBy(Array.from(intros).sort());
     } else {
-      setAvailableNotes([]);
       setAvailableIntroducedBy([]);
     }
   }, [networkData]);
-
-  const noteOptionsForModal = useMemo(() => {
-    const s = new Set(availableNotes);
-    if (notesFilter !== "All") s.add(notesFilter);
-    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
-  }, [availableNotes, notesFilter]);
 
   const introducedOptionsForModal = useMemo(() => {
     const s = new Set(availableIntroducedBy);
     if (introducedByFilter !== "All") s.add(introducedByFilter);
     return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
   }, [availableIntroducedBy, introducedByFilter]);
+
+  const locationFilterActive = locationFilter.trim() !== "";
+  const notesFilterActive = notesFilter.trim() !== "";
+  const dateFilterActive = Boolean(dateFrom || dateTo);
 
   const sortedStorageData = useMemo(
     () => [...storageData].sort(([keyA], [keyB]) => String(keyA).localeCompare(String(keyB))),
@@ -1568,7 +1576,8 @@ const ConnectScreen = ({ navigation }) => {
     if (Platform.OS === "web" && viewMode === "graph" && profileUid) {
       const filtered = applyConnectionFilters(networkData, {
         relationshipFilter,
-        dateFilter,
+        dateFrom,
+        dateTo,
         locationFilter,
         eventFilter,
         notesFilter,
@@ -1579,7 +1588,7 @@ const ConnectScreen = ({ navigation }) => {
       const html = generateVisHTML(filtered, profileUid || "YOU");
       setGraphHtml(html);
     }
-  }, [viewMode, networkData, profileUid, relationshipFilter, dateFilter, locationFilter, eventFilter, notesFilter, introducedByFilter, searchQuery, userProfileData]);
+  }, [viewMode, networkData, profileUid, relationshipFilter, dateFrom, dateTo, locationFilter, eventFilter, notesFilter, introducedByFilter, searchQuery, userProfileData]);
 
   // Create/update iframe element for web
   useEffect(() => {
@@ -1765,10 +1774,11 @@ const ConnectScreen = ({ navigation }) => {
     setActiveView("connections");
     // Keep current viewMode (list or graph) so user stays on View as Graph if they switched Network
     setRelationshipFilter("All");
-    setDateFilter("All");
-    setLocationFilter("All");
+    setDateFrom("");
+    setDateTo("");
+    setLocationFilter("");
     setEventFilter("All");
-    setNotesFilter("All");
+    setNotesFilter("");
     setIntroducedByFilter("All");
     setLoading(true);
     setError(null);
@@ -2273,7 +2283,8 @@ const ConnectScreen = ({ navigation }) => {
   // Apply filters to network data for graph/list views
   const filteredNetworkData = applyConnectionFilters(networkData, {
     relationshipFilter,
-    dateFilter,
+    dateFrom,
+    dateTo,
     locationFilter,
     eventFilter,
     notesFilter,
@@ -2723,7 +2734,7 @@ const ConnectScreen = ({ navigation }) => {
 
                 {showViewMyNetwork && (
                   <>
-                    {/* Search Input - wrapped with borderless strategy to match Levels/Relationship boxes */}
+                    {/* General search — matches name, location, event, notes, relationship, etc. */}
                     {Object.keys(groupedNetwork).length > 0 && (
                       <View style={{ width: "100%", marginBottom: 12, marginTop: 8 }}>
                         <View style={[styles.searchInputWrapper, darkMode && styles.darkSearchInputWrapper]}>
@@ -2731,13 +2742,13 @@ const ConnectScreen = ({ navigation }) => {
                             style={[styles.searchInputInner, darkMode && { color: "#fff" }]}
                             value={searchQuery}
                             onChangeText={setSearchQuery}
-                            placeholder='Search Connections...'
+                            placeholder='Search name, location, event, notes…'
                             placeholderTextColor={darkMode ? "#888" : "#999"}
                             borderless
                             accessibilitylabel='Search connections'
-                            accessibilityHint='Type to search your connections by name, location, event, or relationship'
+                            accessibilityHint='Type anything to search connections by name, location, event, notes, or relationship'
                             accessibilityRole='search'
-                            aria-label='search connection'
+                            aria-label='Search connections'
                           />
                         </View>
                       </View>
@@ -2799,10 +2810,10 @@ const ConnectScreen = ({ navigation }) => {
                         <Text style={[styles.advancedFiltersHeaderText, darkMode && styles.darkAdvancedFiltersHeaderText]}>
                           Advanced Filters
                           {(relationshipFilter !== "All" ||
-                            dateFilter !== "All" ||
-                            locationFilter !== "All" ||
+                            dateFilterActive ||
+                            locationFilterActive ||
                             eventFilter !== "All" ||
-                            notesFilter !== "All" ||
+                            notesFilterActive ||
                             introducedByFilter !== "All") &&
                             " (active)"}
                         </Text>
@@ -2819,20 +2830,78 @@ const ConnectScreen = ({ navigation }) => {
                             </TouchableOpacity>
                           </View>
 
-                          {/* Row 4: Date(s) */}
-                          <View style={styles.controlRow}>
-                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>4. Date(s)</Text>
-                            <TouchableOpacity style={[styles.pullDownButton, dateFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("date")}>
-                              <Text style={[styles.pullDownButtonText, dateFilter !== "All" && styles.pullDownButtonTextActive]}>{dateFilter === "All" ? "All" : dateFilter}</Text>
-                            </TouchableOpacity>
+                          {/* Row 4: Date range — full-width so the picker stays on screen */}
+                          <View style={styles.dateFilterBlock}>
+                            <Text style={[styles.controlRowLabel, styles.dateFilterBlockLabel, darkMode && { color: "#e0e0e0" }]}>4. From date</Text>
+                            <View style={[styles.dateFilterFullField, darkMode && styles.darkFilterTextInputWrap, dateFrom ? styles.filterTextInputWrapActive : null]}>
+                              {Platform.OS === "web" ? (
+                                <WebTextInput
+                                  style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }]}
+                                  type='date'
+                                  value={dateFrom}
+                                  onChangeText={setDateFrom}
+                                  borderless
+                                  accessibilitylabel='From date'
+                                  aria-label='From date'
+                                />
+                              ) : (
+                                <TouchableOpacity style={styles.dateFilterNativeHit} onPress={() => setActiveDatePicker("from")} activeOpacity={0.7}>
+                                  <Text style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }, !dateFrom && { color: darkMode ? "#888" : "#999" }]}>
+                                    {formatFilterDateLabel(dateFrom)}
+                                  </Text>
+                                </TouchableOpacity>
+                              )}
+                              {dateFrom ? (
+                                <TouchableOpacity onPress={() => setDateFrom("")} style={styles.dateFilterClear} accessibilityLabel='Clear from date' hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                  <Ionicons name='close-circle' size={18} color={darkMode ? "#aaa" : "#666"} />
+                                </TouchableOpacity>
+                              ) : null}
+                            </View>
+                          </View>
+                          <View style={styles.dateFilterBlock}>
+                            <Text style={[styles.controlRowLabel, styles.dateFilterBlockLabel, darkMode && { color: "#e0e0e0" }]}>4. To date</Text>
+                            <View style={[styles.dateFilterFullField, darkMode && styles.darkFilterTextInputWrap, dateTo ? styles.filterTextInputWrapActive : null]}>
+                              {Platform.OS === "web" ? (
+                                <WebTextInput
+                                  style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }]}
+                                  type='date'
+                                  value={dateTo}
+                                  onChangeText={setDateTo}
+                                  borderless
+                                  accessibilitylabel='To date'
+                                  aria-label='To date'
+                                />
+                              ) : (
+                                <TouchableOpacity style={styles.dateFilterNativeHit} onPress={() => setActiveDatePicker("to")} activeOpacity={0.7}>
+                                  <Text style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }, !dateTo && { color: darkMode ? "#888" : "#999" }]}>
+                                    {formatFilterDateLabel(dateTo)}
+                                  </Text>
+                                </TouchableOpacity>
+                              )}
+                              {dateTo ? (
+                                <TouchableOpacity onPress={() => setDateTo("")} style={styles.dateFilterClear} accessibilityLabel='Clear to date' hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                  <Ionicons name='close-circle' size={18} color={darkMode ? "#aaa" : "#666"} />
+                                </TouchableOpacity>
+                              ) : null}
+                            </View>
                           </View>
 
-                          {/* Row 5: Location(s) */}
+                          {/* Row 5: Location(s) — searchable text */}
                           <View style={styles.controlRow}>
                             <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>5. Location(s)</Text>
-                            <TouchableOpacity style={[styles.pullDownButton, locationFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("location")}>
-                              <Text style={[styles.pullDownButtonText, locationFilter !== "All" && styles.pullDownButtonTextActive]}>{locationFilter === "All" ? "All" : locationFilter}</Text>
-                            </TouchableOpacity>
+                            <View style={[styles.pullDownButton, styles.filterTextInputWrap, darkMode && styles.darkFilterTextInputWrap, locationFilterActive && styles.filterTextInputWrapActive]}>
+                              <WebTextInput
+                                style={[styles.pullDownButtonInputInner, darkMode && { color: "#fff" }]}
+                                value={locationFilter}
+                                onChangeText={setLocationFilter}
+                                placeholder='Search city or state'
+                                placeholderTextColor={darkMode ? "#888" : "#999"}
+                                borderless
+                                accessibilitylabel='Filter by meeting location'
+                                accessibilityHint='Type to filter connections by meeting city or state'
+                                aria-label='Filter by meeting location'
+                              />
+                            </View>
                           </View>
 
                           {/* Row 6: Event(s) */}
@@ -2843,12 +2912,22 @@ const ConnectScreen = ({ navigation }) => {
                             </TouchableOpacity>
                           </View>
 
-                          {/* Row 7: Notes */}
+                          {/* Row 7: Notes — searchable text */}
                           <View style={styles.controlRow}>
                             <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>7. Notes</Text>
-                            <TouchableOpacity style={[styles.pullDownButton, notesFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("notes")}>
-                              <Text style={[styles.pullDownButtonText, notesFilter !== "All" && styles.pullDownButtonTextActive]}>{formatFilterButtonLabel(notesFilter)}</Text>
-                            </TouchableOpacity>
+                            <View style={[styles.pullDownButton, styles.filterTextInputWrap, darkMode && styles.darkFilterTextInputWrap, notesFilterActive && styles.filterTextInputWrapActive]}>
+                              <WebTextInput
+                                style={[styles.pullDownButtonInputInner, darkMode && { color: "#fff" }]}
+                                value={notesFilter}
+                                onChangeText={setNotesFilter}
+                                placeholder='Search notes'
+                                placeholderTextColor={darkMode ? "#888" : "#999"}
+                                borderless
+                                accessibilitylabel='Filter by notes'
+                                accessibilityHint='Type to filter connections by note text'
+                                aria-label='Filter by notes'
+                              />
+                            </View>
                           </View>
 
                           {/* Row 8: Introduced by */}
@@ -2862,11 +2941,13 @@ const ConnectScreen = ({ navigation }) => {
                           <TouchableOpacity
                             onPress={() => {
                               setRelationshipFilter("All");
-                              setDateFilter("All");
-                              setLocationFilter("All");
+                              setDateFrom("");
+                              setDateTo("");
+                              setLocationFilter("");
                               setEventFilter("All");
-                              setNotesFilter("All");
+                              setNotesFilter("");
                               setIntroducedByFilter("All");
+                              setActiveDatePicker(null);
                               setFilterModalKind(null);
                             }}
                             style={{ alignSelf: "center", marginTop: 8, paddingVertical: 8, paddingHorizontal: 14 }}
@@ -3727,19 +3808,61 @@ const ConnectScreen = ({ navigation }) => {
           darkMode={darkMode}
         />
       )}
-      {filterModalKind === "date" && (
-        <ConnectionFilterModal visible title='4. Date(s)' options={DATE_FILTER_OPTIONS} selected={dateFilter} onSelect={setDateFilter} onClose={() => setFilterModalKind(null)} darkMode={darkMode} />
-      )}
-      {filterModalKind === "location" && (
-        <ConnectionFilterModal
-          visible
-          title='5. Location(s)'
-          options={["All", ...availableCities]}
-          selected={locationFilter}
-          onSelect={setLocationFilter}
-          onClose={() => setFilterModalKind(null)}
-          darkMode={darkMode}
-        />
+      {activeDatePicker != null && (
+        <Modal visible transparent animationType='fade' onRequestClose={() => setActiveDatePicker(null)}>
+          <TouchableOpacity style={styles.datePickerModalOverlay} activeOpacity={1} onPress={() => setActiveDatePicker(null)}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+              style={[styles.datePickerModalSheet, { backgroundColor: darkMode ? "#1e1e2e" : "#fff", borderColor: darkMode ? "#3a3a5c" : "#e0e4f7" }]}
+            >
+              <Text style={[styles.datePickerModalTitle, { color: darkMode ? "#e8eaf6" : "#1a1a2e" }]}>
+                {activeDatePicker === "from" ? "From date" : "To date"}
+              </Text>
+              {Platform.OS === "web" ? (
+                <WebTextInput
+                  style={[styles.dateFilterFullInput, { height: 36, minHeight: 36, lineHeight: 36 }, darkMode && { color: "#fff" }]}
+                  type='date'
+                  value={activeDatePicker === "from" ? dateFrom : dateTo}
+                  onChangeText={(v) => {
+                    if (activeDatePicker === "from") setDateFrom(v);
+                    else setDateTo(v);
+                  }}
+                  borderless
+                  accessibilitylabel={activeDatePicker === "from" ? "From date" : "To date"}
+                />
+              ) : DateTimePicker ? (
+                <DateTimePicker
+                  value={parseFilterDate(activeDatePicker === "from" ? dateFrom : dateTo) || new Date()}
+                  mode='date'
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={(_, selectedDate) => {
+                    if (Platform.OS === "android") setActiveDatePicker(null);
+                    if (!selectedDate) return;
+                    const ymd = toYmd(selectedDate);
+                    if (activeDatePicker === "from") setDateFrom(ymd);
+                    else setDateTo(ymd);
+                  }}
+                />
+              ) : (
+                <WebTextInput
+                  style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }]}
+                  value={activeDatePicker === "from" ? dateFrom : dateTo}
+                  onChangeText={(v) => {
+                    if (activeDatePicker === "from") setDateFrom(v);
+                    else setDateTo(v);
+                  }}
+                  placeholder='YYYY-MM-DD'
+                  placeholderTextColor={darkMode ? "#666" : "#999"}
+                  borderless
+                />
+              )}
+              <TouchableOpacity style={styles.datePickerDone} onPress={() => setActiveDatePicker(null)}>
+                <Text style={styles.datePickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
       )}
       {filterModalKind === "event" && (
         <ConnectionFilterModal
@@ -3751,9 +3874,6 @@ const ConnectScreen = ({ navigation }) => {
           onClose={() => setFilterModalKind(null)}
           darkMode={darkMode}
         />
-      )}
-      {filterModalKind === "notes" && (
-        <ConnectionFilterModal visible title='7. Notes' options={noteOptionsForModal} selected={notesFilter} onSelect={setNotesFilter} onClose={() => setFilterModalKind(null)} darkMode={darkMode} />
       )}
       {filterModalKind === "introduced" && (
         <ConnectionFilterModal
@@ -4633,6 +4753,96 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#fff",
+  },
+  filterTextInputWrap: {
+    alignItems: "stretch",
+    paddingVertical: 6,
+  },
+  filterTextInputWrapActive: {
+    borderColor: "#2434C2",
+  },
+  darkFilterTextInputWrap: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#555",
+  },
+  dateFilterBlock: {
+    width: "100%",
+    paddingVertical: 8,
+  },
+  dateFilterBlockLabel: {
+    flex: 0,
+    marginBottom: 6,
+  },
+  dateFilterFullField: {
+    width: "100%",
+    maxWidth: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#fff",
+    overflow: "hidden",
+  },
+  dateFilterFullInput: {
+    flex: 1,
+    minWidth: 0,
+    width: "100%",
+    borderWidth: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    fontSize: 14,
+    height: 24,
+    lineHeight: 24,
+    minHeight: 24,
+    color: "#333",
+    backgroundColor: "transparent",
+    textAlign: "left",
+  },
+  dateFilterNativeHit: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: "center",
+  },
+  dateFilterClear: {
+    marginLeft: 8,
+    padding: 2,
+  },
+  datePickerModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  datePickerModalSheet: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  datePickerModalTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 10,
+    alignSelf: "stretch",
+    textAlign: "center",
+  },
+  datePickerDone: {
+    alignSelf: "center",
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  datePickerDoneText: {
+    color: "#535db7",
+    fontWeight: "600",
+    fontSize: 14,
   },
   pullDownButtonCompact: {
     paddingVertical: 4,
