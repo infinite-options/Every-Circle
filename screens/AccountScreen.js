@@ -7062,7 +7062,7 @@ function isPurchaseFullyReceivedByQty(transaction) {
 }
 
 /** Buyer PURCHASES Delivered column — return logistics only on Return rows; Order rows show shipping. */
-function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}, shippingProgressByKey = null) {
+function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}, shippingProgressByKey = null, purchaseRows = null) {
   if (isReturnListRow(transaction)) {
     const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
     if (returnLogistics) return returnLogistics.delivered;
@@ -7077,9 +7077,19 @@ function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}, shippi
   const shippingProgressOverride = (shippingProgressByKey && ((orderUid && orderUid !== "—" && shippingProgressByKey[orderUid]) || (txnUid && shippingProgressByKey[txnUid]))) || null;
   const inEscrow = Number(transaction.transaction_in_escrow ?? transaction.in_escrow) === 1;
 
+  if (Array.isArray(purchaseRows) && purchaseRows.length) {
+    const shipping = summarizeSaleRowShipping(transaction, purchaseRows, null);
+    const total = shipping.shippableTotal > 0 ? shipping.shippableTotal : shipping.activeTotal;
+    if (total > 0) {
+      if (shipping.shipped <= 0) return "Not Shipped";
+      if (shipping.shipped >= total) return inEscrow ? "Shipped" : "Delivered";
+      return `${shipping.shipped}/${total}`;
+    }
+  }
+
   const shippedUnits = resolvePurchaseRowShippedUnits(transaction);
   const purchasedUnits = resolvePurchaseRowShippableUnits(transaction);
-  if (isTruthyShippingFlag(transaction.all_items_shipped) || (purchasedUnits > 0 && shippedUnits >= purchasedUnits)) {
+  if (isTruthyShippingFlag(transaction.all_items_shipped) && (purchasedUnits <= 0 || shippedUnits >= purchasedUnits)) {
     return inEscrow ? "Shipped" : "Delivered";
   }
   if (shippedUnits > 0 && purchasedUnits > 0 && shippedUnits < purchasedUnits) {
@@ -7106,14 +7116,24 @@ function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}, shippi
 /**
  * Buyer PURCHASES Received column.
  * Return money state only on Return rows; Order rows show Yes/No/Partial shipping receipt.
+ * Completed returns/cancels on sibling list rows reduce the verification denominator (same as seller orders).
  */
-function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}) {
+function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}, purchaseRows = null) {
   if (isReturnListRow(transaction)) {
     const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
     if (returnLogistics) return returnLogistics.received;
     return "—";
   }
   if (!transaction) return "—";
+
+  if (isTruthyShippingFlag(transaction.all_items_received)) return "Yes";
+
+  const totals = summarizeSaleRowVerification(transaction, purchaseRows, null);
+  if (totals.activePurchased > 0) {
+    if (totals.received <= 0) return "No";
+    if (totals.received >= totals.activePurchased) return "Yes";
+    return "Partial";
+  }
 
   const fromRows = getOrderReceivedStatusFromSaleRows([transaction]);
   if (fromRows === "Yes" || fromRows === "Partial" || fromRows === "No") return fromRows;
@@ -11339,8 +11359,8 @@ export default function AccountScreen({ navigation, route }) {
                             {(() => {
                               const txnUid = String(transaction.original_transaction_uid || transaction.transaction_uid || "").trim();
                               const statusOverride = isReturnRow ? { returnRequested: true } : {};
-                              const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction, statusOverride, orderShippingProgressByKey);
-                              const receivedLabel = getBuyerPurchaseReceivedLabel(transaction, statusOverride);
+                              const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction, statusOverride, orderShippingProgressByKey, personalPurchasesDisplayList);
+                              const receivedLabel = getBuyerPurchaseReceivedLabel(transaction, statusOverride, personalPurchasesDisplayList);
                               const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
                               const canVerifyReceipt = buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel, orderShippingProgressByKey);
                               const receivedDisplayLabel = canVerifyReceipt ? "Verify" : receivedLabel;
