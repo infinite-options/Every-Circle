@@ -127,8 +127,8 @@ function navigateToPurchaseSeller(navigation, transaction) {
  * - Aggregate shape: { purchases: { data }, bounty_results: { data, totals, wallet }, seller_transactions: { data } }
  * - Top-level bounty shape: data[] + total_bounties + total_bounty_earned + wallet (purchases may be in purchases / purchase_transactions)
  * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → treat as no seller lines)
- * - data.profile | user_profile: optional { user_email, personal_info, expertise_info } for MiniCard + expertise list
- * - schema_version: 2 — purchases.rows[] with units + display per sale/return row (preferred over purchases.data)
+ * - data.profile | user_profile: required for SALES table — { expertise_info } with profile_expertise_quantity per offering
+ * - schema_version: 2 — purchases.rows[] and seller_transactions[] with units + display per sale/return row
  * - order_list_hydration: (deprecated v1) map order_uid -> trimmed order payload
  */
 /** Backend may send numeric or string success codes (e.g. 200 vs "200"). */
@@ -177,6 +177,40 @@ function getRowV2DisplayLabel(row, field) {
   const v = row?.display?.[field];
   if (v == null || String(v).trim() === "") return null;
   return String(v).trim();
+}
+
+/** Backend-owned banner / helper copy on return rows and order detail. */
+function resolveRowStatusBanner(row) {
+  if (!row || typeof row !== "object") return "";
+  return String(row.status_banner ?? row.banner_text ?? row.status_message ?? "").trim();
+}
+
+function resolveRowSectionTitle(row) {
+  if (!row || typeof row !== "object") return "";
+  return String(row.items_section_title ?? row.return_items_section_title ?? row.section_title ?? "").trim();
+}
+
+function resolveRowSellerActionNote(row) {
+  if (!row || typeof row !== "object") return "";
+  return String(row.seller_action_note ?? row.pending_seller_note ?? row.action_note ?? "").trim();
+}
+
+function resolveRowCancelConfirmNote(row) {
+  if (!row || typeof row !== "object") return "";
+  return String(row.cancel_confirm_note ?? row.seller_cancel_note ?? row.pending_cancel_note ?? "").trim();
+}
+
+/** True when backend marks this return/cancel as awaiting seller confirm/decline. */
+function rowAwaitingSellerConfirm(row) {
+  if (!row || typeof row !== "object") return false;
+  if (row.awaiting_seller_confirm === true || row.seller_approval_required === true) return true;
+  const returnStatus = String(row.return_status || row.transaction_return_status || "")
+    .trim()
+    .toLowerCase();
+  const refundStatus = String(row.refund_status || row.transaction_refund_status || "")
+    .trim()
+    .toLowerCase();
+  return returnStatus === "returning" && refundStatus === "pending";
 }
 
 function getRowV2DisplayQty(row) {
@@ -247,7 +281,6 @@ function mergeOrderDetailWithListSaleRow(orderDetail, listSaleRow) {
   if (!sale || typeof sale !== "object") return orderDetail;
   const enrichedSale = { ...sale };
   if (!enrichedSale.units && listSaleRow.units) enrichedSale.units = listSaleRow.units;
-  if (!enrichedSale.display && listSaleRow.display) enrichedSale.display = listSaleRow.display;
   if (Array.isArray(enrichedSale.lines)) {
     enrichedSale.lines = enrichedSale.lines.map((line) => {
       if (line?.units) return line;
@@ -265,6 +298,7 @@ function formatLineFulfillmentDisplayFromUnits(units, line) {
   const remainingToShip = parseNonNegativeInt(units.remaining_to_ship_qty) ?? 0;
   const cancelled =
     (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) + (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0);
+  const shippableTotal = parseNonNegativeInt(units.active_qty) ?? Math.max(0, purchased - cancelled);
   const carrier = String(line?.tracking_carrier || line?.ti_tracking_carrier || "").trim();
   const trackingNumber = String(line?.tracking_number || line?.ti_tracking_number || "").trim();
   const trackingPairs = getTrackingPairs(carrier, trackingNumber);
@@ -276,8 +310,8 @@ function formatLineFulfillmentDisplayFromUnits(units, line) {
     return { statusLabel: "Cancelled", trackingLabel: "—", trackingPairs: [], cancelNote };
   }
   if (shipped <= 0) return { statusLabel: "Not shipped", trackingLabel: "—", trackingPairs: [], cancelNote: "" };
-  if (remainingToShip <= 0 || shipped >= purchased) return { statusLabel: "Shipped", trackingLabel, trackingPairs, cancelNote };
-  return { statusLabel: `${shipped}/${purchased}`, trackingLabel, trackingPairs, cancelNote };
+  if (remainingToShip <= 0 || shipped >= shippableTotal) return { statusLabel: "Shipped", trackingLabel, trackingPairs, cancelNote };
+  return { statusLabel: `${shipped}/${shippableTotal}`, trackingLabel, trackingPairs, cancelNote };
 }
 
 function formatOrderDetailLineQtyNoteFromUnits(units) {
@@ -1634,13 +1668,8 @@ async function createStripeRefund({ customerUid, businessCode, paymentIntent, re
 }
 
 /**
- * Normalize backend return/refund pair (plus legacy accepted/declined values).
- * return_status: returning | returned | cancelled
- * refund_status: pending | refunded | rejected | stripe_fail
- *   - rejected     = seller declined before receipt (Returning - Rejected)
- *   - stripe_fail  = return confirmed but Stripe refund failed/skipped (Returned - Stripe Fail)
- *     Backend often still sends Returned - Rejected for Stripe failures; we remap those here.
- *   - cancelled    = pre-shipment cancel (no physical return); refund side still applies
+ * Read return/refund fields from API rows — no lifecycle remapping or inferred transitions.
+ * Only fills missing return_status/refund_status from display_status when those fields are absent.
  */
 function extractReturnRefundState(source = {}, override = {}) {
   const pick = (...vals) => {
@@ -1651,32 +1680,14 @@ function extractReturnRefundState(source = {}, override = {}) {
     return "";
   };
 
-  let returnStatus = pick(override.return_status, override.returnStatus, typeof override === "string" ? override : null, source.return_status, source.transaction_return_status);
+  let returnStatus = pick(override.return_status, override.returnStatus, source.return_status, source.transaction_return_status);
   let refundStatus = pick(override.refund_status, override.refundStatus, source.refund_status, source.transaction_refund_status);
   let displayStatus = String(override.display_status ?? source.display_status ?? "").trim();
 
-  // Explicit cancel-before-ship signals from API / FE.
-  const cancelSignal =
-    override.cancel_unshipped === true ||
-    override.cancel_unshipped === 1 ||
-    override.is_cancel_before_ship === true ||
-    source.is_cancel_before_ship === true ||
-    source.cancel_unshipped === true ||
-    Number(source.cancel_unshipped) === 1 ||
-    source.pre_ship_cancel === true ||
-    Number(source.pre_ship_cancel) === 1 ||
-    returnStatus === "cancelled" ||
-    returnStatus === "canceled" ||
-    /^cancell?ed\s*[-–]/i.test(displayStatus);
-
-  // If the list/API row itself says CC Issue / stripe_fail, don't let a stale cache "refunded" win.
-  const sourceRefund = pick(source.refund_status, source.transaction_refund_status);
-  const sourceDisplay = String(source.display_status || "").trim();
-  if (sourceRefund === "stripe_fail" || sourceRefund === "stripe_failed" || /(?:returned|cancell?ed)\s*[-–]\s*(cc\s*issue|stripe\s*fail|stripe_fail|stripe_failed)/i.test(sourceDisplay)) {
-    refundStatus = "stripe_fail";
-    returnStatus = pick(source.return_status, source.transaction_return_status) || (cancelSignal ? "cancelled" : "returned");
-    if (sourceDisplay) displayStatus = sourceDisplay;
-  }
+  if (returnStatus === "canceled") returnStatus = "cancelled";
+  if (refundStatus === "declined") refundStatus = "rejected";
+  if (refundStatus === "accepted") refundStatus = "refunded";
+  if (refundStatus === "stripe_failed") refundStatus = "stripe_fail";
 
   const returnDisplayMatch = displayStatus.match(/^(returning|returned|cancell?ed)\s*[-–]\s*(pending|refunded|rejected|stripe\s*fail|stripe_fail|stripe_failed|cc\s*issue)$/i);
   if (returnDisplayMatch) {
@@ -1690,53 +1701,8 @@ function extractReturnRefundState(source = {}, override = {}) {
     }
   }
 
-  if (returnStatus === "canceled") returnStatus = "cancelled";
-  // Pre-ship cancel: prefer cancelled unless this is an explicit Returning-Rejected decline.
-  if (cancelSignal && !(returnStatus === "returning" && refundStatus === "rejected")) {
-    returnStatus = "cancelled";
-  }
-
-  const explicitReturnSignal =
-    override.returnRequested === true ||
-    override.returnRequested === 1 ||
-    Number(source.transaction_return_requested) === 1 ||
-    isReturnListRow(source) ||
-    !!returnDisplayMatch ||
-    returnStatus === "returning" ||
-    returnStatus === "returned" ||
-    returnStatus === "cancelled" ||
-    cancelSignal;
-
-  // Legacy single-field values from older FE / AsyncStorage.
-  // Only remap order-lifecycle words (completed/accepted/etc.) when this is actually a return.
-  if (explicitReturnSignal || returnStatus === "returning" || returnStatus === "returned" || returnStatus === "cancelled") {
-    if (returnStatus === "accepted") {
-      returnStatus = "returned";
-      if (!refundStatus || refundStatus === "accepted") refundStatus = "refunded";
-    } else if (returnStatus === "declined") {
-      refundStatus = refundStatus || "rejected";
-      // Decline before receipt → Returning - Rejected
-      returnStatus = "returning";
-    } else if (returnStatus === "resolved" || returnStatus === "completed") {
-      returnStatus = cancelSignal ? "cancelled" : "returned";
-      refundStatus = refundStatus || "refunded";
-    } else if (returnStatus === "rejected" && !refundStatus) {
-      refundStatus = "rejected";
-      returnStatus = "returning";
-    }
-  } else if (["accepted", "declined", "resolved", "completed", "rejected"].includes(returnStatus)) {
-    // Sale/order rows sometimes carry lifecycle statuses in return_status fields — ignore them.
-    returnStatus = "";
-  }
-
-  if (refundStatus === "declined") refundStatus = "rejected";
-  if (refundStatus === "accepted") refundStatus = "refunded";
-
   const isKnownReturnStatus = returnStatus === "returning" || returnStatus === "returned" || returnStatus === "cancelled";
   const isKnownRefundStatus = refundStatus === "pending" || refundStatus === "refunded" || refundStatus === "rejected" || refundStatus === "stripe_fail";
-
-  // Do NOT treat an arbitrary display_status (or unknown status strings) as a return.
-  // That was falsely marking Business Purchases as Returned when no return was requested.
   const returnRequested =
     override.returnRequested === true ||
     override.returnRequested === 1 ||
@@ -1744,56 +1710,29 @@ function extractReturnRefundState(source = {}, override = {}) {
     isReturnListRow(source) ||
     !!returnDisplayMatch ||
     isKnownReturnStatus ||
-    cancelSignal ||
     (isKnownRefundStatus && isKnownReturnStatus);
 
-  const stripeRefund = override.stripe_refund || source.stripe_refund || null;
-  const stripeRefundFailed = stripeRefund && typeof stripeRefund === "object" && (stripeRefund.ok === false || stripeRefund.skipped === true);
-  const displayIndicatesStripeFail =
-    /(?:returned|cancell?ed)\s*[-–]\s*(cc\s*issue|stripe\s*fail|stripe_fail|stripe_failed)/i.test(String(displayStatus || "")) ||
-    (returnDisplayMatch &&
-      ["stripe_fail", "stripe_failed", "cc_issue"].includes(
-        String(returnDisplayMatch[2] || "")
-          .toLowerCase()
-          .replace(/\s+/g, "_"),
-      ));
-
-  // Returned/Cancelled + rejected / stripe_refund fail / display_status CC Issue = Stripe fail (not a completed refund).
-  // Prefer these signals over a stale refund_status=refunded (common on buyer list rows).
-  if (
-    refundStatus === "stripe_fail" ||
-    refundStatus === "stripe_failed" ||
-    ((returnStatus === "returned" || returnStatus === "cancelled") && refundStatus === "rejected") ||
-    ((returnStatus === "returned" || returnStatus === "cancelled") && stripeRefundFailed) ||
-    displayIndicatesStripeFail ||
-    stripeRefundFailed
-  ) {
-    returnStatus = returnStatus === "cancelled" || cancelSignal ? "cancelled" : "returned";
-    refundStatus = "stripe_fail";
+  if (!returnRequested && ["accepted", "declined", "resolved", "completed", "rejected"].includes(returnStatus)) {
+    returnStatus = "";
   }
 
-  if (!displayStatus && returnStatus && refundStatus) {
-    const deliveredWord = returnStatus === "cancelled" ? "Cancelled" : returnStatus === "returned" ? "Returned" : "Returning";
-    const receivedWord = refundStatus === "refunded" ? "Refunded" : refundStatus === "stripe_fail" ? "CC Issue" : refundStatus === "rejected" ? "Rejected" : "Pending";
-    displayStatus = `${deliveredWord} - ${receivedWord}`;
-  } else if (displayStatus) {
-    // Normalize API "Returned - Rejected" / "Stripe Fail" (post-confirm Stripe fail) for chips.
-    displayStatus = displayStatus
-      .replace(/Returned\s*[-–]\s*Rejected/i, "Returned - CC Issue")
-      .replace(/Returned\s*[-–]\s*Stripe\s*Fail/i, "Returned - CC Issue")
-      .replace(/Cancell?ed\s*[-–]\s*Rejected/i, "Cancelled - CC Issue")
-      .replace(/Cancell?ed\s*[-–]\s*Stripe\s*Fail/i, "Cancelled - CC Issue");
-  }
-  if (refundStatus === "stripe_fail") {
-    displayStatus = returnStatus === "cancelled" ? "Cancelled - CC Issue" : "Returned - CC Issue";
-  }
+  const isCancelBeforeShip =
+    override.is_cancel_before_ship === true ||
+    override.cancel_unshipped === true ||
+    override.cancel_unshipped === 1 ||
+    source.is_cancel_before_ship === true ||
+    Number(source.is_cancel_before_ship) === 1 ||
+    source.pre_ship_cancel === true ||
+    Number(source.pre_ship_cancel) === 1 ||
+    source.cancel_unshipped === true ||
+    Number(source.cancel_unshipped) === 1;
 
   return {
     return_status: returnStatus,
     refund_status: refundStatus,
     display_status: displayStatus,
-    active: returnRequested,
-    is_cancel_before_ship: returnStatus === "cancelled" || !!cancelSignal,
+    active: returnRequested && (!!returnStatus || !!refundStatus || !!displayStatus),
+    is_cancel_before_ship: isCancelBeforeShip,
   };
 }
 
@@ -1812,70 +1751,29 @@ function resolveReturnLogisticsLabels(row, override = {}) {
 
   const displayDelivered = getRowV2DisplayLabel(row, "delivered_label");
   const displayReceived = getRowV2DisplayLabel(row, "received_label");
-  if (displayDelivered && displayReceived) {
-    const state = extractReturnRefundState(row, override);
-    return {
-      delivered: displayDelivered,
-      received: displayReceived,
-      return_status: state.return_status || row.return_status,
-      refund_status: state.refund_status || row.refund_status,
-      display_status: row.display_status || `${displayDelivered} - ${displayReceived}`,
-      is_cancel_before_ship: displayDelivered === "Cancelled",
-    };
-  }
+  const state = extractReturnRefundState(row, override);
+  const hasReturnSignal =
+    state.active ||
+    isReturnListRow(row) ||
+    Number(row.transaction_return_requested) === 1 ||
+    !!displayDelivered ||
+    !!displayReceived ||
+    !!state.return_status ||
+    !!state.refund_status ||
+    !!state.display_status;
 
-  const saleSibling = override.saleSibling || override.sale || null;
-  const inferredCancel = isPreShipCancelReturn(row, saleSibling);
-  const state = extractReturnRefundState(row, {
-    ...override,
-    ...(inferredCancel ? { cancel_unshipped: true } : {}),
-  });
-  if (!state.active) return null;
+  if (!hasReturnSignal) return null;
 
-  const isReturnTxn = isReturnListRow(row);
-  let returnStatus = state.return_status;
-  let refundStatus = state.refund_status;
-
-  // Return txn rows without status fields are post-confirm refunds.
-  // Do not guess "refunded" when stripe fail signals are present on the row.
-  if (isReturnTxn && !returnStatus) {
-    returnStatus = inferredCancel || state.is_cancel_before_ship ? "cancelled" : "returned";
-    if (!refundStatus) {
-      const stripeRefund = row.stripe_refund;
-      const stripeRefundFailed = stripeRefund && typeof stripeRefund === "object" && (stripeRefund.ok === false || stripeRefund.skipped === true);
-      const displayFail = /cc\s*issue|stripe\s*fail|stripe_fail|stripe_failed/i.test(String(row.display_status || state.display_status || ""));
-      if (stripeRefundFailed || displayFail) refundStatus = "stripe_fail";
-      else refundStatus = Number(row.transaction_in_escrow ?? row.in_escrow) === 1 ? "pending" : "refunded";
-    }
-  }
-  if (!returnStatus) returnStatus = inferredCancel ? "cancelled" : "returning";
-  if (!refundStatus) refundStatus = "pending";
-
-  // Stripe fail: item received (returned) but refund rejected/failed.
-  if (refundStatus === "stripe_fail" || refundStatus === "stripe_failed" || (returnStatus === "returned" && refundStatus === "rejected")) {
-    refundStatus = "stripe_fail";
-  }
-
-  // Stale cancel flags after the order was fully shipped/verified: show Returning instead.
-  // Keep Cancelled when the sale still has unshipped units (hybrid cancel-before-ship).
-  if (returnStatus === "cancelled" && saleSibling && !isReturnListRow(saleSibling)) {
-    const unshippedLeft = parseInt(saleSibling.unshipped_item_count ?? saleSibling.unshipped_count ?? saleSibling.open_shipping_count, 10);
-    const fullyShipped = isTruthyShippingFlag(saleSibling.all_items_shipped) || (Number.isFinite(unshippedLeft) && unshippedLeft <= 0 && saleHasLeftSellerEvidence(saleSibling));
-    if (fullyShipped) {
-      returnStatus = isReturnTxn && refundStatus !== "pending" ? "returned" : "returning";
-    }
-  }
-
-  const delivered = returnStatus === "cancelled" ? "Cancelled" : returnStatus === "returned" ? "Returned" : "Returning";
-  const received = refundStatus === "refunded" ? "Refunded" : refundStatus === "stripe_fail" ? "CC Issue" : refundStatus === "rejected" ? "Rejected" : "Pending";
+  const displayStatus = state.display_status || "";
 
   return {
-    delivered,
-    received,
-    return_status: returnStatus,
-    refund_status: refundStatus,
-    display_status: `${delivered} - ${received}`,
-    is_cancel_before_ship: returnStatus === "cancelled",
+    delivered: displayDelivered || "",
+    received: displayReceived || "",
+    return_status: state.return_status || "",
+    refund_status: state.refund_status || "",
+    display_status: displayStatus,
+    is_cancel_before_ship: state.is_cancel_before_ship,
+    status_banner: resolveRowStatusBanner(row),
   };
 }
 
@@ -1907,41 +1805,21 @@ function lineHasLeftSeller(line) {
   return SHIPPED_FULFILLMENT_STATUSES.has(status) || status === "complete" || status === "partial" || status === "partially_shipped" || status === "received" || status === "paid";
 }
 
-/** True when this return/cancel targets inventory that has not shipped yet. */
-function isPreShipCancelReturn(row, saleSibling = null) {
+/** True when backend marks this row as a pre-shipment cancel (no FE inference from sale sibling). */
+function isPreShipCancelReturn(row) {
   if (!row || typeof row !== "object") return false;
-  const status = String(row.return_status || row.transaction_return_status || "")
-    .trim()
-    .toLowerCase();
-  // Explicit physical-return statuses must never be remapped to Cancelled.
-  if (status === "returning" || status === "returned") return false;
-  if (/^returning\s*[-–]/i.test(String(row.display_status || ""))) return false;
-  if (/^returned\s*[-–]/i.test(String(row.display_status || ""))) return false;
-
-  if (status === "cancelled" || status === "canceled") return true;
   if (row.is_cancel_before_ship === true || Number(row.is_cancel_before_ship) === 1) return true;
   if (row.cancel_unshipped === true || Number(row.cancel_unshipped) === 1) return true;
   if (row.pre_ship_cancel === true || Number(row.pre_ship_cancel) === 1) return true;
-  if (/^cancell?ed\s*[-–]/i.test(String(row.display_status || ""))) return true;
-
-  const sale = saleSibling && typeof saleSibling === "object" && !isReturnListRow(saleSibling) ? saleSibling : null;
-  if (!sale) return false;
-
-  // Do not infer a pre-ship cancel once the sale has clear ship/receive evidence.
-  if (saleHasLeftSellerEvidence(sale)) return false;
-
-  const shippedCount = parseInt(sale.shipped_item_count ?? sale.shipped_count ?? sale.items_shipped, 10);
-  const shippableCount = parseInt(sale.shippable_item_count ?? sale.unshipped_item_count, 10);
-  // Only infer pre-ship cancel when we positively know nothing has shipped yet.
-  if (Number.isFinite(shippedCount) && shippedCount === 0) {
-    if ((Number.isFinite(shippableCount) && shippableCount > 0) || orderNeedsShipping(sale) || !!extractShippingAddress(sale)) {
-      return true;
-    }
-    const fs = String(sale.fulfillment_status || sale.shipping_status || "")
-      .trim()
-      .toLowerCase();
-    if (["not_shipped", "pending_shipment", "awaiting_shipment", "unfulfilled", "ready_to_ship"].includes(fs)) return true;
-  }
+  if (row.cancel_only === true || Number(row.cancel_only) === 1) return true;
+  const status = String(row.return_status || row.transaction_return_status || "")
+    .trim()
+    .toLowerCase();
+  if (status === "cancelled" || status === "canceled") return true;
+  const displayDelivered = getRowV2DisplayLabel(row, "delivered_label");
+  if (displayDelivered === "Cancelled" || displayDelivered === "Cancelling") return true;
+  const displayStatus = String(row.display_status || "");
+  if (/^cancell?(?:ed|ing)\s*[-–]/i.test(displayStatus)) return true;
   return false;
 }
 
@@ -2009,42 +1887,6 @@ function getReturnStatusOverrideFromCache(_returnStatusesByKey, ..._keys) {
 /** @deprecated List display no longer reads AsyncStorage; kept for call-site compatibility. */
 function getReturnStatusOverrideForRow(_returnStatusesByKey, _row, _orderUid, _listTransactionUid) {
   return {};
-}
-
-function applyReturnRefundFieldsToRow(row, state) {
-  if (!row || !state) return row;
-  return {
-    ...row,
-    transaction_return_requested: 1,
-    return_status: state.return_status,
-    refund_status: state.refund_status,
-    display_status: state.display_status,
-    transaction_return_status: state.return_status,
-    transaction_refund_status: state.refund_status,
-  };
-}
-
-/** True when a list row should receive a confirm/decline status patch for these keys. */
-function rowMatchesReturnStatusKeys(row, statusKeys, { scopeTrrUid = null, scopeReturnTxnUid = null } = {}) {
-  if (!row || !Array.isArray(statusKeys) || !statusKeys.length) return false;
-  const uid = String(row.transaction_uid || "").trim();
-  const orderUid = resolveListRowOrderUid(row);
-  const originalUid = String(row.original_transaction_uid || "").trim();
-  const rowTrrs = normalizeTrrUidList(row);
-  const rowTrr = rowTrrs[0] || resolveTrrUid(row);
-  const scopeTrr = String(scopeTrrUid || "").trim();
-  const scopeReturnTxn = String(scopeReturnTxnUid || "").trim();
-
-  // Concurrent returns: only the matching pending request / reverse txn.
-  if (scopeTrr || scopeReturnTxn) {
-    if (scopeTrr && rowTrrs.some((id) => id === scopeTrr || statusKeys.includes(id))) return true;
-    if (scopeReturnTxn && uid && uid === scopeReturnTxn) return true;
-    if (scopeTrr && rowTrr && statusKeys.includes(rowTrr)) return true;
-    if (scopeReturnTxn && statusKeys.includes(uid)) return true;
-    return false;
-  }
-
-  return statusKeys.includes(uid) || statusKeys.includes(orderUid) || (originalUid && statusKeys.includes(originalUid)) || rowTrrs.some((id) => statusKeys.includes(id));
 }
 
 /** Order UIDs that need return/refund chip hydration from order_list_hydration (buyer PURCHASES). */
@@ -2143,8 +1985,8 @@ function auditPurchaseRowAccountScreenGaps(row, { shippingProgressByKey = {}, re
   }
 
   if (orderNeedsShipping(row) && !purchaseRowDeliveredNotApplicable(row)) {
-    const delivered = getBuyerPurchaseDeliveredLabel(row, returnStatusesByKey, shippingProgressByKey);
-    const progress = resolveShippingProgressForDisplay([row], shippingProgressByKey[resolveListRowOrderUid(row)] || shippingProgressByKey[String(row.transaction_uid || "").trim()] || null);
+    const delivered = getBuyerPurchaseDeliveredLabel(row, returnStatusesByKey);
+    const progress = resolveShippingProgressForDisplay([row], null);
     if (delivered === "—" && progress === "unknown") {
       gaps.push('Purchases Delivered column shows "—": need ti_shipped_qty, fulfillment_status, or shipped_item_count on list row');
     }
@@ -2158,7 +2000,7 @@ function auditPurchaseRowAccountScreenGaps(row, { shippingProgressByKey = {}, re
   }
 
   if (orderNeedsShipping(row) && !purchaseRowDeliveredNotApplicable(row)) {
-    const progress = resolveShippingProgressForDisplay([row], shippingProgressByKey[resolveListRowOrderUid(row)] || null);
+    const progress = resolveShippingProgressForDisplay([row], null);
     if (progress === "partial" || progress === "complete") {
       const received = getBuyerPurchaseReceivedLabel(row, returnStatusesByKey);
       const hasReceivedSignal = row.ti_received_qty != null || row.received_units != null || row.received_item_count != null || getUnitReceivedStatusFromSaleRows([row]) != null;
@@ -2178,6 +2020,7 @@ function auditPurchaseRowAccountScreenGaps(row, { shippingProgressByKey = {}, re
 function auditPersonalExpertiseLoadGaps(row, sellerLines, returnStatusesByKey, shippingProgressByKey) {
   const gaps = [];
   if (!row || isReturnListRow(row)) return gaps;
+  if (rowHasV2Units(row)) return gaps;
 
   if (orderNeedsShipping(row) && !orderFulfillmentIsNotRequired(row)) {
     const progressOverride = resolveSellerShippingProgressOverride(row, shippingProgressByKey);
@@ -2198,6 +2041,7 @@ function auditPersonalExpertiseLoadGaps(row, sellerLines, returnStatusesByKey, s
 function auditSellerOrdersTableGaps(row, sellerLines, returnStatusesByKey, shippingProgressByKey) {
   const gaps = [];
   if (!row || isReturnListRow(row)) return gaps;
+  if (rowHasV2Display(row)) return gaps;
 
   const progressOverride = resolveSellerShippingProgressOverride(row, shippingProgressByKey);
 
@@ -2319,25 +2163,6 @@ function logAccountScreenHydrationGaps({ screenContext, rows, listHydrationByOrd
       summarizeListRowForHydrationLog(row),
     );
   }
-}
-
-/** Normalize list/API return rows so stripe_fail (and returned+rejected) surface consistently when read. */
-function normalizeListRowReturnRefundFields(row) {
-  if (!row || typeof row !== "object") return row;
-  const hasReturnSignal =
-    isReturnListRow(row) ||
-    Number(row.transaction_return_requested) === 1 ||
-    row.return_status ||
-    row.refund_status ||
-    row.transaction_return_status ||
-    row.transaction_refund_status ||
-    row.display_status ||
-    row.stripe_refund;
-  if (!hasReturnSignal) return row;
-  const state = extractReturnRefundState(row);
-  if (!state.active) return row;
-  if (!state.return_status && !state.refund_status) return row;
-  return applyReturnRefundFieldsToRow(row, state);
 }
 
 function getReturnLogisticsForRow(row) {
@@ -2821,19 +2646,16 @@ function pendingReturnFieldsFromOrderDetail(orderDetail, bountyLines = []) {
   };
 }
 
-function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, saleSibling = null, sellerLines = null) {
+function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLines = null) {
   const orderUid = resolveListRowOrderUid(row);
   const isReturn = isReturnListRow(row);
   const dateMs = transactionDateMs(row);
   const trrUidEarly = resolveTrrUid(row);
   const listTransactionUid = String(row.transaction_uid || trrUidEarly || "").trim();
-  // Prefer hydrated progress when present — list "Partial" often still counts cancelled units.
-  const shippingProgressOverride = (shippingProgressByKey && (shippingProgressByKey[orderUid] || shippingProgressByKey[listTransactionUid])) || null;
   const statusOverride = {};
   const returnLogistics = resolveReturnLogisticsLabels(row, {
     ...statusOverride,
     saleSibling,
-    ...(isPreShipCancelReturn(row, saleSibling) ? { cancel_unshipped: true } : {}),
   });
 
   // Keep Order rows on shipping/receipt chips. Return logistics belong on the Return row only.
@@ -2842,8 +2664,8 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, saleSi
     const money = resolveReturnRowMoney(row, null, null);
     const trrUid = trrUidEarly;
     const trrUids = normalizeTrrUidList(row);
-    const delivered = returnLogistics?.delivered || "Returned";
-    const received = returnLogistics?.received || "Pending";
+    const delivered = returnLogistics?.delivered || "";
+    const received = returnLogistics?.received || "";
     return {
       key: String(trrUid || row.transaction_uid || `return-${orderUid}-${dateMs}`),
       orderUid,
@@ -2869,9 +2691,9 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, saleSi
 
   const total = parseFloat(row.transaction_total);
   const bountyPaid = resolveSellerOrderTableBounty(row);
-  const delivered = formatOrderDeliveredStatusLabel([row], sellerLines, null, shippingProgressOverride);
+  const delivered = formatOrderDeliveredStatusLabel([row], sellerLines);
   const received = formatOrderReceivedStatusLabel([row], sellerLines);
-  const attentionLevel = resolveSellerOrderAttentionLevel(row, shippingProgressByKey, sellerLines);
+  const attentionLevel = resolveSellerOrderAttentionLevel(row, sellerLines);
   return {
     key: String(row.transaction_uid || `${orderUid}-${dateMs}`),
     orderUid,
@@ -2902,7 +2724,7 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, saleSi
  *   (falls back to return txn / bounty lines when reclaim is missing)
  * Return chips: display_status / return_status + refund_status on the list row
  */
-function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines, shippingProgressByKey) {
+function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines) {
   if (!Array.isArray(sellerLines)) return [];
   const bountyByTransactionUid = buildBountyPaidByTransactionUid(bountyLines);
   const saleByOrderUid = {};
@@ -2914,7 +2736,7 @@ function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines,
   const mapped = sellerLines.map((row) => {
     const orderUid = resolveListRowOrderUid(row);
     const saleSibling = isReturnListRow(row) ? saleByOrderUid[orderUid] || null : null;
-    const mappedRow = mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, saleSibling, sellerLines);
+    const mappedRow = mapTransactionListRowToOrderTableRow(row, saleSibling, sellerLines);
     if (mappedRow.isReturn) {
       let money = resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines);
       if (saleSibling) {
@@ -2935,7 +2757,7 @@ function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines,
           );
           if (!money.total && est.total) {
             money = { ...money, total: est.total };
-          } else if (!money.total && (isPreShipCancelReturn(row, saleSibling) || isPreShipCancelReturn(row.pending_return, saleSibling))) {
+          } else if (!money.total && (isPreShipCancelReturn(row) || isPreShipCancelReturn(row.pending_return))) {
             const saleTotal = parseFloat(saleSibling.transaction_total ?? saleSibling.transaction_amount);
             if (Number.isFinite(saleTotal) && saleTotal > 0) {
               money = { ...money, total: -Math.abs(saleTotal) };
@@ -3144,45 +2966,8 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, bountyLines = []) {
   const normalizedPurchaseRows = purchaseRows.map((row) => {
     if (!isReturnListRow(row)) return row;
     const orderUid = resolveListRowOrderUid(row);
-    const txnUid = String(row.original_transaction_uid || row.transaction_uid || "").trim();
     const saleSibling = orderSaleByUid[orderUid] || null;
     const isPendingReturnRow = row.is_pending_return === true || Number(row.is_pending_return) === 1 || String(row.transaction_uid || "").startsWith("return-request-");
-    // Prefer return-row fields, but inherit Stripe-fail / display_status from the parent sale when the
-    // reverse-txn list row still says refunded (buyer account-screen quirk).
-    const siblingState = saleSibling ? extractReturnRefundState(saleSibling, { returnRequested: 1 }) : null;
-    const rowRefund = String(row.refund_status || row.transaction_refund_status || "")
-      .trim()
-      .toLowerCase();
-    const preferSiblingStripeFail = siblingState?.refund_status === "stripe_fail" && (rowRefund === "refunded" || !rowRefund);
-    const statusSource = {
-      ...row,
-      return_status:
-        (preferSiblingStripeFail ? "returned" : null) ||
-        row.return_status ||
-        row.transaction_return_status ||
-        (isPendingReturnRow ? saleSibling?.return_status || saleSibling?.transaction_return_status : null),
-      refund_status: preferSiblingStripeFail
-        ? "stripe_fail"
-        : row.refund_status || row.transaction_refund_status || (isPendingReturnRow ? saleSibling?.refund_status || saleSibling?.transaction_refund_status : null),
-      display_status:
-        (preferSiblingStripeFail ? siblingState.display_status || "Returned - CC Issue" : null) ||
-        row.display_status ||
-        (isPendingReturnRow ? saleSibling?.display_status || saleSibling?.pending_return?.display_status : null),
-      stripe_refund: row.stripe_refund || saleSibling?.stripe_refund || saleSibling?.pending_return?.stripe_refund,
-      pending_return: isPendingReturnRow ? row.pending_return || saleSibling?.pending_return : row.pending_return,
-    };
-    const logistics = resolveReturnLogisticsLabels(statusSource, {
-      returnRequested: true,
-      saleSibling,
-      ...(isPreShipCancelReturn(statusSource, saleSibling) ? { cancel_unshipped: true } : {}),
-      ...(isPendingReturnRow
-        ? {}
-        : {
-            return_status: statusSource.return_status || (isPreShipCancelReturn(statusSource, saleSibling) ? "cancelled" : "returned"),
-            refund_status: statusSource.refund_status || "refunded",
-            display_status: statusSource.display_status || (isPreShipCancelReturn(statusSource, saleSibling) ? "Cancelled - Refunded" : "Returned - Refunded"),
-          }),
-    });
     const money = resolveReturnRowMoney(row, null, bountyLines);
     const estimated = isPendingReturnRow
       ? estimatePendingReturnMoney(
@@ -3199,9 +2984,8 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, bountyLines = []) {
     const itemSummary = resolveReturnRowItemSummary(row, saleSibling);
     const rawPurchasedItem = String(row.purchased_item || "").trim();
     const purchasedItemLooksLikeUid = /^\d{3}-\d+$/.test(rawPurchasedItem);
-    const withMoney = {
+    return {
       ...row,
-      // Pending return list rows often omit business_name but include seller_id.
       business_name: row.business_name || saleSibling?.business_name || saleSibling?.transaction_business_name || null,
       seller_id: row.seller_id || saleSibling?.seller_id || saleSibling?.transaction_business_id || null,
       transaction_business_id: row.transaction_business_id || saleSibling?.transaction_business_id || saleSibling?.seller_id || null,
@@ -3211,15 +2995,12 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, bountyLines = []) {
       seller_total: total,
       bounty_paid: bountyPaid,
       _pending_return_money: { total, bountyPaid },
-      stripe_refund: statusSource.stripe_refund || row.stripe_refund,
-      display_status: statusSource.display_status || row.display_status,
+      stripe_refund: row.stripe_refund || saleSibling?.stripe_refund || saleSibling?.pending_return?.stripe_refund,
       purchased_item:
         itemSummary.purchased_item || (itemSummary.qty != null || purchasedItemLooksLikeUid ? null : rawPurchasedItem && rawPurchasedItem.toLowerCase() !== "item" ? rawPurchasedItem : null),
       ...(itemSummary.qty != null ? { ti_bs_qty: itemSummary.qty } : getRowV2DisplayQty(row) != null ? { ti_bs_qty: getRowV2DisplayQty(row) } : {}),
       original_transaction_uid: row.original_transaction_uid || row.transaction_original_uid || saleSibling?.transaction_uid || null,
     };
-    if (!logistics) return withMoney;
-    return applyReturnRefundFieldsToRow(withMoney, logistics);
   });
 
   return normalizedPurchaseRows.sort((a, b) => {
@@ -3331,9 +3112,9 @@ function getExistingReturnRowsForOrder(rows, orderUid, extraSources = []) {
       addEvent({
         ...pending,
         is_pending_return: true,
-        return_status: pending.return_status || "returning",
-        refund_status: pending.refund_status || "pending",
-        display_status: pending.display_status || "Returning - Pending",
+        return_status: pending.return_status,
+        refund_status: pending.refund_status,
+        display_status: pending.display_status,
         return_lines: pending.return_lines || pending.items,
       });
     }
@@ -3345,9 +3126,9 @@ function getExistingReturnRowsForOrder(rows, orderUid, extraSources = []) {
     for (const pending of getPendingReturnsList(src)) {
       addEvent({
         ...pending,
-        return_status: pending.return_status || "returning",
-        refund_status: pending.refund_status || "pending",
-        display_status: pending.display_status || "Returning - Pending",
+        return_status: pending.return_status,
+        refund_status: pending.refund_status,
+        display_status: pending.display_status,
       });
     }
   }
@@ -5593,7 +5374,7 @@ function OrderDetailModal({
 
   const showSellerShipControls = isSellerView && needsShipping && unshippedItemUids.length > 0;
   const showFulfillmentColumns = needsShipping || saleLines.some((line) => lineRequiresShipping(line) || isLineFullyShipped(line) || getLineShippedQty(line) > 0 || !!getLineFulfillmentStatus(line));
-  const verifiedSummary = formatOrderDetailVerifiedSummary(orderDetail, isSellerView, !isSellerView ? purchaseListRow : null);
+  const verifiedSummary = formatOrderDetailVerifiedSummary(orderDetail, isSellerView, purchaseListRow);
   const pendingReturn = resolveOrderDetailPendingReturn(orderDetail);
   const showPendingReturnSummary = !!pendingReturn && String(pendingReturn.refund_status || "").toLowerCase() === "pending";
   const allUnshippedSelected = unshippedItemUids.length > 0 && unshippedItemUids.every((uid) => selectedShipItemUids.includes(uid));
@@ -5703,7 +5484,7 @@ function OrderDetailModal({
                 saleBountyPaid={saleBountyPaid}
                 salePurchasedQty={salePurchasedQty}
                 isSellerView={isSellerView}
-                purchaseListRow={!isSellerView ? purchaseListRow : null}
+                purchaseListRow={purchaseListRow}
                 sale={sale}
               />
 
@@ -5948,24 +5729,20 @@ function ReturnDetailsModal({
     saleBountyPool,
     refundTotalFallback,
   });
-  const statusSource = sourceReturnRow || (scoped.hasScope && (scoped.scopedPending || scoped.matchedReturns[0])) || sale || orderDetail || {};
-  const preShipCancel =
-    splitInfo.cancelOnly ||
-    (areScopedReturnItemsUnshipped(orderDetail, returnLines) && !splitInfo.hasReturn) ||
-    isPreShipCancelReturn(statusSource, sale) ||
-    isPreShipCancelReturn(sourceReturnRow, sale);
+  const statusSource =
+    (scoped.hasScope && scoped.scopedPending) || sourceReturnRow || (scoped.hasScope && scoped.matchedReturns[0]) || sale || orderDetail || {};
   const logistics = resolveReturnLogisticsLabels(statusSource, {
     returnRequested: true,
-    ...(preShipCancel && !splitInfo.isHybrid ? { cancel_unshipped: true, saleSibling: sale } : { saleSibling: sale }),
     ...(statusOverride || {}),
   });
   const returnStatus = logistics?.return_status || "";
   const refundStatus = logistics?.refund_status || "";
   const displayStatus = logistics?.display_status || "";
-  const isCancelBeforeShip = (returnStatus === "cancelled" || !!logistics?.is_cancel_before_ship || preShipCancel) && !splitInfo.isHybrid;
+  const isCancelBeforeShip = !!logistics?.is_cancel_before_ship && !splitInfo.isHybrid;
   const includesUnshippedShippableUnits = returnIncludesUnshippedShippableUnits(orderDetail, returnLines);
-  const pendingSellerDecision = returnStatus === "returning" && refundStatus === "pending";
-  const pendingCancelDecision = isSellerView && pendingSellerDecision && splitInfo.cancelOnly;
+  const pendingSellerDecision = rowAwaitingSellerConfirm(statusSource);
+  const cancelOnlyFlow = statusSource.cancel_only === true || splitInfo.cancelOnly;
+  const pendingCancelDecision = isSellerView && pendingSellerDecision && cancelOnlyFlow;
   const awaitingReturnReceipt = isSellerView && pendingSellerDecision && splitInfo.hasReturn;
   const awaitingHybridConfirm = isSellerView && pendingSellerDecision && splitInfo.isHybrid;
   const awaitingSellerAction = awaitingReturnReceipt;
@@ -6043,48 +5820,11 @@ function ReturnDetailsModal({
     );
   };
 
-  const statusBanner = (() => {
-    if (!logistics) return null;
-    if (pendingSellerDecision && isSellerView && (splitInfo.hasReturn || splitInfo.isHybrid)) return null;
-    if (pendingCancelDecision && isSellerView) return null;
-    if (pendingCancelDecision && !isSellerView) {
-      return includesUnshippedShippableUnits ? "Items were not shipped — waiting for seller to confirm cancel and refund." : "Waiting for seller to confirm cancel and refund.";
-    }
-    if (pendingSellerDecision && !isSellerView) {
-      return "Waiting for seller to confirm receipt of your return.";
-    }
-    if (refundPendingAfterConfirm) {
-      if (isCancelBeforeShip) {
-        return isSellerView ? "Cancel confirmed — Delivered: Cancelled · Received: Pending (processing refund)" : "Seller confirmed your cancel — refund is processing.";
-      }
-      return isSellerView ? "Item received — Delivered: Returned · Received: Pending (processing refund)" : "Seller received your return — refund is processing.";
-    }
-    if (isRefunded) {
-      return isCancelBeforeShip
-        ? isSellerView
-          ? "Delivered: Cancelled · Received: Refunded"
-          : includesUnshippedShippableUnits
-            ? "Cancel completed — refund issued (item was never shipped)."
-            : "Cancel completed — refund issued."
-        : isSellerView
-          ? "Delivered: Returned · Received: Refunded"
-          : "Refund completed.";
-    }
-    if (isStripeFail) {
-      return isCancelBeforeShip
-        ? isSellerView
-          ? "CC Issue — Delivered: Cancelled · Received: CC Issue (refund not completed)"
-          : "Refund could not be completed (card issue). Contact the seller if this persists."
-        : isSellerView
-          ? "CC Issue — Delivered: Returned · Received: CC Issue (refund not completed)"
-          : "Refund could not be completed (card issue). Contact the seller if this persists.";
-    }
-    if (isRejected && returnStatus === "returning") {
-      return isSellerView ? "Return rejected — Delivered: Returning · Received: Rejected" : "Seller rejected this return.";
-    }
-    if (isRejected) return isSellerView ? "Delivered: Returning · Received: Rejected" : "Seller rejected this return.";
-    return displayStatus || `${logistics.delivered} - ${logistics.received}`;
-  })();
+  const itemsSectionTitle = resolveRowSectionTitle(statusSource) || resolveRowSectionTitle(orderDetail) || resolveRowSectionTitle(scoped.scopedPending);
+  const sellerPendingNote = resolveRowSellerActionNote(statusSource) || resolveRowSellerActionNote(orderDetail) || resolveRowSellerActionNote(scoped.scopedPending);
+  const cancelConfirmNote = resolveRowCancelConfirmNote(statusSource) || resolveRowCancelConfirmNote(orderDetail) || resolveRowCancelConfirmNote(scoped.scopedPending);
+  const statusBanner =
+    resolveRowStatusBanner(statusSource) || resolveRowStatusBanner(orderDetail) || resolveRowStatusBanner(scoped.scopedPending) || logistics?.status_banner || "";
 
   return (
     <Modal animationType='slide' transparent visible={visible} onRequestClose={onClose}>
@@ -6107,31 +5847,15 @@ function ReturnDetailsModal({
             <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No return data available.</Text>
           ) : (
             <ScrollView style={styles.businessOrderDetailScroll} nestedScrollEnabled keyboardShouldPersistTaps='handled'>
-              <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>
-                {awaitingSellerAction || awaitingHybridConfirm
-                  ? splitInfo.isHybrid
-                    ? "Confirm returns and cancellations:"
-                    : "Select return item(s) received:"
-                  : isCancelBeforeShip
-                    ? includesUnshippedShippableUnits
-                      ? "Items cancelled (not shipped)"
-                      : "Items cancelled"
-                    : splitInfo.isHybrid
-                      ? "Returns and cancellations"
-                      : "Items being returned"}
-              </Text>
-
-              {awaitingSellerAction && (splitInfo.hasReturn || splitInfo.hasCancel) ? (
-                <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }, { marginBottom: 8 }]}>
-                  {splitInfo.hasReturn ? `Returns received: ${receivedReturnQty} of ${pendingReturnQty}` : null}
-                  {splitInfo.hasReturn && splitInfo.hasCancel ? " · " : null}
-                  {splitInfo.hasCancel ? `Cancellations: ${cancelQtyTotal} (no receipt required)` : null}
+              {itemsSectionTitle ? (
+                <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>
+                  {itemsSectionTitle}
                 </Text>
               ) : null}
 
-              {awaitingSellerAction && splitInfo.isHybrid ? (
+              {awaitingSellerAction && sellerPendingNote ? (
                 <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }, { marginBottom: 8 }]}>
-                  Check each return (shipped) row you physically received. Cancellation rows were never shipped and do not require receipt.
+                  {sellerPendingNote}
                 </Text>
               ) : null}
 
@@ -6150,11 +5874,7 @@ function ReturnDetailsModal({
                   onToggleSelect={onToggleReceivedItem}
                   selectionDisabled={confirming || declining}
                 />
-              ) : (
-                <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>
-                  {isCancelBeforeShip || splitInfo.cancelOnly ? "No cancelled line items on this order." : "No pending return line items on this order."}
-                </Text>
-              )}
+              ) : null}
 
               {buyerNote ? (
                 <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
@@ -6194,11 +5914,6 @@ function ReturnDetailsModal({
 
               {awaitingSellerAction ? (
                 <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
-                  <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
-                    {splitInfo.isHybrid
-                      ? "After checking all returned (shipped) items, confirm to issue the refund. Cancellations are included automatically. Reject before confirming leaves this as Returning - Rejected."
-                      : "Check each item you received, then confirm to trigger the refund. Reject before confirming leaves this as Returning - Rejected."}
-                  </Text>
                   {!allReturnUnitsReceived && returnReceiptItems.length > 0 ? (
                     <Text style={{ color: "#B71C1C", fontSize: 12, marginTop: 8, textAlign: "center" }}>Please confirm receipt of every returned (shipped) item.</Text>
                   ) : null}
@@ -6229,11 +5944,9 @@ function ReturnDetailsModal({
 
               {awaitingCancelConfirm ? (
                 <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
-                  <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
-                    {includesUnshippedShippableUnits
-                      ? "These items were never shipped. Confirming cancels the ship quantity and issues the refund. No physical return is required."
-                      : "Confirming cancels the order and issues the refund. No physical return is required."}
-                  </Text>
+                  {cancelConfirmNote ? (
+                    <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>{cancelConfirmNote}</Text>
+                  ) : null}
                   {renderRestockSection()}
                   <View style={[styles.orderDetailShipActions, { marginTop: 14 }]}>
                     <TouchableOpacity
@@ -6655,7 +6368,7 @@ function formatOrderDetailShipLineMeta(row) {
 
 /** Order-level buyer verification summary for Order Details header / section. */
 function formatOrderDetailVerifiedSummary(orderDetail, isSellerView = false, listSaleRow = null) {
-  const units = listSaleRow?.units;
+  const units = listSaleRow?.units || orderDetail?.sale?.units;
   if (units && typeof units === "object") {
     const verified = parseNonNegativeInt(units.verified_qty) ?? 0;
     const active = parseNonNegativeInt(units.active_qty) ?? parseNonNegativeInt(units.purchased_qty) ?? 0;
@@ -7072,160 +6785,33 @@ function isPurchaseFullyReceivedByQty(transaction) {
   return false;
 }
 
-/** Buyer PURCHASES Delivered column — return logistics only on Return rows; Order rows show shipping. */
-function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}, shippingProgressByKey = null, purchaseRows = null) {
+/** Buyer PURCHASES Delivered column — backend display.delivered_label only. */
+function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}) {
   if (isReturnListRow(transaction)) {
     const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
-    if (returnLogistics) return returnLogistics.delivered;
-    return "—";
+    return returnLogistics?.delivered || "";
   }
-  if (!transaction) return "—";
-
-  const v2Label = getRowV2DisplayLabel(transaction, "delivered_label");
-  if (v2Label) return v2Label;
-
-  if (purchaseRowDeliveredNotApplicable(transaction)) {
-    return "—";
-  }
-  const orderUid = resolveListRowOrderUid(transaction);
-  const txnUid = String(transaction.transaction_uid || "").trim();
-  const shippingProgressOverride = (shippingProgressByKey && ((orderUid && orderUid !== "—" && shippingProgressByKey[orderUid]) || (txnUid && shippingProgressByKey[txnUid]))) || null;
-  const inEscrow = Number(transaction.transaction_in_escrow ?? transaction.in_escrow) === 1;
-
-  const orderSiblingRows = filterListRowsForOrder(orderUid, purchaseRows);
-  if (orderSiblingRows) {
-    const shipping = summarizeSaleRowShipping(transaction, orderSiblingRows, null);
-    const total = shipping.shippableTotal > 0 ? shipping.shippableTotal : shipping.activeTotal;
-    if (total > 0) {
-      if (shipping.shipped <= 0) return "Not Shipped";
-      if (shipping.shipped >= total) return inEscrow ? "Shipped" : "Delivered";
-      return `${shipping.shipped}/${total}`;
-    }
-  }
-
-  const shippedUnits = resolvePurchaseRowShippedUnits(transaction);
-  const purchasedUnits = resolvePurchaseRowShippableUnits(transaction);
-  if (isTruthyShippingFlag(transaction.all_items_shipped) && (purchasedUnits <= 0 || shippedUnits >= purchasedUnits)) {
-    return inEscrow ? "Shipped" : "Delivered";
-  }
-  if (shippedUnits > 0 && purchasedUnits > 0 && shippedUnits < purchasedUnits) {
-    return `${shippedUnits}/${purchasedUnits}`;
-  }
-
-  const progress = resolveShippingProgressForDisplay([transaction], shippingProgressOverride);
-
-  if (progress === "complete") {
-    return inEscrow ? "Shipped" : "Delivered";
-  }
-  if (progress === "partial") {
-    const shipped = shippedUnits > 0 ? shippedUnits : parseInt(transaction.shipped_item_count ?? transaction.shipped_count, 10);
-    const total = purchasedUnits > 0 ? purchasedUnits : parseInt(transaction.shippable_item_count ?? transaction.items_requiring_shipping, 10);
-    if (Number.isFinite(shipped) && total > 0 && shipped < total) {
-      return `${shipped}/${total}`;
-    }
-    return "Partial";
-  }
-
-  return getOrderDeliveredStatus([transaction], shippingProgressOverride);
+  if (!transaction) return "";
+  return getRowV2DisplayLabel(transaction, "delivered_label") || "";
 }
 
-/**
- * Buyer PURCHASES Received column.
- * Return money state only on Return rows; Order rows show Yes/No/Partial shipping receipt.
- * Completed returns/cancels on sibling list rows reduce the verification denominator (same as seller orders).
- */
-function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}, purchaseRows = null) {
+/** Buyer PURCHASES Received column — backend display.received_label only. */
+function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}) {
   if (isReturnListRow(transaction)) {
     const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
-    if (returnLogistics) return returnLogistics.received;
-    return "—";
+    return returnLogistics?.received || "";
   }
-  if (!transaction) return "—";
-
-  const v2Label = getRowV2DisplayLabel(transaction, "received_label");
-  if (v2Label) return v2Label;
-
-  if (isTruthyShippingFlag(transaction.all_items_received)) return "Yes";
-
-  const orderUid = resolveListRowOrderUid(transaction);
-  const orderSiblingRows = filterListRowsForOrder(orderUid, purchaseRows);
-  const totals = summarizeSaleRowVerification(transaction, orderSiblingRows || purchaseRows, null);
-  if (totals.activePurchased > 0) {
-    if (totals.received <= 0) return "No";
-    if (totals.received >= totals.activePurchased) return "Yes";
-    return "Partial";
-  }
-
-  const fromRows = getOrderReceivedStatusFromSaleRows([transaction]);
-  if (fromRows === "Yes" || fromRows === "Partial" || fromRows === "No") return fromRows;
-
-  return "No";
+  if (!transaction) return "";
+  return getRowV2DisplayLabel(transaction, "received_label") || "";
 }
 
-/** True when the buyer can still open delivery verification for this purchase row. */
-function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel, shippingProgressByKey = null, purchaseRows = null) {
+/** True when backend marks this purchase row as ready for buyer delivery verification. */
+function buyerPurchaseNeedsReceiptVerification(transaction) {
   if (!transaction || isReturnListRow(transaction)) return false;
-
-  if (rowHasV2Display(transaction)) {
-    if (transaction.display.received_action === "verify") return true;
-    if (transaction.display.received_action === "status") return false;
-    const v2Label = getRowV2DisplayLabel(transaction, "received_label");
-    if (v2Label === "Verify") return true;
-    if (v2Label === "Yes" || v2Label === "Refunded" || v2Label === "Pending" || v2Label === "CC Issue" || v2Label === "Rejected") return false;
-  }
-
-  if (receivedLabel === "Yes") return false;
-
-  const receivedFraction = parseFractionStatusLabel(receivedLabel);
-  const receivedNeedsVerify = receivedLabel === "No" || receivedLabel === "Partial" || !!receivedFraction;
-  if (!receivedNeedsVerify) return false;
-
-  // Display label is authoritative — list row line-item counts can falsely imply "fully received".
-  if (receivedLabel !== "Partial" && receivedLabel !== "No" && !receivedFraction && isPurchaseFullyReceivedByQty(transaction)) {
-    return false;
-  }
-
-  if (orderFulfillmentIsNotRequired(transaction)) {
-    const purchased = Math.max(0, parseInt(transaction.ti_bs_qty, 10) || 0);
-    const received = Math.max(0, Math.round(parsePrice(transaction.ti_received_qty ?? transaction.received_item_count ?? transaction.delivered_item_count)));
-    if (purchased > 0 && received >= purchased) return false;
-    return purchased <= 0 || received < purchased;
-  }
-
-  const orderUid = resolveListRowOrderUid(transaction);
-  const orderSiblings = filterListRowsForOrder(orderUid, purchaseRows);
-  const shipping = summarizeSaleRowShipping(transaction, orderSiblings || purchaseRows, null);
-  const verification = summarizeSaleRowVerification(transaction, orderSiblings || purchaseRows, null);
-  const purchasedUnits = verification.activePurchased > 0 ? verification.activePurchased : verification.purchased || resolvePurchaseRowShippableUnits(transaction);
-  const receivedUnits =
-    verification.received > 0 || verification.purchased > 0
-      ? verification.received
-      : Math.max(0, Math.round(parsePrice(transaction.ti_received_qty ?? transaction.received_units ?? transaction.received_item_count)));
-  const shippedUnits = shipping.shipped > 0 ? shipping.shipped : resolvePurchaseRowShippedUnits(transaction);
-
-  if (purchasedUnits > 0 && receivedUnits < purchasedUnits && shippedUnits > receivedUnits) {
-    return true;
-  }
-
-  const txnUid = String(transaction.transaction_uid || "").trim();
-  const cachedProgress = (shippingProgressByKey && ((orderUid && orderUid !== "—" && shippingProgressByKey[orderUid]) || (txnUid && shippingProgressByKey[txnUid]))) || null;
-  const progress = resolveShippingProgressForDisplay([transaction], cachedProgress);
-
-  const delivered = String(deliveredLabel || "").trim();
-  const deliveredLower = delivered.toLowerCase();
-  const deliveredIndicatesShipped =
-    progress === "partial" || progress === "complete" || deliveredLower === "partial" || deliveredLower === "shipped" || deliveredLower === "delivered" || !!parseFractionStatusLabel(delivered);
-
-  if (!deliveredIndicatesShipped) return false;
-
-  if (shippedUnits > 0 && receivedUnits < shippedUnits) return true;
-
-  if (receivedUnits < purchasedUnits && (deliveredLower === "shipped" || deliveredLower === "delivered" || progress === "complete")) {
-    // Delivered says fully shipped but received still partial — trust delivered + allow verify when counts lag.
-    return shippedUnits <= receivedUnits ? purchasedUnits > receivedUnits : true;
-  }
-
-  return receivedLabel === "No" || receivedLabel === "Partial";
+  if (transaction.display?.received_action === "verify") return true;
+  if (transaction.display?.received_action === "status") return false;
+  const v2Label = getRowV2DisplayLabel(transaction, "received_label");
+  return v2Label === "Verify";
 }
 
 /** Yes/No/Partial from ti_received_qty vs purchased units on list rows (buyer-confirmed receipt). */
@@ -7290,50 +6876,15 @@ function getOrderReceivedStatusFromSaleRows(saleRows) {
   return "No";
 }
 
-/** Seller order-table Received label — Partial becomes received/active-purchased when unit counts are known. */
-function formatOrderReceivedStatusLabel(saleRows, sellerLines = null, returnStatusesByKey = null) {
+/** Seller order-table Received label — backend display.received_label only. */
+function formatOrderReceivedStatusLabel(saleRows, sellerLines = null) {
   const row = saleRows?.[0];
-  if (row && sellerLines && !isReturnListRow(row)) {
-    const inEscrow = Number(row.transaction_in_escrow ?? row.in_escrow) === 1;
-    const totals = summarizeSaleRowVerification(row, sellerLines, returnStatusesByKey);
-    if (totals.activePurchased > 0) {
-      if (totals.received <= 0) return "No";
-      if (totals.received >= totals.activePurchased) return "Yes";
-      return `${totals.received}/${totals.activePurchased}`;
-    }
-    if (totals.purchased > 0 && totals.returned >= totals.purchased) return inEscrow ? "—" : "Yes";
+  if (!row) return "";
+  if (isReturnListRow(row)) {
+    const logistics = resolveReturnLogisticsLabels(row);
+    return logistics?.received || "";
   }
-
-  const status = getOrderReceivedStatusFromSaleRows(saleRows);
-  if (status !== "Partial") return status;
-
-  const first = saleRows?.[0] || {};
-  const hydratedReceived = parseInt(first.received_units ?? first.received_units_total, 10);
-  const hydratedPurchased = parseInt(first.purchased_units ?? first.purchased_units_total, 10);
-  if (Number.isFinite(hydratedReceived) && Number.isFinite(hydratedPurchased) && hydratedPurchased > 0 && hydratedReceived > 0 && hydratedReceived < hydratedPurchased) {
-    return `${hydratedReceived}/${hydratedPurchased}`;
-  }
-
-  let purchasedTracked = 0;
-  let receivedTracked = 0;
-  for (const row of saleRows || []) {
-    if (row?.ti_received_qty == null || String(row.ti_received_qty).trim() === "") continue;
-    purchasedTracked += getSaleLineQty(row);
-    receivedTracked += Math.max(0, Math.round(parsePrice(row.ti_received_qty)));
-  }
-  if (purchasedTracked > 0 && receivedTracked > 0 && receivedTracked < purchasedTracked) {
-    return `${receivedTracked}/${purchasedTracked}`;
-  }
-
-  const receivedCount = parseInt(first.received_item_count ?? first.items_received, 10);
-  const shippableCount = parseInt(first.shippable_item_count ?? first.items_requiring_shipping, 10);
-  const purchasedUnits = (saleRows || []).reduce((sum, row) => sum + getSaleLineQty(row), 0);
-  const totalItems = Number.isFinite(shippableCount) && shippableCount > 0 ? shippableCount : purchasedUnits;
-  if (Number.isFinite(receivedCount) && receivedCount > 0 && totalItems > receivedCount) {
-    return `${receivedCount}/${totalItems}`;
-  }
-
-  return "Partial";
+  return getRowV2DisplayLabel(row, "received_label") || "";
 }
 
 function parseFractionStatusLabel(label) {
@@ -7506,37 +7057,15 @@ function summarizeSaleRowShipping(row, sellerLines, returnStatusesByKey) {
   return { shipped: Math.max(0, shipped), shippableTotal: Math.max(0, shippableTotal), activeTotal, returned: verification.returned };
 }
 
-/** Seller order-table Delivered label — partial shipping becomes shipped/shippable (e.g. 3/5). */
-function formatOrderDeliveredStatusLabel(saleRows, sellerLines = null, returnStatusesByKey = null, shippingProgressOverride = null) {
+/** Seller order-table Delivered label — backend display.delivered_label only. */
+function formatOrderDeliveredStatusLabel(saleRows, sellerLines = null) {
   const row = saleRows?.[0];
-  if (!row) return "—";
-
-  const inEscrow = Number(row.transaction_in_escrow ?? row.in_escrow) === 1;
-  if (orderFulfillmentIsNotRequired(row) || !orderNeedsShipping(row)) {
-    return "—";
+  if (!row) return "";
+  if (isReturnListRow(row)) {
+    const logistics = resolveReturnLogisticsLabels(row);
+    return logistics?.delivered || "";
   }
-
-  const progress =
-    shippingProgressOverride === "complete" || shippingProgressOverride === "partial" || shippingProgressOverride === "none" || shippingProgressOverride === "not_required"
-      ? shippingProgressOverride
-      : getOrderShippingProgress([row]);
-
-  if (progress === "not_required") return "—";
-  if (progress === "unknown") return "—";
-
-  const shipping = summarizeSaleRowShipping(row, sellerLines, returnStatusesByKey);
-  const total = shipping.shippableTotal > 0 ? shipping.shippableTotal : shipping.activeTotal;
-  const verification = summarizeSaleRowVerification(row, sellerLines, returnStatusesByKey);
-
-  if (total > 0) {
-    // List row can lag behind order detail — buyer cannot verify unshipped units.
-    if (shipping.shipped <= 0 && verification.received > 0) return "—";
-    if (shipping.shipped <= 0) return "Not Shipped";
-    if (shipping.shipped >= total) return inEscrow ? "Shipped" : "Delivered";
-    return `${shipping.shipped}/${total}`;
-  }
-
-  return getOrderDeliveredStatus(saleRows, shippingProgressOverride);
+  return getRowV2DisplayLabel(row, "delivered_label") || "";
 }
 
 const SELLER_ATTENTION_PRIORITY = { red: 3, orange: 2, purple: 1 };
@@ -7557,6 +7086,15 @@ function resolveSellerShippingProgressOverride(row, shippingProgressByKey) {
 function sellerOrderNeedsShippingAction(row, shippingProgressOverride, sellerLines = null, returnStatusesByKey = null) {
   if (!row || isReturnListRow(row)) return false;
   if (!orderNeedsShipping(row) || orderFulfillmentIsNotRequired(row)) return false;
+
+  const units = row?.units;
+  if (units && typeof units === "object") {
+    const remaining = parseNonNegativeInt(units.remaining_to_ship_qty);
+    if (remaining != null) return remaining > 0;
+    const shipped = parseNonNegativeInt(units.shipped_qty) ?? 0;
+    const active = parseNonNegativeInt(units.active_qty) ?? parseNonNegativeInt(units.purchased_qty) ?? 0;
+    if (active > 0) return shipped < active;
+  }
 
   if (sellerLines) {
     const shipping = summarizeSaleRowShipping(row, sellerLines, returnStatusesByKey);
@@ -7587,6 +7125,14 @@ function sellerOrderNeedsVerificationAction(row, sellerLines, returnStatusesByKe
   if (!row || isReturnListRow(row)) return false;
   if (Number(row.transaction_in_escrow ?? row.in_escrow) !== 1) return false;
 
+  const units = row?.units;
+  if (units && typeof units === "object") {
+    const verified = parseNonNegativeInt(units.verified_qty) ?? 0;
+    const active = parseNonNegativeInt(units.active_qty) ?? parseNonNegativeInt(units.purchased_qty) ?? 0;
+    if (active <= 0) return false;
+    return verified < active;
+  }
+
   const totals = summarizeSaleRowVerification(row, sellerLines, returnStatusesByKey);
   if (totals.activePurchased <= 0) return false;
   return totals.received < totals.activePurchased;
@@ -7608,10 +7154,9 @@ function sellerOrderHasPendingReturnAttention(row, sellerLines, returnStatusesBy
 }
 
 /** Priority: red (shipping) > orange (verification) > purple (pending return/refund). */
-function resolveSellerOrderAttentionLevel(row, shippingProgressByKey, sellerLines, returnStatusesByKey) {
+function resolveSellerOrderAttentionLevel(row, sellerLines, returnStatusesByKey) {
   if (!row || isReturnListRow(row)) return null;
-  const progressOverride = resolveSellerShippingProgressOverride(row, shippingProgressByKey);
-  if (sellerOrderNeedsShippingAction(row, progressOverride, sellerLines, returnStatusesByKey)) return "red";
+  if (sellerOrderNeedsShippingAction(row, null, sellerLines, returnStatusesByKey)) return "red";
   if (sellerOrderNeedsVerificationAction(row, sellerLines, returnStatusesByKey)) return "orange";
   if (sellerOrderHasPendingReturnAttention(row, sellerLines, returnStatusesByKey)) return "purple";
   return null;
@@ -7621,7 +7166,7 @@ function resolveSellerReturnRowAttentionLevel(row, returnStatusesByKey) {
   return sellerReturnRowIsPendingAttention(row, returnStatusesByKey) ? "purple" : null;
 }
 
-function resolveOfferingSoldQtyAttentionLevel(expertiseUid, sellerTx, shippingProgressByKey, returnStatusesByKey) {
+function resolveOfferingSoldQtyAttentionLevel(expertiseUid, sellerTx, returnStatusesByKey) {
   const uid = String(expertiseUid || "").trim();
   if (!uid) return null;
   let level = null;
@@ -7631,7 +7176,7 @@ function resolveOfferingSoldQtyAttentionLevel(expertiseUid, sellerTx, shippingPr
       level = maxSellerAttentionLevel(level, resolveSellerReturnRowAttentionLevel(row, returnStatusesByKey));
       continue;
     }
-    level = maxSellerAttentionLevel(level, resolveSellerOrderAttentionLevel(row, shippingProgressByKey, sellerTx, returnStatusesByKey));
+    level = maxSellerAttentionLevel(level, resolveSellerOrderAttentionLevel(row, sellerTx, returnStatusesByKey));
   }
   return level;
 }
@@ -7690,14 +7235,14 @@ function sumBusinessOrderRows(rows) {
   );
 }
 
-function buildProductSalesOrderRows(product, sellerLines, bountyLines, shippingProgressByKey) {
+function buildProductSalesOrderRows(product, sellerLines, bountyLines) {
   const orderUids = new Set();
   for (const sale of product?.sales || []) {
     const uid = resolveListRowOrderUid(sale);
     if (uid !== "—") orderUids.add(uid);
   }
   const scopedLines = (sellerLines || []).filter((row) => orderUids.has(resolveListRowOrderUid(row)));
-  return buildBusinessOrdersListFromSellerTransactions(scopedLines, bountyLines, shippingProgressByKey);
+  return buildBusinessOrdersListFromSellerTransactions(scopedLines, bountyLines);
 }
 
 function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress, onReturnPress }) {
@@ -8313,11 +7858,8 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
       soldQty += getSignedProductSalesLineQty(transaction);
     });
     soldQty = Math.max(0, soldQty);
-    // profile_expertise_quantity is the remaining quantity in the DB (decremented on each sale).
-    // null/0 with no sales = unlimited ("—"); 0 with sales = sold out.
-    const rawDbQty = exp.profile_expertise_quantity;
-    const dbQty = rawDbQty != null && rawDbQty !== "" ? parseInt(rawDbQty) : null;
-    const remaining = dbQty == null ? null : dbQty > 0 ? dbQty : soldQty > 0 ? 0 : null;
+    const remainingLabel = resolveExpertiseRemainingLabel(exp, soldQty);
+    const remaining = remainingLabel === "∞" || remainingLabel === "NA" ? null : parseInt(remainingLabel, 10);
     return {
       expertiseUid,
       name: exp.profile_expertise_title || "",
@@ -8326,14 +7868,25 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
       bounty: exp.profile_expertise_bounty || "",
       soldQty,
       remaining,
+      remainingLabel,
       isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
     };
   });
 }
 
+/** SALES "Left" column — ∞ unlimited, NA when BE omitted quantity, else numeric string. */
+function resolveExpertiseRemainingLabel(exp, soldQty) {
+  if (isOfferingQtyUnlimited(exp)) return "∞";
+  const raw = exp.profile_expertise_quantity;
+  if (raw == null || String(raw).trim() === "") return "NA";
+  const dbQty = parseInt(raw, 10);
+  if (!Number.isFinite(dbQty)) return "NA";
+  if (dbQty > 0) return String(dbQty);
+  return soldQty > 0 ? "0" : "NA";
+}
+
 /**
- * Prefer live profile expertise qty so SALES "Left" drops after sales.
- * Only keep an optimistic restock override while the account-screen/profile payload still lags.
+ * @deprecated Restock overrides removed — inventory must come from account-screen profile only.
  */
 function mergeExpertiseListWithRestockOverrides(incoming, restockOverrides) {
   const overrides = restockOverrides && typeof restockOverrides === "object" ? restockOverrides : null;
@@ -8441,7 +7994,7 @@ export default function AccountScreen({ navigation, route }) {
   const expertiseRestockOverridesRef = useRef({});
   const [expertiseLoading, setExpertiseLoading] = useState(true);
   const [sellerTxData, setSellerTxData] = useState([]);
-  const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [], loading: false });
+  const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [], sellerLines: null, loading: false });
   const salesDeepLinkKeyRef = useRef("");
   const [productSalesModal, setProductSalesModal] = useState({
     visible: false,
@@ -8451,8 +8004,6 @@ export default function AccountScreen({ navigation, route }) {
     loading: false,
   });
   const [businessSellerTransactionList, setBusinessSellerTransactionList] = useState([]);
-  /** order_uid / transaction_uid → shipping progress from order detail (list API often lacks fulfillment fields). */
-  const [orderShippingProgressByKey, setOrderShippingProgressByKey] = useState({});
   const [orderDetailModal, setOrderDetailModal] = useState({
     visible: false,
     orderUid: null,
@@ -8776,24 +8327,6 @@ export default function AccountScreen({ navigation, route }) {
     return String(fromList?.seller_id || fromList?.transaction_seller_id || "").trim();
   };
 
-  const persistReturnRefundState = async (statusKeys, state, { scopeTrrUid = null, scopeReturnTxnUid = null, clearOrderUids = [] } = {}) => {
-    const payload = {
-      return_status: state.return_status,
-      refund_status: state.refund_status,
-      display_status: state.display_status,
-    };
-    const keys = (statusKeys || []).map((k) => String(k || "").trim()).filter(Boolean);
-    const patchRows = (prev) =>
-      (prev || []).map((row) => {
-        if (!rowMatchesReturnStatusKeys(row, keys, { scopeTrrUid, scopeReturnTxnUid })) return row;
-        return applyReturnRefundFieldsToRow(row, payload);
-      });
-    setBusinessSellerTransactionList(patchRows);
-    setBusinessTransactionData(patchRows);
-    // Buyer PURCHASES list — keep Delivered/Received chips in sync with return-detail / confirm outcomes.
-    setTransactionData(patchRows);
-  };
-
   /**
    * Persist Stripe-fail outcome on the backend so account-screen reads match local chips.
    * Uses confirm endpoint with action=set_refund_status (no Stripe re-attempt).
@@ -8958,14 +8491,6 @@ export default function AccountScreen({ navigation, route }) {
         return { ok: false, result };
       }
       const payload = result?.data && typeof result.data === "object" ? result.data : result || {};
-      const defaults =
-        action === "confirm"
-          ? { return_status: "returned", refund_status: "pending", display_status: "Returned - Pending" }
-          : { return_status: "returning", refund_status: "rejected", display_status: "Returning - Rejected" };
-
-      // Prefer the IO-Payments createRefund result from the FE when present.
-      // Deployed Every-Circle confirm may still report "Stripe secret key not configured"
-      // from its local key path even after createRefund already succeeded on Stripe.
       const clientStripeOk = action === "confirm" && stripeRefundResult?.ok === true;
       const stripeRefund = clientStripeOk
         ? {
@@ -8981,18 +8506,8 @@ export default function AccountScreen({ navigation, route }) {
         !clientStripeOk &&
         (payload.refund_status === "rejected" || payload.refund_status === "stripe_fail" || payload.refund_status === "stripe_failed" || stripeRefund?.ok === false || stripeRefund?.skipped === true);
 
-      const state = extractReturnRefundState(payload, {
-        return_status: payload.return_status || defaults.return_status,
-        refund_status: clientStripeOk ? "refunded" : stripeFailedOnConfirm ? "stripe_fail" : payload.refund_status || defaults.refund_status,
-        display_status: clientStripeOk ? "Returned - Refunded" : stripeFailedOnConfirm ? "Returned - CC Issue" : payload.display_status || defaults.display_status,
-        returnRequested: 1,
-        stripe_refund: stripeRefund,
-      });
+      const state = extractReturnRefundState(payload, { returnRequested: 1 });
       if (clientStripeOk) {
-        state.return_status = "returned";
-        state.refund_status = "refunded";
-        state.display_status = "Returned - Refunded";
-        // If backend still stored rejected/CC Issue (old local Stripe path), correct it.
         const backendRefund = String(payload.refund_status || payload.transaction_refund_status || "")
           .trim()
           .toLowerCase();
@@ -9012,15 +8527,11 @@ export default function AccountScreen({ navigation, route }) {
           }
         }
       } else if (stripeFailedOnConfirm) {
-        state.return_status = "returned";
-        state.refund_status = "stripe_fail";
-        state.display_status = "Returned - CC Issue";
         Alert.alert(
           "Stripe Fail",
           stripeRefund?.message ||
             (stripeRefund?.skipped ? "Stripe refund was skipped. Marked as Stripe Fail for later debugging." : "Stripe refund failed. Marked as Stripe Fail for later debugging."),
         );
-        // Persist canonical statuses so personal/business account-screen reloads match local chips.
         const alreadyPersisted =
           String(payload.refund_status || payload.transaction_refund_status || "")
             .trim()
@@ -9040,36 +8551,6 @@ export default function AccountScreen({ navigation, route }) {
           }
         }
       }
-      // Scope status to this return request / reverse txn — never write order_uid when trr is known,
-      // or sibling concurrent returns will all show Refunded.
-      const returnTxnUid = String(payload.return_transaction_uid || "").trim();
-      const responseTrrUids = normalizeTrrUidList(payload.trr_uids, payload.trr_uid, batchTrrUids, resolvedTrr);
-      const statusKeys = (responseTrrUids.length ? [...responseTrrUids, returnTxnUid] : [saleUid, transactionUid, orderUidForStatus, returnTxnUid]).map((k) => String(k || "").trim()).filter(Boolean);
-      await persistReturnRefundState(statusKeys, state, {
-        scopeTrrUid: responseTrrUids[0] || resolvedTrr || null,
-        scopeReturnTxnUid: returnTxnUid || null,
-        clearOrderUids: responseTrrUids.length || resolvedTrr ? [saleUid, orderUidForStatus, transactionUid] : [],
-      });
-      // Patch list row money/status from confirm response when present (avoid waiting only on AsyncStorage).
-      setBusinessSellerTransactionList((prev) =>
-        (prev || []).map((row) => {
-          if (
-            !rowMatchesReturnStatusKeys(row, statusKeys, {
-              scopeTrrUid: responseTrrUids[0] || resolvedTrr || null,
-              scopeReturnTxnUid: returnTxnUid || null,
-            })
-          ) {
-            return row;
-          }
-          return {
-            ...applyReturnRefundFieldsToRow(row, state),
-            ...(payload.pending_return != null ? { pending_return: payload.pending_return } : {}),
-            ...(payload.order_bounty_paid != null ? { order_bounty_paid: payload.order_bounty_paid } : {}),
-            ...(payload.refund_breakdown != null ? { refund_breakdown: payload.refund_breakdown } : {}),
-            ...(stripeRefund ? { stripe_refund: stripeRefund } : {}),
-          };
-        }),
-      );
       return {
         ok: true,
         state,
@@ -9251,23 +8732,6 @@ export default function AccountScreen({ navigation, route }) {
           }
         }
         setReturnConfirmResult(outcome.result || outcome);
-        setReturnDetailModal((prev) =>
-          prev.visible
-            ? {
-                ...prev,
-                orderDetail: prev.orderDetail
-                  ? {
-                      ...prev.orderDetail,
-                      sale: prev.orderDetail.sale ? applyReturnRefundFieldsToRow(prev.orderDetail.sale, outcome.state) : prev.orderDetail.sale,
-                      return_status: outcome.state?.return_status,
-                      refund_status: outcome.state?.refund_status,
-                      display_status: outcome.state?.display_status,
-                      stripe_refund: outcome.stripe_refund || stripeRefundResult,
-                    }
-                  : prev.orderDetail,
-              }
-            : prev,
-        );
         try {
           const sellerId = String(returnDetailModal.sellerId || "").trim();
           const ctx = sellerId
@@ -9280,7 +8744,7 @@ export default function AccountScreen({ navigation, route }) {
             setReturnDetailModal((prev) => (prev.visible ? { ...prev, orderDetail: refreshed } : prev));
           }
         } catch (_) {
-          /* keep local status update */
+          /* rely on account-screen refresh */
         }
         if (selectedAccountRef.current && selectedAccountRef.current !== "personal") {
           try {
@@ -9343,9 +8807,15 @@ export default function AccountScreen({ navigation, route }) {
   };
 
   /** GET /api/v1/account-screen/personal/:profile_id — maps to purchases, bounties, sales (expertise qty). One in-flight request; no GET /transactions fallbacks. */
-  const refreshAccountScreenPersonal = async () => {
+  const refreshAccountScreenPersonal = async (options = {}) => {
+    const force = options?.force === true;
     if (refreshPersonalInFlightRef.current) {
-      return refreshPersonalInFlightRef.current;
+      if (!force) return refreshPersonalInFlightRef.current;
+      try {
+        await refreshPersonalInFlightRef.current;
+      } catch (_) {
+        /* stale in-flight — fetch again below */
+      }
     }
     const fetchGen = personalFetchGenRef.current;
     const task = (async () => {
@@ -9353,7 +8823,6 @@ export default function AccountScreen({ navigation, route }) {
         setTransactionData([]);
         setExpertiseData([]);
         setExpertiseCatalog([]);
-        setSellerTxData([]);
         setTransactionLoading(true);
         setBountyLoading(true);
         setExpertiseLoading(true);
@@ -9376,17 +8845,13 @@ export default function AccountScreen({ navigation, route }) {
         });
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         if (response.status === 400) {
-          // Aggregate unavailable: show empty purchases/bounties; expertise from cached profile + no seller lines.
+          // Aggregate unavailable: show empty purchases/bounties; no expertise without account-screen profile.
           setTransactionData([]);
           setBountyData({ data: [] });
-          const session = await getSessionProfile();
-          const profileResult = session?.rawProfile;
-          const expertiseList = profileResult?.expertise_info ? parseExpertiseInfo(profileResult.expertise_info) : [];
-          const mergedExpertiseList = mergeExpertiseListWithRestockOverrides(expertiseList, expertiseRestockOverridesRef.current);
-          setExpertiseCatalog(mergedExpertiseList);
-          setExpertiseData(buildExpertiseRows(mergedExpertiseList, []));
+          setExpertiseCatalog([]);
+          setExpertiseData([]);
           await fetchPersonalProfileData();
-          return;
+          return [];
         }
         if (!response.ok) {
           throw new Error(`account-screen personal HTTP ${response.status}`);
@@ -9409,7 +8874,7 @@ export default function AccountScreen({ navigation, route }) {
         const isV2Personal = (mapped.schemaVersion ?? getAccountScreenSchemaVersion(json)) >= 2;
 
         const purchaseRows = Array.isArray(mapped.transactions) ? mapped.transactions : [];
-        let normalizedPurchases = purchaseRows.map(normalizeListRowReturnRefundFields);
+        let normalizedPurchases = purchaseRows;
         const bountyLines = Array.isArray(mapped.bounty?.data) ? mapped.bounty.data : [];
         normalizedPurchases = enrichPurchasesFromBountyResults(normalizedPurchases, bountyLines);
 
@@ -9461,7 +8926,7 @@ export default function AccountScreen({ navigation, route }) {
           await fetchPersonalProfileData();
         }
 
-        let sellerTx = (Array.isArray(mapped.sellerTransactions) ? mapped.sellerTransactions : []).map(normalizeListRowReturnRefundFields);
+        let sellerTx = Array.isArray(mapped.sellerTransactions) ? mapped.sellerTransactions : [];
         if (!isV2Personal) {
           const listHydrationByOrderUid = extractOrderListHydrationMap(json);
           reportAccountScreenListRowDiagnostics({
@@ -9479,27 +8944,25 @@ export default function AccountScreen({ navigation, route }) {
           });
         }
 
-        const session = await getSessionProfile();
-        const profileResult = session?.rawProfile;
         let expertiseList = [];
         if (mapped.profile?.expertise_info != null) {
           expertiseList = parseExpertiseInfo(mapped.profile.expertise_info);
-        } else if (profileResult?.expertise_info) {
-          expertiseList = parseExpertiseInfo(profileResult.expertise_info);
         }
-        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
-        const mergedExpertiseList = mergeExpertiseListWithRestockOverrides(expertiseList, expertiseRestockOverridesRef.current);
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return [];
+        const mergedExpertiseList = expertiseList;
         setSellerTxData(sellerTx);
         setExpertiseCatalog(mergedExpertiseList);
         setExpertiseData(buildExpertiseRows(mergedExpertiseList, sellerTx));
+        return sellerTx;
       } catch (error) {
-        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return [];
         console.error("Error loading account-screen personal:", error);
         setTransactionData([]);
         setBountyData({ error: error.message });
         setPersonalWallet(null);
         setExpertiseData([]);
         setExpertiseCatalog([]);
+        return [];
       } finally {
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setTransactionLoading(false);
@@ -9719,8 +9182,18 @@ export default function AccountScreen({ navigation, route }) {
     async (item) => {
       if (!item) return;
       const expertiseUid = String(item.expertiseUid || "").trim();
-      const transactions = sellerTxData.filter((tx) => String(tx.ti_bs_id || "").trim() === expertiseUid);
-      setSalesModal({ visible: true, item, transactions, loading: true });
+      setSalesModal({ visible: true, item, transactions: [], sellerLines: null, loading: true });
+
+      let sellerLines = [];
+      try {
+        const refreshed = await refreshAccountScreenPersonal({ force: true });
+        sellerLines = Array.isArray(refreshed) ? refreshed : [];
+      } catch (error) {
+        console.warn("[AccountScreen] offering sales refresh failed:", error?.message || error);
+        sellerLines = Array.isArray(sellerTxData) ? sellerTxData : [];
+      }
+
+      const transactions = sellerLines.filter((tx) => String(tx.ti_bs_id || "").trim() === expertiseUid);
 
       try {
         reportAccountScreenListRowDiagnostics({
@@ -9736,13 +9209,13 @@ export default function AccountScreen({ navigation, route }) {
           auditRowGaps: (row, opts) => auditSellerOrdersTableGaps(row, transactions, {}, opts.shippingProgressByKey || {}),
           auditOptions: {},
         });
-        setSalesModal({ visible: true, item, transactions, loading: false });
+        setSalesModal({ visible: true, item, transactions, sellerLines, loading: false });
       } catch (error) {
         console.warn("[AccountScreen] offering sales list row diagnostics failed:", error?.message || error);
-        setSalesModal({ visible: true, item, transactions, loading: false });
+        setSalesModal({ visible: true, item, transactions, sellerLines, loading: false });
       }
     },
-    [sellerTxData],
+    [sellerTxData, refreshAccountScreenPersonal],
   );
 
   useEffect(() => {
@@ -9902,29 +9375,6 @@ export default function AccountScreen({ navigation, route }) {
           sourceReturnRow: prev.sourceReturnRow || null,
         }));
 
-        // Keep PURCHASES chips aligned when order-detail is the authoritative Stripe-fail source.
-        const sale = orderDetail?.sale || orderDetail || {};
-        const detailState = extractReturnRefundState(sale, {
-          returnRequested: 1,
-          stripe_refund: orderDetail?.stripe_refund || sale?.stripe_refund,
-        });
-        if (detailState.active && detailState.refund_status === "stripe_fail") {
-          const scopeTrr = String(trrUid || "").trim();
-          const returnTxnUids = (Array.isArray(orderDetail?.returns) ? orderDetail.returns : []).map((ret) => String(ret?.transaction_uid || "").trim()).filter(Boolean);
-          const statusKeys = (scopeTrr ? [scopeTrr, ...trrUids, ...returnTxnUids] : [saleUid, saleTxnUid, transactionUid, ...returnTxnUids]).map((k) => String(k || "").trim()).filter(Boolean);
-          await persistReturnRefundState(
-            statusKeys,
-            {
-              return_status: "returned",
-              refund_status: "stripe_fail",
-              display_status: detailState.display_status || "Returned - CC Issue",
-            },
-            {
-              scopeTrrUid: scopeTrr || null,
-              clearOrderUids: scopeTrr ? [saleUid, saleTxnUid, transactionUid] : [],
-            },
-          );
-        }
       } catch (err) {
         setReturnDetailModal((prev) => ({
           ...prev,
@@ -9933,7 +9383,7 @@ export default function AccountScreen({ navigation, route }) {
         }));
       }
     },
-    [selectedAccount, primaryBusinessUid, persistReturnRefundState, sellerTxData, businessSellerTransactionList],
+    [selectedAccount, primaryBusinessUid, sellerTxData, businessSellerTransactionList],
   );
 
   const openOrderDetail = useCallback(
@@ -9967,7 +9417,9 @@ export default function AccountScreen({ navigation, route }) {
         bountyPaidFallback: resolveOrderDetailBountyPaidFallback(orderRow),
         walletLedgerEntries: ledgerEntries,
         highlightLedgerEntryId: options.highlightLedgerEntryId || options.ledgerEntry?.entry_id || null,
-        purchaseListRow: !isSellerView ? findSaleRowInPurchaseList(transactionData, orderUid) || orderRow?.rawRow || null : null,
+        purchaseListRow: isSellerView
+          ? findSaleRowInPurchaseList(sellerTxData, orderUid) || orderRow?.rawRow || null
+          : findSaleRowInPurchaseList(transactionData, orderUid) || orderRow?.rawRow || null,
       });
 
       try {
@@ -9978,10 +9430,11 @@ export default function AccountScreen({ navigation, route }) {
           const profileId = (await AsyncStorage.getItem("profile_uid")) || "";
           if (profileId) ctx.profileId = String(profileId).trim();
         }
+        const listSaleRow = isSellerView
+          ? findSaleRowInPurchaseList(sellerTxData, orderUid) || orderRow?.rawRow || null
+          : findSaleRowInPurchaseList(transactionData, orderUid) || orderRow?.rawRow || null;
         let orderDetail = await fetchOrderDetailApi(orderUid, ctx);
-        if (!isSellerView) {
-          orderDetail = mergeOrderDetailWithListSaleRow(orderDetail, findSaleRowInPurchaseList(transactionData, orderUid) || orderRow?.rawRow || null);
-        }
+        orderDetail = mergeOrderDetailWithListSaleRow(orderDetail, listSaleRow);
         const txnUid = String(orderDetail?.sale?.transaction_uid || "").trim();
         const bountyRowsForOrder = resolveOrderDetailBountyRows(isSellerView, selectedAccount, bountyData, businessBountyData, sellerTxData, businessSellerTransactionList, txnUid);
         const bountyPaidFallback =
@@ -10002,15 +9455,6 @@ export default function AccountScreen({ navigation, route }) {
           bountyPaidFallback,
           walletLedgerEntries: resolvedLedgerEntries.length ? resolvedLedgerEntries : prev.walletLedgerEntries,
         }));
-        const progress = getOrderShippingProgress([orderDetail?.sale || orderDetail].filter(Boolean));
-        if (progress === "complete" || progress === "partial" || progress === "none") {
-          const keys = [orderUid, orderDetail?.order_uid, orderDetail?.sale?.transaction_uid, orderRow?.listTransactionUid].map((k) => String(k || "").trim()).filter(Boolean);
-          setOrderShippingProgressByKey((prev) => {
-            const next = { ...prev };
-            for (const key of keys) next[key] = progress;
-            return next;
-          });
-        }
       } catch (error) {
         setOrderDetailModal((prev) => ({
           ...prev,
@@ -10064,7 +9508,7 @@ export default function AccountScreen({ navigation, route }) {
         const isSellerView = orderDetailModal.isSellerView;
         const transactionUid = String(payload.transaction_uid || "").trim();
 
-        // Optimistic list update: account-screen seller rows often omit per-item fulfillment fields.
+        // Optimistic order-detail update only (same modal). Product Summary reloads from BE on next open.
         const shippedItemUids = new Set((payload.fulfillment_updates || []).map((u) => String(u.transaction_item_uid || "").trim()).filter(Boolean));
         const priorDetail = orderDetailModal.orderDetail;
         const priorSale = priorDetail?.sale || null;
@@ -10114,7 +9558,7 @@ export default function AccountScreen({ navigation, route }) {
         if (selectedAccount !== "personal") {
           await refreshAccountScreenBusiness();
         } else {
-          await refreshAccountScreenPersonal();
+          await refreshAccountScreenPersonal({ force: true });
         }
         let refreshedLedgerRows = null;
         if (orderUid && orderUid !== "—") {
@@ -10154,7 +9598,7 @@ export default function AccountScreen({ navigation, route }) {
         return false;
       }
     },
-    [orderDetailModal.orderUid, orderDetailModal.isSellerView, orderDetailModal.orderDetail, orderDetailModal.sellerId, selectedAccount, primaryBusinessUid],
+    [orderDetailModal.orderUid, orderDetailModal.isSellerView, orderDetailModal.orderDetail, orderDetailModal.sellerId, selectedAccount, primaryBusinessUid, refreshAccountScreenPersonal],
   );
 
   const openReturnNoteModalFromReceipt = useCallback(() => {
@@ -10286,14 +9730,11 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessTransactionData([]);
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
-        setOrderShippingProgressByKey({});
         return;
       }
 
-      const normalizedSellerLines = sellerLines.map(normalizeListRowReturnRefundFields);
+      const normalizedSellerLines = sellerLines;
       setBusinessSellerTransactionList(normalizedSellerLines);
-      // Reset optimistic shipping overrides so account-screen list fulfillment fields win on first paint.
-      setOrderShippingProgressByKey({});
 
       const listHydrationByOrderUid = extractOrderListHydrationMap(json);
       reportAccountScreenListRowDiagnostics({
@@ -11085,8 +10526,8 @@ export default function AccountScreen({ navigation, route }) {
     });
   }, [returnDetailRestockCandidates]);
   const businessOrdersSummary = useMemo(
-    () => buildBusinessOrdersListFromSellerTransactions(businessSellerTransactionList, sellerOrderBountyRows, orderShippingProgressByKey),
-    [businessSellerTransactionList, sellerOrderBountyRows, orderShippingProgressByKey],
+    () => buildBusinessOrdersListFromSellerTransactions(businessSellerTransactionList, sellerOrderBountyRows),
+    [businessSellerTransactionList, sellerOrderBountyRows],
   );
   const personalPurchasesDisplayList = useMemo(
     () => buildPersonalPurchasesListWithReturns(transactionData, bountyData?.data || []),
@@ -11214,7 +10655,7 @@ export default function AccountScreen({ navigation, route }) {
                         <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: "right" }]}>Bounty</Text>
                       </View>
                       {expertiseData.map((item, idx) => {
-                        const soldAttention = resolveOfferingSoldQtyAttentionLevel(item.expertiseUid, sellerTxData, orderShippingProgressByKey);
+                        const soldAttention = resolveOfferingSoldQtyAttentionLevel(item.expertiseUid, sellerTxData);
                         return (
                           <View key={item.expertiseUid || idx} style={styles.tableRow}>
                             <TouchableOpacity style={{ flex: 1.5 }} onPress={() => openOfferingListing(item)} activeOpacity={0.7}>
@@ -11238,7 +10679,9 @@ export default function AccountScreen({ navigation, route }) {
                               >
                                 {item.soldQty}
                               </Text>
-                              <Text style={[styles.tableCell, { flex: 0.7, color: item.remaining === 0 ? "#c00" : "#777", marginLeft: 12 }]}>{item.remaining === null ? "∞" : item.remaining}</Text>
+                              <Text style={[styles.tableCell, { flex: 0.7, color: item.remainingLabel === "NA" ? "#B71C1C" : item.remaining === 0 ? "#c00" : "#777", marginLeft: 12 }]}>
+                                {item.remainingLabel ?? (item.remaining === null ? "NA" : item.remaining)}
+                              </Text>
                               <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
                             </TouchableOpacity>
                           </View>
@@ -11350,11 +10793,11 @@ export default function AccountScreen({ navigation, route }) {
                             {(() => {
                               const txnUid = String(transaction.original_transaction_uid || transaction.transaction_uid || "").trim();
                               const statusOverride = isReturnRow ? { returnRequested: true } : {};
-                              const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction, statusOverride, orderShippingProgressByKey, personalPurchasesDisplayList);
-                              const receivedLabel = getBuyerPurchaseReceivedLabel(transaction, statusOverride, personalPurchasesDisplayList);
+                              const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction, statusOverride);
+                              const receivedLabel = getBuyerPurchaseReceivedLabel(transaction, statusOverride);
                               const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
-                              const canVerifyReceipt = buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel, orderShippingProgressByKey, personalPurchasesDisplayList);
-                              const receivedDisplayLabel = canVerifyReceipt ? "Verify" : receivedLabel;
+                              const canVerifyReceipt = buyerPurchaseNeedsReceiptVerification(transaction);
+                              const receivedDisplayLabel = receivedLabel;
                               const receivedBadge = getProductSaleStatusBadgeStyle("received", canVerifyReceipt ? "verify" : receivedLabel);
 
                               const renderBadge = (label, badgeStyle) => (
@@ -12552,22 +11995,29 @@ export default function AccountScreen({ navigation, route }) {
                     const outcome = await handleReturnDecline(saleUid, declineNote, saleUid, trrUid || null, trrUids);
                     if (outcome?.ok) {
                       setReturnConfirmResult(outcome.result || outcome);
-                      setReturnDetailModal((prev) =>
-                        prev.visible
-                          ? {
-                              ...prev,
-                              orderDetail: prev.orderDetail
-                                ? {
-                                    ...prev.orderDetail,
-                                    sale: prev.orderDetail.sale ? applyReturnRefundFieldsToRow(prev.orderDetail.sale, outcome.state) : prev.orderDetail.sale,
-                                    return_status: outcome.state?.return_status,
-                                    refund_status: outcome.state?.refund_status,
-                                    display_status: outcome.state?.display_status,
-                                  }
-                                : prev.orderDetail,
-                            }
-                          : prev,
-                      );
+                      try {
+                        const sellerId = String(returnDetailModal.sellerId || "").trim();
+                        const ctx = sellerId
+                          ? buildSellerOrderDetailFetchContext(sellerId, selectedAccount)
+                          : selectedAccount !== "personal"
+                            ? buildSellerOrderDetailFetchContext(selectedAccount || primaryBusinessUid, selectedAccount)
+                            : {};
+                        if (saleUid) {
+                          const refreshed = await fetchOrderDetailApi(saleUid, ctx);
+                          setReturnDetailModal((prev) => (prev.visible ? { ...prev, orderDetail: refreshed } : prev));
+                        }
+                      } catch (_) {
+                        /* rely on account-screen refresh */
+                      }
+                      if (selectedAccountRef.current && selectedAccountRef.current !== "personal") {
+                        try {
+                          await refreshAccountScreenBusiness();
+                        } catch (_) {}
+                      } else {
+                        try {
+                          await refreshAccountScreenPersonal();
+                        } catch (_) {}
+                      }
                       setShowDeclineNoteModal(false);
                       setDeclineNote("");
                       setPendingDeclineIdx(null);
@@ -12899,7 +12349,7 @@ export default function AccountScreen({ navigation, route }) {
               <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No orders recorded for this product yet.</Text>
             ) : (
               <BusinessOrdersTable
-                rows={buildProductSalesOrderRows(productSalesModal.product, businessSellerTransactionList, sellerOrderBountyRows, orderShippingProgressByKey)}
+                rows={buildProductSalesOrderRows(productSalesModal.product, businessSellerTransactionList, sellerOrderBountyRows)}
                 darkMode={darkMode}
                 onOrderPress={(row) => openOrderDetail(row, { isSellerView: true })}
                 onReturnPress={(row) => openReturnDetails(row, { isSellerView: true })}
@@ -13020,7 +12470,7 @@ export default function AccountScreen({ navigation, route }) {
       />
 
       {/* Sales Detail Modal */}
-      <Modal animationType='slide' transparent={true} visible={salesModal.visible} onRequestClose={() => setSalesModal({ visible: false, item: null, transactions: [], loading: false })}>
+      <Modal animationType='slide' transparent={true} visible={salesModal.visible} onRequestClose={() => setSalesModal({ visible: false, item: null, transactions: [], sellerLines: null, loading: false })}>
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }}>
           <View style={{ backgroundColor: "#fff", borderRadius: 12, padding: 20, width: "90%", maxHeight: "80%" }}>
             <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 4, color: "#222" }}>{salesModal.item?.name}</Text>
@@ -13034,7 +12484,7 @@ export default function AccountScreen({ navigation, route }) {
               <Text style={{ color: "#888", fontStyle: "italic" }}>No one has purchased this offering yet.</Text>
             ) : (
               <BusinessOrdersTable
-                rows={buildProductSalesOrderRows({ sales: salesModal.transactions || [] }, sellerTxData, bountyData?.data || [], orderShippingProgressByKey)}
+                rows={buildProductSalesOrderRows({ sales: salesModal.transactions || [] }, salesModal.sellerLines || sellerTxData, bountyData?.data || [])}
                 darkMode={false}
                 maxBodyHeight={360}
                 onOrderPress={(row) => {
