@@ -120,23 +120,21 @@ function navigateToPurchaseSeller(navigation, transaction) {
 }
 
 /**
- * Expected GET /api/v1/account-screen/personal/:profile_id JSON (flexible keys):
- * - data.transactions | purchase_transactions | personal_transactions | purchases | purchase: buyer rows as array, or { code, data }, or nested { data | items | rows | transactions | list | results | records }[]
- * - data.bounty | bounty_results | bounty_data: same shape as legacy /api/bountyresults body, or bounty_items[] + totals
- * - wallet: root, data, or bounty_results.wallet ({ wallet_actual_balance, wallet_pending, wallet_useable_balance, ... })
- * - Aggregate shape: { purchases: { data }, bounty_results: { data, totals, wallet }, seller_transactions: { data } }
- * - Top-level bounty shape: data[] + total_bounties + total_bounty_earned + wallet (purchases may be in purchases / purchase_transactions)
- * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → treat as no seller lines)
- * - data.profile | user_profile: required for SALES table — { expertise_info } with profile_expertise_quantity per offering
- * - schema_version: 2 — purchases.rows[] and seller_transactions[] with units + display per sale/return row
- * - order_list_hydration: (deprecated v1) map order_uid -> trimmed order payload
+ * GET /api/v1/account-screen/personal/:profile_id — v2 only (schema_version >= 2).
+ * - purchases.rows[] — buyer purchase/return list (required)
+ * - seller_transactions — seller lines as array or { code, data }
+ * - bounty_results | bounty — bounty lines + totals
+ * - wallet — wallet balances
+ * - profile — personal_info + expertise_info (SALES table)
  */
 /** Backend may send numeric or string success codes (e.g. 200 vs "200"). */
 function isApiSuccessCode(code) {
   return code === 200 || code === "200" || Number(code) === 200;
 }
 
-/** Unwrap buyer tx list when API nests rows (e.g. purchases: { code, data: [...] } or { items: [...] }). */
+const ACCOUNT_SCREEN_DISPLAY_NA = "NA";
+
+/** Unwrap nested API arrays (bounty, seller_transactions envelopes). Not used for purchases. */
 function extractTransactionArray(raw) {
   if (raw == null) return [];
   if (Array.isArray(raw)) return raw;
@@ -155,9 +153,6 @@ function getAccountScreenSchemaVersion(json) {
   return Number.isFinite(v) ? v : 0;
 }
 
-function accountScreenResponseUsesV2(json) {
-  return getAccountScreenSchemaVersion(json) >= 2;
-}
 
 function parseNonNegativeInt(value) {
   const n = parseInt(value, 10);
@@ -168,15 +163,15 @@ function rowHasV2Units(row) {
   return !!(row?.units && typeof row.units === "object");
 }
 
-function rowHasV2Display(row) {
-  const d = row?.display;
-  return !!(d && typeof d === "object" && (d.delivered_label != null || d.received_label != null));
-}
-
 function getRowV2DisplayLabel(row, field) {
   const v = row?.display?.[field];
   if (v == null || String(v).trim() === "") return null;
   return String(v).trim();
+}
+
+/** Purchases / orders table chip text — backend display only; NA when absent. */
+function getAccountScreenDisplayLabel(row, field) {
+  return getRowV2DisplayLabel(row, field) ?? ACCOUNT_SCREEN_DISPLAY_NA;
 }
 
 /** Backend-owned banner / helper copy on return rows and order detail. */
@@ -351,21 +346,27 @@ function formatDeliveryVerificationLineStatus(line, orderRow, verifiableQty, ord
   return "Ready to verify";
 }
 
-/** Prefer purchases.rows when schema_version >= 2. */
-function extractAccountScreenPurchaseRows(root) {
-  const schemaVersion = getAccountScreenSchemaVersion(root);
+function extractAccountScreenPurchaseRowsV2(root) {
   const purchases = root?.purchases;
-  if (schemaVersion >= 2 && purchases && typeof purchases === "object" && Array.isArray(purchases.rows)) {
-    return { rows: purchases.rows, schemaVersion, source: "purchases.rows" };
+  if (purchases && typeof purchases === "object" && Array.isArray(purchases.rows)) {
+    return purchases.rows;
   }
-  const txRaw =
-    purchases ??
-    root?.purchase_transactions ??
-    root?.personal_transactions ??
-    root?.buyer_transactions ??
-    root?.data?.purchases ??
-    root?.data?.purchase_transactions;
-  return { rows: extractTransactionArray(txRaw), schemaVersion, source: "legacy" };
+  return [];
+}
+
+function extractAccountScreenSellerTransactions(root, payload) {
+  const stRaw = payload?.seller_transactions ?? payload?.seller_tx ?? root?.seller_transactions ?? root?.seller_tx;
+  if (Array.isArray(stRaw)) return stRaw;
+  if (stRaw && typeof stRaw === "object" && isApiSuccessCode(stRaw.code) && Array.isArray(stRaw.data)) return stRaw.data;
+  return [];
+}
+
+function normalizeAccountScreenListRow(row) {
+  if (!row || typeof row !== "object") return row;
+  if (row.transaction_business_id == null && row.seller_id != null) {
+    return { ...row, transaction_business_id: row.seller_id };
+  }
+  return row;
 }
 
 const RECEIPT_TOTAL_EPS = 0.02;
@@ -821,45 +822,6 @@ function enrichBountyLineFromPurchases(line, transactionData) {
   };
 }
 
-/** Merge receipt fields from bounty_results lines onto purchase list rows (same account-screen payload). */
-function enrichPurchasesFromBountyResults(purchaseRows, bountyLines) {
-  if (!Array.isArray(purchaseRows) || !purchaseRows.length || !Array.isArray(bountyLines) || !bountyLines.length) {
-    return purchaseRows;
-  }
-  const bountyByTxnUid = {};
-  const bountyByTiUid = {};
-  for (const line of bountyLines) {
-    if (!line || typeof line !== "object") continue;
-    const txnUid = String(line.ti_transaction_id || line.transaction_uid || "").trim();
-    const tiUid = String(line.ti_uid || line.tb_ti_id || "").trim();
-    if (txnUid) bountyByTxnUid[txnUid] = line;
-    if (tiUid) bountyByTiUid[tiUid] = line;
-  }
-  return purchaseRows.map((row) => {
-    if (!row || typeof row !== "object" || isReturnListRow(row)) return row;
-    const txnUid = String(row.transaction_uid || "").trim();
-    const tiUid = String(row.ti_uid || row.transaction_item_uid || "").trim();
-    const bountyLine = (tiUid && bountyByTiUid[tiUid]) || (txnUid && bountyByTxnUid[txnUid]);
-    if (!bountyLine) return row;
-
-    const patches = {};
-    const bountyReceived = bountyLine.ti_received_qty;
-    if (bountyReceived != null && String(bountyReceived).trim() !== "" && (row.ti_received_qty == null || String(row.ti_received_qty).trim() === "")) {
-      patches.ti_received_qty = bountyReceived;
-    }
-    if (bountyLine.ti_received_at && !row.ti_received_at) {
-      patches.ti_received_at = bountyLine.ti_received_at;
-    }
-    const receivedCount = parseInt(row.received_item_count ?? row.delivered_item_count, 10);
-    const bountyReceivedNum = Math.max(0, Math.round(parsePrice(bountyReceived)));
-    if (bountyReceivedNum > 0 && !Number.isFinite(receivedCount)) {
-      patches.received_item_count = bountyReceivedNum;
-      patches.delivered_item_count = bountyReceivedNum;
-    }
-    return Object.keys(patches).length ? { ...row, ...patches } : row;
-  });
-}
-
 /** Bounty dollars still pending on a chart date (earned by then, not yet released by then). */
 function bountyAmountPendingOnChartDate(line, dateKey, ledgerAvailabilityByTxnUid, ledgerRows) {
   const amount = parseFloat(line.bounty_earned) || 0;
@@ -1026,174 +988,26 @@ function logAccountScreenPersonalPurchasesDebug({ source, purchasesRawKey, txRaw
 function mapAccountScreenPersonalResponse(json, options = {}) {
   const root = json && typeof json === "object" ? json : {};
   const schemaVersion = getAccountScreenSchemaVersion(root);
-
-  if (Array.isArray(root.data)) {
-    const bountyResultsBlock = root.bounty_results ?? null;
-    const walletEarly = extractPersonalWallet(root, root, bountyResultsBlock ?? { data: root.data, wallet: root.wallet });
-    const hasBountyTotals = root.total_bounty_earned != null || root.total_bounties != null || walletEarly != null || bountyResultsBlock != null;
-    if (hasBountyTotals) {
-      const purchaseExtract = extractAccountScreenPurchaseRows(root);
-      const purchasesRawKey = purchaseExtract.source === "purchases.rows" ? "root.purchases.rows" : "root.purchases (legacy)";
-      let sellerTransactions = [];
-      const stRaw = root.seller_transactions ?? root.seller_tx;
-      if (Array.isArray(stRaw)) {
-        sellerTransactions = stRaw;
-      } else if (stRaw && isApiSuccessCode(stRaw.code) && Array.isArray(stRaw.data)) {
-        sellerTransactions = stRaw.data;
-      }
-      const bountyRaw = bountyResultsBlock ?? {
-        data: root.data,
-        total_bounty_earned: root.total_bounty_earned,
-        total_bounties: root.total_bounties,
-        wallet: root.wallet,
-      };
-      let transactions = purchaseExtract.rows;
-      if (options.debug) {
-        logAccountScreenPersonalPurchasesDebug({
-          source: `root.data + bounty aggregate (${purchaseExtract.source})`,
-          purchasesRawKey,
-          txRaw: root.purchases,
-          transactions,
-        });
-      }
-      transactions = transactions.map((row) => {
-        if (!row || typeof row !== "object") return row;
-        if (row.transaction_business_id == null && row.seller_id != null) {
-          return { ...row, transaction_business_id: row.seller_id };
-        }
-        return row;
-      });
-      return {
-        transactions,
-        bounty: normalizePersonalBounty(bountyRaw, root, root),
-        wallet: extractPersonalWallet(root, root, bountyRaw),
-        sellerTransactions,
-        profile: root.profile ?? root.user_profile ?? null,
-        schemaVersion: purchaseExtract.schemaVersion,
-      };
-    }
-    return {
-      transactions: isApiSuccessCode(root.code) ? root.data : [],
-      bounty: null,
-      wallet: extractPersonalWallet(root, root, null),
-      /** Top-level `data` array is buyer rows only; no nested seller list in this shape */
-      sellerTransactions: [],
-      profile: null,
-      schemaVersion,
-    };
-  }
   const payload = root.data !== undefined && root.data !== null && typeof root.data === "object" && !Array.isArray(root.data) ? root.data : root;
 
-  let transactions = [];
-  let transactionsSource = "txRaw";
-  const purchaseExtract = extractAccountScreenPurchaseRows({ ...root, ...payload, purchases: root.purchases ?? payload.purchases });
-  if (purchaseExtract.source === "purchases.rows") {
-    transactions = purchaseExtract.rows;
-    transactionsSource = "purchases.rows (v2)";
-  } else {
-    /** Purchases often live in data.purchases; some APIs put the same block on the root next to data. */
-    const txRaw =
-      payload.transactions ??
-      payload.purchase_transactions ??
-      payload.personal_transactions ??
-      payload.buyer_transactions ??
-      payload.transaction_list ??
-      payload.purchases ??
-      payload.purchase ??
-      payload.purchase_list ??
-      root.purchases;
-    const purchasesRawKey =
-      payload.transactions != null
-        ? "payload.transactions"
-        : payload.purchase_transactions != null
-          ? "payload.purchase_transactions"
-          : payload.personal_transactions != null
-            ? "payload.personal_transactions"
-            : payload.buyer_transactions != null
-              ? "payload.buyer_transactions"
-              : payload.transaction_list != null
-                ? "payload.transaction_list"
-                : payload.purchases != null
-                  ? "payload.purchases"
-                  : payload.purchase != null
-                    ? "payload.purchase"
-                    : payload.purchase_list != null
-                      ? "payload.purchase_list"
-                      : root.purchases != null
-                        ? "root.purchases"
-                        : null;
-    transactions = extractTransactionArray(txRaw);
-    // Nested legacy shape: { message, code: 200, data: [ rows ] } embedded under payload
-    if (!transactions.length && payload && typeof payload === "object") {
-      const legacyBlock = payload.transactions_legacy ?? payload.transaction_payload ?? payload.transaction_response ?? payload.buyer_transaction_response;
-      if (legacyBlock && isApiSuccessCode(legacyBlock.code) && Array.isArray(legacyBlock.data)) {
-        transactions = legacyBlock.data;
-        transactionsSource = "legacyBlock.data";
-      } else if (isApiSuccessCode(payload.code) && Array.isArray(payload.data)) {
-        const sample = payload.data[0];
-        if (sample && (sample.transaction_uid != null || sample.ti_uid != null)) {
-          transactions = payload.data;
-          transactionsSource = "payload.data (buyer rows)";
-        }
-      }
-    }
+  const transactions = extractAccountScreenPurchaseRowsV2({ ...root, ...payload, purchases: root.purchases ?? payload.purchases }).map(normalizeAccountScreenListRow);
 
-    if (options.debug) {
-      logAccountScreenPersonalPurchasesDebug({
-        source: transactionsSource === "txRaw" ? "payload/root purchases" : transactionsSource,
-        purchasesRawKey: transactionsSource === "txRaw" ? purchasesRawKey : transactionsSource,
-        txRaw: transactionsSource === "txRaw" ? txRaw : null,
-        transactions,
-      });
-    }
-  }
-
-  if (options.debug && transactionsSource === "purchases.rows (v2)") {
+  if (options.debug) {
     logAccountScreenPersonalPurchasesDebug({
-      source: transactionsSource,
+      source: "purchases.rows (v2)",
       purchasesRawKey: "root.purchases.rows",
       txRaw: root.purchases,
       transactions,
     });
   }
 
-  /** Legacy buyer rows use transaction_business_id; aggregate may only send seller_id. */
-  transactions = transactions.map((row) => {
-    if (!row || typeof row !== "object") return row;
-    if (row.transaction_business_id == null && row.seller_id != null) {
-      return { ...row, transaction_business_id: row.seller_id };
-    }
-    return row;
-  });
+  const bountyRaw = root.bounty_results ?? payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
+  const bounty = normalizePersonalBounty(bountyRaw, root, payload);
+  const wallet = extractPersonalWallet(root, payload, bountyRaw);
+  const sellerTransactions = extractAccountScreenSellerTransactions(root, payload).map(normalizeAccountScreenListRow);
+  const profile = root.profile ?? payload.profile ?? payload.user_profile ?? payload.personal_profile ?? null;
 
-  const bountyRaw = payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
-  let bounty = bountyRaw;
-  if (!bounty && Array.isArray(payload.bounty_items)) {
-    bounty = {
-      data: payload.bounty_items,
-      total_bounty_earned: payload.total_bounty_earned,
-      total_bounties: payload.total_bounties,
-    };
-  }
-  bounty = normalizePersonalBounty(bounty, root, payload);
-
-  const walletFromResponse = extractPersonalWallet(root, payload, bountyRaw);
-
-  let sellerTransactions;
-  const stRaw = payload.seller_transactions ?? payload.seller_tx ?? payload.seller_transaction_lines;
-  if (stRaw === undefined) {
-    sellerTransactions = [];
-  } else if (Array.isArray(stRaw)) {
-    sellerTransactions = stRaw;
-  } else if (stRaw && isApiSuccessCode(stRaw.code) && Array.isArray(stRaw.data)) {
-    sellerTransactions = stRaw.data;
-  } else {
-    sellerTransactions = [];
-  }
-
-  const profile = payload.profile ?? payload.user_profile ?? payload.personal_profile ?? null;
-
-  return { transactions, bounty, sellerTransactions, profile, wallet: walletFromResponse, schemaVersion: purchaseExtract.schemaVersion || schemaVersion };
+  return { transactions, bounty, sellerTransactions, profile, wallet, schemaVersion };
 }
 
 /**
@@ -1202,7 +1016,6 @@ function mapAccountScreenPersonalResponse(json, options = {}) {
  * - data.seller_transactions | transactions_seller: seller line rows OR { code, data } (same as legacy /transactions/seller/:id)
  * - data.business | business_profile | profile (optional): same field names as GET /api/v1/businessinfo/:uid `business` object for MiniCard
  * - data.services | business_services | business_info.services: product catalog for Product Inventory
- * - order_list_hydration: (backend) map order_uid -> trimmed order payload (seller shipping/received chips)
  */
 /** Seller line is a business product sale (API uses purchase_type and/or bs_uid 250-*, not always ti_bs_id on the line). */
 function isBusinessProductSellerLine(item) {
@@ -1877,292 +1690,6 @@ function returnIncludesUnshippedShippableUnits(orderDetail, returnLines) {
     return true;
   }
   return false;
-}
-
-/** Account list rows use endpoint / order_list_hydration fields only — not legacy return_status_* AsyncStorage. */
-function getReturnStatusOverrideFromCache(_returnStatusesByKey, ..._keys) {
-  return {};
-}
-
-/** @deprecated List display no longer reads AsyncStorage; kept for call-site compatibility. */
-function getReturnStatusOverrideForRow(_returnStatusesByKey, _row, _orderUid, _listTransactionUid) {
-  return {};
-}
-
-/** Order UIDs that need return/refund chip hydration from order_list_hydration (buyer PURCHASES). */
-function collectOrderUidsNeedingReturnStatusHydration(purchaseRows) {
-  const uids = new Set();
-  if (!Array.isArray(purchaseRows)) return [];
-  for (const row of purchaseRows) {
-    if (!row || typeof row !== "object") continue;
-    const hasReturn =
-      isReturnListRow(row) ||
-      Number(row.transaction_return_requested) === 1 ||
-      row.return_status ||
-      row.refund_status ||
-      row.transaction_return_status ||
-      row.transaction_refund_status ||
-      row.display_status ||
-      row.pending_return ||
-      row.stripe_refund;
-    if (!hasReturn) continue;
-    const orderUid = resolveListRowOrderUid(row);
-    if (orderUid && orderUid !== "—") uids.add(orderUid);
-  }
-  return [...uids];
-}
-
-/** Buyer PURCHASES: shipped orders whose received totals are missing or incomplete on the list row. */
-function collectOrderUidsNeedingBuyerPurchaseReceivedHydration(purchaseRows) {
-  const uids = new Set();
-  for (const row of purchaseRows || []) {
-    if (isReturnListRow(row)) continue;
-    if (!orderNeedsShipping(row)) continue;
-    const orderUid = resolveListRowOrderUid(row);
-    if (!orderUid || orderUid === "—") continue;
-    if (getOrderReceivedStatusFromSaleRows([row]) === "Yes") continue;
-    const progress = getOrderShippingProgress([row]);
-    if (progress !== "partial" && progress !== "complete") continue;
-    uids.add(orderUid);
-  }
-  return [...uids];
-}
-
-/** Personal PURCHASES: order UIDs whose list rows are still incomplete (diagnostics only). */
-function collectOrderUidsNeedingPersonalPurchaseHydration(purchaseRows) {
-  return [
-    ...new Set([
-      ...collectOrderUidsNeedingReturnStatusHydration(purchaseRows),
-      ...collectOrderUidsNeedingShippingProgressHydration(purchaseRows),
-      ...collectOrderUidsNeedingBuyerPurchaseReceivedHydration(purchaseRows),
-    ]),
-  ];
-}
-
-/** Top-level map from GET account-screen/personal|business. */
-function extractOrderListHydrationMap(json) {
-  const root = json && typeof json === "object" ? json : {};
-  const map = root.order_list_hydration;
-  return map && typeof map === "object" && !Array.isArray(map) ? map : null;
-}
-
-/** Snapshot list-row fields when list data is missing (for red console diagnostics). */
-function summarizeListRowForHydrationLog(row) {
-  if (!row || typeof row !== "object") return null;
-  return {
-    transaction_uid: row.transaction_uid,
-    fulfillment_status: row.fulfillment_status ?? row.shipping_status,
-    shipped_item_count: row.shipped_item_count ?? row.shipped_count,
-    unshipped_item_count: row.unshipped_item_count ?? row.unshipped_count,
-    all_items_shipped: row.all_items_shipped,
-    received_units: row.received_units ?? row.received_item_count,
-    ti_received_qty: row.ti_received_qty,
-    ti_shipped_qty: row.ti_shipped_qty,
-    return_status: row.return_status ?? row.transaction_return_status,
-    refund_status: row.refund_status ?? row.transaction_refund_status,
-    in_escrow: row.transaction_in_escrow ?? row.in_escrow,
-    has_sale_detail_lines: !!(Array.isArray(row._sale_detail_lines) && row._sale_detail_lines.length) || !!(Array.isArray(row.lines) && row.lines.length),
-  };
-}
-
-/**
- * Purchases table (personal account): Delivered / Received / return chips.
- * Returns only gaps that would show wrong or ambiguous text on AccountScreen load.
- */
-function auditPurchaseRowAccountScreenGaps(row, { shippingProgressByKey = {}, returnStatusesByKey = {} } = {}) {
-  const gaps = [];
-  if (!row) return gaps;
-  if (rowHasV2Display(row)) return gaps;
-
-  if (isReturnListRow(row)) {
-    const needsChip = Number(row.transaction_return_requested) === 1 || row.return_status || row.refund_status || row.display_status || row.pending_return;
-    if (!needsChip) return gaps;
-    const logistics = resolveReturnLogisticsLabels(row, returnStatusesByKey);
-    if (!logistics?.delivered || !logistics?.received) {
-      gaps.push("Purchases return row chip text (Delivered/Received on return row): display_status or return_status + refund_status");
-    }
-    return gaps;
-  }
-
-  if (orderNeedsShipping(row) && !purchaseRowDeliveredNotApplicable(row)) {
-    const delivered = getBuyerPurchaseDeliveredLabel(row, returnStatusesByKey);
-    const progress = resolveShippingProgressForDisplay([row], null);
-    if (delivered === "—" && progress === "unknown") {
-      gaps.push('Purchases Delivered column shows "—": need ti_shipped_qty, fulfillment_status, or shipped_item_count on list row');
-    }
-    if (delivered === "Partial" && progress === "partial") {
-      const shipped = resolvePurchaseRowShippedUnits(row);
-      const purchased = resolvePurchaseRowShippableUnits(row);
-      if (shipped <= 0 || purchased <= 0) {
-        gaps.push('Purchases Delivered column shows generic "Partial" (not "3/5"): need ti_shipped_qty or shipped_item_count + ti_bs_qty');
-      }
-    }
-  }
-
-  if (orderNeedsShipping(row) && !purchaseRowDeliveredNotApplicable(row)) {
-    const progress = resolveShippingProgressForDisplay([row], null);
-    if (progress === "partial" || progress === "complete") {
-      const received = getBuyerPurchaseReceivedLabel(row, returnStatusesByKey);
-      const hasReceivedSignal = row.ti_received_qty != null || row.received_units != null || row.received_item_count != null || getUnitReceivedStatusFromSaleRows([row]) != null;
-      if (received === "Partial" && !hasReceivedSignal) {
-        gaps.push('Purchases Received column may be wrong ("Partial" without ti_received_qty / received_units): need line received qty on list row');
-      }
-    }
-  }
-
-  return gaps;
-}
-
-/**
- * SALES table on personal account (expertise list): Sold count + red/orange Sold highlight only.
- * Does NOT include offering sales modal (opened separately).
- */
-function auditPersonalExpertiseLoadGaps(row, sellerLines, returnStatusesByKey, shippingProgressByKey) {
-  const gaps = [];
-  if (!row || isReturnListRow(row)) return gaps;
-  if (rowHasV2Units(row)) return gaps;
-
-  if (orderNeedsShipping(row) && !orderFulfillmentIsNotRequired(row)) {
-    const progressOverride = resolveSellerShippingProgressOverride(row, shippingProgressByKey);
-    const shipping = summarizeSaleRowShipping(row, sellerLines || [row], returnStatusesByKey);
-    const total = shipping.shippableTotal > 0 ? shipping.shippableTotal : shipping.activeTotal;
-    const progress =
-      progressOverride === "complete" || progressOverride === "partial" || progressOverride === "none" || progressOverride === "not_required" ? progressOverride : getOrderShippingProgress([row]);
-
-    if (total > 0 && shipping.shipped <= 0 && progress !== "none" && progress !== "not_required") {
-      gaps.push("SALES Sold highlight: in-transit order but cannot compute shipped count — need shipped_item_count or sale.lines[].ti_shipped_qty");
-    }
-  }
-
-  return gaps;
-}
-
-/** Business orders table + offering sales modal: Delivered / Received columns. */
-function auditSellerOrdersTableGaps(row, sellerLines, returnStatusesByKey, shippingProgressByKey) {
-  const gaps = [];
-  if (!row || isReturnListRow(row)) return gaps;
-  if (rowHasV2Display(row)) return gaps;
-
-  const progressOverride = resolveSellerShippingProgressOverride(row, shippingProgressByKey);
-
-  if (orderNeedsShipping(row) && !orderFulfillmentIsNotRequired(row)) {
-    const delivered = formatOrderDeliveredStatusLabel([row], sellerLines, returnStatusesByKey, progressOverride);
-    const progress =
-      progressOverride === "complete" || progressOverride === "partial" || progressOverride === "none" || progressOverride === "not_required" ? progressOverride : getOrderShippingProgress([row]);
-
-    if (delivered === "—" && (progress === "unknown" || progress === "partial" || progress === "complete")) {
-      gaps.push('Orders Delivered column shows "—": need shipped_item_count + unshipped/shippable counts or sale.lines ship qty');
-    }
-    if (delivered === "Partial") {
-      gaps.push('Orders Delivered column shows generic "Partial" (not "7/9"): need shipped_item_count + shippable count or sale.lines with cancelled_qty');
-    }
-  }
-
-  if (Number(row.transaction_in_escrow ?? row.in_escrow) === 1) {
-    const received = formatOrderReceivedStatusLabel([row], sellerLines, returnStatusesByKey);
-    const totals = summarizeSaleRowVerification(row, sellerLines, returnStatusesByKey);
-    const hasReceivedSignal = row.ti_received_qty != null || row.received_units != null || row.received_item_count != null;
-    const shipping = summarizeSaleRowShipping(row, sellerLines, returnStatusesByKey);
-    if (totals.activePurchased > 0 && shipping.shipped > 0 && received === "No" && !hasReceivedSignal && totals.received <= 0) {
-      // Only flag when shipped but we cannot show partial verification — buyer may truly have verified 0
-      // Skip — "No" is accurate when nothing received yet
-    }
-    if (received === "Partial" && !hasReceivedSignal && totals.received <= 0) {
-      gaps.push('Orders Received column shows "Partial" without unit counts: need ti_received_qty or received_units on list row');
-    }
-  }
-
-  return gaps;
-}
-
-/** Log when aggregate list-row counts disagree with per-row unit fields (backend should fix). */
-function assertListRowShippingCountsConsistent(row) {
-  if (!row || isReturnListRow(row) || rowHasV2Units(row)) return;
-  const orderUid = resolveListRowOrderUid(row);
-  const purchased = resolvePurchaseRowShippableUnits(row);
-  const shippableCount = parseInt(row.shippable_item_count ?? row.items_requiring_shipping ?? row.shipping_required_count, 10);
-  const shippedCount = parseInt(row.shipped_item_count ?? row.shipped_count ?? row.items_shipped, 10);
-
-  if (Number.isFinite(shippableCount) && purchased > 0 && shippableCount > purchased) {
-    console.error("[AccountScreen] List row shippable_item_count exceeds ti_bs_qty — backend should fix", {
-      orderUid,
-      shippableCount,
-      ti_bs_qty: purchased,
-    });
-  }
-  if (Number.isFinite(shippedCount) && purchased > 0 && shippedCount > purchased) {
-    console.error("[AccountScreen] List row shipped_item_count exceeds ti_bs_qty — backend should fix", {
-      orderUid,
-      shippedCount,
-      ti_bs_qty: purchased,
-    });
-  }
-  if (Number.isFinite(shippedCount) && Number.isFinite(shippableCount) && shippableCount > 0 && shippedCount > shippableCount) {
-    console.error("[AccountScreen] List row shipped_item_count exceeds shippable_item_count — backend should fix", {
-      orderUid,
-      shippedCount,
-      shippableCount,
-    });
-  }
-}
-
-/**
- * Log when list rows would have triggered the removed order_list_hydration merge path.
- * Uses console.error (red in dev tools). Silent when list data is sufficient.
- */
-function reportAccountScreenListRowDiagnostics({ screenContext, rows, listHydrationByOrderUid, collectOrderUids }) {
-  if (!Array.isArray(rows) || !rows.length || typeof collectOrderUids !== "function") return;
-
-  for (const row of rows) {
-    assertListRowShippingCountsConsistent(row);
-  }
-
-  const logged = new Set();
-  for (const orderUid of collectOrderUids(rows)) {
-    if (!orderUid || orderUid === "—" || logged.has(orderUid)) continue;
-    logged.add(orderUid);
-    const row = rows.find((entry) => resolveListRowOrderUid(entry) === orderUid);
-    const hasMapEntry = !!(listHydrationByOrderUid || {})[orderUid];
-    console.error(
-      `[AccountScreen] List row incomplete — removed hydration merge no longer patches this (${screenContext} · order ${orderUid})`,
-      hasMapEntry
-        ? "order_list_hydration entry exists; populate purchase/seller list row fields instead"
-        : "no order_list_hydration entry; backend must add fulfillment/return fields to list row",
-      summarizeListRowForHydrationLog(row),
-    );
-  }
-}
-
-/**
- * Log only when AccountScreen UI would be wrong or ambiguous from incomplete list rows.
- * Uses console.error (red in dev tools). Silent when list data is sufficient.
- */
-function logAccountScreenHydrationGaps({ screenContext, rows, listHydrationByOrderUid, auditRowGaps, auditOptions = {} }) {
-  if (!Array.isArray(rows) || !rows.length) return;
-
-  const logged = new Set();
-  for (const row of rows) {
-    assertListRowShippingCountsConsistent(row);
-    const orderUid = resolveListRowOrderUid(row);
-    if (!orderUid || orderUid === "—" || logged.has(orderUid)) continue;
-
-    const gaps = auditRowGaps(row, auditOptions);
-    if (!gaps.length) continue;
-    logged.add(orderUid);
-
-    const hasMapEntry = !!(listHydrationByOrderUid || {})[orderUid];
-    const sourceHint = hasMapEntry
-      ? "order_list_hydration entry exists but list row still incomplete — populate list row fields on backend"
-      : "no order_list_hydration entry — add fulfillment/return fields to list row on backend";
-
-    console.error(
-      `[AccountScreen LIST ROW GAP] ${screenContext} · order ${orderUid}`,
-      `\n  AccountScreen impact:\n  · ${gaps.join("\n  · ")}`,
-      `\n  ${sourceHint}`,
-      "\n  list_row:",
-      summarizeListRowForHydrationLog(row),
-    );
-  }
 }
 
 function getReturnLogisticsForRow(row) {
@@ -6600,91 +6127,6 @@ function listRowHasExplicitShippingProgress(row) {
   return false;
 }
 
-function collectOrderUidsNeedingShippingProgressHydration(sellerLines) {
-  const uids = new Set();
-  for (const row of sellerLines || []) {
-    if (isReturnListRow(row)) continue;
-    const orderUid = resolveListRowOrderUid(row);
-    if (!orderUid || orderUid === "—") continue;
-    if (!orderNeedsShipping(row)) continue;
-    const status = String(row.fulfillment_status || row.shipping_status || row.order_fulfillment_status || row.transaction_fulfillment_status || "")
-      .trim()
-      .toLowerCase();
-    // Always hydrate partial/mixed from order detail — list summaries often lag line-level ship qty.
-    if (status === "partial" || status === "partially_shipped") {
-      uids.add(orderUid);
-      continue;
-    }
-    // Order-level not_shipped is often stale once any line has shipped_qty > 0.
-    if (["not_shipped", "pending_shipment", "awaiting_shipment", "unfulfilled", "ready_to_ship"].includes(status)) {
-      uids.add(orderUid);
-      continue;
-    }
-    const shippedCount = parseInt(row.shipped_item_count ?? row.shipped_count ?? row.items_shipped, 10);
-    const unshippedCount = parseInt(row.unshipped_item_count ?? row.unshipped_count ?? row.items_unshipped ?? row.open_shipping_count, 10);
-    if (Number.isFinite(shippedCount) && Number.isFinite(unshippedCount) && shippedCount > 0 && unshippedCount > 0) {
-      uids.add(orderUid);
-      continue;
-    }
-    if (isTruthyShippingFlag(row.all_items_shipped)) continue;
-    if (Number.isFinite(unshippedCount) && unshippedCount <= 0) continue;
-    const receivedUnits = Math.max(0, parseInt(row.received_units ?? row.received_item_count ?? row.ti_received_qty, 10) || 0);
-    // Buyer verified units but list shipped count is missing/stale — need order-detail line qty.
-    if (receivedUnits > 0 && (!Number.isFinite(shippedCount) || shippedCount < receivedUnits)) {
-      uids.add(orderUid);
-      continue;
-    }
-    if (listRowHasExplicitShippingProgress(row)) continue;
-    uids.add(orderUid);
-  }
-  return [...uids];
-}
-
-/** In-escrow orders without clear received totals need order-detail line qty to show Partial. */
-function collectOrderUidsNeedingReceivedHydration(sellerLines) {
-  const uids = new Set();
-  for (const row of sellerLines || []) {
-    if (isReturnListRow(row)) continue;
-    if (Number(row.transaction_in_escrow ?? row.in_escrow) !== 1) continue;
-    const orderUid = resolveListRowOrderUid(row);
-    if (!orderUid || orderUid === "—") continue;
-    if (row.received_units != null || row.purchased_units != null) continue;
-    const receivedCount = parseInt(row.received_item_count ?? row.delivered_item_count, 10);
-    // Explicit positive received count already yields Partial/Yes without hydration.
-    if (Number.isFinite(receivedCount) && receivedCount > 0) continue;
-    uids.add(orderUid);
-  }
-  return [...uids];
-}
-
-/** Orders missing line-level shipped counts (list row often has received_units but not shipped_item_count). */
-function collectOrderUidsNeedingSellerOrderDetailHydration(sellerLines) {
-  const uids = new Set([...collectOrderUidsNeedingShippingProgressHydration(sellerLines), ...collectOrderUidsNeedingReceivedHydration(sellerLines)]);
-  for (const row of sellerLines || []) {
-    if (isReturnListRow(row)) continue;
-    if (!orderNeedsShipping(row)) continue;
-    const orderUid = resolveListRowOrderUid(row);
-    if (!orderUid || orderUid === "—") continue;
-    const hasDetailLines = (Array.isArray(row._sale_detail_lines) && row._sale_detail_lines.length > 0) || (Array.isArray(row.lines) && row.lines.length > 0);
-    const shippedCount = parseInt(row.shipped_item_count ?? row.shipped_count ?? row.items_shipped, 10);
-    const receivedUnits = Math.max(0, parseInt(row.received_units ?? row.received_item_count ?? row.ti_received_qty, 10) || 0);
-    const progress = getOrderShippingProgress([row]);
-    if (receivedUnits > 0 && (!Number.isFinite(shippedCount) || shippedCount < receivedUnits)) {
-      uids.add(orderUid);
-      continue;
-    }
-    if ((progress === "partial" || progress === "complete") && (!hasDetailLines || !Number.isFinite(shippedCount) || shippedCount <= 0)) {
-      uids.add(orderUid);
-      continue;
-    }
-    // In-escrow shipping orders without line-level ship qty still show "Not Shipped" incorrectly.
-    if (Number(row.transaction_in_escrow ?? row.in_escrow) === 1 && !hasDetailLines && (!Number.isFinite(shippedCount) || shippedCount <= 0)) {
-      uids.add(orderUid);
-    }
-  }
-  return [...uids];
-}
-
 /** True when the purchase list Delivered column should show "—" (pickup/virtual/no shippable items). */
 function purchaseRowDeliveredNotApplicable(row) {
   if (!row || typeof row !== "object") return true;
@@ -6789,20 +6231,20 @@ function isPurchaseFullyReceivedByQty(transaction) {
 function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}) {
   if (isReturnListRow(transaction)) {
     const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
-    return returnLogistics?.delivered || "";
+    return returnLogistics?.delivered || ACCOUNT_SCREEN_DISPLAY_NA;
   }
-  if (!transaction) return "";
-  return getRowV2DisplayLabel(transaction, "delivered_label") || "";
+  if (!transaction) return ACCOUNT_SCREEN_DISPLAY_NA;
+  return getAccountScreenDisplayLabel(transaction, "delivered_label");
 }
 
 /** Buyer PURCHASES Received column — backend display.received_label only. */
 function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}) {
   if (isReturnListRow(transaction)) {
     const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
-    return returnLogistics?.received || "";
+    return returnLogistics?.received || ACCOUNT_SCREEN_DISPLAY_NA;
   }
-  if (!transaction) return "";
-  return getRowV2DisplayLabel(transaction, "received_label") || "";
+  if (!transaction) return ACCOUNT_SCREEN_DISPLAY_NA;
+  return getAccountScreenDisplayLabel(transaction, "received_label");
 }
 
 /** True when backend marks this purchase row as ready for buyer delivery verification. */
@@ -6879,12 +6321,12 @@ function getOrderReceivedStatusFromSaleRows(saleRows) {
 /** Seller order-table Received label — backend display.received_label only. */
 function formatOrderReceivedStatusLabel(saleRows, sellerLines = null) {
   const row = saleRows?.[0];
-  if (!row) return "";
+  if (!row) return ACCOUNT_SCREEN_DISPLAY_NA;
   if (isReturnListRow(row)) {
     const logistics = resolveReturnLogisticsLabels(row);
-    return logistics?.received || "";
+    return logistics?.received || ACCOUNT_SCREEN_DISPLAY_NA;
   }
-  return getRowV2DisplayLabel(row, "received_label") || "";
+  return getAccountScreenDisplayLabel(row, "received_label");
 }
 
 function parseFractionStatusLabel(label) {
@@ -6909,10 +6351,7 @@ function getReturnRowUnits(row) {
 function sellerReturnRowIsPendingAttention(row, returnStatusesByKey) {
   if (!row || !isReturnListRow(row)) return false;
   if (isPendingReturnListRow(row)) return true;
-  const orderUid = resolveListRowOrderUid(row);
-  const txnUid = String(row.transaction_uid || "").trim();
-  const override = getReturnStatusOverrideForRow(returnStatusesByKey, row, orderUid, txnUid);
-  const logistics = resolveReturnLogisticsLabels(row, override);
+  const logistics = resolveReturnLogisticsLabels(row);
   if (!logistics) return false;
   if (logistics.return_status === "returning") return true;
   if (logistics.refund_status === "pending" || logistics.refund_status === "stripe_fail") return true;
@@ -6929,9 +6368,7 @@ function sumCompletedReturnUnitsForOrder(orderUid, sellerLines, expertiseUid, re
       if (rowProduct && rowProduct !== expertiseUid) continue;
     }
     if (isPendingReturnListRow(row)) continue;
-    const txnUid = String(row.transaction_uid || "").trim();
-    const override = getReturnStatusOverrideForRow(returnStatusesByKey, row, orderUid, txnUid);
-    const logistics = resolveReturnLogisticsLabels(row, override);
+    const logistics = resolveReturnLogisticsLabels(row);
     if (!logistics) continue;
     const completed = (logistics.return_status === "returned" && logistics.refund_status === "refunded") || (logistics.return_status === "cancelled" && logistics.refund_status === "refunded");
     if (completed) total += getReturnRowUnits(row);
@@ -7060,12 +6497,12 @@ function summarizeSaleRowShipping(row, sellerLines, returnStatusesByKey) {
 /** Seller order-table Delivered label — backend display.delivered_label only. */
 function formatOrderDeliveredStatusLabel(saleRows, sellerLines = null) {
   const row = saleRows?.[0];
-  if (!row) return "";
+  if (!row) return ACCOUNT_SCREEN_DISPLAY_NA;
   if (isReturnListRow(row)) {
     const logistics = resolveReturnLogisticsLabels(row);
-    return logistics?.delivered || "";
+    return logistics?.delivered || ACCOUNT_SCREEN_DISPLAY_NA;
   }
-  return getRowV2DisplayLabel(row, "delivered_label") || "";
+  return getAccountScreenDisplayLabel(row, "delivered_label");
 }
 
 const SELLER_ATTENTION_PRIORITY = { red: 3, orange: 2, purple: 1 };
@@ -7074,12 +6511,6 @@ function maxSellerAttentionLevel(current, next) {
   if (!next) return current;
   if (!current) return next;
   return SELLER_ATTENTION_PRIORITY[next] > SELLER_ATTENTION_PRIORITY[current] ? next : current;
-}
-
-function resolveSellerShippingProgressOverride(row, shippingProgressByKey) {
-  const orderUid = resolveListRowOrderUid(row);
-  const txnUid = String(row?.transaction_uid || "").trim();
-  return (shippingProgressByKey && ((orderUid && orderUid !== "—" && shippingProgressByKey[orderUid]) || (txnUid && shippingProgressByKey[txnUid]))) || null;
 }
 
 /** True when the seller still has units to ship on a shipping-required order. */
@@ -7375,7 +6806,7 @@ function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress
 function getProductSaleStatusBadgeStyle(kind, label) {
   const normalized = String(label || "").toLowerCase();
   if (kind === "delivered") {
-    if (normalized === "—" || normalized === "-" || normalized === "–" || normalized === "n/a") {
+    if (normalized === "—" || normalized === "-" || normalized === "–" || normalized === "n/a" || normalized === "na") {
       return { badge: { backgroundColor: "#F5F5F5" }, text: { color: "#9E9E9E" } };
     }
     if (normalized === "not shipped") {
@@ -7424,6 +6855,9 @@ function getProductSaleStatusBadgeStyle(kind, label) {
   }
   if (normalized === "yes" || normalized === "complete" || normalized === "refunded") {
     return { badge: { backgroundColor: "#E8F5E9" }, text: { color: "#2E7D32" } };
+  }
+  if (normalized === "na" || normalized === "n/a") {
+    return { badge: { backgroundColor: "#F5F5F5" }, text: { color: "#9E9E9E" } };
   }
   if (normalized === "verify") {
     return { badge: { backgroundColor: "#FFEBEE" }, text: { color: "#B71C1C" } };
@@ -8871,29 +8305,8 @@ export default function AccountScreen({ navigation, route }) {
           } catch (_) {}
         }
         const mapped = mapAccountScreenPersonalResponse(json, { debug: debugPurchases });
-        const isV2Personal = (mapped.schemaVersion ?? getAccountScreenSchemaVersion(json)) >= 2;
 
-        const purchaseRows = Array.isArray(mapped.transactions) ? mapped.transactions : [];
-        let normalizedPurchases = purchaseRows;
-        const bountyLines = Array.isArray(mapped.bounty?.data) ? mapped.bounty.data : [];
-        normalizedPurchases = enrichPurchasesFromBountyResults(normalizedPurchases, bountyLines);
-
-        if (!isV2Personal) {
-          const listHydrationByOrderUid = extractOrderListHydrationMap(json);
-          reportAccountScreenListRowDiagnostics({
-            screenContext: "personal / purchases",
-            rows: normalizedPurchases,
-            listHydrationByOrderUid,
-            collectOrderUids: collectOrderUidsNeedingPersonalPurchaseHydration,
-          });
-          logAccountScreenHydrationGaps({
-            screenContext: "personal / purchases",
-            rows: normalizedPurchases,
-            listHydrationByOrderUid,
-            auditRowGaps: auditPurchaseRowAccountScreenGaps,
-            auditOptions: {},
-          });
-        }
+        const normalizedPurchases = Array.isArray(mapped.transactions) ? mapped.transactions : [];
 
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setTransactionData(normalizedPurchases);
@@ -8927,22 +8340,6 @@ export default function AccountScreen({ navigation, route }) {
         }
 
         let sellerTx = Array.isArray(mapped.sellerTransactions) ? mapped.sellerTransactions : [];
-        if (!isV2Personal) {
-          const listHydrationByOrderUid = extractOrderListHydrationMap(json);
-          reportAccountScreenListRowDiagnostics({
-            screenContext: "personal / SALES table (expertise list)",
-            rows: sellerTx,
-            listHydrationByOrderUid,
-            collectOrderUids: collectOrderUidsNeedingSellerOrderDetailHydration,
-          });
-          logAccountScreenHydrationGaps({
-            screenContext: "personal / SALES table (expertise list)",
-            rows: sellerTx,
-            listHydrationByOrderUid,
-            auditRowGaps: (row, opts) => auditPersonalExpertiseLoadGaps(row, sellerTx, {}, opts.shippingProgressByKey || {}),
-            auditOptions: {},
-          });
-        }
 
         let expertiseList = [];
         if (mapped.profile?.expertise_info != null) {
@@ -9194,26 +8591,7 @@ export default function AccountScreen({ navigation, route }) {
       }
 
       const transactions = sellerLines.filter((tx) => String(tx.ti_bs_id || "").trim() === expertiseUid);
-
-      try {
-        reportAccountScreenListRowDiagnostics({
-          screenContext: "offering sales modal",
-          rows: transactions,
-          listHydrationByOrderUid: null,
-          collectOrderUids: collectOrderUidsNeedingSellerOrderDetailHydration,
-        });
-        logAccountScreenHydrationGaps({
-          screenContext: "offering sales modal",
-          rows: transactions,
-          listHydrationByOrderUid: null,
-          auditRowGaps: (row, opts) => auditSellerOrdersTableGaps(row, transactions, {}, opts.shippingProgressByKey || {}),
-          auditOptions: {},
-        });
-        setSalesModal({ visible: true, item, transactions, sellerLines, loading: false });
-      } catch (error) {
-        console.warn("[AccountScreen] offering sales list row diagnostics failed:", error?.message || error);
-        setSalesModal({ visible: true, item, transactions, sellerLines, loading: false });
-      }
+      setSalesModal({ visible: true, item, transactions, sellerLines, loading: false });
     },
     [sellerTxData, refreshAccountScreenPersonal],
   );
@@ -9736,21 +9114,6 @@ export default function AccountScreen({ navigation, route }) {
       const normalizedSellerLines = sellerLines;
       setBusinessSellerTransactionList(normalizedSellerLines);
 
-      const listHydrationByOrderUid = extractOrderListHydrationMap(json);
-      reportAccountScreenListRowDiagnostics({
-        screenContext: "business / ORDERS table",
-        rows: normalizedSellerLines,
-        listHydrationByOrderUid,
-        collectOrderUids: collectOrderUidsNeedingSellerOrderDetailHydration,
-      });
-      logAccountScreenHydrationGaps({
-        screenContext: "business / ORDERS table",
-        rows: normalizedSellerLines,
-        listHydrationByOrderUid,
-        auditRowGaps: (row, opts) => auditSellerOrdersTableGaps(row, normalizedSellerLines, {}, opts.shippingProgressByKey || {}),
-        auditOptions: {},
-      });
-
       const businessTransactions = sellerLines.filter(isBusinessProductSellerLine).filter((row) => !isReturnListRow(row));
       businessTransactions.forEach((txn) => {
         txn.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
@@ -9813,7 +9176,6 @@ export default function AccountScreen({ navigation, route }) {
 
   const reloadAccountScreen = useCallback(() => {
     checkAuth();
-    // Personal list uses account-screen v2 units/display when present; legacy hydration diagnostics skipped for v2.
     void (async () => {
       await refreshAccountScreenPersonal();
       await refreshWalletLedger();
