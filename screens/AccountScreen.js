@@ -153,7 +153,6 @@ function getAccountScreenSchemaVersion(json) {
   return Number.isFinite(v) ? v : 0;
 }
 
-
 function parseNonNegativeInt(value) {
   const n = parseInt(value, 10);
   return Number.isFinite(n) && n >= 0 ? n : null;
@@ -291,8 +290,7 @@ function formatLineFulfillmentDisplayFromUnits(units, line) {
   const purchased = parseNonNegativeInt(units.purchased_qty) ?? 0;
   const shipped = parseNonNegativeInt(units.shipped_qty) ?? 0;
   const remainingToShip = parseNonNegativeInt(units.remaining_to_ship_qty) ?? 0;
-  const cancelled =
-    (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) + (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0);
+  const cancelled = (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) + (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0);
   const shippableTotal = parseNonNegativeInt(units.active_qty) ?? Math.max(0, purchased - cancelled);
   const carrier = String(line?.tracking_carrier || line?.ti_tracking_carrier || "").trim();
   const trackingNumber = String(line?.tracking_number || line?.ti_tracking_number || "").trim();
@@ -519,13 +517,7 @@ function resolveOfferingDisplayFields(item, transactionFallback = null) {
   const src = item && typeof item === "object" ? item : {};
   const txn = transactionFallback && typeof transactionFallback === "object" ? transactionFallback : {};
   const rateDisplay = String(
-    src.offering_rate_display ||
-      txn.offering_rate_display ||
-      src.offering_cost_label ||
-      src.offering_rate_label ||
-      txn.offering_cost_label ||
-      txn.offering_rate_label ||
-      "",
+    src.offering_rate_display || txn.offering_rate_display || src.offering_cost_label || src.offering_rate_label || txn.offering_cost_label || txn.offering_rate_label || "",
   ).trim();
   return { rateDisplay };
 }
@@ -2952,9 +2944,7 @@ function buildReturnModalCapsFromV2Units(units, row) {
   const remainingNotLeft = maxCancelUnshipped;
   const returnedFromLeft = parseNonNegativeInt(units.returned_shipped_completed_qty) ?? 0;
   const returnedFromNotLeft =
-    (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0) +
-    (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) +
-    (parseNonNegativeInt(units.return_in_progress_unshipped_qty) ?? 0);
+    (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) + (parseNonNegativeInt(units.return_in_progress_unshipped_qty) ?? 0);
 
   return {
     purchasedQty,
@@ -3012,9 +3002,7 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, existingRetur
         }
         const eligibility = resolveLineReturnEligibility(line);
         const shippedOnLine = lineUnits ? (parseNonNegativeInt(lineUnits.shipped_qty) ?? 0) : Math.min(purchasedQty, getLineShippedQty(line));
-        const unshippedOnLine = lineUnits
-          ? (parseNonNegativeInt(lineUnits.remaining_to_ship_qty) ?? Math.max(0, purchasedQty - shippedOnLine))
-          : Math.max(0, purchasedQty - shippedOnLine);
+        const unshippedOnLine = lineUnits ? (parseNonNegativeInt(lineUnits.remaining_to_ship_qty) ?? Math.max(0, purchasedQty - shippedOnLine)) : Math.max(0, purchasedQty - shippedOnLine);
         const backendSplit = backendReturnSplitByLine[transactionItemUid] || { shipped: 0, unshipped: 0, splitKnown: false };
         const returnedShippedQty = lineUnits
           ? (parseNonNegativeInt(lineUnits.returned_shipped_completed_qty) ?? 0) + (parseNonNegativeInt(lineUnits.return_in_progress_shipped_qty) ?? 0)
@@ -3063,9 +3051,7 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, existingRetur
     }
     const eligibility = resolveLineReturnEligibility(item);
     const shippedOnLine = lineUnits ? (parseNonNegativeInt(lineUnits.shipped_qty) ?? 0) : Math.min(purchasedQty, getLineShippedQty(item));
-    const unshippedOnLine = lineUnits
-      ? (parseNonNegativeInt(lineUnits.remaining_to_ship_qty) ?? Math.max(0, purchasedQty - shippedOnLine))
-      : Math.max(0, purchasedQty - shippedOnLine);
+    const unshippedOnLine = lineUnits ? (parseNonNegativeInt(lineUnits.remaining_to_ship_qty) ?? Math.max(0, purchasedQty - shippedOnLine)) : Math.max(0, purchasedQty - shippedOnLine);
     const backendSplit = backendReturnSplitByLine[transactionItemUid] || { shipped: 0, unshipped: 0, splitKnown: false };
     const returnedShippedQty = lineUnits
       ? (parseNonNegativeInt(lineUnits.returned_shipped_completed_qty) ?? 0) + (parseNonNegativeInt(lineUnits.return_in_progress_shipped_qty) ?? 0)
@@ -4085,17 +4071,7 @@ function walletLedgerEntryStatusNote(entry) {
 
 function walletLedgerEntryItemizeQty(entry, purchasedQty) {
   if (!entry || purchasedQty <= 0) return null;
-  for (const key of [
-    "cancelled_qty_delta",
-    "returned_qty_delta",
-    "verified_qty_delta",
-    "itemize_qty",
-    "units",
-    "unit_count",
-    "item_qty",
-    "return_quantity",
-    "quantity",
-  ]) {
+  for (const key of ["cancelled_qty_delta", "returned_qty_delta", "verified_qty_delta", "itemize_qty", "units", "unit_count", "item_qty", "return_quantity", "quantity"]) {
     const v = parseInt(entry[key], 10);
     if (Number.isFinite(v) && v > 0 && v <= purchasedQty) return v;
   }
@@ -4210,14 +4186,7 @@ function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, 
 
   const taxTotal = Math.round(Math.abs(parseOrderMoneyField(sale?.transaction_taxes) ?? 0) * 100) / 100;
 
-  const purchasedQty = Math.max(
-    1,
-    parseInt(entry?.purchased_qty, 10) ||
-      salePurchasedQty ||
-      merchandiseRows.reduce((sum, row) => sum + row.qty, 0) ||
-      parseInt(sale?.ti_bs_qty, 10) ||
-      1,
-  );
+  const purchasedQty = Math.max(1, parseInt(entry?.purchased_qty, 10) || salePurchasedQty || merchandiseRows.reduce((sum, row) => sum + row.qty, 0) || parseInt(sale?.ti_bs_qty, 10) || 1);
   const bountyTotal = isSellerView
     ? saleBountyPaid > 0
       ? saleBountyPaid
@@ -4332,9 +4301,7 @@ function OrderDetailWalletLedgerSummary({ entries, highlightEntryId, darkMode, s
 
   return (
     <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
-      <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>
-        {isSellerView ? "Wallet ledger (your sale proceeds)" : "Wallet ledger"}
-      </Text>
+      <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>{isSellerView ? "Wallet ledger (your sale proceeds)" : "Wallet ledger"}</Text>
       <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
         {isSellerView
           ? "Itemized below is how your sale proceeds are calculated. This is separate from the buyer refund — see pending return above for the customer credit."
@@ -4993,10 +4960,7 @@ function OrderDetailModal({
               {verifiedSummary ? <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }, { marginBottom: 8 }]}>{verifiedSummary}</Text> : null}
               {isSellerView && saleProceedsStatusNotes.length
                 ? saleProceedsStatusNotes.map((note) => (
-                    <Text
-                      key={note.entryId || note.statusNote}
-                      style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }, { marginBottom: 8, fontStyle: "italic" }]}
-                    >
+                    <Text key={note.entryId || note.statusNote} style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }, { marginBottom: 8, fontStyle: "italic" }]}>
                       {note.statusNote}
                       {note.availability ? ` · ${note.availability}` : ""}
                     </Text>
@@ -5256,8 +5220,7 @@ function ReturnDetailsModal({
     saleBountyPool,
     refundTotalFallback,
   });
-  const statusSource =
-    (scoped.hasScope && scoped.scopedPending) || sourceReturnRow || (scoped.hasScope && scoped.matchedReturns[0]) || sale || orderDetail || {};
+  const statusSource = (scoped.hasScope && scoped.scopedPending) || sourceReturnRow || (scoped.hasScope && scoped.matchedReturns[0]) || sale || orderDetail || {};
   const logistics = resolveReturnLogisticsLabels(statusSource, {
     returnRequested: true,
     ...(statusOverride || {}),
@@ -5350,8 +5313,7 @@ function ReturnDetailsModal({
   const itemsSectionTitle = resolveRowSectionTitle(statusSource) || resolveRowSectionTitle(orderDetail) || resolveRowSectionTitle(scoped.scopedPending);
   const sellerPendingNote = resolveRowSellerActionNote(statusSource) || resolveRowSellerActionNote(orderDetail) || resolveRowSellerActionNote(scoped.scopedPending);
   const cancelConfirmNote = resolveRowCancelConfirmNote(statusSource) || resolveRowCancelConfirmNote(orderDetail) || resolveRowCancelConfirmNote(scoped.scopedPending);
-  const statusBanner =
-    resolveRowStatusBanner(statusSource) || resolveRowStatusBanner(orderDetail) || resolveRowStatusBanner(scoped.scopedPending) || logistics?.status_banner || "";
+  const statusBanner = resolveRowStatusBanner(statusSource) || resolveRowStatusBanner(orderDetail) || resolveRowStatusBanner(scoped.scopedPending) || logistics?.status_banner || "";
 
   return (
     <Modal animationType='slide' transparent visible={visible} onRequestClose={onClose}>
@@ -5374,17 +5336,9 @@ function ReturnDetailsModal({
             <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No return data available.</Text>
           ) : (
             <ScrollView style={styles.businessOrderDetailScroll} nestedScrollEnabled keyboardShouldPersistTaps='handled'>
-              {itemsSectionTitle ? (
-                <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>
-                  {itemsSectionTitle}
-                </Text>
-              ) : null}
+              {itemsSectionTitle ? <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>{itemsSectionTitle}</Text> : null}
 
-              {awaitingSellerAction && sellerPendingNote ? (
-                <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }, { marginBottom: 8 }]}>
-                  {sellerPendingNote}
-                </Text>
-              ) : null}
+              {awaitingSellerAction && sellerPendingNote ? <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }, { marginBottom: 8 }]}>{sellerPendingNote}</Text> : null}
 
               {returnLines.length > 0 ? (
                 <OrderDetailLinesTable
@@ -5471,9 +5425,7 @@ function ReturnDetailsModal({
 
               {awaitingCancelConfirm ? (
                 <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
-                  {cancelConfirmNote ? (
-                    <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>{cancelConfirmNote}</Text>
-                  ) : null}
+                  {cancelConfirmNote ? <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>{cancelConfirmNote}</Text> : null}
                   {renderRestockSection()}
                   <View style={[styles.orderDetailShipActions, { marginTop: 14 }]}>
                     <TouchableOpacity
@@ -6098,10 +6050,7 @@ function assertReceiptLinesHaveFulfillmentFields(receiptLines, orderUid) {
     const hasCancelledField = line.cancelled_qty != null || line.canceled_qty != null;
 
     if (shipped > 0 && shipped < purchased && !hasRemainingField && !hasCancelledField) {
-      console.error(
-        "[AccountScreen] Receipt line missing fulfillment fields for delivery verification (previously required order-detail enrich)",
-        { orderUid, ti_uid: tiUid, purchased, shipped },
-      );
+      console.error("[AccountScreen] Receipt line missing fulfillment fields for delivery verification (previously required order-detail enrich)", { orderUid, ti_uid: tiUid, purchased, shipped });
     }
   }
 }
@@ -6827,11 +6776,8 @@ function getProductSaleStatusBadgeStyle(kind, label) {
     if (normalized === "returning") {
       return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
     }
-    if (normalized === "cancelled" || normalized === "canceled") {
+    if (normalized === "cancelled" || normalized === "canceled" || normalized === "returned") {
       return { badge: { backgroundColor: "#ECEFF1" }, text: { color: "#546E7A" } };
-    }
-    if (normalized === "returned") {
-      return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
     }
     if (normalized === "delivered" || normalized === "paid") {
       return { badge: { backgroundColor: "#E8F5E9" }, text: { color: "#2E7D32" } };
@@ -6871,8 +6817,8 @@ function getProductSaleStatusBadgeStyle(kind, label) {
   if (normalized === "stripe fail" || normalized === "stripe_fail" || normalized === "stripe_failed" || normalized === "cc issue" || normalized === "cc_issue") {
     return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
   }
-  if (normalized === "returned") {
-    return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
+  if (normalized === "cancelled" || normalized === "canceled" || normalized === "returned") {
+    return { badge: { backgroundColor: "#ECEFF1" }, text: { color: "#546E7A" } };
   }
   if (normalized === "rejected") {
     return { badge: { backgroundColor: "#FFEBEE" }, text: { color: "#B71C1C" } };
@@ -8752,7 +8698,6 @@ export default function AccountScreen({ navigation, route }) {
           returnTxnUid: prev.returnTxnUid || null,
           sourceReturnRow: prev.sourceReturnRow || null,
         }));
-
       } catch (err) {
         setReturnDetailModal((prev) => ({
           ...prev,
@@ -8821,10 +8766,7 @@ export default function AccountScreen({ navigation, route }) {
             orderDetail,
             sellerTransactionRows: sellerTxData,
           });
-        const resolvedLedgerEntries = patchWalletLedgerEntriesPendingShipment(
-          ledgerEntries.length ? ledgerEntries : filterWalletLedgerEntriesForOrder(walletLedgerRows, orderUid),
-          orderDetail?.sale,
-        );
+        const resolvedLedgerEntries = patchWalletLedgerEntriesPendingShipment(ledgerEntries.length ? ledgerEntries : filterWalletLedgerEntriesForOrder(walletLedgerRows, orderUid), orderDetail?.sale);
         setOrderDetailModal((prev) => ({
           ...prev,
           orderDetail,
@@ -9891,10 +9833,7 @@ export default function AccountScreen({ navigation, route }) {
     () => buildBusinessOrdersListFromSellerTransactions(businessSellerTransactionList, sellerOrderBountyRows),
     [businessSellerTransactionList, sellerOrderBountyRows],
   );
-  const personalPurchasesDisplayList = useMemo(
-    () => buildPersonalPurchasesListWithReturns(transactionData, bountyData?.data || []),
-    [transactionData, bountyData],
-  );
+  const personalPurchasesDisplayList = useMemo(() => buildPersonalPurchasesListWithReturns(transactionData, bountyData?.data || []), [transactionData, bountyData]);
 
   /** Debug Mode Yes (Settings): show Transaction ID, Type, Purchased Item. Narrow web (<700px) uses the same compact layout as mobile without those debug columns. Purchased Item also shows on web when width > 600 regardless of Debug Mode (unless compact dev flag hides it). */
   const purchasesShowDebugColumns = SHOW_NETWORK_DEBUG_UI !== 0 && settingsDebugModeEnabled;
@@ -10523,7 +10462,13 @@ export default function AccountScreen({ navigation, route }) {
                   ) : businessBountyData?.error ? (
                     <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
                   ) : businessOrdersSummary.length > 0 ? (
-                    <BusinessOrdersTable rows={businessOrdersSummary} darkMode={darkMode} maxBodyHeight={360} onOrderPress={(row) => openOrderDetail(row, { isSellerView: true })} onReturnPress={openReturnDetails} />
+                    <BusinessOrdersTable
+                      rows={businessOrdersSummary}
+                      darkMode={darkMode}
+                      maxBodyHeight={360}
+                      onOrderPress={(row) => openOrderDetail(row, { isSellerView: true })}
+                      onReturnPress={openReturnDetails}
+                    />
                   ) : (
                     <Text style={styles.noDataText}>No orders available.</Text>
                   )}
@@ -10593,9 +10538,7 @@ export default function AccountScreen({ navigation, route }) {
                         const apiReturnRequested = Number(transaction.transaction_return_requested) === 1;
                         const rowReturnLogistics = resolveReturnLogisticsLabels(transaction);
                         const returnLogistics =
-                          apiReturnRequested || rowReturnLogistics
-                            ? rowReturnLogistics || (apiReturnRequested ? resolveReturnLogisticsLabels(transaction, { returnRequested: 1 }) : null)
-                            : null;
+                          apiReturnRequested || rowReturnLogistics ? rowReturnLogistics || (apiReturnRequested ? resolveReturnLogisticsLabels(transaction, { returnRequested: 1 }) : null) : null;
                         const hasCustomerReturnRequest = apiReturnRequested || !!returnLogistics;
                         const awaitingReturnAction = returnLogistics?.return_status === "returning" && returnLogistics?.refund_status === "pending";
                         const returnRefunded = returnLogistics?.refund_status === "refunded";
@@ -11411,197 +11354,195 @@ export default function AccountScreen({ navigation, route }) {
                   const verifyOrderUid = resolveListRowOrderUid(pendingTransactionForConfirm);
                   const returnRowsForVerify = getExistingReturnRowsForOrder(transactionData, verifyOrderUid);
                   return deliveryVerificationReceiptData.map((item, index) => {
-                  const itemId = String(index);
-                  const isSelected = selectedReceivedItems.includes(itemId);
-                  const lineUnits = resolveEffectiveUnits({
-                    line: item,
-                    orderUnits: deliveryVerificationOrderUnits,
-                    listSaleRow: pendingTransactionForConfirm,
-                    sale: pendingTransactionForConfirm,
-                  });
-                  const purchasedQty = parseNonNegativeInt(lineUnits?.purchased_qty) ?? getReceiptLineQty(item);
-                  const alreadyReceivedQty = lineUnits ? (parseNonNegativeInt(lineUnits.verified_qty) ?? 0) : getPreviouslyReceivedQty(item);
-                  const cancelledQty = lineUnits
-                    ? (parseNonNegativeInt(lineUnits.cancelled_pre_ship_qty) ?? 0) + (parseNonNegativeInt(lineUnits.returned_unshipped_completed_qty) ?? 0)
-                    : getLineCancelledFromShipQty(item);
-                  const remainingQty = lineUnits
-                    ? Math.max(0, (parseNonNegativeInt(lineUnits.purchased_qty) ?? purchasedQty) - alreadyReceivedQty - cancelledQty)
-                    : getRemainingQtyToReceive(item);
-                  const verifiableQty = getVerifiableReceiveRemaining(item, pendingTransactionForConfirm, returnRowsForVerify, deliveryVerificationOrderUnits);
-                  const fullyReceived = remainingQty <= 0;
-                  const awaitingShipment = !fullyReceived && verifiableQty <= 0;
-                  const canSelect = canSelectReceiptLineForVerification(item, pendingTransactionForConfirm, returnRowsForVerify, deliveryVerificationOrderUnits);
-                  const receivedQty = receivedItemQuantities[itemId] ?? verifiableQty;
-                  const needsQtyPicker = isSelected && verifiableQty > 1;
-                  const unitsContext = {
-                    orderUnits: deliveryVerificationOrderUnits,
-                    listSaleRow: pendingTransactionForConfirm,
-                    sale: pendingTransactionForConfirm,
-                  };
-                  const shipDisplay = formatLineFulfillmentDisplay(item, unitsContext);
-                  const shippedQty = lineUnits ? (parseNonNegativeInt(lineUnits.shipped_qty) ?? 0) : getLineShippedQty(item);
-                  const cancelNote = shipDisplay.cancelNote || (cancelledQty > 0 ? `${cancelledQty}/${purchasedQty} cancelled` : "");
-                  const showShipMeta =
-                    orderNeedsShipping(item) ||
-                    orderNeedsShipping(pendingTransactionForConfirm) ||
-                    lineUnits != null ||
-                    listRowHasExplicitShippingProgress(item) ||
-                    shippedQty > 0 ||
-                    cancelledQty > 0 ||
-                    awaitingShipment ||
-                    (shipDisplay.statusLabel && shipDisplay.statusLabel !== "—");
+                    const itemId = String(index);
+                    const isSelected = selectedReceivedItems.includes(itemId);
+                    const lineUnits = resolveEffectiveUnits({
+                      line: item,
+                      orderUnits: deliveryVerificationOrderUnits,
+                      listSaleRow: pendingTransactionForConfirm,
+                      sale: pendingTransactionForConfirm,
+                    });
+                    const purchasedQty = parseNonNegativeInt(lineUnits?.purchased_qty) ?? getReceiptLineQty(item);
+                    const alreadyReceivedQty = lineUnits ? (parseNonNegativeInt(lineUnits.verified_qty) ?? 0) : getPreviouslyReceivedQty(item);
+                    const cancelledQty = lineUnits
+                      ? (parseNonNegativeInt(lineUnits.cancelled_pre_ship_qty) ?? 0) + (parseNonNegativeInt(lineUnits.returned_unshipped_completed_qty) ?? 0)
+                      : getLineCancelledFromShipQty(item);
+                    const remainingQty = lineUnits ? Math.max(0, (parseNonNegativeInt(lineUnits.purchased_qty) ?? purchasedQty) - alreadyReceivedQty - cancelledQty) : getRemainingQtyToReceive(item);
+                    const verifiableQty = getVerifiableReceiveRemaining(item, pendingTransactionForConfirm, returnRowsForVerify, deliveryVerificationOrderUnits);
+                    const fullyReceived = remainingQty <= 0;
+                    const awaitingShipment = !fullyReceived && verifiableQty <= 0;
+                    const canSelect = canSelectReceiptLineForVerification(item, pendingTransactionForConfirm, returnRowsForVerify, deliveryVerificationOrderUnits);
+                    const receivedQty = receivedItemQuantities[itemId] ?? verifiableQty;
+                    const needsQtyPicker = isSelected && verifiableQty > 1;
+                    const unitsContext = {
+                      orderUnits: deliveryVerificationOrderUnits,
+                      listSaleRow: pendingTransactionForConfirm,
+                      sale: pendingTransactionForConfirm,
+                    };
+                    const shipDisplay = formatLineFulfillmentDisplay(item, unitsContext);
+                    const shippedQty = lineUnits ? (parseNonNegativeInt(lineUnits.shipped_qty) ?? 0) : getLineShippedQty(item);
+                    const cancelNote = shipDisplay.cancelNote || (cancelledQty > 0 ? `${cancelledQty}/${purchasedQty} cancelled` : "");
+                    const showShipMeta =
+                      orderNeedsShipping(item) ||
+                      orderNeedsShipping(pendingTransactionForConfirm) ||
+                      lineUnits != null ||
+                      listRowHasExplicitShippingProgress(item) ||
+                      shippedQty > 0 ||
+                      cancelledQty > 0 ||
+                      awaitingShipment ||
+                      (shipDisplay.statusLabel && shipDisplay.statusLabel !== "—");
 
-                  const shipStatusText = formatDeliveryVerificationLineStatus(item, pendingTransactionForConfirm, verifiableQty, deliveryVerificationOrderUnits);
-                  const trackingLines =
-                    !awaitingShipment && shipDisplay.trackingPairs?.length
-                      ? shipDisplay.trackingPairs
-                      : !awaitingShipment && shipDisplay.trackingLabel && shipDisplay.trackingLabel !== "—"
-                        ? shipDisplay.trackingLabel
-                            .split(",")
-                            .map((s) => s.trim())
-                            .filter(Boolean)
-                        : [];
-                  const shipMetaSubtextStyle = { fontSize: 11, color: darkMode ? "#aaa" : "#666", marginTop: 2 };
+                    const shipStatusText = formatDeliveryVerificationLineStatus(item, pendingTransactionForConfirm, verifiableQty, deliveryVerificationOrderUnits);
+                    const trackingLines =
+                      !awaitingShipment && shipDisplay.trackingPairs?.length
+                        ? shipDisplay.trackingPairs
+                        : !awaitingShipment && shipDisplay.trackingLabel && shipDisplay.trackingLabel !== "—"
+                          ? shipDisplay.trackingLabel
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean)
+                          : [];
+                    const shipMetaSubtextStyle = { fontSize: 11, color: darkMode ? "#aaa" : "#666", marginTop: 2 };
 
-                  return (
-                    <View
-                      key={itemId}
-                      style={{
-                        paddingVertical: 8,
-                        paddingHorizontal: 4,
-                        borderBottomWidth: 1,
-                        borderBottomColor: darkMode ? "#444" : "#eee",
-                        opacity: fullyReceived || awaitingShipment ? 0.45 : 1,
-                      }}
-                    >
-                      <TouchableOpacity
-                        disabled={!canSelect}
-                        style={{ flexDirection: "row", alignItems: "center" }}
-                        onPress={() => {
-                          if (!canSelect) return;
-                          if (isSelected) {
-                            setSelectedReceivedItems((prev) => prev.filter((id) => id !== itemId));
-                            setReceivedItemQuantities((prev) => {
-                              const next = { ...prev };
-                              delete next[itemId];
-                              return next;
-                            });
-                          } else {
-                            setSelectedReceivedItems((prev) => [...prev, itemId]);
-                            setReceivedItemQuantities((prev) => ({ ...prev, [itemId]: verifiableQty }));
-                          }
+                    return (
+                      <View
+                        key={itemId}
+                        style={{
+                          paddingVertical: 8,
+                          paddingHorizontal: 4,
+                          borderBottomWidth: 1,
+                          borderBottomColor: darkMode ? "#444" : "#eee",
+                          opacity: fullyReceived || awaitingShipment ? 0.45 : 1,
                         }}
-                        activeOpacity={0.7}
                       >
-                        <Ionicons
-                          name={fullyReceived ? "checkbox" : isSelected ? "checkbox" : "square-outline"}
-                          size={18}
-                          color={fullyReceived || isSelected ? "#9C45F7" : awaitingShipment ? "#aaa" : "#555"}
-                          style={{ marginRight: 8 }}
-                        />
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333" }}>
-                            {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
-                          </Text>
-                          {showShipMeta ? (
-                            <View style={{ marginTop: 2 }}>
-                              <Text style={shipMetaSubtextStyle}>
-                                {shipStatusText}
-                                {cancelNote ? ` · ${cancelNote}` : ""}
-                              </Text>
-                              {trackingLines.map((line, trackingIdx) => (
-                                <Text key={`${itemId}-tracking-${trackingIdx}`} style={shipMetaSubtextStyle}>
-                                  {line}
+                        <TouchableOpacity
+                          disabled={!canSelect}
+                          style={{ flexDirection: "row", alignItems: "center" }}
+                          onPress={() => {
+                            if (!canSelect) return;
+                            if (isSelected) {
+                              setSelectedReceivedItems((prev) => prev.filter((id) => id !== itemId));
+                              setReceivedItemQuantities((prev) => {
+                                const next = { ...prev };
+                                delete next[itemId];
+                                return next;
+                              });
+                            } else {
+                              setSelectedReceivedItems((prev) => [...prev, itemId]);
+                              setReceivedItemQuantities((prev) => ({ ...prev, [itemId]: verifiableQty }));
+                            }
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name={fullyReceived ? "checkbox" : isSelected ? "checkbox" : "square-outline"}
+                            size={18}
+                            color={fullyReceived || isSelected ? "#9C45F7" : awaitingShipment ? "#aaa" : "#555"}
+                            style={{ marginRight: 8 }}
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333" }}>
+                              {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
+                            </Text>
+                            {showShipMeta ? (
+                              <View style={{ marginTop: 2 }}>
+                                <Text style={shipMetaSubtextStyle}>
+                                  {shipStatusText}
+                                  {cancelNote ? ` · ${cancelNote}` : ""}
                                 </Text>
-                              ))}
-                            </View>
-                          ) : null}
-                        </View>
-                        {fullyReceived ? (
-                          <Text style={{ fontSize: 11, color: "#9C45F7", marginLeft: 4 }}>{alreadyReceivedQty > 0 ? "Received" : cancelledQty >= purchasedQty ? "Cancelled" : "Shipped"}</Text>
-                        ) : awaitingShipment ? (
-                          <Text style={{ fontSize: 11, color: "#E65100", marginLeft: 4 }}>Awaiting ship</Text>
-                        ) : alreadyReceivedQty > 0 || (shippedQty > 0 && shippedQty < purchasedQty) ? (
-                          <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{verifiableQty} to verify</Text>
-                        ) : null}
-                      </TouchableOpacity>
-
-                      {needsQtyPicker && (
-                        <View style={{ marginTop: 8, marginLeft: 26 }}>
-                          <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>How many did you receive?</Text>
-                          <View style={{ flexDirection: "row", alignItems: "center" }}>
-                            <TouchableOpacity
-                              style={{
-                                width: 36,
-                                height: 36,
-                                borderRadius: 8,
-                                borderWidth: 1,
-                                borderColor: darkMode ? "#555" : "#ccc",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
-                              }}
-                              onPress={() =>
-                                setReceivedItemQuantities((prev) => ({
-                                  ...prev,
-                                  [itemId]: Math.max(1, (prev[itemId] ?? verifiableQty) - 1),
-                                }))
-                              }
-                            >
-                              <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>−</Text>
-                            </TouchableOpacity>
-                            <TextInput
-                              style={{
-                                width: 48,
-                                marginHorizontal: 10,
-                                borderWidth: 1,
-                                borderColor: darkMode ? "#555" : "#ccc",
-                                borderRadius: 8,
-                                paddingVertical: 6,
-                                textAlign: "center",
-                                fontSize: 14,
-                                color: darkMode ? "#fff" : "#333",
-                                backgroundColor: darkMode ? "#3a3a3a" : "#fff",
-                              }}
-                              value={String(receivedQty)}
-                              onChangeText={(t) => {
-                                const digits = t.replace(/[^0-9]/g, "");
-                                const n = digits === "" ? "" : parseInt(digits, 10);
-                                setReceivedItemQuantities((prev) => ({
-                                  ...prev,
-                                  [itemId]: n === "" ? "" : Math.min(verifiableQty, Math.max(1, n)),
-                                }));
-                              }}
-                              keyboardType='number-pad'
-                              maxLength={4}
-                            />
-                            <TouchableOpacity
-                              style={{
-                                width: 36,
-                                height: 36,
-                                borderRadius: 8,
-                                borderWidth: 1,
-                                borderColor: darkMode ? "#555" : "#ccc",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
-                              }}
-                              onPress={() =>
-                                setReceivedItemQuantities((prev) => ({
-                                  ...prev,
-                                  [itemId]: Math.min(verifiableQty, (prev[itemId] ?? verifiableQty) + 1),
-                                }))
-                              }
-                            >
-                              <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>+</Text>
-                            </TouchableOpacity>
-                            <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginLeft: 8 }}>of {verifiableQty} shipped</Text>
+                                {trackingLines.map((line, trackingIdx) => (
+                                  <Text key={`${itemId}-tracking-${trackingIdx}`} style={shipMetaSubtextStyle}>
+                                    {line}
+                                  </Text>
+                                ))}
+                              </View>
+                            ) : null}
                           </View>
-                        </View>
-                      )}
-                    </View>
-                  );
-                });
+                          {fullyReceived ? (
+                            <Text style={{ fontSize: 11, color: "#9C45F7", marginLeft: 4 }}>{alreadyReceivedQty > 0 ? "Received" : cancelledQty >= purchasedQty ? "Cancelled" : "Shipped"}</Text>
+                          ) : awaitingShipment ? (
+                            <Text style={{ fontSize: 11, color: "#E65100", marginLeft: 4 }}>Awaiting ship</Text>
+                          ) : alreadyReceivedQty > 0 || (shippedQty > 0 && shippedQty < purchasedQty) ? (
+                            <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{verifiableQty} to verify</Text>
+                          ) : null}
+                        </TouchableOpacity>
+
+                        {needsQtyPicker && (
+                          <View style={{ marginTop: 8, marginLeft: 26 }}>
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>How many did you receive?</Text>
+                            <View style={{ flexDirection: "row", alignItems: "center" }}>
+                              <TouchableOpacity
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 8,
+                                  borderWidth: 1,
+                                  borderColor: darkMode ? "#555" : "#ccc",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+                                }}
+                                onPress={() =>
+                                  setReceivedItemQuantities((prev) => ({
+                                    ...prev,
+                                    [itemId]: Math.max(1, (prev[itemId] ?? verifiableQty) - 1),
+                                  }))
+                                }
+                              >
+                                <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>−</Text>
+                              </TouchableOpacity>
+                              <TextInput
+                                style={{
+                                  width: 48,
+                                  marginHorizontal: 10,
+                                  borderWidth: 1,
+                                  borderColor: darkMode ? "#555" : "#ccc",
+                                  borderRadius: 8,
+                                  paddingVertical: 6,
+                                  textAlign: "center",
+                                  fontSize: 14,
+                                  color: darkMode ? "#fff" : "#333",
+                                  backgroundColor: darkMode ? "#3a3a3a" : "#fff",
+                                }}
+                                value={String(receivedQty)}
+                                onChangeText={(t) => {
+                                  const digits = t.replace(/[^0-9]/g, "");
+                                  const n = digits === "" ? "" : parseInt(digits, 10);
+                                  setReceivedItemQuantities((prev) => ({
+                                    ...prev,
+                                    [itemId]: n === "" ? "" : Math.min(verifiableQty, Math.max(1, n)),
+                                  }));
+                                }}
+                                keyboardType='number-pad'
+                                maxLength={4}
+                              />
+                              <TouchableOpacity
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 8,
+                                  borderWidth: 1,
+                                  borderColor: darkMode ? "#555" : "#ccc",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+                                }}
+                                onPress={() =>
+                                  setReceivedItemQuantities((prev) => ({
+                                    ...prev,
+                                    [itemId]: Math.min(verifiableQty, (prev[itemId] ?? verifiableQty) + 1),
+                                  }))
+                                }
+                              >
+                                <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>+</Text>
+                              </TouchableOpacity>
+                              <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginLeft: 8 }}>of {verifiableQty} shipped</Text>
+                            </View>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  });
                 })()}
               </ScrollView>
             )}
@@ -11832,7 +11773,12 @@ export default function AccountScreen({ navigation, route }) {
       />
 
       {/* Sales Detail Modal */}
-      <Modal animationType='slide' transparent={true} visible={salesModal.visible} onRequestClose={() => setSalesModal({ visible: false, item: null, transactions: [], sellerLines: null, loading: false })}>
+      <Modal
+        animationType='slide'
+        transparent={true}
+        visible={salesModal.visible}
+        onRequestClose={() => setSalesModal({ visible: false, item: null, transactions: [], sellerLines: null, loading: false })}
+      >
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }}>
           <View style={{ backgroundColor: "#fff", borderRadius: 12, padding: 20, width: "90%", maxHeight: "80%" }}>
             <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 4, color: "#222" }}>{salesModal.item?.name}</Text>
