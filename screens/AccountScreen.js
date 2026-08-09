@@ -46,7 +46,7 @@ import {
   withTimeZoneQuery,
 } from "../utils/transactionDateTime";
 import { businessCcFeePayerFromSource } from "../utils/businessCcFeePayer";
-import { computeCreditCardProcessingFee, roundCreditCardMoney } from "../utils/cartCreditCardFee";
+import { roundCreditCardMoney } from "../utils/cartCreditCardFee";
 
 /** 1 = compact: Purchases (Date, Type, Seller, Delivered, Received, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
@@ -583,10 +583,6 @@ function resolveReceiptLineBountyDisplay(receiptLine, bountyRow) {
   const pctRaw = parseFloat(bountyRow?.tb_percentage ?? receiptLine?.tb_percentage ?? receiptLine?.bounty_percentage ?? NaN);
   const percentage = Number.isFinite(pctRaw) ? pctRaw : null;
 
-  if (lineBounty == null && earned != null && percentage != null && percentage > 0) {
-    lineBounty = earned / percentage;
-  }
-
   if (lineBounty == null && earned == null) return null;
 
   const pctLabel = percentage != null ? (percentage > 0 && percentage <= 1 ? `${Math.round(percentage * 1000) / 10}%` : `${Math.round(percentage * 10) / 10}%`) : null;
@@ -631,15 +627,7 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
   const txnBounty = receiptMoneyFromSources(first, fallback, ["bounty_paid", "transaction_bounty", "total_bounty_paid"]);
   const txnTotal = receiptMoneyFromSources(first, fallback, ["transaction_total", "total_amount_paid", "seller_total"]);
 
-  const purchaseType = String(fallback.purchase_type || first.purchase_type || "").toLowerCase();
-  const ccPayer = businessCcFeePayerFromSource(fallback) || businessCcFeePayerFromSource(first);
-  const buyerPaysCardFee = purchaseType === "expertise" || purchaseType === "offering" || ccPayer === "buyer" || (ccPayer !== "seller" && txnFeesReported != null && txnFeesReported > 0);
-
-  const merchForFee = txnMerch != null ? txnMerch : fromLines;
-  const creditCardFeeBase = roundCreditCardMoney((merchForFee || 0) + (txnTaxes || 0) + (txnShipping || 0) + (txnOtherFees || 0));
-  const txnFees = buyerPaysCardFee ? computeCreditCardProcessingFee(creditCardFeeBase, true) : 0;
-
-  const hasAnyBreakdown = txnMerch != null || txnTaxes != null || txnFeesReported != null || txnShipping != null || txnBounty != null || txnTotal != null || creditCardFeeBase > 0;
+  const hasAnyBreakdown = txnMerch != null || txnTaxes != null || txnFeesReported != null || txnShipping != null || txnBounty != null || txnTotal != null;
   if (!hasAnyBreakdown) return null;
 
   const merchDisplay = txnMerch != null ? txnMerch : fromLines;
@@ -659,10 +647,10 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
     </View>
   );
 
-  const taxesStr = txnTaxes != null ? formatReceiptUsd(txnTaxes) : "—";
-  const shippingStr = txnShipping != null ? formatReceiptUsd(txnShipping) : "—";
-  const feesStr = buyerPaysCardFee ? formatReceiptUsd(txnFees) : "—";
-  const totalStr = txnTotal != null ? formatReceiptUsd(txnTotal) : "—";
+  const taxesStr = txnTaxes != null ? formatReceiptUsd(txnTaxes) : ACCOUNT_SCREEN_DISPLAY_NA;
+  const shippingStr = txnShipping != null ? formatReceiptUsd(txnShipping) : ACCOUNT_SCREEN_DISPLAY_NA;
+  const feesStr = txnFeesReported != null ? formatReceiptUsd(txnFeesReported) : ACCOUNT_SCREEN_DISPLAY_NA;
+  const totalStr = txnTotal != null ? formatReceiptUsd(txnTotal) : ACCOUNT_SCREEN_DISPLAY_NA;
   const showBounty = txnBounty != null && txnBounty > 0;
 
   const linesVsMerch = txnMerch != null && fromLines > 0 && Math.abs(fromLines - txnMerch) > RECEIPT_TOTAL_EPS;
@@ -671,31 +659,27 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
   let verifyColor = secondaryColor;
 
   if (txnTotal != null) {
-    const sumParts = [merchForFee || 0];
+    const sumParts = [merchDisplay || 0];
     if (txnTaxes != null) sumParts.push(txnTaxes);
     if (txnShipping != null) sumParts.push(txnShipping);
     if (txnOtherFees != null && txnOtherFees > 0) sumParts.push(txnOtherFees);
-    if (buyerPaysCardFee && txnFees > 0) sumParts.push(txnFees);
+    if (txnFeesReported != null && txnFeesReported > 0) sumParts.push(txnFeesReported);
     const sum = roundCreditCardMoney(sumParts.reduce((a, b) => a + b, 0));
-    if (txnTaxes != null || txnShipping != null || buyerPaysCardFee || txnOtherFees != null) {
+    if (txnTaxes != null || txnShipping != null || txnFeesReported != null || txnOtherFees != null) {
       if (Math.abs(sum - txnTotal) <= RECEIPT_TOTAL_EPS) {
-        verifyText = `Subtotal + tax + shipping${txnOtherFees != null && txnOtherFees > 0 ? " + other fees" : ""}${buyerPaysCardFee ? " + card fees" : ""} matches amount paid (${formatReceiptUsd(txnTotal)}).`;
+        verifyText = `Subtotal + tax + shipping${txnOtherFees != null && txnOtherFees > 0 ? " + other fees" : ""}${txnFeesReported != null && txnFeesReported > 0 ? " + card fees" : ""} matches amount paid (${formatReceiptUsd(txnTotal)}).`;
         verifyColor = "#18884A";
       } else {
         const partsLabel = [
-          formatReceiptUsd(merchForFee || 0),
+          formatReceiptUsd(merchDisplay || 0),
           txnTaxes != null ? formatReceiptUsd(txnTaxes) : null,
           txnShipping != null ? formatReceiptUsd(txnShipping) : null,
           txnOtherFees != null && txnOtherFees > 0 ? formatReceiptUsd(txnOtherFees) : null,
-          buyerPaysCardFee && txnFees > 0 ? formatReceiptUsd(txnFees) : null,
+          txnFeesReported != null && txnFeesReported > 0 ? formatReceiptUsd(txnFeesReported) : null,
         ]
           .filter(Boolean)
           .join(" + ");
         verifyText = `Totals do not match: ${partsLabel} = ${formatReceiptUsd(sum)}, but amount paid is ${formatReceiptUsd(txnTotal)}.`;
-        verifyColor = "#B71C1C";
-      }
-      if (buyerPaysCardFee && txnFeesReported != null && Math.abs(txnFeesReported - txnFees) > RECEIPT_TOTAL_EPS) {
-        verifyText = `${verifyText ? `${verifyText} ` : ""}Reported card fees (${formatReceiptUsd(txnFeesReported)}) differ from computed (${formatReceiptUsd(txnFees)}) on base ${formatReceiptUsd(creditCardFeeBase)}.`;
         verifyColor = "#B71C1C";
       }
     } else {
@@ -1167,6 +1151,74 @@ function isPendingReturnListRow(row) {
 function findSaleRowInPurchaseList(rows, orderUid) {
   if (!orderUid || orderUid === "—" || !Array.isArray(rows)) return null;
   return rows.find((row) => !isReturnListRow(row) && resolveListRowOrderUid(row) === orderUid) || null;
+}
+
+/** True for seller sale / sale_line rows (not returns or pending-return stubs). */
+function isSellerSaleListRow(row) {
+  if (!row || typeof row !== "object") return false;
+  if (isReturnListRow(row) || isPendingReturnListRow(row)) return false;
+  const kind = String(row.row_kind || "").toLowerCase();
+  if (kind === "sale" || kind === "sale_line") return true;
+  return String(row.transaction_type || "").toLowerCase() !== "return";
+}
+
+/** Stable list-row id — prefer row_uid for sale_line rows. */
+function resolveSellerListRowKey(row) {
+  if (!row || typeof row !== "object") return "";
+  const kind = String(row.row_kind || "").toLowerCase();
+  const rowUid = String(row.row_uid || "").trim();
+  if (kind === "sale_line" && rowUid) return rowUid;
+  if (isReturnListRow(row)) {
+    const trrUid = resolveTrrUid(row);
+    if (trrUid) return trrUid;
+  }
+  const tiUid = String(row.ti_uid || row.transaction_item_uid || "").trim();
+  if (tiUid) return tiUid;
+  const txnUid = String(row.transaction_uid || "").trim();
+  if (txnUid) return txnUid;
+  return resolveListRowOrderUid(row);
+}
+
+/** Product Summary money — line fields when present, else unit cost × qty. */
+function resolveProductSummaryLineTotal(row) {
+  const lineTotal = parseFloat(row?.line_total ?? row?.line_merchandise_total ?? NaN);
+  if (Number.isFinite(lineTotal)) return lineTotal;
+  const qty = Math.abs(getSignedProductSalesLineQty(row));
+  return getSaleLineUnitCost(row) * qty;
+}
+
+function resolveProductSummaryLineBounty(row) {
+  const lineBounty = parseFloat(row?.line_bounty_paid ?? row?.line_bounty ?? NaN);
+  if (Number.isFinite(lineBounty)) return lineBounty;
+  const fromRow = parseFloat(row?.bounty_paid ?? row?.order_bounty_paid ?? NaN);
+  return Number.isFinite(fromRow) ? fromRow : 0;
+}
+
+/** Match return/cancel list rows to one offering/product via ti_uid and/or ti_bs_id. */
+function returnRowMatchesProductScope(row, productUid, saleTiUids = null) {
+  if (!row || !isReturnListRow(row)) return false;
+  const bsId = String(row.ti_bs_id || "").trim();
+  if (productUid && bsId && bsId === productUid) return true;
+  const tiUid = String(row.ti_uid || row.transaction_item_uid || "").trim();
+  if (tiUid && saleTiUids instanceof Set && saleTiUids.size && saleTiUids.has(tiUid)) return true;
+  return false;
+}
+
+/** Sale sibling for a return row — match line first, then order fallback. */
+function findSaleSiblingForReturnRow(returnRow, sellerLines) {
+  if (!returnRow || !Array.isArray(sellerLines)) return null;
+  const orderUid = resolveListRowOrderUid(returnRow);
+  const returnTiUid = String(returnRow.ti_uid || returnRow.transaction_item_uid || "").trim();
+  const returnBsId = String(returnRow.ti_bs_id || "").trim();
+  let orderFallback = null;
+  for (const row of sellerLines) {
+    if (isReturnListRow(row)) continue;
+    if (resolveListRowOrderUid(row) !== orderUid) continue;
+    if (!orderFallback) orderFallback = row;
+    if (returnTiUid && String(row.ti_uid || row.transaction_item_uid || "").trim() === returnTiUid) return row;
+    if (returnBsId && String(row.ti_bs_id || "").trim() === returnBsId) return row;
+  }
+  return orderFallback;
 }
 
 /**
@@ -1743,14 +1795,36 @@ function resolveSellerOrderTableBounty(row) {
 /** Seller bounty pool paid on the original sale (order detail or seller_transactions row). */
 function resolveSaleOrderBountyPaid(sale) {
   if (!sale || typeof sale !== "object") return 0;
-  const n = parseFloat(sale.order_bounty_paid ?? sale.bounty_paid ?? sale.transaction_bounty ?? NaN);
+  const n = parseFloat(sale.order_bounty_paid ?? sale.bounty_paid ?? sale.bounty_amount ?? sale.transaction_bounty ?? NaN);
   return Number.isFinite(n) && n !== 0 ? Math.abs(n) : 0;
 }
 
-/** Sum per-line bounty pool from order/receipt lines (bs_bounty × qty, etc.). */
+/** Bounty pool on a wallet-ledger sale-proceeds row (authoritative when order API omits bounty). */
+function resolveWalletLedgerEntryBountyAbs(entry) {
+  if (!entry || typeof entry !== "object") return 0;
+  const n = parseFloat(entry.bounty_amount ?? entry.bounty_paid ?? NaN);
+  return Number.isFinite(n) && n !== 0 ? Math.abs(n) : 0;
+}
+
+/** Order-level bounty from wallet ledger sale_proceeds entries for one transaction. */
+function resolveBountyPaidFromWalletLedgerEntries(entries, transactionUid) {
+  const txnUid = String(transactionUid || "").trim();
+  if (!txnUid || !Array.isArray(entries)) return 0;
+  for (const entry of entries) {
+    if (!isWalletLedgerSaleProceedsEntry(entry)) continue;
+    if (String(entry.transaction_uid || "").trim() !== txnUid) continue;
+    const bounty = resolveWalletLedgerEntryBountyAbs(entry);
+    if (bounty > 0) return bounty;
+  }
+  return 0;
+}
+
+/** Sum per-line bounty pool from order/receipt lines (bs_bounty × qty, line_bounty_paid, etc.). */
 function sumBountyFromSaleLines(saleLines) {
   if (!Array.isArray(saleLines) || !saleLines.length) return 0;
   return saleLines.reduce((sum, line) => {
+    const lineBountyPaid = parseFloat(line?.line_bounty_paid ?? NaN);
+    if (Number.isFinite(lineBountyPaid) && lineBountyPaid !== 0) return sum + Math.abs(lineBountyPaid);
     const qty = Math.max(1, parseInt(line?.ti_bs_qty, 10) || 1);
     const display = resolveReceiptLineBountyDisplay(line, null);
     const pool = Number(display?.lineBounty);
@@ -1777,12 +1851,12 @@ function sumOrderBountyFromSellerTransactionRows(rows, transactionUid) {
 }
 
 /** Resolve seller order bounty for Order Details — sale, bounty rows, list fallbacks, line fields. */
-function resolveOrderDetailSaleBountyPaid(sale, bountyRows, transactionUid, { bountyPaidFallback = 0, orderDetail = null, sellerTransactionRows = [] } = {}) {
+function resolveOrderDetailSaleBountyPaid(sale, bountyRows, transactionUid, { bountyPaidFallback = 0, orderDetail = null, sellerTransactionRows = [], walletLedgerEntries = [] } = {}) {
   const fromSale = resolveSaleOrderBountyPaid(sale);
   if (fromSale > 0) return fromSale;
 
   const summary = orderDetail?.summary;
-  const fromSummary = parseFloat(summary?.order_bounty_paid ?? summary?.bounty_paid ?? summary?.transaction_bounty ?? NaN);
+  const fromSummary = parseFloat(summary?.order_bounty_paid ?? summary?.bounty_paid ?? summary?.bounty_amount ?? summary?.transaction_bounty ?? NaN);
   if (Number.isFinite(fromSummary) && fromSummary !== 0) return Math.abs(fromSummary);
 
   const fromRows = sumBountyPaidForTransaction(bountyRows, transactionUid);
@@ -1790,6 +1864,9 @@ function resolveOrderDetailSaleBountyPaid(sale, bountyRows, transactionUid, { bo
 
   const fromSellerRows = sumOrderBountyFromSellerTransactionRows(sellerTransactionRows, transactionUid);
   if (fromSellerRows > 0) return fromSellerRows;
+
+  const fromLedger = resolveBountyPaidFromWalletLedgerEntries(walletLedgerEntries, transactionUid);
+  if (fromLedger > 0) return fromLedger;
 
   const fallback = Math.abs(Number(bountyPaidFallback) || 0);
   if (fallback > 0) return fallback;
@@ -1989,6 +2066,8 @@ function resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines) {
   const listTxnUid = String(row?.transaction_uid ?? "").trim();
   const orderUid = resolveListRowOrderUid(row);
   const cached = row?._pending_return_money;
+  let totalKnown = !!(fromPending.total || fromPending.bountyPaid);
+  let bountyKnown = !!fromPending.bountyPaid;
 
   let total = fromPending.total;
   let bountyPaid = fromPending.bountyPaid;
@@ -1999,9 +2078,11 @@ function resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines) {
     const cachedBounty = Number(cached.bountyPaid);
     if (!total && Number.isFinite(cachedTotal) && cachedTotal !== 0) {
       total = cachedTotal > 0 ? -Math.abs(cachedTotal) : cachedTotal;
+      totalKnown = true;
     }
     if (!bountyPaid && Number.isFinite(cachedBounty) && cachedBounty !== 0) {
       bountyPaid = cachedBounty > 0 ? -Math.abs(cachedBounty) : cachedBounty;
+      bountyKnown = true;
     }
   }
 
@@ -2009,15 +2090,22 @@ function resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines) {
     const fromComponents = resolveReturnCustomerCreditTotal(row);
     if (fromComponents) {
       total = fromComponents;
+      totalKnown = true;
     } else {
       const totalRaw = parseFloat(
         row?.transaction_total ?? row?.returned_total ?? row?.return_total ?? row?.refund_total ?? row?.pending_return?.total ?? row?.pending_return?.transaction_total ?? NaN,
       );
-      total = Number.isFinite(totalRaw) ? totalRaw : 0;
+      if (Number.isFinite(totalRaw) && totalRaw !== 0) {
+        total = totalRaw;
+        totalKnown = true;
+      } else {
+        total = 0;
+      }
       // Display returns as credits (negative). Keep already-negative API values.
       if (total > 0) total = -Math.abs(total);
     }
   } else {
+    totalKnown = true;
     const fromComponents = resolveReturnCustomerCreditTotal(row);
     if (fromComponents && Math.abs(fromComponents) > Math.abs(total) + 0.01) {
       total = fromComponents;
@@ -2025,132 +2113,57 @@ function resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines) {
   }
 
   if (!bountyPaid) {
-    bountyPaid = resolveListRowBountyPaid(row, null, null, bountyByTransactionUid);
+    const fromList = resolveListRowBountyPaid(row, null, null, bountyByTransactionUid);
+    if (Number.isFinite(fromList) && fromList !== 0) {
+      bountyPaid = fromList;
+      bountyKnown = true;
+    }
+  } else {
+    bountyKnown = true;
   }
   const saleTxnUid = String(row?.original_transaction_uid || row?.order_uid || orderUid || "").trim();
-  // Real return txns may omit bounty_paid — derive from matching sale bounty lines / return lines.
+  // Real return txns may omit bounty_paid — use matching sale bounty lines / return lines when present.
   if ((!Number.isFinite(bountyPaid) || bountyPaid === 0) && Array.isArray(bountyLines) && bountyLines.length) {
     const returnLines = [...(Array.isArray(row?.return_lines) ? row.return_lines : []), ...(Array.isArray(row?.lines) ? row.lines : [])];
     const pendingItems = row?.pending_return?.items || row?.transaction_return_items || returnLines || [];
     if (Array.isArray(pendingItems) && pendingItems.length) {
-      bountyPaid = pendingItems.reduce((sum, item) => {
+      const fromLines = pendingItems.reduce((sum, item) => {
         const qty = Math.max(1, parseInt(item.return_quantity ?? item.ti_bs_qty ?? item.quantity, 10) || 1);
         const amounts = resolveReturnLineBountyAmounts(item, qty, bountyLines, saleTxnUid || listTxnUid || orderUid);
         return sum + amounts.bountyPaidReversed;
       }, 0);
+      if (fromLines > 0) {
+        bountyPaid = fromLines;
+        bountyKnown = true;
+      }
     }
   }
   if (!Number.isFinite(bountyPaid)) bountyPaid = 0;
   if (bountyPaid > 0) bountyPaid = -Math.abs(bountyPaid);
   else if (bountyPaid < 0) bountyPaid = -Math.abs(bountyPaid);
 
-  return { total, bountyPaid };
-}
-
-/**
- * Estimate return merchandise/bounty for a pending request before a reverse txn exists.
- * Uses seller_transactions.pending_return from account-screen.
- */
-function estimatePendingReturnMoney(saleRow, bountyLines = []) {
-  const fromApi = resolvePendingReturnTableMoney(saleRow);
-  let total = fromApi.total;
-  let bountyPaid = fromApi.bountyPaid;
-
-  const cached = saleRow?._pending_return_money;
-  if (cached && typeof cached === "object") {
-    const cachedTotal = Number(cached.total);
-    const cachedBounty = Number(cached.bountyPaid);
-    if (!total && Number.isFinite(cachedTotal) && cachedTotal !== 0) {
-      total = cachedTotal > 0 ? -Math.abs(cachedTotal) : cachedTotal;
-    }
-    if (!bountyPaid && Number.isFinite(cachedBounty) && cachedBounty !== 0) {
-      bountyPaid = cachedBounty > 0 ? -Math.abs(cachedBounty) : cachedBounty;
-    }
-  }
-
-  // Prefer API total+bounty when both present; otherwise keep deriving the missing side.
-  if (total && bountyPaid) {
-    return { total, bountyPaid };
-  }
-
-  const explicitTotal = parseFloat(
-    saleRow?.returned_total ?? saleRow?.return_total ?? saleRow?.refund_total ?? saleRow?.pending_return?.total ?? saleRow?.pending_return?.transaction_total ?? saleRow?.pending_return?.amount ?? NaN,
-  );
-  const explicitBounty = parseFloat(saleRow?.returned_bounty ?? saleRow?.return_bounty_paid ?? saleRow?.pending_return?.bounty_paid ?? saleRow?.pending_return?.bounty ?? NaN);
-
-  const saleLines = Array.isArray(saleRow?.lines) ? saleRow.lines : [];
-  const pendingItems = collectItemsFromPendingReturns(saleRow);
-
-  const enrichedPending = mapPendingReturnItemsToLines(pendingItems, saleLines);
-  const itemsForMoney = enrichedPending.length ? enrichedPending : pendingItems;
-  const txnUid = String(saleRow?.transaction_uid || saleRow?.order_uid || "").trim();
-
-  let merchandise = 0;
-  let bountyFromLines = 0;
-  for (const item of itemsForMoney) {
-    const qty = Math.max(0, parseInt(item.return_quantity ?? item.quantity ?? item.qty ?? item.ti_bs_qty, 10) || 0) || 1;
-    const unit = Math.abs(getReceiptLineUnitPrice(item) || parseFloat(item.ti_bs_cost ?? item.unit_cost ?? item.cost ?? item.bs_cost ?? 0) || 0);
-    merchandise += unit * qty;
-    const saleBountyPool = resolveSaleOrderBountyPaid(saleRow);
-    const amounts = resolveReturnLineBountyAmounts(item, qty, bountyLines, txnUid, saleBountyPool);
-    bountyFromLines += amounts.bountyPaidReversed;
-  }
-  let taxes = Math.abs(
-    parseFloat(
-      saleRow?.pending_return?.estimated_refund?.taxes ?? saleRow?.pending_return?.taxes ?? saleRow?.pending_return?.transaction_taxes ?? saleRow?.return_taxes ?? saleRow?.returned_taxes ?? NaN,
-    ) || 0,
-  );
-  if (!taxes && merchandise > 0) {
-    const saleAmount = Math.abs(parseOrderMoneyField(saleRow?.transaction_amount));
-    const saleTaxes = Math.abs(parseOrderMoneyField(saleRow?.transaction_taxes));
-    if (saleAmount > 0 && saleTaxes > 0) {
-      taxes = saleTaxes * (merchandise / saleAmount);
-    }
-  }
-
-  if (!total) {
-    if (Number.isFinite(explicitTotal) && explicitTotal !== 0) total = -Math.abs(explicitTotal);
-    else if (merchandise > 0) total = -(merchandise + taxes);
-  }
-
-  if (!bountyPaid) {
-    if (bountyFromLines > 0) bountyPaid = -Math.abs(bountyFromLines);
-    else if (Number.isFinite(explicitBounty) && explicitBounty !== 0) bountyPaid = -Math.abs(explicitBounty);
-    else {
-      const saleBounty = resolveSaleOrderBountyPaid(saleRow);
-      if (saleBounty > 0) {
-        const purchasedQty = Math.max(1, parseInt(saleRow?.ti_bs_qty ?? NaN, 10) || 1);
-        const returnQty = itemsForMoney.reduce((sum, item) => sum + Math.max(0, parseInt(item.return_quantity ?? item.quantity ?? item.qty ?? item.ti_bs_qty ?? 0, 10) || 0), 0);
-        const scaled = returnQty > 0 ? scaleAmountForReturnQty(saleBounty, purchasedQty, returnQty) : saleBounty;
-        if (scaled > 0) bountyPaid = -Math.abs(scaled);
-      }
-    }
-  }
-
-  return { total, bountyPaid };
+  return { total, bountyPaid, totalKnown, bountyKnown };
 }
 
 /** Snapshot pending-return fields from GET /orders/:uid onto a seller list row (legacy helper). */
-function pendingReturnFieldsFromOrderDetail(orderDetail, bountyLines = []) {
+function pendingReturnFieldsFromOrderDetail(orderDetail, _bountyLines = []) {
   if (!orderDetail || typeof orderDetail !== "object") return null;
   const sale = orderDetail.sale || null;
   const pending = orderDetail.pending_return || sale?.pending_return || (Array.isArray(orderDetail.pending_return_items) ? { items: orderDetail.pending_return_items } : null) || null;
   const returnItems = sale?.transaction_return_items || orderDetail.transaction_return_items || pending?.items || null;
   const lines = Array.isArray(sale?.lines) ? sale.lines : [];
-  const money = estimatePendingReturnMoney(
-    {
-      ...(sale || {}),
-      transaction_uid: sale?.transaction_uid || orderDetail.order_uid,
-      order_uid: orderDetail.order_uid || sale?.order_uid,
-      pending_return: pending,
-      transaction_return_items: returnItems,
-      lines,
-      returned_total: orderDetail.returned_total ?? sale?.returned_total ?? pending?.total,
-      return_taxes: pending?.taxes ?? pending?.transaction_taxes,
-      returned_bounty: pending?.bounty_paid ?? pending?.bounty,
-    },
-    bountyLines,
-  );
+  const money = resolvePendingReturnTableMoney({
+    ...(sale || {}),
+    transaction_uid: sale?.transaction_uid || orderDetail.order_uid,
+    order_uid: orderDetail.order_uid || sale?.order_uid,
+    pending_return: pending,
+    pending_returns: orderDetail.pending_returns || sale?.pending_returns,
+    transaction_return_items: returnItems,
+    lines,
+    returned_total: orderDetail.returned_total ?? sale?.returned_total ?? pending?.total,
+    return_taxes: pending?.taxes ?? pending?.transaction_taxes,
+    returned_bounty: pending?.bounty_paid ?? pending?.bounty,
+  });
   if (!money.total && !money.bountyPaid && !(pending?.items || []).length && !(returnItems || []).length && !lines.length) {
     if (!pending && !returnItems) return null;
   }
@@ -2165,7 +2178,8 @@ function pendingReturnFieldsFromOrderDetail(orderDetail, bountyLines = []) {
   };
 }
 
-function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLines = null) {
+function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLines = null, options = {}) {
+  const productSummary = options.productSummary === true;
   const orderUid = resolveListRowOrderUid(row);
   const isReturn = isReturnListRow(row);
   const dateMs = transactionDateMs(row);
@@ -2186,7 +2200,7 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
     const delivered = returnLogistics?.delivered || "";
     const received = returnLogistics?.received || "";
     return {
-      key: String(trrUid || row.transaction_uid || `return-${orderUid}-${dateMs}`),
+      key: resolveSellerListRowKey(row) || String(trrUid || row.transaction_uid || `return-${orderUid}-${dateMs}`),
       orderUid,
       rowLabel: "Return",
       listTransactionUid,
@@ -2199,6 +2213,8 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
       dateMs,
       total: money.total,
       bountyPaid: money.bountyPaid,
+      totalKnown: money.totalKnown,
+      bountyKnown: money.bountyKnown,
       delivered,
       received,
       attentionLevel: resolveSellerReturnRowAttentionLevel(row),
@@ -2208,13 +2224,13 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
     };
   }
 
-  const total = parseFloat(row.transaction_total);
-  const bountyPaid = resolveSellerOrderTableBounty(row);
+  const total = productSummary ? resolveProductSummaryLineTotal(row) : parseFloat(row.transaction_total);
+  const bountyPaid = productSummary ? resolveProductSummaryLineBounty(row) : resolveSellerOrderTableBounty(row);
   const delivered = formatOrderDeliveredStatusLabel([row], sellerLines);
   const received = formatOrderReceivedStatusLabel([row], sellerLines);
   const attentionLevel = resolveSellerOrderAttentionLevel(row, sellerLines);
   return {
-    key: String(row.transaction_uid || `${orderUid}-${dateMs}`),
+    key: resolveSellerListRowKey(row) || String(row.transaction_uid || `${orderUid}-${dateMs}`),
     orderUid,
     rowLabel: "Order",
     listTransactionUid,
@@ -2240,52 +2256,24 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
  * Renders API sale + return rows only (backend owns pending/completed return rows).
  * Order bounty: order_bounty_paid
  * Return money: pending_return.estimated_refund.total_customer_credit + bounty_to_reclaim
- *   (falls back to return txn / bounty lines when reclaim is missing)
+ *   (or return txn fields when present — no FE estimation)
  * Return chips: display_status / return_status + refund_status on the list row
  */
-function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines) {
+function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines, options = {}) {
   if (!Array.isArray(sellerLines)) return [];
   const bountyByTransactionUid = buildBountyPaidByTransactionUid(bountyLines);
-  const saleByOrderUid = {};
-  for (const row of sellerLines) {
-    if (isReturnListRow(row)) continue;
-    const orderUid = resolveListRowOrderUid(row);
-    if (orderUid && orderUid !== "—") saleByOrderUid[orderUid] = row;
-  }
   const mapped = sellerLines.map((row) => {
-    const orderUid = resolveListRowOrderUid(row);
-    const saleSibling = isReturnListRow(row) ? saleByOrderUid[orderUid] || null : null;
-    const mappedRow = mapTransactionListRowToOrderTableRow(row, saleSibling, sellerLines);
+    const saleSibling = isReturnListRow(row) ? findSaleSiblingForReturnRow(row, sellerLines) : null;
+    const mappedRow = mapTransactionListRowToOrderTableRow(row, saleSibling, sellerLines, options);
     if (mappedRow.isReturn) {
       let money = resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines);
-      if (saleSibling) {
-        if (!money.bountyPaid) {
-          money = { ...money, bountyPaid: resolveReturnBountyFromSaleRow(row, saleSibling) };
-        }
-        if (!money.total || !money.bountyPaid) {
-          const est = estimatePendingReturnMoney(
-            {
-              ...saleSibling,
-              pending_return: row.pending_return || saleSibling.pending_return,
-              pending_returns: row.pending_returns || saleSibling.pending_returns,
-              transaction_return_items: row.transaction_return_items || saleSibling.transaction_return_items,
-              return_lines: row.return_lines || saleSibling.return_lines,
-              lines: saleSibling.lines || row.return_lines,
-            },
-            bountyLines,
-          );
-          if (!money.total && est.total) {
-            money = { ...money, total: est.total };
-          } else if (!money.total && (isPreShipCancelReturn(row) || isPreShipCancelReturn(row.pending_return))) {
-            const saleTotal = parseFloat(saleSibling.transaction_total ?? saleSibling.transaction_amount);
-            if (Number.isFinite(saleTotal) && saleTotal > 0) {
-              money = { ...money, total: -Math.abs(saleTotal) };
-            }
-          }
-          if (!money.bountyPaid && est.bountyPaid) money = { ...money, bountyPaid: est.bountyPaid };
+      if (saleSibling && !money.bountyPaid) {
+        const fromSale = resolveReturnBountyFromSaleRow(row, saleSibling);
+        if (fromSale) {
+          money = { ...money, bountyPaid: fromSale, bountyKnown: true };
         }
       }
-      return { ...mappedRow, total: money.total, bountyPaid: money.bountyPaid };
+      return { ...mappedRow, total: money.total, bountyPaid: money.bountyPaid, totalKnown: money.totalKnown, bountyKnown: money.bountyKnown };
     }
     return mappedRow;
   });
@@ -2486,20 +2474,9 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, bountyLines = []) {
     if (!isReturnListRow(row)) return row;
     const orderUid = resolveListRowOrderUid(row);
     const saleSibling = orderSaleByUid[orderUid] || null;
-    const isPendingReturnRow = row.is_pending_return === true || Number(row.is_pending_return) === 1 || String(row.transaction_uid || "").startsWith("return-request-");
     const money = resolveReturnRowMoney(row, null, bountyLines);
-    const estimated = isPendingReturnRow
-      ? estimatePendingReturnMoney(
-          {
-            ...row,
-            pending_return: row.pending_return || saleSibling?.pending_return,
-            lines: Array.isArray(row.lines) ? row.lines : Array.isArray(saleSibling?.lines) ? saleSibling.lines : [],
-          },
-          bountyLines,
-        )
-      : { total: 0, bountyPaid: 0 };
-    const total = money.total || estimated.total || 0;
-    const bountyPaid = money.bountyPaid || estimated.bountyPaid || 0;
+    const total = money.total;
+    const bountyPaid = money.bountyPaid;
     const itemSummary = resolveReturnRowItemSummary(row, saleSibling);
     const rawPurchasedItem = String(row.purchased_item || "").trim();
     const purchasedItemLooksLikeUid = /^\d{3}-\d+$/.test(rawPurchasedItem);
@@ -2513,7 +2490,7 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, bountyLines = []) {
       transaction_total: total,
       seller_total: total,
       bounty_paid: bountyPaid,
-      _pending_return_money: { total, bountyPaid },
+      _pending_return_money: { total, bountyPaid, totalKnown: money.totalKnown, bountyKnown: money.bountyKnown },
       stripe_refund: row.stripe_refund || saleSibling?.stripe_refund || saleSibling?.pending_return?.stripe_refund,
       purchased_item:
         itemSummary.purchased_item || (itemSummary.qty != null || purchasedItemLooksLikeUid ? null : rawPurchasedItem && rawPurchasedItem.toLowerCase() !== "item" ? rawPurchasedItem : null),
@@ -2592,14 +2569,19 @@ async function fetchOrderDetailApi(orderUid, ctx = {}) {
 
 function formatOrderMoney(value) {
   const n = parseFloat(value);
-  return Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : ACCOUNT_SCREEN_DISPLAY_NA;
 }
 
 function formatSignedOrderMoney(value) {
   const n = parseFloat(value);
-  if (!Number.isFinite(n)) return "—";
+  if (!Number.isFinite(n)) return ACCOUNT_SCREEN_DISPLAY_NA;
   if (n < 0) return `-$${Math.abs(n).toFixed(2)}`;
   return `$${n.toFixed(2)}`;
+}
+
+function formatSignedOrderMoneyOrNa(value, known = true) {
+  if (!known) return ACCOUNT_SCREEN_DISPLAY_NA;
+  return formatSignedOrderMoney(value);
 }
 
 /** Return rows for one sale already included in the account-screen payload. */
@@ -3291,23 +3273,41 @@ function parseOrderTransactionShipping(source, fallback) {
   return value != null ? value : null;
 }
 
-const ORDER_LINE_SHIPPING_TOTAL_KEYS = ["ti_line_shipping_amount", "line_shipping_amount", "ti_shipping_total", "line_shipping_total", "shipping_total", "ti_total_shipping", "total_line_shipping"];
-const ORDER_LINE_SHIPPING_UNIT_KEYS = ["ti_shipping_amount", "ti_shipping_unit", "shipping_unit", "ti_shipping_per_unit", "unit_shipping"];
-const ORDER_LINE_SHIPPING_KEYS = ["line_shipping", "shipping_amount", "shipping_cost", "shipping", "ti_shipping", "ti_shipping_cost", "item_shipping"];
+const ORDER_LINE_SHIPPING_PER_LINE_KEYS = ["ti_shipping_amount_per_line", "ti_line_shipping_amount", "line_shipping_amount", "ti_shipping_total", "line_shipping_total", "shipping_total", "ti_total_shipping", "total_line_shipping"];
+const ORDER_LINE_SHIPPING_PER_UNIT_KEYS = ["ti_shipping_amount_per_unit", "ti_shipping_amount", "ti_shipping_unit", "shipping_unit", "ti_shipping_per_unit", "unit_shipping"];
+const ORDER_LINE_SHIPPING_LEGACY_KEYS = ["line_shipping", "shipping_amount", "shipping_cost", "shipping", "ti_shipping", "ti_shipping_cost", "item_shipping"];
 
-/** Per-line shipping charged on an order detail row (line total, not unit merchandise). */
+/** Per-line flat shipping when checkout did not use a per-unit rate (0.00 when free). */
+function getReturnLinePerLineShippingAmount(line) {
+  if (!line || typeof line !== "object") return null;
+  for (const key of ORDER_LINE_SHIPPING_PER_LINE_KEYS) {
+    const amount = receiptMoneyNullable(line[key]);
+    if (amount != null) return amount;
+  }
+  return null;
+}
+
+/** Per-unit buyer shipping snapshotted at checkout — ti_shipping_amount_per_unit when present. */
+function getReturnLinePerUnitShippingAmount(line) {
+  if (!line || typeof line !== "object") return null;
+  for (const key of ORDER_LINE_SHIPPING_PER_UNIT_KEYS) {
+    const unit = receiptMoneyNullable(line[key]);
+    if (unit != null) return unit;
+  }
+  return null;
+}
+
+/** Line shipping for display — per_unit × qty when per-unit exists; else flat per-line amount. */
 function getOrderLineShippingAmount(line, qty = 1) {
   if (!line || typeof line !== "object") return null;
-  for (const key of ORDER_LINE_SHIPPING_TOTAL_KEYS) {
-    const total = receiptMoneyNullable(line[key]);
-    if (total != null) return total;
+  const perUnit = getReturnLinePerUnitShippingAmount(line);
+  if (perUnit != null) {
+    const safeQty = Math.max(1, parseInt(qty, 10) || 1);
+    return Math.round(perUnit * safeQty * 100) / 100;
   }
-  const safeQty = Math.max(1, parseInt(qty, 10) || 1);
-  for (const key of ORDER_LINE_SHIPPING_UNIT_KEYS) {
-    const unit = receiptMoneyNullable(line[key]);
-    if (unit != null) return unit * safeQty;
-  }
-  for (const key of ORDER_LINE_SHIPPING_KEYS) {
+  const perLine = getReturnLinePerLineShippingAmount(line);
+  if (perLine != null) return perLine;
+  for (const key of ORDER_LINE_SHIPPING_LEGACY_KEYS) {
     const amount = receiptMoneyNullable(line[key]);
     if (amount != null) return amount;
   }
@@ -3341,52 +3341,28 @@ function getReturnLineUnshippedQty(line, returnQtyOverride) {
   return Math.min(returnQty, unshippedOnLine);
 }
 
-/** Per-unit buyer shipping snapshotted at checkout (ti_shipping_amount). */
-function getReturnLinePerUnitShippingAmount(line) {
-  if (!line || typeof line !== "object") return 0;
-  for (const key of ORDER_LINE_SHIPPING_UNIT_KEYS) {
-    const unit = receiptMoneyNullable(line[key]);
-    if (unit != null && unit > 0) return unit;
-  }
-  const purchasedQty = Math.max(1, getLinePurchasedQty(line) || getReceiptLineQty(line) || 1);
-  for (const key of ORDER_LINE_SHIPPING_TOTAL_KEYS) {
-    const total = receiptMoneyNullable(line[key]);
-    if (total != null && total > 0) {
-      return Math.round((total / purchasedQty) * 100) / 100;
-    }
-  }
-  for (const key of ORDER_LINE_SHIPPING_KEYS) {
-    const amount = receiptMoneyNullable(line[key]);
-    if (amount != null && amount > 0) {
-      return Math.round((amount / purchasedQty) * 100) / 100;
-    }
-  }
-  return 0;
-}
-
 /** Total line shipping charged at checkout (all units on the line). */
 function getReturnLineFlatShippingAmount(line) {
   const purchasedQty = Math.max(1, getLinePurchasedQty(line) || 1);
-  const perUnit = getReturnLinePerUnitShippingAmount(line);
-  if (perUnit > 0) {
-    return Math.round(perUnit * purchasedQty * 100) / 100;
-  }
-  const lineShipping = getOrderLineShippingAmount(line, purchasedQty);
-  if (lineShipping == null || lineShipping <= 0) return 0;
-  return Math.round(lineShipping * 100) / 100;
+  const fromLine = getOrderLineShippingAmount(line, purchasedQty);
+  if (fromLine == null) return null;
+  return Math.round(fromLine * 100) / 100;
 }
 
 /**
- * Refundable shipping for a return line — per-unit × returned/cancelled qty.
- * - Refundable lines: per_unit × return_quantity (shipped or cancelled units).
- * - Non-refundable: per_unit × cancel_unshipped_qty only (pre-ship cancel).
+ * Refundable shipping for a return line.
+ * - Per-unit checkout: ti_shipping_amount_per_unit × returned/cancelled qty.
+ * - Flat per-line checkout: ti_shipping_amount_per_line on full-line return only, or line_shipping_refund from API.
  */
 function getReturnLineRefundableShippingAmount(line, returnQtyOverride) {
   const returnQty = Math.max(0, parseInt(returnQtyOverride ?? line?.return_quantity ?? line?.ti_bs_qty, 10) || 0);
   if (returnQty <= 0) return 0;
 
+  const explicitRefund = parseReturnRefundShippingFromSource(line, ["line_shipping_refund", "shipping_refund", "returned_shipping", "refund_shipping"]);
+  if (explicitRefund != null) return explicitRefund;
+
   const perUnit = getReturnLinePerUnitShippingAmount(line);
-  if (perUnit <= 0) return 0;
+  const perLine = getReturnLinePerLineShippingAmount(line);
 
   const explicitShippedReturn = parseInt(line?.return_shipped_qty ?? line?.ti_return_shipped_qty, 10);
   const explicitCancelUnshipped = parseInt(line?.cancel_unshipped_qty ?? line?.ti_cancel_unshipped_qty, 10);
@@ -3406,7 +3382,20 @@ function getReturnLineRefundableShippingAmount(line, returnQtyOverride) {
   }
 
   if (refundableQty <= 0) return 0;
-  return Math.round(perUnit * refundableQty * 100) / 100;
+
+  if (perUnit != null) {
+    return Math.round(perUnit * refundableQty * 100) / 100;
+  }
+
+  if (perLine != null) {
+    const purchasedQty = Math.max(1, getLinePurchasedQty(line) || getReceiptLineQty(line) || 1);
+    if (refundableQty >= purchasedQty) {
+      return Math.round(perLine * 100) / 100;
+    }
+    return null;
+  }
+
+  return null;
 }
 
 function parseReturnRefundShippingFromSource(source, keys = ["shipping_refund", "returned_shipping", "refund_shipping", "transaction_shipping", "total_shipping", "shipping_amount"]) {
@@ -3428,23 +3417,6 @@ function isFullMerchandiseReturn(sale, itemMerchandise) {
   const merch = Math.abs(Number(itemMerchandise) || 0);
   if (!saleAmount || !merch) return false;
   return merch >= saleAmount - 0.02;
-}
-
-/** Proportional sales tax for a pending/completed return — full tax when entire order is returned. */
-function estimateProportionalReturnTax(sale, itemMerchandise, pending = null) {
-  const merch = Math.abs(Number(itemMerchandise) || 0);
-  if (!merch) return 0;
-  const fromEstimated = parseOrderMoneyField(pending?.estimated_refund?.taxes ?? pending?.estimated_refund?.transaction_taxes);
-  if (fromEstimated > 0) return fromEstimated;
-  const fromPending = parseOrderMoneyField(pending?.taxes ?? pending?.transaction_taxes);
-  if (fromPending > 0) return fromPending;
-  const saleAmount = Math.abs(parseOrderMoneyField(sale?.transaction_amount));
-  const saleTaxes = Math.abs(parseOrderMoneyField(sale?.transaction_taxes));
-  if (saleAmount > 0 && saleTaxes > 0) {
-    if (isFullMerchandiseReturn(sale, merch)) return saleTaxes;
-    return saleTaxes * (merch / saleAmount);
-  }
-  return 0;
 }
 
 /** Customer credit for a return row: merchandise + tax + shipping (excludes non-refundable card fees). */
@@ -3470,20 +3442,8 @@ function orderRefundableCustomerTotal(sale) {
   return Math.round((amount + taxes + shipping) * 100) / 100;
 }
 
-/** Refundable shipping — line-item proration first, then pending estimate, then full order on full returns. */
-function estimateReverseReturnShipping(sale, itemMerchandise, computedShippingRefund, estimatedTax, pending = null) {
-  if (computedShippingRefund > 0) return computedShippingRefund;
-  const fromEstimated = parseEstimatedRefundShipping(pending?.estimated_refund);
-  if (fromEstimated > 0) return fromEstimated;
-  const merch = Math.abs(Number(itemMerchandise) || 0);
-  if (!isFullMerchandiseReturn(sale, merch)) return 0;
-  const orderShipping = parseOrderTransactionShipping(sale, null);
-  if (orderShipping != null && orderShipping > 0) return Math.abs(orderShipping);
-  return 0;
-}
-
 function formatOrderShippingCell(value, signedRows) {
-  if (value == null || !Number.isFinite(value)) return "—";
+  if (value == null || !Number.isFinite(value)) return ACCOUNT_SCREEN_DISPLAY_NA;
   return signedRows ? formatSignedOrderMoney(value) : formatOrderMoney(value);
 }
 
@@ -3791,11 +3751,12 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   const itemShippingRefund = (items || []).reduce((sum, item) => sum + (Number(item.refundableShipping) || 0), 0);
   const itemShippingFromLines = (items || []).reduce((sum, item) => {
     if (item.line && typeof item.line === "object") {
-      return sum + getReturnLineRefundableShippingAmount(item.line, item.qty);
+      const lineShipping = getReturnLineRefundableShippingAmount(item.line, item.qty);
+      return sum + (lineShipping != null ? lineShipping : 0);
     }
     return sum;
   }, 0);
-  const computedShippingRefund = itemShippingRefund > 0 ? itemShippingRefund : itemShippingFromLines;
+  const computedShippingRefund = itemShippingRefund > 0 ? itemShippingRefund : itemShippingFromLines > 0 ? itemShippingFromLines : null;
   // Prefer seller bounty_paid reversed (Orders Bounty column), else pool bounty.
   const itemBounty = (items || []).reduce((sum, item) => sum + (Number(item.bountyPaidReversed) || Number(item.lineBounty) || 0), 0);
   const bountyPool = saleBountyPool > 0 ? saleBountyPool : resolveSaleOrderBountyPaid(sale);
@@ -3805,8 +3766,11 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   const pendingSubtotal = parseOrderMoneyField(estimated?.subtotal);
   const pendingTaxes = parseOrderMoneyField(estimated?.taxes ?? estimated?.transaction_taxes);
   const pendingShippingFromApi = parseEstimatedRefundShipping(estimated);
-  const pendingShippingRefund = computedShippingRefund > 0 ? computedShippingRefund : (pendingShippingFromApi ?? computedShippingRefund);
-  const pendingComponentCredit = Math.round((pendingSubtotal + pendingTaxes + (pendingShippingRefund || 0)) * 100) / 100;
+  const pendingShippingRefund = computedShippingRefund != null && computedShippingRefund > 0 ? computedShippingRefund : pendingShippingFromApi;
+  const pendingComponentCredit =
+    pendingSubtotal > 0 || pendingTaxes > 0 || (pendingShippingRefund != null && pendingShippingRefund > 0)
+      ? Math.round((pendingSubtotal + pendingTaxes + (pendingShippingRefund || 0)) * 100) / 100
+      : 0;
   const pendingCreditRaw = parseOrderMoneyField(estimated?.total_customer_credit ?? estimated?.total ?? pending?.estimated_total ?? pending?.total_customer_credit ?? pending?.total);
   const pendingCredit = pendingComponentCredit > 0.01 ? pendingComponentCredit : pendingCreditRaw;
   const pendingBountyExplicit = pending?.bounty_to_reclaim != null && String(pending.bounty_to_reclaim).trim() !== "" ? parseOrderMoneyField(pending.bounty_to_reclaim) : null;
@@ -3818,13 +3782,13 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   });
   if (pending && (pendingCredit || pendingSubtotal || resolvedBounty)) {
     const merchAbs = pendingSubtotal || itemMerchandise;
-    const amount = asNegative(merchAbs || Math.max(0, pendingCredit - pendingTaxes - pendingShippingRefund) || itemMerchandise);
-    const taxAmount = pendingTaxes > 0 ? pendingTaxes : estimateProportionalReturnTax(sale, merchAbs || itemMerchandise, pending);
-    const shippingAmount = pendingShippingRefund > 0 ? pendingShippingRefund : estimateReverseReturnShipping(sale, merchAbs || itemMerchandise, computedShippingRefund, taxAmount, pending);
-    const taxes = asNegative(taxAmount);
-    const shipping = asNegative(shippingAmount);
+    const amount = asNegative(merchAbs || Math.max(0, pendingCredit - pendingTaxes - (pendingShippingRefund || 0)) || itemMerchandise);
+    const taxAmount = pendingTaxes > 0 ? pendingTaxes : null;
+    const shippingAmount = pendingShippingRefund != null && pendingShippingRefund > 0 ? pendingShippingRefund : null;
+    const taxes = taxAmount != null ? asNegative(taxAmount) : null;
+    const shipping = shippingAmount != null ? asNegative(shippingAmount) : null;
     const bounty = asNegative(resolvedBounty);
-    const computedRefund = Math.abs(amount) + Math.abs(taxes) + Math.abs(shipping);
+    const computedRefund = Math.abs(amount) + Math.abs(taxes || 0) + Math.abs(shipping || 0);
     let totalAbs = computedRefund;
     if (pendingCredit > 0) {
       const usedCorrectedLineShipping = computedShippingRefund > 0 && pendingShippingFromApi != null && Math.abs(pendingShippingFromApi - computedShippingRefund) > 0.02;
@@ -3899,15 +3863,12 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
       bountyPool,
     });
     bounty = asNegative(resolvedReturnBounty);
-    if (!taxes && itemMerchandise > 0) {
-      const taxEst = estimateProportionalReturnTax(sale, itemMerchandise, pending);
-      if (taxEst > 0) taxes = -taxEst;
-    }
     amount = amount > 0 ? -amount : amount;
     taxes = taxes > 0 ? -taxes : taxes;
-    const shippingRefund = shipping > 0 ? shipping : estimateReverseReturnShipping(sale, itemMerchandise, computedShippingRefund, Math.abs(taxes), pending);
-    const shippingOut = shippingRefund === 0 ? 0 : shipping < 0 ? shipping : asNegative(shippingRefund);
-    let totalAbs = Math.abs(amount) + Math.abs(taxes) + Math.abs(shippingOut);
+    const shippingRefund =
+      shipping > 0 ? shipping : computedShippingRefund != null && computedShippingRefund > 0 ? computedShippingRefund : null;
+    const shippingOut = shippingRefund == null ? null : shipping < 0 ? shipping : asNegative(shippingRefund);
+    let totalAbs = Math.abs(amount) + Math.abs(taxes || 0) + Math.abs(shippingOut || 0);
     const refundTarget = refundTotalFallback > 0 ? Math.abs(refundTotalFallback) : 0;
     const refundableCap = orderRefundableCustomerTotal(sale);
     if (refundTarget > 0 && Math.abs(totalAbs - refundTarget) <= 0.02) {
@@ -3926,20 +3887,17 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
     };
   }
 
-  let taxes = estimateProportionalReturnTax(sale, itemMerchandise, pending);
-  if (!taxes) {
-    const pendingTax = parseFloat(pending?.taxes ?? pending?.transaction_taxes ?? sale?.return_taxes ?? sale?.returned_taxes ?? NaN);
-    if (Number.isFinite(pendingTax)) taxes = Math.abs(pendingTax);
-  }
-
-  const shippingRefund = estimateReverseReturnShipping(sale, itemMerchandise, computedShippingRefund, taxes, pending);
+  const pendingTaxFromApi = parseOrderMoneyField(pending?.estimated_refund?.taxes ?? pending?.estimated_refund?.transaction_taxes ?? pending?.taxes ?? pending?.transaction_taxes);
+  const taxes = pendingTaxFromApi > 0 ? asNegative(pendingTaxFromApi) : null;
+  const shippingFromApi = parseEstimatedRefundShipping(pending?.estimated_refund);
+  const shippingRefund = computedShippingRefund != null && computedShippingRefund > 0 ? computedShippingRefund : shippingFromApi;
   const bountyOut = resolveReverseTransactionBountyAmount({
     items,
     itemBounty,
     pendingBountyExplicit,
     bountyPool,
   });
-  let totalAbs = itemMerchandise + taxes + shippingRefund;
+  let totalAbs = itemMerchandise + Math.abs(taxes || 0) + Math.abs(shippingRefund || 0);
   const refundTarget = refundTotalFallback > 0 ? Math.abs(refundTotalFallback) : 0;
   const refundableCap = orderRefundableCustomerTotal(sale);
   if (refundTarget > 0 && Math.abs(totalAbs - refundTarget) <= 0.02) {
@@ -3950,8 +3908,8 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
 
   return {
     amount: asNegative(itemMerchandise),
-    taxes: asNegative(taxes),
-    shipping: asNegative(shippingRefund),
+    taxes,
+    shipping: shippingRefund != null && shippingRefund > 0 ? asNegative(shippingRefund) : null,
     bounty: asNegative(bountyOut),
     total: asNegative(totalAbs),
     returnTxnUids: [],
@@ -4027,7 +3985,9 @@ function OrderDetailPendingReturnSummary({ pendingReturn, darkMode }) {
   const row = (label, value, { signed = false } = {}) => (
     <View style={styles.orderDetailSummaryRow} key={label}>
       <Text style={labelStyle}>{label}</Text>
-      <Text style={[...valueStyle, signed && parseFloat(value) < 0 && { color: "#B71C1C" }]}>{signed ? formatSignedOrderMoney(value) : formatOrderMoney(value)}</Text>
+      <Text style={[...valueStyle, signed && Number.isFinite(parseFloat(value)) && parseFloat(value) < 0 && { color: "#B71C1C" }]}>
+        {value == null || !Number.isFinite(parseFloat(value)) ? ACCOUNT_SCREEN_DISPLAY_NA : signed ? formatSignedOrderMoney(value) : formatOrderMoney(value)}
+      </Text>
     </View>
   );
 
@@ -4050,16 +4010,16 @@ function OrderDetailPendingReturnSummary({ pendingReturn, darkMode }) {
           </Text>
         );
       })}
-      {subtotal ? row("Returned items", -Math.abs(subtotal), { signed: true }) : null}
-      {taxes ? row("Sales tax", -Math.abs(taxes), { signed: true }) : null}
-      {shipping ? row("Shipping", -Math.abs(shipping), { signed: true }) : null}
-      {total ? (
-        <View style={[styles.orderDetailSummaryRow, styles.orderDetailSummaryRowTotal]}>
-          <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>Refund total</Text>
-          <Text style={[styles.orderDetailSummaryValue, styles.orderDetailSummaryNet, { color: "#B71C1C" }]}>{formatSignedOrderMoney(-Math.abs(total))}</Text>
-        </View>
-      ) : null}
-      {bounty ? row("Bounty reversed", -Math.abs(bounty), { signed: true }) : null}
+      {row("Returned items", subtotal != null && subtotal > 0 ? -Math.abs(subtotal) : null, { signed: true })}
+      {row("Sales tax", taxes != null && taxes > 0 ? -Math.abs(taxes) : null, { signed: true })}
+      {row("Shipping", shipping != null && shipping > 0 ? -Math.abs(shipping) : null, { signed: true })}
+      <View style={[styles.orderDetailSummaryRow, styles.orderDetailSummaryRowTotal]}>
+        <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>Refund total</Text>
+        <Text style={[styles.orderDetailSummaryValue, styles.orderDetailSummaryNet, { color: "#B71C1C" }]}>
+          {total != null && total > 0 ? formatSignedOrderMoney(-Math.abs(total)) : ACCOUNT_SCREEN_DISPLAY_NA}
+        </Text>
+      </View>
+      {row("Bounty reversed", bounty != null && bounty > 0 ? -Math.abs(bounty) : null, { signed: true })}
     </View>
   );
 }
@@ -4124,9 +4084,8 @@ function scaleWalletLedgerProceedsBreakdown(breakdown, itemizeQty, purchasedQty)
   const scaledTax = Math.round((breakdown.taxTotal / purchasedQty) * itemizeQty * 100) / 100;
   const scaledBounty = breakdown.bounty
     ? {
-        ...breakdown.bounty,
-        qty: itemizeQty,
-        total: Math.round(breakdown.bounty.unitCost * itemizeQty * 100) / 100,
+        description: breakdown.bounty.description,
+        total: Math.round(breakdown.bounty.total * (itemizeQty / purchasedQty) * 100) / 100,
       }
     : null;
 
@@ -4190,10 +4149,12 @@ function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, 
   const bountyTotal = isSellerView
     ? saleBountyPaid > 0
       ? saleBountyPaid
-      : sumBountyPaidForTransaction(bountyRows, transactionUid) || resolveSaleOrderBountyPaid(sale) || sumBountyFromSaleLines(sale?.lines)
+      : sumBountyPaidForTransaction(bountyRows, transactionUid) ||
+        resolveSaleOrderBountyPaid(sale) ||
+        sumBountyFromSaleLines(sale?.lines) ||
+        resolveWalletLedgerEntryBountyAbs(entry)
     : 0;
   const bountyAbs = Math.round(Math.abs(Number(bountyTotal) || 0) * 100) / 100;
-  const bountyUnit = purchasedQty > 0 ? Math.round((-bountyAbs / purchasedQty) * 100) / 100 : 0;
 
   const merchandiseTotal = Math.round(merchandiseRows.reduce((sum, row) => sum + row.total, 0) * 100) / 100;
   const computedTotal = computeWalletLedgerItemizedTotal({
@@ -4214,8 +4175,6 @@ function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, 
       isSellerView && bountyAbs > 0
         ? {
             description: "Bounty",
-            qty: purchasedQty,
-            unitCost: bountyUnit,
             total: -bountyAbs,
           }
         : null,
@@ -4281,7 +4240,7 @@ function OrderDetailWalletLedgerBreakdownTable({ breakdown, darkMode }) {
       ))}
       {taxTotal > 0 ? <DataRow description='Sales tax' total={taxTotal} /> : null}
       {shippingTotal > 0 ? <DataRow description='Shipping' total={shippingTotal} /> : null}
-      {bounty ? <DataRow description={bounty.description} qty={bounty.qty} unitCost={bounty.unitCost} total={bounty.total} /> : null}
+      {bounty ? <DataRow description={bounty.description} total={bounty.total} /> : null}
       <View style={{ borderTopWidth: 1, borderTopColor: borderColor, marginTop: 4, paddingTop: 6 }}>
         <DataRow description='Total' total={ledgerAmount || computedTotal} emphasize />
       </View>
@@ -4452,12 +4411,12 @@ function OrderDetailLinesTable({
     const bountyAmount = isSellerView ? bountyAmounts.bountyPaidReversed || bountyAmounts.lineBounty || 0 : bountyAmounts.lineBounty || bountyAmounts.bountyPaidReversed || 0;
     const shareAmount = Math.abs(bountyAmounts.earnedShare || 0);
     const displayPct = bountyAmounts.percentage;
-    let bountyPctLabel = null;
-    if (displayPct != null && Number.isFinite(displayPct)) {
-      bountyPctLabel = displayPct > 0 && displayPct <= 1 ? `${Math.round(displayPct * 1000) / 10}%` : `${Math.round(displayPct * 10) / 10}%`;
-    } else if (bountyAmount > 0 && shareAmount > 0) {
-      bountyPctLabel = `${Math.round((shareAmount / bountyAmount) * 1000) / 10}%`;
-    }
+    const bountyPctLabel =
+      displayPct != null && Number.isFinite(displayPct)
+        ? displayPct > 0 && displayPct <= 1
+          ? `${Math.round(displayPct * 1000) / 10}%`
+          : `${Math.round(displayPct * 10) / 10}%`
+        : ACCOUNT_SCREEN_DISPLAY_NA;
     const displayQty = signedRows ? -qty : qty;
     const displayUnitCost = signedRows ? -unitCost : unitCost;
     const displayLineTotal = signedRows ? -lineTotal : lineTotal;
@@ -4621,7 +4580,7 @@ function OrderDetailLinesTable({
               </Text>
               {showBuyerShareColumns ? (
                 <>
-                  <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBountyPct, darkMode && { color: "#ccc" }]}>{row.bountyPctLabel || "—"}</Text>
+                  <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBountyPct, darkMode && { color: "#ccc" }]}>{row.bountyPctLabel}</Text>
                   <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColShare, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
                     {Math.abs(row.share) > 0 ? formatCellAmount(row.share) : "—"}
                   </Text>
@@ -4777,14 +4736,16 @@ function OrderDetailModal({
   const summary = orderDetail?.summary || null;
   const saleLines = Array.isArray(sale?.lines) ? sale.lines : [];
   const transactionUid = String(sale?.transaction_uid || orderDetail?.transaction_uid || orderUid || "").trim();
+  const orderWalletEntries = Array.isArray(walletLedgerEntries) && walletLedgerEntries.length ? walletLedgerEntries : [];
   const saleBountyPaid = useMemo(
     () =>
       resolveOrderDetailSaleBountyPaid(sale, bountyRows, transactionUid, {
         bountyPaidFallback,
         orderDetail,
         sellerTransactionRows,
+        walletLedgerEntries: orderWalletEntries,
       }),
-    [sale, bountyRows, transactionUid, bountyPaidFallback, orderDetail, sellerTransactionRows],
+    [sale, bountyRows, transactionUid, bountyPaidFallback, orderDetail, sellerTransactionRows, orderWalletEntries],
   );
   const salePurchasedQty = useMemo(() => {
     if (!sale) return null;
@@ -4856,7 +4817,6 @@ function OrderDetailModal({
     setTrackingNumber("");
   }, [visible, transactionUid, orderDetail?.sale?.transaction_uid]);
 
-  const orderWalletEntries = Array.isArray(walletLedgerEntries) && walletLedgerEntries.length ? walletLedgerEntries : [];
   const saleProceedsStatusNotes = useMemo(() => resolveOrderDetailSaleProceedsStatusNotes(orderWalletEntries), [orderWalletEntries]);
   const buyerLabel = useMemo(
     () => (isSellerView || orderWalletEntries.length ? resolveOrderDetailBuyerLabel({ orderDetail, sale, walletLedgerEntries: orderWalletEntries }) : ""),
@@ -5262,7 +5222,9 @@ function ReturnDetailsModal({
   const moneyRow = (label, value) => (
     <View style={styles.orderDetailSummaryRow} key={label}>
       <Text style={labelStyle}>{label}</Text>
-      <Text style={[...valueStyle, parseFloat(value) < 0 && { color: "#B71C1C" }]}>{formatSignedOrderMoney(value)}</Text>
+      <Text style={[...valueStyle, Number.isFinite(parseFloat(value)) && parseFloat(value) < 0 && { color: "#B71C1C" }]}>
+        {value == null || !Number.isFinite(parseFloat(value)) ? ACCOUNT_SCREEN_DISPLAY_NA : formatSignedOrderMoney(value)}
+      </Text>
     </View>
   );
 
@@ -5373,7 +5335,7 @@ function ReturnDetailsModal({
                 ) : null}
                 {moneyRow("Returned items", reverse.amount)}
                 {moneyRow("Sales tax", reverse.taxes)}
-                {Math.abs(Number(reverse.shipping) || 0) > 0.01 ? moneyRow("Shipping", reverse.shipping) : null}
+                {moneyRow("Shipping", reverse.shipping)}
                 <View style={[styles.orderDetailSummaryRow, styles.orderDetailSummaryRowTotal]}>
                   <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>{isSellerView ? "Refund total" : "Refund you should expect"}</Text>
                   <Text style={[styles.orderDetailSummaryValue, styles.orderDetailSummaryNet, { color: "#B71C1C" }]}>{formatSignedOrderMoney(reverse.total)}</Text>
@@ -6616,13 +6578,23 @@ function sumBusinessOrderRows(rows) {
 }
 
 function buildProductSalesOrderRows(product, sellerLines, bountyLines) {
+  const productUid = String(product?.productUid || product?.expertiseUid || "").trim();
+  const saleRows = (product?.sales || []).filter((row) => isSellerSaleListRow(row));
+  const saleTiUids = new Set();
   const orderUids = new Set();
-  for (const sale of product?.sales || []) {
-    const uid = resolveListRowOrderUid(sale);
-    if (uid !== "—") orderUids.add(uid);
+  for (const sale of saleRows) {
+    const tiUid = String(sale.ti_uid || sale.transaction_item_uid || "").trim();
+    if (tiUid) saleTiUids.add(tiUid);
+    const orderUid = resolveListRowOrderUid(sale);
+    if (orderUid !== "—") orderUids.add(orderUid);
   }
-  const scopedLines = (sellerLines || []).filter((row) => orderUids.has(resolveListRowOrderUid(row)));
-  return buildBusinessOrdersListFromSellerTransactions(scopedLines, bountyLines);
+  const returnRows = (sellerLines || []).filter((row) => {
+    if (!isReturnListRow(row)) return false;
+    if (!orderUids.has(resolveListRowOrderUid(row))) return false;
+    return returnRowMatchesProductScope(row, productUid, saleTiUids);
+  });
+  const scopedLines = [...saleRows, ...returnRows];
+  return buildBusinessOrdersListFromSellerTransactions(scopedLines, bountyLines, { productSummary: true });
 }
 
 function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress, onReturnPress }) {
@@ -6701,10 +6673,10 @@ function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress
                 <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColPlacedBy, styles.productSalesDetailOrderText, darkMode && { color: "#eee" }]}>{row.placedBy}</Text>
                 <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate, darkMode && { color: "#ccc" }]}>{row.dateLabel}</Text>
                 <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColTotal, isReturnRow && { color: "#B71C1C" }, darkMode && !isReturnRow && { color: "#ccc" }]} numberOfLines={1}>
-                  {formatSignedOrderMoney(row.total)}
+                  {formatSignedOrderMoneyOrNa(row.total, row.isReturn ? row.totalKnown !== false : true)}
                 </Text>
                 <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColMoney, isReturnRow && { color: "#B71C1C" }, darkMode && !isReturnRow && { color: "#ccc" }]}>
-                  {formatSignedOrderMoney(row.bountyPaid)}
+                  {formatSignedOrderMoneyOrNa(row.bountyPaid, row.isReturn ? row.bountyKnown !== false : true)}
                 </Text>
                 <View style={[styles.productSalesDetailColStatus, styles.productSalesDetailStatusCell]}>
                   {isReturnRow && onReturnPress ? (
@@ -7234,7 +7206,7 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
     const offeringUid = String(expertiseUid || "").trim();
     sellerTx.forEach((transaction) => {
       if (String(transaction.ti_bs_id || "").trim() !== offeringUid) return;
-      if (isPendingReturnListRow(transaction)) return;
+      if (!isSellerSaleListRow(transaction)) return;
       soldQty += getSignedProductSalesLineQty(transaction);
     });
     soldQty = Math.max(0, soldQty);
@@ -8536,7 +8508,7 @@ export default function AccountScreen({ navigation, route }) {
         sellerLines = Array.isArray(sellerTxData) ? sellerTxData : [];
       }
 
-      const transactions = sellerLines.filter((tx) => String(tx.ti_bs_id || "").trim() === expertiseUid);
+      const transactions = sellerLines.filter((tx) => isSellerSaleListRow(tx) && String(tx.ti_bs_id || "").trim() === expertiseUid);
       setSalesModal({ visible: true, item, transactions, sellerLines, loading: false });
     },
     [sellerTxData, refreshAccountScreenPersonal],
@@ -10029,7 +10001,9 @@ export default function AccountScreen({ navigation, route }) {
                         const sellerId = resolvePurchaseSellerId(transaction);
                         const returnMoney = isReturnRow ? resolveReturnRowMoney(transaction, null, bountyData?.data || []) : null;
                         const displayAmount = isReturnRow
-                          ? returnMoney?.total || parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0) || 0
+                          ? returnMoney?.totalKnown
+                            ? returnMoney.total
+                            : ACCOUNT_SCREEN_DISPLAY_NA
                           : parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0);
                         const rowIdentity = resolveTrrUid(transaction) || transaction.transaction_uid || transaction.ti_uid || "purchase";
                         const rowKey = `${rowIdentity}-${isReturnRow ? "return" : "sale"}-${i}`;
@@ -10143,7 +10117,9 @@ export default function AccountScreen({ navigation, route }) {
                               );
                             })()}
                             <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7} disabled={orderUid === "—"}>
-                              <Text style={[styles.transactionAmount, isReturnRow && { color: "#B71C1C" }, orderUid !== "—" && styles.receiptLink]}>{formatSignedOrderMoney(displayAmount)}</Text>
+                              <Text style={[styles.transactionAmount, isReturnRow && { color: "#B71C1C" }, orderUid !== "—" && styles.receiptLink]}>
+                                {typeof displayAmount === "string" ? displayAmount : formatSignedOrderMoney(displayAmount)}
+                              </Text>
                             </TouchableOpacity>
                           </View>
                         );
@@ -10757,11 +10733,13 @@ export default function AccountScreen({ navigation, route }) {
                         const bountyCell = bountyDisplay?.lineBounty != null && bountyDisplay.lineBounty > 0 ? `$${bountyDisplay.lineBounty.toFixed(2)}` : "—";
                         const shareCell = bountyDisplay?.earned != null ? `$${bountyDisplay.earned.toFixed(2)}` : "—";
                         const sharePct =
-                          bountyDisplay?.percentage != null
+                          bountyDisplay?.percentage != null && Number.isFinite(bountyDisplay.percentage)
                             ? bountyDisplay.percentage > 0 && bountyDisplay.percentage <= 1
                               ? `${Math.round(bountyDisplay.percentage * 1000) / 10}%`
                               : `${Math.round(bountyDisplay.percentage * 10) / 10}%`
-                            : null;
+                            : shareCell !== "—"
+                              ? ACCOUNT_SCREEN_DISPLAY_NA
+                              : null;
                         const moneyCellColor = darkMode ? "#ddd" : "#333";
                         const moneyMetaColor = darkMode ? "#aaa" : "#666";
                         const shippingCell = formatOrderShippingCell(getOrderLineShippingAmount(item, qty), false);
@@ -11783,7 +11761,10 @@ export default function AccountScreen({ navigation, route }) {
           <View style={{ backgroundColor: "#fff", borderRadius: 12, padding: 20, width: "90%", maxHeight: "80%" }}>
             <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 4, color: "#222" }}>{salesModal.item?.name}</Text>
             <Text style={{ fontSize: 13, color: "#888", marginBottom: 16 }}>
-              {salesModal.transactions?.length ? `${salesModal.transactions.length} purchase${salesModal.transactions.length !== 1 ? "s" : ""}` : "No purchases yet"}
+              {(() => {
+                const saleCount = (salesModal.transactions || []).filter((row) => isSellerSaleListRow(row)).length;
+                return saleCount ? `${saleCount} purchase${saleCount !== 1 ? "s" : ""}` : "No purchases yet";
+              })()}
             </Text>
 
             {salesModal.loading ? (
