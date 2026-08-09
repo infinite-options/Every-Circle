@@ -309,16 +309,22 @@ function formatLineFulfillmentDisplayFromUnits(units, line) {
 
 function formatOrderDetailLineQtyNoteFromUnits(units) {
   if (!units || typeof units !== "object") return "";
-  const parts = [];
   const purchased = parseNonNegativeInt(units.purchased_qty) ?? 0;
   const shipped = parseNonNegativeInt(units.shipped_qty) ?? 0;
-  const cancelled = (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) + (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0);
-  const returned = parseNonNegativeInt(units.returned_shipped_completed_qty) ?? 0;
+  const cancelledCompleted = parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0;
+  const cancelledUnshippedReturned = parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0;
+  const cancelInProgress = parseNonNegativeInt(units.return_in_progress_unshipped_qty) ?? 0;
+  const cancelled = cancelledCompleted + cancelledUnshippedReturned + cancelInProgress;
+  const returnedCompleted = parseNonNegativeInt(units.returned_shipped_completed_qty) ?? 0;
+  const returnInProgress = parseNonNegativeInt(units.return_in_progress_shipped_qty) ?? 0;
+  const returned = returnedCompleted + returnInProgress;
   const verified = parseNonNegativeInt(units.verified_qty) ?? 0;
-  if (shipped > 0 && shipped < purchased) parts.push(`${shipped} shipped`);
+  const parts = [];
+  if (purchased > 0) parts.push(`${purchased} ordered`);
+  if (shipped > 0) parts.push(`${shipped} shipped`);
   if (cancelled > 0) parts.push(`${cancelled} cancelled`);
   if (returned > 0) parts.push(`${returned} returned`);
-  if (verified > 0) parts.push(verified >= purchased ? "all verified" : `${verified} verified`);
+  if (verified > 0) parts.push(verified >= purchased && purchased > 0 ? "all verified" : `${verified} verified`);
   return parts.join(" · ");
 }
 
@@ -1799,11 +1805,73 @@ function resolveSaleOrderBountyPaid(sale) {
   return Number.isFinite(n) && n !== 0 ? Math.abs(n) : 0;
 }
 
+/** First finite money field on a wallet-ledger row (or nested line). */
+function parseWalletLedgerEntryMoney(source, keys) {
+  if (!source || typeof source !== "object") return null;
+  for (const key of keys) {
+    const n = parseFloat(source[key]);
+    if (Number.isFinite(n)) return Math.round(n * 100) / 100;
+  }
+  return null;
+}
+
 /** Bounty pool on a wallet-ledger sale-proceeds row (authoritative when order API omits bounty). */
 function resolveWalletLedgerEntryBountyAbs(entry) {
-  if (!entry || typeof entry !== "object") return 0;
-  const n = parseFloat(entry.bounty_amount ?? entry.bounty_paid ?? NaN);
-  return Number.isFinite(n) && n !== 0 ? Math.abs(n) : 0;
+  const n = parseWalletLedgerEntryMoney(entry, ["bounty_amount", "bounty_paid"]);
+  return n != null && n !== 0 ? Math.abs(n) : 0;
+}
+
+function resolveWalletLedgerEntryMerchandiseAmount(entry) {
+  return parseWalletLedgerEntryMoney(entry, ["merchandise_amount"]);
+}
+
+function resolveWalletLedgerEntryTaxAmount(entry) {
+  return parseWalletLedgerEntryMoney(entry, ["sales_tax_amount"]);
+}
+
+function resolveWalletLedgerEntryShippingAmount(entry) {
+  return parseWalletLedgerEntryMoney(entry, ["shipping_amount"]);
+}
+
+function mapWalletLedgerEntryLinesToMerchandiseRows(entry, sale, statusNote = "") {
+  const ledgerLines = Array.isArray(entry?.lines) ? entry.lines : [];
+  if (!ledgerLines.length) return null;
+  const saleLines = Array.isArray(sale?.lines) ? sale.lines : [];
+  const saleByUid = {};
+  for (const line of saleLines) {
+    const uid = String(line?.ti_uid || line?.transaction_item_uid || "").trim();
+    if (uid) saleByUid[uid] = line;
+  }
+  return ledgerLines.map((line, index) => {
+    const uid = String(line?.ti_uid || line?.transaction_item_uid || "").trim();
+    const saleLine = uid ? saleByUid[uid] : null;
+    const qty = Math.max(0, parseInt(line?.qty ?? line?.ti_bs_qty ?? line?.quantity, 10) || 0);
+    const totalAbs = Math.abs(parseWalletLedgerEntryMoney(line, ["merchandise_amount", "line_total", "amount"]) ?? 0);
+    const unitFromLine = Math.abs(parseFloat(line?.ti_bs_cost ?? line?.unit_cost) || 0);
+    const safeQty = qty > 0 ? qty : 0;
+    const unitCost = safeQty > 0 && totalAbs > 0 ? Math.round((totalAbs / safeQty) * 100) / 100 : unitFromLine;
+    const total = totalAbs;
+    return {
+      key: uid || `ledger-line-${index}`,
+      description: line?.item_name || saleLine?.item_name || saleLine?.bs_service_name || saleLine?.bs_service_desc || "Item",
+      qty: safeQty,
+      unitCost,
+      total,
+      statusNote: index === 0 ? statusNote : "",
+    };
+  });
+}
+
+/** Merchandise table rows from wallet ledger entry only (no order-sale fallback). */
+function resolveWalletLedgerMerchandiseRows(entry, sale, statusNote = "") {
+  const fromLedgerLines = mapWalletLedgerEntryLinesToMerchandiseRows(entry, sale, statusNote);
+  if (fromLedgerLines?.length) return fromLedgerLines;
+
+  const ledgerMerch = resolveWalletLedgerEntryMerchandiseAmount(entry);
+  if (ledgerMerch != null) {
+    return [{ key: "ledger-merchandise", description: "Merchandise", qty: "", unitCost: "", total: Math.abs(ledgerMerch), statusNote }];
+  }
+  return [];
 }
 
 /** Order-level bounty from wallet ledger sale_proceeds entries for one transaction. */
@@ -2266,9 +2334,25 @@ function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines,
     const saleSibling = isReturnListRow(row) ? findSaleSiblingForReturnRow(row, sellerLines) : null;
     const mappedRow = mapTransactionListRowToOrderTableRow(row, saleSibling, sellerLines, options);
     if (mappedRow.isReturn) {
-      let money = resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines);
+      const enrichedRow = mergeReturnRowWithSaleContext(row, saleSibling);
+      let money = resolveReturnRowMoney(enrichedRow, bountyByTransactionUid, bountyLines);
+      if (!money.totalKnown && saleSibling) {
+        const scoped = resolveScopedPendingReturnMoney(row, saleSibling, {
+          productUid: options.productUid,
+          saleTiUids: options.saleTiUids,
+        });
+        if (scoped?.totalKnown) {
+          money = {
+            ...money,
+            total: scoped.total || money.total,
+            bountyPaid: scoped.bountyPaid || money.bountyPaid,
+            totalKnown: true,
+            bountyKnown: money.bountyKnown || scoped.bountyKnown,
+          };
+        }
+      }
       if (saleSibling && !money.bountyPaid) {
-        const fromSale = resolveReturnBountyFromSaleRow(row, saleSibling);
+        const fromSale = resolveReturnBountyFromSaleRow(enrichedRow, saleSibling);
         if (fromSale) {
           money = { ...money, bountyPaid: fromSale, bountyKnown: true };
         }
@@ -2693,8 +2777,8 @@ function returnEventRefundedShipping(eventRow) {
 function parseReturnEventLineSplit(line, eventRow) {
   if (!line || typeof line !== "object") return { shipped: 0, unshipped: 0, total: 0, splitKnown: true };
 
-  const shippedRaw = line.return_shipped_qty ?? line.shipped_return_qty;
-  const unshippedRaw = line.cancel_unshipped_qty ?? line.return_unshipped_qty ?? line.unshipped_return_qty;
+  const shippedRaw = line.return_shipped_qty ?? line.ti_return_shipped_qty;
+  const unshippedRaw = line.cancel_unshipped_qty ?? line.ti_cancel_unshipped_qty;
   const hasExplicitShipped = shippedRaw != null && String(shippedRaw).trim() !== "";
   const hasExplicitUnshipped = unshippedRaw != null && String(unshippedRaw).trim() !== "";
 
@@ -3326,12 +3410,12 @@ function isLineShippingRefundable(line) {
   return false;
 }
 
-/** Return-line qty that never shipped (backend may override with return_unshipped_qty). */
+/** Return-line qty that never shipped — canonical cancel_unshipped_qty on the line. */
 function getReturnLineUnshippedQty(line, returnQtyOverride) {
   if (!line || typeof line !== "object") return 0;
   const returnQty = Math.max(0, parseInt(returnQtyOverride ?? line?.return_quantity ?? line?.ti_bs_qty, 10) || 0);
   if (returnQty <= 0) return 0;
-  for (const key of ["return_unshipped_qty", "unshipped_return_qty", "cancel_unshipped_qty", "ti_return_unshipped_qty"]) {
+  for (const key of ["cancel_unshipped_qty", "ti_cancel_unshipped_qty"]) {
     const explicit = parseInt(line[key], 10);
     if (Number.isFinite(explicit) && explicit >= 0) return Math.min(returnQty, explicit);
   }
@@ -3506,8 +3590,8 @@ function mapPendingReturnItemsToLines(pendingItems, saleLines = []) {
     .map((item) => {
       const uid = String(item.transaction_item_uid || item.ti_uid || "").trim();
       const base = byUid[uid] || {};
-      const shippedReturnQty = Math.max(0, parseInt(item.return_shipped_qty ?? item.shipped_return_qty, 10) || 0);
-      const cancelUnshippedQty = Math.max(0, parseInt(item.cancel_unshipped_qty ?? item.return_unshipped_qty, 10) || 0);
+      const shippedReturnQty = Math.max(0, parseInt(item.return_shipped_qty, 10) || 0);
+      const cancelUnshippedQty = Math.max(0, parseInt(item.cancel_unshipped_qty, 10) || 0);
       const explicitTotal = shippedReturnQty + cancelUnshippedQty;
       const qty = Math.max(1, parseInt(item.return_quantity ?? item.quantity ?? item.qty, 10) || explicitTotal || 1);
       const purchasedQty = Math.max(qty, parseInt(base.ti_bs_qty ?? base.purchased_qty ?? item.purchased_qty, 10) || qty);
@@ -3522,8 +3606,8 @@ function mapPendingReturnItemsToLines(pendingItems, saleLines = []) {
         ti_bs_cost: item.ti_bs_cost ?? base.ti_bs_cost,
         return_quantity: qty,
         ti_bs_qty: qty,
-        return_shipped_qty: item.return_shipped_qty ?? item.shipped_return_qty,
-        cancel_unshipped_qty: item.cancel_unshipped_qty ?? item.return_unshipped_qty,
+        return_shipped_qty: item.return_shipped_qty,
+        cancel_unshipped_qty: item.cancel_unshipped_qty,
         purchased_qty: purchasedQty,
         ti_purchased_qty: purchasedQty,
       };
@@ -3582,8 +3666,8 @@ function collectReturnDetailLines(orderDetail, scope = null) {
 /** Shipped-return vs pre-ship-cancel quantities on one pending return line. */
 function parseReturnDetailLineSplit(line, saleLine = null) {
   if (!line || typeof line !== "object") return { shipped: 0, unshipped: 0, total: 0, splitKnown: false };
-  const shipped = Math.max(0, parseInt(line.return_shipped_qty ?? line.ti_return_shipped_qty ?? line.shipped_return_qty, 10) || 0);
-  const unshipped = Math.max(0, parseInt(line.cancel_unshipped_qty ?? line.ti_cancel_unshipped_qty ?? line.return_unshipped_qty ?? line.unshipped_return_qty, 10) || 0);
+  const shipped = Math.max(0, parseInt(line.return_shipped_qty ?? line.ti_return_shipped_qty, 10) || 0);
+  const unshipped = Math.max(0, parseInt(line.cancel_unshipped_qty ?? line.ti_cancel_unshipped_qty, 10) || 0);
   if (shipped > 0 || unshipped > 0) {
     return { shipped, unshipped, total: shipped + unshipped, splitKnown: true };
   }
@@ -3998,12 +4082,20 @@ function OrderDetailPendingReturnSummary({ pendingReturn, darkMode }) {
         This is what the buyer will be refunded if the return is confirmed. It is separate from your sale-proceeds wallet adjustment below.
       </Text>
       {items.map((item, index) => {
-        const shipped = parseInt(item.return_shipped_qty, 10) || 0;
-        const cancelled = parseInt(item.cancel_unshipped_qty, 10) || 0;
-        const parts = [];
-        if (shipped > 0) parts.push(`${shipped} return`);
-        if (cancelled > 0) parts.push(`${cancelled} cancel`);
-        const splitLabel = parts.length ? parts.join(", ") : `${item.return_quantity || "—"} unit(s)`;
+        const hasShippedField = item.return_shipped_qty != null && String(item.return_shipped_qty).trim() !== "";
+        const hasCancelField = item.cancel_unshipped_qty != null && String(item.cancel_unshipped_qty).trim() !== "";
+        const shipped = hasShippedField ? Math.max(0, parseInt(item.return_shipped_qty, 10) || 0) : null;
+        const cancelled = hasCancelField ? Math.max(0, parseInt(item.cancel_unshipped_qty, 10) || 0) : null;
+        let splitLabel = ACCOUNT_SCREEN_DISPLAY_NA;
+        if (hasShippedField || hasCancelField) {
+          const parts = [];
+          if (shipped > 0) parts.push(`${shipped} returning`);
+          if (cancelled > 0) parts.push(`${cancelled} cancelling`);
+          splitLabel = parts.length ? parts.join(", ") : "0 unit(s)";
+        } else {
+          const total = parseInt(item.return_quantity, 10);
+          if (Number.isFinite(total) && total > 0) splitLabel = `${total} unit(s)`;
+        }
         return (
           <Text key={`pending-item-${index}`} style={[styles.orderDetailSectionText, darkMode && { color: "#ddd" }, { marginTop: index === 0 ? 8 : 4 }]}>
             {splitLabel}
@@ -4027,15 +4119,6 @@ function OrderDetailPendingReturnSummary({ pendingReturn, darkMode }) {
 /** Wallet ledger status note — explicit API field only (no description parsing). */
 function walletLedgerEntryStatusNote(entry) {
   return String(entry?.status_note ?? entry?.entry_status_note ?? "").trim();
-}
-
-function walletLedgerEntryItemizeQty(entry, purchasedQty) {
-  if (!entry || purchasedQty <= 0) return null;
-  for (const key of ["cancelled_qty_delta", "returned_qty_delta", "verified_qty_delta", "itemize_qty", "units", "unit_count", "item_qty", "return_quantity", "quantity"]) {
-    const v = parseInt(entry[key], 10);
-    if (Number.isFinite(v) && v > 0 && v <= purchasedQty) return v;
-  }
-  return null;
 }
 
 function walletLedgerCounterpartyLabel(entry) {
@@ -4069,46 +4152,6 @@ function resolveOrderDetailSaleProceedsStatusNotes(walletLedgerEntries) {
   return notes;
 }
 
-/** Scale a full-order proceeds breakdown to a partial ledger entry (return/cancel). */
-function scaleWalletLedgerProceedsBreakdown(breakdown, itemizeQty, purchasedQty) {
-  if (!breakdown || !itemizeQty || itemizeQty >= purchasedQty) return breakdown;
-
-  const scaledMerchandiseRows = breakdown.merchandiseRows.map((row) => {
-    const lineShare = purchasedQty > 0 ? row.qty / purchasedQty : 0;
-    const qty = breakdown.merchandiseRows.length === 1 ? itemizeQty : Math.max(0, Math.min(row.qty, Math.round(itemizeQty * lineShare) || (itemizeQty > 0 && row.qty > 0 ? 1 : 0)));
-    const total = Math.round(row.unitCost * qty * 100) / 100;
-    return { ...row, qty, total };
-  });
-
-  const scaledShipping = Math.round((breakdown.shippingTotal / purchasedQty) * itemizeQty * 100) / 100;
-  const scaledTax = Math.round((breakdown.taxTotal / purchasedQty) * itemizeQty * 100) / 100;
-  const scaledBounty = breakdown.bounty
-    ? {
-        description: breakdown.bounty.description,
-        total: Math.round(breakdown.bounty.total * (itemizeQty / purchasedQty) * 100) / 100,
-      }
-    : null;
-
-  const merchandiseTotal = Math.round(scaledMerchandiseRows.reduce((sum, row) => sum + row.total, 0) * 100) / 100;
-  const bountyAbs = scaledBounty ? Math.abs(scaledBounty.total) : 0;
-  const computedTotal = computeWalletLedgerItemizedTotal({
-    merchandiseTotal,
-    taxTotal: scaledTax,
-    shippingTotal: scaledShipping,
-    bountyAbs,
-    isSellerView: breakdown.isSellerView !== false,
-  });
-
-  return {
-    ...breakdown,
-    merchandiseRows: scaledMerchandiseRows,
-    shippingTotal: scaledShipping,
-    taxTotal: scaledTax,
-    bounty: scaledBounty,
-    computedTotal,
-  };
-}
-
 function computeWalletLedgerItemizedTotal({ merchandiseTotal, taxTotal, shippingTotal, bountyAbs, isSellerView }) {
   const tax = Math.abs(Number(taxTotal) || 0);
   const shipping = Math.abs(Number(shippingTotal) || 0);
@@ -4116,47 +4159,16 @@ function computeWalletLedgerItemizedTotal({ merchandiseTotal, taxTotal, shipping
   return Math.round((merchandiseTotal + tax + shipping - bounty) * 100) / 100;
 }
 
-/** Itemized wallet-ledger breakdown that should sum to a ledger entry (seller proceeds or buyer refund). */
-function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, saleBountyPaid, salePurchasedQty, entry, isSellerView = true }) {
-  const saleLines = Array.isArray(sale?.lines) ? sale.lines : [];
-  const merchandiseRows = saleLines.map((line, index) => {
-    const qty = Math.max(0, parseInt(line?.ti_bs_qty, 10) || 0);
-    const unitCost = Math.abs(getReceiptLineUnitPrice(line) || parseFloat(line?.ti_bs_cost) || 0);
-    const total = Math.round(unitCost * qty * 100) / 100;
-    return {
-      key: String(line?.ti_uid || line?.transaction_item_uid || `line-${index}`).trim(),
-      description: line?.item_name || line?.bs_service_name || line?.bs_service_desc || "Item",
-      qty,
-      unitCost,
-      total,
-      statusNote: index === 0 ? walletLedgerEntryStatusNote(entry) : "",
-    };
-  });
-
-  let shippingTotal = parseOrderTransactionShipping(sale, null);
-  if (shippingTotal == null || shippingTotal === 0) {
-    shippingTotal = saleLines.reduce((sum, line) => {
-      const qty = Math.max(1, parseInt(line?.ti_bs_qty, 10) || 1);
-      const sh = getOrderLineShippingAmount(line, qty);
-      return sum + (sh != null ? sh : 0);
-    }, 0);
-  }
-  shippingTotal = Math.round(Math.abs(Number(shippingTotal) || 0) * 100) / 100;
-
-  const taxTotal = Math.round(Math.abs(parseOrderMoneyField(sale?.transaction_taxes) ?? 0) * 100) / 100;
-
-  const purchasedQty = Math.max(1, parseInt(entry?.purchased_qty, 10) || salePurchasedQty || merchandiseRows.reduce((sum, row) => sum + row.qty, 0) || parseInt(sale?.ti_bs_qty, 10) || 1);
-  const bountyTotal = isSellerView
-    ? saleBountyPaid > 0
-      ? saleBountyPaid
-      : sumBountyPaidForTransaction(bountyRows, transactionUid) ||
-        resolveSaleOrderBountyPaid(sale) ||
-        sumBountyFromSaleLines(sale?.lines) ||
-        resolveWalletLedgerEntryBountyAbs(entry)
-    : 0;
-  const bountyAbs = Math.round(Math.abs(Number(bountyTotal) || 0) * 100) / 100;
-
+/** Itemized wallet-ledger breakdown from ledger entry fields only (missing fields → 0). */
+function buildWalletLedgerProceedsBreakdown({ sale, entry, isSellerView = true }) {
+  const statusNote = walletLedgerEntryStatusNote(entry);
+  const ledgerAmount = Math.round(parsePrice(entry?.amount) * 100) / 100;
+  const merchandiseRows = resolveWalletLedgerMerchandiseRows(entry, sale, statusNote);
   const merchandiseTotal = Math.round(merchandiseRows.reduce((sum, row) => sum + row.total, 0) * 100) / 100;
+  const taxTotal = Math.abs(resolveWalletLedgerEntryTaxAmount(entry) ?? 0);
+  const shippingTotal = Math.abs(resolveWalletLedgerEntryShippingAmount(entry) ?? 0);
+  const bountyRaw = parseWalletLedgerEntryMoney(entry, ["bounty_amount"]);
+  const bountyAbs = isSellerView && bountyRaw != null ? Math.abs(bountyRaw) : 0;
   const computedTotal = computeWalletLedgerItemizedTotal({
     merchandiseTotal,
     taxTotal,
@@ -4164,9 +4176,8 @@ function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, 
     bountyAbs,
     isSellerView,
   });
-  const ledgerAmount = Math.round(parsePrice(entry?.amount) * 100) / 100;
 
-  const fullBreakdown = {
+  return {
     merchandiseRows,
     shippingTotal,
     taxTotal,
@@ -4181,9 +4192,6 @@ function buildWalletLedgerProceedsBreakdown({ sale, bountyRows, transactionUid, 
     computedTotal,
     ledgerAmount,
   };
-
-  const itemizeQty = walletLedgerEntryItemizeQty(entry, purchasedQty);
-  return scaleWalletLedgerProceedsBreakdown(fullBreakdown, itemizeQty, purchasedQty);
 }
 
 function OrderDetailWalletLedgerBreakdownTable({ breakdown, darkMode }) {
@@ -4242,13 +4250,28 @@ function OrderDetailWalletLedgerBreakdownTable({ breakdown, darkMode }) {
       {shippingTotal > 0 ? <DataRow description='Shipping' total={shippingTotal} /> : null}
       {bounty ? <DataRow description={bounty.description} total={bounty.total} /> : null}
       <View style={{ borderTopWidth: 1, borderTopColor: borderColor, marginTop: 4, paddingTop: 6 }}>
-        <DataRow description='Total' total={ledgerAmount || computedTotal} emphasize />
+        <DataRow description='Total' total={ledgerAmount ?? computedTotal} emphasize />
       </View>
-      {Math.abs((ledgerAmount < 0 ? -Math.abs(computedTotal) : computedTotal) - ledgerAmount) > 0.02 ? (
-        <Text style={{ fontSize: 10, color: "#B71C1C", marginTop: 4 }}>
-          Itemized total ({formatSignedOrderMoney(computedTotal)}) differs from ledger entry ({formatSignedOrderMoney(ledgerAmount)}).
-        </Text>
-      ) : null}
+      {(() => {
+        const signedComputed = ledgerAmount < 0 ? -Math.abs(computedTotal) : computedTotal;
+        const hasLedgerAmount = ledgerAmount != null && Number.isFinite(ledgerAmount);
+        const hasMismatch = hasLedgerAmount && Math.abs(signedComputed - ledgerAmount) > 0.02;
+        if (hasMismatch) {
+          return (
+            <Text style={{ fontSize: 10, color: "#B71C1C", marginTop: 4 }}>
+              Itemized total ({formatSignedOrderMoney(signedComputed)}) differs from ledger entry ({formatSignedOrderMoney(ledgerAmount)}).
+            </Text>
+          );
+        }
+        if (hasLedgerAmount) {
+          return (
+            <Text style={{ fontSize: 10, color: "#18884A", marginTop: 4 }}>
+              Merchandise + tax + shipping{bounty ? " − bounty" : ""} matches ledger entry ({formatSignedOrderMoney(ledgerAmount)}).
+            </Text>
+          );
+        }
+        return null;
+      })()}
     </View>
   );
 }
@@ -4303,7 +4326,7 @@ function OrderDetailWalletLedgerSummary({ entries, highlightEntryId, darkMode, s
               </View>
               <Text style={[...valueStyle, signed < 0 && { color: "#B71C1C" }, signed > 0 && { color: "#2e7d32" }]}>{formatSignedOrderMoney(signed)}</Text>
             </View>
-            {breakdown && breakdown.merchandiseRows.length > 0 ? <OrderDetailWalletLedgerBreakdownTable breakdown={breakdown} darkMode={darkMode} /> : null}
+            {breakdown ? <OrderDetailWalletLedgerBreakdownTable breakdown={breakdown} darkMode={darkMode} /> : null}
           </View>
         );
       })}
@@ -4551,6 +4574,11 @@ function OrderDetailLinesTable({
                     {row.typeLabel}
                   </Text>
                 ) : null}
+                {row.qtyNote ? (
+                  <Text style={{ fontSize: 10, color: noteTextColor, marginTop: 4, lineHeight: 14 }} numberOfLines={3}>
+                    {row.qtyNote}
+                  </Text>
+                ) : null}
                 {(row.choiceLines || []).map((choiceLine, choiceIdx) => (
                   <Text key={`${row.key}-opt-${choiceIdx}`} style={{ fontSize: 11, color: optionTextColor, marginTop: 2, lineHeight: 15 }} numberOfLines={2}>
                     {formatChoiceLineText(choiceLine)}
@@ -4564,7 +4592,6 @@ function OrderDetailLinesTable({
               </View>
               <View style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty, { alignItems: "flex-end" }]}>
                 <Text style={[signedCellStyle, darkMode && !signedRows && { color: "#ccc" }, { fontSize: 13 }]}>{row.qty}</Text>
-                {row.qtyNote ? <Text style={{ fontSize: 10, color: noteTextColor, marginTop: 2, textAlign: "right", lineHeight: 13 }}>{row.qtyNote}</Text> : null}
               </View>
               <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
                 {formatCellAmount(row.unitCost)}
@@ -4828,7 +4855,6 @@ function OrderDetailModal({
 
   const showSellerShipControls = isSellerView && needsShipping && unshippedItemUids.length > 0;
   const showFulfillmentColumns = needsShipping || saleLines.some((line) => lineRequiresShipping(line) || isLineFullyShipped(line) || getLineShippedQty(line) > 0 || !!getLineFulfillmentStatus(line));
-  const verifiedSummary = formatOrderDetailVerifiedSummary(orderDetail, isSellerView, purchaseListRow);
   const pendingReturn = resolveOrderDetailPendingReturn(orderDetail);
   const showPendingReturnSummary = !!pendingReturn && String(pendingReturn.refund_status || "").toLowerCase() === "pending";
   const allUnshippedSelected = unshippedItemUids.length > 0 && unshippedItemUids.every((uid) => selectedShipItemUids.includes(uid));
@@ -4917,15 +4943,6 @@ function OrderDetailModal({
               {needsShipping ? <OrderDetailShippingCard shippingAddress={shippingAddress} darkMode={darkMode} /> : null}
 
               <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>Items purchased</Text>
-              {verifiedSummary ? <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }, { marginBottom: 8 }]}>{verifiedSummary}</Text> : null}
-              {isSellerView && saleProceedsStatusNotes.length
-                ? saleProceedsStatusNotes.map((note) => (
-                    <Text key={note.entryId || note.statusNote} style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }, { marginBottom: 8, fontStyle: "italic" }]}>
-                      {note.statusNote}
-                      {note.availability ? ` · ${note.availability}` : ""}
-                    </Text>
-                  ))
-                : null}
               <OrderDetailLinesTable
                 lines={saleLines}
                 darkMode={darkMode}
@@ -4938,6 +4955,21 @@ function OrderDetailModal({
                 purchaseListRow={purchaseListRow}
                 sale={sale}
               />
+
+              {isSellerView && saleProceedsStatusNotes.length ? (
+                <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
+                  <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>Order payment status</Text>
+                  <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
+                    Wallet ledger summary for this order (all products). Line counts above are per product.
+                  </Text>
+                  {saleProceedsStatusNotes.map((note) => (
+                    <Text key={note.entryId || note.statusNote} style={[styles.orderDetailSectionText, darkMode && { color: "#ddd" }, { marginTop: 6 }]}>
+                      {note.statusNote}
+                      {note.availability ? ` · ${note.availability}` : ""}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
 
               {showSellerShipControls ? (
                 <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
@@ -5611,7 +5643,7 @@ function getLineCancelledQty(line) {
 /** Post-shipment physical returns — does not reduce remaining_to_ship. */
 function getLineReturnedQty(line) {
   if (!line || typeof line !== "object") return 0;
-  const explicit = parseInt(line.returned_qty ?? line.returned_quantity ?? line.return_quantity_completed ?? line.return_shipped_qty ?? line.ti_return_shipped_qty ?? line.shipped_return_qty, 10);
+  const explicit = parseInt(line.returned_qty ?? line.returned_quantity ?? line.return_quantity_completed ?? line.return_shipped_qty ?? line.ti_return_shipped_qty, 10);
   return Number.isFinite(explicit) && explicit > 0 ? explicit : 0;
 }
 
@@ -5761,7 +5793,7 @@ function formatLineFulfillmentDisplay(line, unitsContext = null) {
   return { statusLabel: "—", trackingLabel: "—", trackingPairs: [], cancelNote: "" };
 }
 
-/** Sub-label under Qty in order detail when shipped/cancelled/returned/verified counts differ from purchased. */
+/** Sub-label under Description in order detail — unit counts for this line only. */
 function formatOrderDetailLineQtyNote(line, unitsContext = null) {
   if (!line || typeof line !== "object") return "";
   const units = resolveEffectiveUnits({
@@ -5779,14 +5811,106 @@ function formatOrderDetailLineQtyNote(line, unitsContext = null) {
   const cancelled = getLineCancelledFromShipQty(line);
   const returned = getLineReturnedQty(line);
   const verified = getPreviouslyReceivedQty(line);
-  const parts = [];
-  if (shipped > 0 && shipped < purchased) parts.push(`${shipped} shipped`);
+  const parts = [`${purchased} ordered`];
+  if (shipped > 0) parts.push(`${shipped} shipped`);
   if (cancelled > 0) parts.push(`${cancelled} cancelled`);
   if (returned > 0) parts.push(`${returned} returned`);
   if (verified > 0) {
     parts.push(verified >= purchased ? "all verified" : `${verified} verified`);
   }
   return parts.join(" · ");
+}
+
+function mergeReturnRowWithSaleContext(returnRow, saleSibling) {
+  if (!returnRow || typeof returnRow !== "object") return returnRow;
+  if (!saleSibling) return returnRow;
+  return {
+    ...returnRow,
+    pending_return: returnRow.pending_return || saleSibling.pending_return,
+    pending_returns: returnRow.pending_returns || saleSibling.pending_returns,
+    lines: Array.isArray(returnRow.lines) && returnRow.lines.length ? returnRow.lines : saleSibling.lines,
+    transaction_return_items: returnRow.transaction_return_items || saleSibling.transaction_return_items,
+  };
+}
+
+function pendingReturnItemMatchesProductScope(item, productUid, saleTiUids, saleLines = []) {
+  if (!item || typeof item !== "object") return false;
+  const tiUid = String(item.transaction_item_uid || item.ti_uid || "").trim();
+  const bsId = String(item.ti_bs_id || "").trim();
+  if (productUid && bsId && bsId === productUid) return true;
+  if (tiUid && saleTiUids instanceof Set && saleTiUids.size && saleTiUids.has(tiUid)) return true;
+  if (productUid && tiUid && Array.isArray(saleLines)) {
+    const saleLine = saleLines.find((line) => String(line?.ti_uid || line?.transaction_item_uid || "").trim() === tiUid);
+    if (saleLine && String(saleLine.ti_bs_id || "").trim() === productUid) return true;
+  }
+  return false;
+}
+
+/** Product-scoped return credit from pending_return.items (same API fields Return Details uses). */
+function resolveScopedPendingReturnMoney(returnRow, saleSibling, { productUid, saleTiUids } = {}) {
+  const merged = mergeReturnRowWithSaleContext(returnRow, saleSibling);
+  const pendingList = getPendingReturnsList(merged);
+  if (!pendingList.length) return null;
+
+  const saleLines = Array.isArray(merged.lines) ? merged.lines : Array.isArray(saleSibling?.lines) ? saleSibling.lines : [];
+  const hasScope = !!(productUid || (saleTiUids instanceof Set && saleTiUids.size));
+
+  let subtotal = 0;
+  let shipping = 0;
+  let scopedItemCount = 0;
+  let totalItemCount = 0;
+  let bountyPaid = 0;
+
+  for (const pending of pendingList) {
+    const items = Array.isArray(pending.items) ? pending.items : [];
+    totalItemCount += items.length;
+    for (const item of items) {
+      if (hasScope && !pendingReturnItemMatchesProductScope(item, productUid, saleTiUids, saleLines)) continue;
+      scopedItemCount += 1;
+      const uid = String(item.transaction_item_uid || item.ti_uid || "").trim();
+      const saleLine = saleLines.find((line) => String(line?.ti_uid || line?.transaction_item_uid || "").trim() === uid) || item;
+      const shippedRet = Math.max(0, parseInt(item.return_shipped_qty, 10) || 0);
+      const cancelUnshipped = Math.max(0, parseInt(item.cancel_unshipped_qty, 10) || 0);
+      const qty = Math.max(0, parseInt(item.return_quantity ?? item.quantity ?? item.qty, 10) || shippedRet + cancelUnshipped);
+      if (qty <= 0) continue;
+      const unit = Math.abs(parseFloat(item.ti_bs_cost ?? saleLine.ti_bs_cost ?? saleLine.unit_cost ?? 0) || 0);
+      subtotal += unit * qty;
+      const lineShip = parseReturnRefundShippingFromSource(item, ["line_shipping_refund", "shipping_refund", "returned_shipping", "refund_shipping"]);
+      if (lineShip != null) {
+        shipping += lineShip;
+      } else {
+        const fromLine = getReturnLineRefundableShippingAmount(saleLine, qty);
+        if (fromLine != null) shipping += fromLine;
+      }
+      const lineBounty = parseFloat(item.line_bounty_reclaim ?? item.return_bounty ?? item.bounty_paid ?? NaN);
+      if (Number.isFinite(lineBounty) && lineBounty !== 0) {
+        bountyPaid += Math.abs(lineBounty);
+      }
+    }
+  }
+
+  if (subtotal <= 0 && shipping <= 0) return null;
+
+  // When every pending item belongs to this product, use the API estimated_refund total (includes tax).
+  if (hasScope && scopedItemCount > 0 && scopedItemCount === totalItemCount && pendingList.length === 1) {
+    const entryMoney = resolvePendingReturnEntryMoney(pendingList[0]);
+    if (entryMoney.total) {
+      return {
+        total: entryMoney.total,
+        bountyPaid: entryMoney.bountyPaid || (bountyPaid > 0 ? -bountyPaid : 0),
+        totalKnown: true,
+        bountyKnown: !!(entryMoney.bountyPaid || bountyPaid),
+      };
+    }
+  }
+
+  const totalAbs = Math.round((subtotal + shipping) * 100) / 100;
+  return {
+    total: totalAbs > 0 ? -totalAbs : 0,
+    bountyPaid: bountyPaid > 0 ? -bountyPaid : 0,
+    totalKnown: totalAbs > 0,
+    bountyKnown: bountyPaid > 0,
+  };
 }
 
 /** Meta line under Mark items shipped rows (Ordered · cancelled · returned · left to ship). */
@@ -6577,10 +6701,33 @@ function sumBusinessOrderRows(rows) {
   );
 }
 
+function sellerSaleRowMatchesProduct(row, productUid, saleTiUids) {
+  if (!isSellerSaleListRow(row)) return false;
+  const bsId = String(row.ti_bs_id || "").trim();
+  if (productUid && bsId && bsId === productUid) return true;
+  const tiUid = String(row.ti_uid || row.transaction_item_uid || "").trim();
+  if (tiUid && saleTiUids instanceof Set && saleTiUids.size && saleTiUids.has(tiUid)) return true;
+  return false;
+}
+
 function buildProductSalesOrderRows(product, sellerLines, bountyLines) {
   const productUid = String(product?.productUid || product?.expertiseUid || "").trim();
-  const saleRows = (product?.sales || []).filter((row) => isSellerSaleListRow(row));
+  const bountySaleRows = (product?.sales || []).filter((row) => isSellerSaleListRow(row));
   const saleTiUids = new Set();
+  for (const sale of bountySaleRows) {
+    const tiUid = String(sale.ti_uid || sale.transaction_item_uid || "").trim();
+    if (tiUid) saleTiUids.add(tiUid);
+  }
+  for (const row of sellerLines || []) {
+    if (!isSellerSaleListRow(row)) continue;
+    const bsId = String(row.ti_bs_id || "").trim();
+    if (productUid && bsId === productUid) {
+      const tiUid = String(row.ti_uid || row.transaction_item_uid || "").trim();
+      if (tiUid) saleTiUids.add(tiUid);
+    }
+  }
+  const sellerSaleRows = (sellerLines || []).filter((row) => sellerSaleRowMatchesProduct(row, productUid, saleTiUids));
+  const saleRows = sellerSaleRows.length ? sellerSaleRows : bountySaleRows;
   const orderUids = new Set();
   for (const sale of saleRows) {
     const tiUid = String(sale.ti_uid || sale.transaction_item_uid || "").trim();
@@ -6594,7 +6741,360 @@ function buildProductSalesOrderRows(product, sellerLines, bountyLines) {
     return returnRowMatchesProductScope(row, productUid, saleTiUids);
   });
   const scopedLines = [...saleRows, ...returnRows];
-  return buildBusinessOrdersListFromSellerTransactions(scopedLines, bountyLines, { productSummary: true });
+  return buildBusinessOrdersListFromSellerTransactions(scopedLines, bountyLines, {
+    productSummary: true,
+    productUid,
+    saleTiUids,
+  }).map(enrichProductSummaryTableRow);
+}
+
+function getProductSummaryLinePayload(row) {
+  if (!row || typeof row !== "object") return row;
+  const hasReturnQty = row.return_quantity != null || row.return_qty != null;
+  if (hasReturnQty) return row;
+  const lines = collectReturnEventLinesFromRow(row);
+  if (lines.length === 1) return { ...row, ...lines[0] };
+  if (lines.length > 1) {
+    const tiUid = String(row.ti_uid || row.transaction_item_uid || "").trim();
+    const bsId = String(row.ti_bs_id || "").trim();
+    const match = lines.find((line) => {
+      const lineTi = String(line?.ti_uid || line?.transaction_item_uid || "").trim();
+      const lineBs = String(line?.ti_bs_id || "").trim();
+      return (tiUid && lineTi === tiUid) || (bsId && lineBs === bsId);
+    });
+    if (match) return { ...row, ...match };
+  }
+  return row;
+}
+
+function resolveProductSummaryPurchasedQty(row) {
+  if (!row || typeof row !== "object") return 0;
+  const units = row.units;
+  if (units && typeof units === "object") {
+    const q = parseNonNegativeInt(units.purchased_qty);
+    if (q != null && q > 0) return q;
+  }
+  const fromDisplay = getRowV2DisplayQty(row);
+  if (fromDisplay != null && fromDisplay > 0) return fromDisplay;
+  return getSaleLineQty(row);
+}
+
+function resolveProductSummaryReturnQty(row) {
+  const line = getProductSummaryLinePayload(row);
+  if (!line || typeof line !== "object") return 0;
+  const explicit = parseInt(line.return_quantity ?? line.return_qty ?? NaN, 10);
+  if (Number.isFinite(explicit) && explicit !== 0) return Math.abs(explicit);
+  const units = line.units;
+  if (units && typeof units === "object") {
+    const fromUnits = parseNonNegativeInt(units.return_quantity ?? units.return_qty);
+    if (fromUnits != null && fromUnits > 0) return fromUnits;
+  }
+  const lineQty = parseInt(line.ti_bs_qty, 10);
+  if (Number.isFinite(lineQty) && lineQty !== 0) return Math.abs(lineQty);
+  return getReturnRowUnits(line);
+}
+
+function resolveProductSummaryReturnCancelQty(row) {
+  const line = getProductSummaryLinePayload(row);
+  if (!line || typeof line !== "object") return 0;
+  if (line.cancel_unshipped_qty != null && String(line.cancel_unshipped_qty).trim() !== "") {
+    return Math.max(0, parseInt(line.cancel_unshipped_qty, 10) || 0);
+  }
+  return 0;
+}
+
+function resolveProductSummaryReturnShippedQty(row) {
+  const line = getProductSummaryLinePayload(row);
+  if (!line || typeof line !== "object") return 0;
+  if (line.return_shipped_qty != null && String(line.return_shipped_qty).trim() !== "") {
+    return Math.max(0, parseInt(line.return_shipped_qty, 10) || 0);
+  }
+  const total = resolveProductSummaryReturnQty(row);
+  const cancelUnshipped = resolveProductSummaryReturnCancelQty(row);
+  if (cancelUnshipped > 0 && total > cancelUnshipped) return total - cancelUnshipped;
+  if (cancelUnshipped > 0) return 0;
+  return total;
+}
+
+function resolveProductSummaryOrderUnitPrice(row) {
+  if (!row || typeof row !== "object") return 0;
+  const unitPrice = parseFloat(row.unit_price ?? row.ti_unit_price ?? NaN);
+  if (Number.isFinite(unitPrice) && unitPrice > 0) return Math.abs(unitPrice);
+  const fallback = parseFloat(row.ti_bs_cost ?? row.bs_cost ?? NaN);
+  return Number.isFinite(fallback) && fallback > 0 ? Math.abs(fallback) : 0;
+}
+
+function resolveProductSummaryCancelledQty(row) {
+  if (!row || typeof row !== "object") return 0;
+  const units = row.units;
+  if (!units || typeof units !== "object") return 0;
+  const completed = parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0;
+  const inProgress = parseNonNegativeInt(units.cancelled_pre_ship_in_progress_qty) ?? 0;
+  return completed + inProgress;
+}
+
+/** Order total: line_total minus cancelled_pre_ship × unit_price. */
+function resolveProductSummaryOrderTotal(row) {
+  if (!row || typeof row !== "object") return { total: 0, totalKnown: false };
+  const cancelQty = resolveProductSummaryCancelledQty(row);
+  const unitPrice = resolveProductSummaryOrderUnitPrice(row);
+  const cancelDeduction = cancelQty > 0 && unitPrice > 0 ? Math.round(cancelQty * unitPrice * 100) / 100 : 0;
+  const lineTotal = parseFloat(row.line_total ?? row.line_merchandise_total ?? NaN);
+  if (Number.isFinite(lineTotal)) {
+    return { total: Math.round((lineTotal - cancelDeduction) * 100) / 100, totalKnown: true };
+  }
+  const qty = resolveProductSummaryPurchasedQty(row);
+  if (qty > 0 && unitPrice > 0) {
+    return { total: Math.round((qty * unitPrice - cancelDeduction) * 100) / 100, totalKnown: true };
+  }
+  return { total: 0, totalKnown: false };
+}
+
+/** Product Summary line total — orders net of pre-ship cancel; returns use return_shipped_qty × ti_bs_cost. */
+function resolveProductSummaryDisplayTotal(row, isReturn) {
+  if (!row || typeof row !== "object") return { total: 0, totalKnown: false };
+  if (isReturn) {
+    const line = getProductSummaryLinePayload(row);
+    const qty = resolveProductSummaryReturnShippedQty(row);
+    const unit = Math.abs(parseFloat(line.ti_bs_cost ?? line.bs_cost ?? NaN));
+    if (Number.isFinite(unit) && unit > 0 && qty > 0) {
+      return { total: -Math.round(unit * qty * 100) / 100, totalKnown: true };
+    }
+    if (qty === 0) return { total: 0, totalKnown: true };
+    return { total: 0, totalKnown: false };
+  }
+  return resolveProductSummaryOrderTotal(row);
+}
+
+function enrichProductSummaryTableRow(mappedRow) {
+  const raw = mappedRow?.rawRow && typeof mappedRow.rawRow === "object" ? mappedRow.rawRow : mappedRow;
+  const isReturn = !!mappedRow?.isReturn;
+  const money = resolveProductSummaryDisplayTotal(raw, isReturn);
+  return {
+    ...mappedRow,
+    lineQty: isReturn ? resolveProductSummaryReturnShippedQty(raw) : resolveProductSummaryPurchasedQty(raw),
+    cancelledQty: isReturn ? 0 : resolveProductSummaryCancelledQty(raw),
+    total: money.total,
+    totalKnown: money.totalKnown,
+  };
+}
+
+function groupProductSummaryRowsByOrder(rows) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const orderUid = row.orderUid || "—";
+    if (!map.has(orderUid)) {
+      map.set(orderUid, { orderUid, placedBy: "—", dateLabel: "—", dateMs: 0, rows: [] });
+    }
+    const group = map.get(orderUid);
+    group.rows.push(row);
+    if (!row.isReturn) {
+      group.placedBy = row.placedBy || group.placedBy;
+      group.dateLabel = row.dateLabel || group.dateLabel;
+      group.dateMs = Math.max(group.dateMs || 0, row.dateMs || 0);
+    } else if (group.placedBy === "—") {
+      group.placedBy = row.placedBy || group.placedBy;
+    }
+  }
+  for (const group of map.values()) {
+    if (!group.dateMs && group.rows.length) {
+      const anchor = group.rows.find((row) => !row.isReturn) || group.rows[0];
+      group.dateLabel = anchor.dateLabel;
+      group.dateMs = anchor.dateMs || 0;
+      group.placedBy = anchor.placedBy || group.placedBy;
+    }
+    group.rows.sort((a, b) => {
+      const byType = (b.isReturn ? 1 : 0) - (a.isReturn ? 1 : 0);
+      if (byType !== 0) return byType;
+      return (b.dateMs || 0) - (a.dateMs || 0);
+    });
+  }
+  return [...map.values()].sort((a, b) => (b.dateMs || 0) - (a.dateMs || 0));
+}
+
+function sumProductSummaryDisplayTotals(rows) {
+  let total = 0;
+  let allKnown = true;
+  for (const row of rows || []) {
+    if (row.totalKnown === false) {
+      allKnown = false;
+      continue;
+    }
+    total += Number(row.total) || 0;
+  }
+  return { total, allKnown };
+}
+
+function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrderPress, onReturnPress }) {
+  const groups = groupProductSummaryRowsByOrder(rows);
+  const grandTotal = sumProductSummaryDisplayTotals(rows);
+
+  const renderStatusBadge = (kind, label, attentionLevel = null) => {
+    let badgeStyle;
+    if (attentionLevel === "red") {
+      badgeStyle = { badge: { backgroundColor: "#FFEBEE" }, text: { color: "#B71C1C", fontWeight: "600" } };
+    } else if (attentionLevel === "orange") {
+      badgeStyle = { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100", fontWeight: "600" } };
+    } else if (attentionLevel === "purple") {
+      badgeStyle = { badge: { backgroundColor: "#F3E5F5" }, text: { color: "#7B1FA2", fontWeight: "600" } };
+    } else {
+      badgeStyle = getProductSaleStatusBadgeStyle(kind, label);
+    }
+    return (
+      <View style={[styles.productSalesDetailStatusBadge, badgeStyle.badge]}>
+        <Text style={[styles.productSalesDetailStatusBadgeText, badgeStyle.text]} numberOfLines={1}>
+          {label}
+        </Text>
+      </View>
+    );
+  };
+
+  const isShipActionDeliveredLabel = (label) => {
+    const normalized = String(label || "")
+      .trim()
+      .toLowerCase();
+    if (normalized === "not shipped" || normalized === "partial") return true;
+    const fraction = parseFractionStatusLabel(label);
+    return !!(fraction && fraction.num < fraction.den);
+  };
+
+  if (!groups.length) return null;
+
+  const metaColor = darkMode ? "#aaa" : "#666";
+  const headerColor = darkMode ? "#ccc" : "#555";
+
+  const renderLineRow = (row) => {
+    const isReturnRow = !!row.isReturn;
+    const openReturn = () => {
+      if (typeof onReturnPress === "function") onReturnPress(row);
+      else if (typeof onOrderPress === "function") onOrderPress(row);
+    };
+    const openOrder = () => {
+      if (typeof onOrderPress === "function") onOrderPress(row);
+    };
+    const cancelledLabel = !isReturnRow && row.cancelledQty > 0 ? String(row.cancelledQty) : "—";
+
+    return (
+      <View key={row.key} style={[styles.productSummaryLineRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailDataRowDark]}>
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColType, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}>
+          {row.rowLabel || "Order"}
+        </Text>
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty, darkMode && { color: "#ccc" }]}>
+          {row.lineQty > 0 ? row.lineQty : "—"}
+        </Text>
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColCancelled, darkMode && { color: "#ccc" }]}>{cancelledLabel}</Text>
+        <Text
+          style={[
+            styles.productSalesDetailCell,
+            styles.productSummaryColTotal,
+            isReturnRow && { color: "#B71C1C", fontWeight: "600" },
+            darkMode && !isReturnRow && { color: "#ccc" },
+          ]}
+          numberOfLines={1}
+        >
+          {formatSignedOrderMoneyOrNa(row.total, row.totalKnown !== false)}
+        </Text>
+        <View style={[styles.productSummaryColStatus, styles.productSalesDetailStatusCell]}>
+          {isReturnRow && onReturnPress ? (
+            <TouchableOpacity onPress={openReturn} activeOpacity={0.7}>
+              {renderStatusBadge("delivered", row.delivered, row.attentionLevel === "purple" ? "purple" : null)}
+            </TouchableOpacity>
+          ) : onOrderPress && !isReturnRow && isShipActionDeliveredLabel(row.delivered) ? (
+            <TouchableOpacity onPress={openOrder} activeOpacity={0.7}>
+              {renderStatusBadge("delivered", row.delivered, row.attentionLevel === "red" ? "red" : null)}
+            </TouchableOpacity>
+          ) : (
+            renderStatusBadge("delivered", row.delivered, row.attentionLevel === "red" ? "red" : null)
+          )}
+        </View>
+        <View style={[styles.productSummaryColStatus, styles.productSalesDetailStatusCell]}>
+          {isReturnRow && onReturnPress ? (
+            <TouchableOpacity onPress={openReturn} activeOpacity={0.7}>
+              {renderStatusBadge("received", row.received, row.attentionLevel === "purple" ? "purple" : null)}
+            </TouchableOpacity>
+          ) : (
+            renderStatusBadge("received", row.received, row.attentionLevel)
+          )}
+        </View>
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColDaysOpen, darkMode && { color: "#ccc" }]} numberOfLines={1}>
+          {row.daysOpen}
+        </Text>
+      </View>
+    );
+  };
+
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator nestedScrollEnabled>
+      <ScrollView style={{ maxHeight: maxBodyHeight, minWidth: 600 }} nestedScrollEnabled showsVerticalScrollIndicator>
+      {groups.map((group, groupIndex) => {
+        const openGroupOrder = () => {
+          const saleRow = group.rows.find((row) => !row.isReturn) || group.rows[0];
+          if (saleRow && typeof onOrderPress === "function") onOrderPress(saleRow);
+        };
+        return (
+          <View key={group.orderUid} style={[styles.productSummaryOrderGroup, groupIndex > 0 && styles.productSummaryOrderGroupSpacing, darkMode && styles.productSummaryOrderGroupDark]}>
+            <View style={styles.productSummaryOrderHeader}>
+              {onOrderPress ? (
+                <TouchableOpacity onPress={openGroupOrder} activeOpacity={0.7}>
+                  <Text style={styles.productSummaryOrderHeaderLine} numberOfLines={2}>
+                    <Text style={[styles.productSummaryOrderHeaderUid, styles.productSalesDetailTxnLink]}>{group.orderUid}</Text>
+                    <Text style={[styles.productSummaryOrderHeaderMeta, { color: metaColor }]}>
+                      {"  "}
+                      {group.dateLabel || "—"} · Placed by {group.placedBy || "—"}
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.productSummaryOrderHeaderLine} numberOfLines={2}>
+                  <Text style={[styles.productSummaryOrderHeaderUid, darkMode && { color: "#eee" }]}>{group.orderUid}</Text>
+                  <Text style={[styles.productSummaryOrderHeaderMeta, { color: metaColor }]}>
+                    {"  "}
+                    {group.dateLabel || "—"} · Placed by {group.placedBy || "—"}
+                  </Text>
+                </Text>
+              )}
+            </View>
+            <View style={[styles.productSummaryLineHeaderRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailHeaderRowDark]}>
+              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColType, { color: headerColor }]} numberOfLines={1}>
+                Type
+              </Text>
+              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColQty, { color: headerColor }]} numberOfLines={1}>
+                Qty
+              </Text>
+              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColCancelled, { color: headerColor }]} numberOfLines={1}>
+                Cancelled
+              </Text>
+              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColTotal, { color: headerColor }]} numberOfLines={1}>
+                Total
+              </Text>
+              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColStatus, { color: headerColor }]} numberOfLines={1}>
+                Shipped
+              </Text>
+              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColStatus, { color: headerColor }]} numberOfLines={1}>
+                Received
+              </Text>
+              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColDaysOpen, { color: headerColor }]} numberOfLines={1}>
+                Days open
+              </Text>
+            </View>
+            {group.rows.map(renderLineRow)}
+          </View>
+        );
+      })}
+      <View style={[styles.productSummaryGrandTotalRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailTotalRowDark]}>
+        <Text style={[styles.productSalesDetailTotalLabel, styles.productSummaryColType, darkMode && { color: "#eee" }]}>Total</Text>
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty]} />
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColCancelled]} />
+        <Text style={[styles.productSalesDetailTotalValue, styles.productSummaryColTotal, darkMode && { color: "#eee" }]} numberOfLines={1}>
+          {formatSignedOrderMoneyOrNa(grandTotal.total, grandTotal.allKnown)}
+        </Text>
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColStatus]} />
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColStatus]} />
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColDaysOpen]} />
+      </View>
+      </ScrollView>
+    </ScrollView>
+  );
 }
 
 function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress, onReturnPress }) {
@@ -11619,7 +12119,7 @@ export default function AccountScreen({ navigation, route }) {
       <Modal animationType='slide' transparent={true} visible={productSalesModal.visible} onRequestClose={closeProductSalesModal}>
         <View style={[styles.productSalesModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.productSalesModalContent, darkMode && styles.darkModalContent]}>
-            <Text style={[styles.productSalesModalTitle, darkMode && styles.darkTitle]}>Orders</Text>
+            <Text style={[styles.productSalesModalTitle, darkMode && styles.darkTitle]}>Product Summary</Text>
             <Text style={[styles.productSalesModalSubtitle, darkMode && { color: "#aaa" }]}>
               {productSalesModal.product?.productName || "Product"} · {productSalesModal.product?.productUid || "—"}
             </Text>
@@ -11629,7 +12129,7 @@ export default function AccountScreen({ navigation, route }) {
             ) : productSalesModal.sales?.length === 0 ? (
               <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No orders recorded for this product yet.</Text>
             ) : (
-              <BusinessOrdersTable
+              <ProductSummaryOrdersTable
                 rows={buildProductSalesOrderRows(productSalesModal.product, businessSellerTransactionList, sellerOrderBountyRows)}
                 darkMode={darkMode}
                 onOrderPress={(row) => openOrderDetail(row, { isSellerView: true })}
@@ -11772,7 +12272,7 @@ export default function AccountScreen({ navigation, route }) {
             ) : salesModal.transactions?.length === 0 ? (
               <Text style={{ color: "#888", fontStyle: "italic" }}>No one has purchased this offering yet.</Text>
             ) : (
-              <BusinessOrdersTable
+              <ProductSummaryOrdersTable
                 rows={buildProductSalesOrderRows({ sales: salesModal.transactions || [] }, salesModal.sellerLines || sellerTxData, bountyData?.data || [])}
                 darkMode={false}
                 maxBodyHeight={360}
@@ -12213,6 +12713,92 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#222",
     paddingHorizontal: 6,
+    textAlign: "right",
+  },
+  productSummaryOrderGroup: {
+    borderWidth: 1,
+    borderColor: "#eee",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingTop: 10,
+    paddingBottom: 4,
+    marginBottom: 4,
+  },
+  productSummaryOrderGroupDark: {
+    borderColor: "#444",
+  },
+  productSummaryOrderGroupSpacing: {
+    marginTop: 12,
+  },
+  productSummaryOrderHeader: {
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  productSummaryOrderHeaderLine: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  productSummaryOrderHeaderUid: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#222",
+  },
+  productSummaryOrderHeaderMeta: {
+    fontSize: 14,
+    fontWeight: "400",
+  },
+  productSummaryLineHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    marginBottom: 2,
+  },
+  productSummaryTableRow: {
+    minWidth: 600,
+  },
+  productSummaryLineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f5f5f5",
+  },
+  productSummaryGrandTotalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    marginTop: 8,
+    borderTopWidth: 2,
+    borderTopColor: "#ddd",
+  },
+  productSummaryColType: {
+    width: 76,
+    flexShrink: 0,
+  },
+  productSummaryColQty: {
+    width: 40,
+    flexShrink: 0,
+    textAlign: "right",
+  },
+  productSummaryColCancelled: {
+    width: 88,
+    flexShrink: 0,
+    textAlign: "right",
+  },
+  productSummaryColTotal: {
+    width: 88,
+    flexShrink: 0,
+    textAlign: "right",
+  },
+  productSummaryColStatus: {
+    width: 96,
+    flexShrink: 0,
+  },
+  productSummaryColDaysOpen: {
+    width: 92,
+    flexShrink: 0,
     textAlign: "right",
   },
   productSalesModalCloseButton: {
