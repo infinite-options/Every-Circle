@@ -3435,12 +3435,20 @@ function getReturnLineFlatShippingAmount(line) {
 
 /**
  * Refundable shipping for a return line.
- * - Per-unit checkout: ti_shipping_amount_per_unit × returned/cancelled qty.
+ * - Shipped physical returns (return_kind=return) never refund delivery shipping.
+ * - Pre-ship cancel (return_kind=cancel / unshipped qty) may refund shipping only when bs_shipping_refundable.
+ * - Per-unit checkout: ti_shipping_amount_per_unit × refundable qty.
  * - Flat per-line checkout: ti_shipping_amount_per_line on full-line return only, or line_shipping_refund from API.
  */
 function getReturnLineRefundableShippingAmount(line, returnQtyOverride) {
   const returnQty = Math.max(0, parseInt(returnQtyOverride ?? line?.return_quantity ?? line?.ti_bs_qty, 10) || 0);
   if (returnQty <= 0) return 0;
+
+  const returnKind = line.return_kind === "cancel" ? "cancel" : line.return_kind === "return" ? "return" : null;
+  // Delivery / shipped returns — shipping is not refunded even when the listing allows returns.
+  if (returnKind === "return") return 0;
+
+  if (!isLineShippingRefundable(line)) return 0;
 
   const explicitRefund = parseReturnRefundShippingFromSource(line, ["line_shipping_refund", "shipping_refund", "returned_shipping", "refund_shipping"]);
   if (explicitRefund != null) return explicitRefund;
@@ -3454,13 +3462,13 @@ function getReturnLineRefundableShippingAmount(line, returnQtyOverride) {
 
   let refundableQty = 0;
   if (hasExplicitSplit) {
-    if (isLineShippingRefundable(line)) {
+    if (Number.isFinite(explicitCancelUnshipped) && explicitCancelUnshipped > 0) {
+      refundableQty = explicitCancelUnshipped;
+    } else if (returnKind === "cancel") {
       refundableQty = returnQty;
     } else {
-      refundableQty = Number.isFinite(explicitCancelUnshipped) && explicitCancelUnshipped >= 0 ? explicitCancelUnshipped : 0;
+      refundableQty = getReturnLineUnshippedQty(line, returnQty);
     }
-  } else if (isLineShippingRefundable(line)) {
-    refundableQty = returnQty;
   } else {
     refundableQty = getReturnLineUnshippedQty(line, returnQty);
   }
@@ -3872,12 +3880,20 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
     const taxes = taxAmount != null ? asNegative(taxAmount) : null;
     const shipping = shippingAmount != null ? asNegative(shippingAmount) : null;
     const bounty = asNegative(resolvedBounty);
-    const computedRefund = Math.abs(amount) + Math.abs(taxes || 0) + Math.abs(shipping || 0);
+    let computedRefund = Math.abs(amount) + Math.abs(taxes || 0) + Math.abs(shipping || 0);
     let totalAbs = computedRefund;
     if (pendingCredit > 0) {
       const usedCorrectedLineShipping = computedShippingRefund > 0 && pendingShippingFromApi != null && Math.abs(pendingShippingFromApi - computedShippingRefund) > 0.02;
       if (!usedCorrectedLineShipping && pendingCredit >= computedRefund - 0.02) {
         totalAbs = pendingCredit;
+      } else if (pendingCredit < computedRefund - 0.02) {
+        // estimated_refund total is authoritative when FE over-counts shipping (e.g. shipped returns).
+        totalAbs = pendingCredit;
+        if (pendingShippingFromApi != null) {
+          const shippingAbs = Math.max(0, pendingShippingFromApi);
+          shipping = shippingAbs > 0 ? asNegative(shippingAbs) : null;
+          computedRefund = Math.abs(amount) + Math.abs(taxes || 0) + shippingAbs;
+        }
       }
       // else API under-refunded (e.g. card fees wrongly withheld) — use merchandise + tax + shipping
     }
