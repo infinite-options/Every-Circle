@@ -3435,8 +3435,8 @@ function getReturnLineFlatShippingAmount(line) {
 
 /**
  * Refundable shipping for a return line.
- * - Shipped physical returns (return_kind=return) never refund delivery shipping.
- * - Pre-ship cancel (return_kind=cancel / unshipped qty) may refund shipping only when bs_shipping_refundable.
+ * - Pre-ship cancel (return_kind=cancel / unshipped qty): shipping is always refunded.
+ * - Shipped physical return (return_kind=return): shipping refunded only when bs_shipping_refundable.
  * - Per-unit checkout: ti_shipping_amount_per_unit × refundable qty.
  * - Flat per-line checkout: ti_shipping_amount_per_line on full-line return only, or line_shipping_refund from API.
  */
@@ -3445,13 +3445,12 @@ function getReturnLineRefundableShippingAmount(line, returnQtyOverride) {
   if (returnQty <= 0) return 0;
 
   const returnKind = line.return_kind === "cancel" ? "cancel" : line.return_kind === "return" ? "return" : null;
-  // Delivery / shipped returns — shipping is not refunded even when the listing allows returns.
-  if (returnKind === "return") return 0;
 
-  if (!isLineShippingRefundable(line)) return 0;
+  // Shipped returns — delivery shipping only when explicitly marked refundable on the listing.
+  if (returnKind === "return" && !isLineShippingRefundable(line)) return 0;
 
   const explicitRefund = parseReturnRefundShippingFromSource(line, ["line_shipping_refund", "shipping_refund", "returned_shipping", "refund_shipping"]);
-  if (explicitRefund != null) return explicitRefund;
+  if (explicitRefund != null && returnKind !== "cancel") return explicitRefund;
 
   const perUnit = getReturnLinePerUnitShippingAmount(line);
   const perLine = getReturnLinePerLineShippingAmount(line);
@@ -3461,16 +3460,20 @@ function getReturnLineRefundableShippingAmount(line, returnQtyOverride) {
   const hasExplicitSplit = (Number.isFinite(explicitShippedReturn) && explicitShippedReturn >= 0) || (Number.isFinite(explicitCancelUnshipped) && explicitCancelUnshipped >= 0);
 
   let refundableQty = 0;
-  if (hasExplicitSplit) {
-    if (Number.isFinite(explicitCancelUnshipped) && explicitCancelUnshipped > 0) {
-      refundableQty = explicitCancelUnshipped;
-    } else if (returnKind === "cancel") {
-      refundableQty = returnQty;
-    } else {
-      refundableQty = getReturnLineUnshippedQty(line, returnQty);
-    }
+  if (returnKind === "cancel") {
+    refundableQty = returnQty;
+  } else if (returnKind === "return") {
+    refundableQty = returnQty;
+  } else if (hasExplicitSplit) {
+    const cancelQty = Number.isFinite(explicitCancelUnshipped) && explicitCancelUnshipped > 0 ? explicitCancelUnshipped : 0;
+    const shippedQty = Number.isFinite(explicitShippedReturn) && explicitShippedReturn > 0 ? explicitShippedReturn : 0;
+    const shippedRefundable = isLineShippingRefundable(line) ? shippedQty : 0;
+    refundableQty = cancelQty + shippedRefundable;
   } else {
-    refundableQty = getReturnLineUnshippedQty(line, returnQty);
+    const unshippedQty = getReturnLineUnshippedQty(line, returnQty);
+    const shippedQty = Math.max(0, returnQty - unshippedQty);
+    const shippedRefundable = isLineShippingRefundable(line) ? shippedQty : 0;
+    refundableQty = unshippedQty + shippedRefundable;
   }
 
   if (refundableQty <= 0) return 0;
@@ -3848,7 +3851,8 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
     }
     return sum;
   }, 0);
-  const computedShippingRefund = itemShippingRefund > 0 ? itemShippingRefund : itemShippingFromLines > 0 ? itemShippingFromLines : null;
+  const hasReturnLineItems = Array.isArray(items) && items.length > 0;
+  const computedShippingRefund = hasReturnLineItems ? itemShippingRefund : itemShippingFromLines > 0 ? itemShippingFromLines : null;
   // Prefer seller bounty_paid reversed (Orders Bounty column), else pool bounty.
   const itemBounty = (items || []).reduce((sum, item) => sum + (Number(item.bountyPaidReversed) || Number(item.lineBounty) || 0), 0);
   const bountyPool = saleBountyPool > 0 ? saleBountyPool : resolveSaleOrderBountyPaid(sale);
@@ -3858,7 +3862,7 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   const pendingSubtotal = parseOrderMoneyField(estimated?.subtotal);
   const pendingTaxes = parseOrderMoneyField(estimated?.taxes ?? estimated?.transaction_taxes);
   const pendingShippingFromApi = parseEstimatedRefundShipping(estimated);
-  const pendingShippingRefund = computedShippingRefund != null && computedShippingRefund > 0 ? computedShippingRefund : pendingShippingFromApi;
+  const pendingShippingRefund = hasReturnLineItems ? itemShippingRefund : computedShippingRefund != null && computedShippingRefund > 0 ? computedShippingRefund : pendingShippingFromApi;
   const pendingComponentCredit =
     pendingSubtotal > 0 || pendingTaxes > 0 || (pendingShippingRefund != null && pendingShippingRefund > 0)
       ? Math.round((pendingSubtotal + pendingTaxes + (pendingShippingRefund || 0)) * 100) / 100
@@ -3876,27 +3880,20 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
     const merchAbs = pendingSubtotal || itemMerchandise;
     const amount = asNegative(merchAbs || Math.max(0, pendingCredit - pendingTaxes - (pendingShippingRefund || 0)) || itemMerchandise);
     const taxAmount = pendingTaxes > 0 ? pendingTaxes : null;
-    const shippingAmount = pendingShippingRefund != null && pendingShippingRefund > 0 ? pendingShippingRefund : null;
+    const shippingAmount =
+      hasReturnLineItems ? (itemShippingRefund > 0 ? itemShippingRefund : null) : pendingShippingRefund != null && pendingShippingRefund > 0 ? pendingShippingRefund : null;
     const taxes = taxAmount != null ? asNegative(taxAmount) : null;
     const shipping = shippingAmount != null ? asNegative(shippingAmount) : null;
     const bounty = asNegative(resolvedBounty);
     let computedRefund = Math.abs(amount) + Math.abs(taxes || 0) + Math.abs(shipping || 0);
     let totalAbs = computedRefund;
-    if (pendingCredit > 0) {
-      const usedCorrectedLineShipping = computedShippingRefund > 0 && pendingShippingFromApi != null && Math.abs(pendingShippingFromApi - computedShippingRefund) > 0.02;
-      if (!usedCorrectedLineShipping && pendingCredit >= computedRefund - 0.02) {
-        totalAbs = pendingCredit;
-      } else if (pendingCredit < computedRefund - 0.02) {
-        // estimated_refund total is authoritative when FE over-counts shipping (e.g. shipped returns).
-        totalAbs = pendingCredit;
-        if (pendingShippingFromApi != null) {
-          const shippingAbs = Math.max(0, pendingShippingFromApi);
-          shipping = shippingAbs > 0 ? asNegative(shippingAbs) : null;
-          computedRefund = Math.abs(amount) + Math.abs(taxes || 0) + shippingAbs;
-        }
-      }
-      // else API under-refunded (e.g. card fees wrongly withheld) — use merchandise + tax + shipping
+    if (hasReturnLineItems) {
+      // Hybrid return/cancel: line-level rules (cancel shipping always; return shipping when flagged).
+      totalAbs = computedRefund;
+    } else if (pendingCredit > 0 && pendingCredit >= computedRefund - 0.02) {
+      totalAbs = pendingCredit;
     }
+    // else API under-refunded (e.g. card fees wrongly withheld) — use merchandise + tax + shipping
     const refundTarget = refundTotalFallback > 0 ? Math.abs(refundTotalFallback) : 0;
     const refundableCap = orderRefundableCustomerTotal(sale);
     if (refundTarget > 0 && Math.abs(totalAbs - refundTarget) <= 0.02) {
@@ -6296,6 +6293,69 @@ function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}) {
   }
   if (!transaction) return ACCOUNT_SCREEN_DISPLAY_NA;
   return getAccountScreenDisplayLabel(transaction, "received_label");
+}
+
+/** Immediate Purchases Received chip after buyer confirms delivery (before account-screen refresh lands). */
+function applyOptimisticPurchaseDeliveryVerification(purchaseRow, receiptLines, deliveryVerificationItems, orderUnits = null, returnRows = null) {
+  if (!purchaseRow || typeof purchaseRow !== "object" || !Array.isArray(receiptLines) || !receiptLines.length) {
+    return purchaseRow;
+  }
+
+  const verifiedByTi = {};
+  for (const line of receiptLines) {
+    const ti = getReceiptLineTransactionItemUid(line);
+    if (!ti) continue;
+    verifiedByTi[ti] = getPreviouslyReceivedQty(line);
+  }
+  for (const item of deliveryVerificationItems || []) {
+    const ti = String(item?.transaction_item_uid || "").trim();
+    if (!ti) continue;
+    verifiedByTi[ti] = (verifiedByTi[ti] || 0) + Math.max(0, parseInt(item.received_quantity, 10) || 0);
+  }
+
+  let verifiedTotal = 0;
+  let purchasedTotal = 0;
+  let verifiableRemaining = 0;
+  for (const line of receiptLines) {
+    const ti = getReceiptLineTransactionItemUid(line);
+    const purchased = Math.max(0, getReceivableQty(line));
+    purchasedTotal += purchased;
+    const verified = ti && verifiedByTi[ti] != null ? verifiedByTi[ti] : getPreviouslyReceivedQty(line);
+    verifiedTotal += verified;
+    verifiableRemaining += getVerifiableReceiveRemaining({ ...line, ti_received_qty: verified }, purchaseRow, returnRows, orderUnits);
+  }
+
+  const unitsPurchased =
+    parseNonNegativeInt(orderUnits?.purchased_qty) ??
+    parseNonNegativeInt(purchaseRow?.units?.purchased_qty) ??
+    parseNonNegativeInt(getRowV2DisplayQty(purchaseRow)) ??
+    parseNonNegativeInt(purchaseRow?.ti_bs_qty) ??
+    purchasedTotal;
+  const purchased = Math.max(purchasedTotal, unitsPurchased || 0);
+  const verified = purchased > 0 ? Math.min(verifiedTotal, purchased) : verifiedTotal;
+
+  let receivedLabel = purchaseRow?.display?.received_label;
+  if (verified > 0) {
+    receivedLabel = purchased > 0 && verified >= purchased ? "Yes" : `${verified}/${purchased}`;
+  }
+  const receivedAction = verifiableRemaining > 0 ? "verify" : "status";
+
+  return {
+    ...purchaseRow,
+    ti_received_qty: verified,
+    units: {
+      ...(purchaseRow.units && typeof purchaseRow.units === "object" ? purchaseRow.units : {}),
+      ...(orderUnits && typeof orderUnits === "object" ? orderUnits : {}),
+      purchased_qty: purchased,
+      verified_qty: verified,
+      verifiable_remaining_qty: verifiableRemaining,
+    },
+    display: {
+      ...(purchaseRow.display && typeof purchaseRow.display === "object" ? purchaseRow.display : {}),
+      received_label: receivedLabel,
+      received_action: receivedAction,
+    },
+  };
 }
 
 /** True when backend marks this purchase row as ready for buyer delivery verification. */
@@ -8811,9 +8871,15 @@ export default function AccountScreen({ navigation, route }) {
   };
 
   /** GET /api/v1/wallet_ledger/:profile_id — bounty credits, sale proceeds, wallet payments/refunds. */
-  const refreshWalletLedger = async () => {
+  const refreshWalletLedger = async (options = {}) => {
+    const force = options?.force === true;
     if (refreshWalletLedgerInFlightRef.current) {
-      return refreshWalletLedgerInFlightRef.current;
+      if (!force) return refreshWalletLedgerInFlightRef.current;
+      try {
+        await refreshWalletLedgerInFlightRef.current;
+      } catch (_) {
+        /* stale in-flight — fetch again below */
+      }
     }
     const fetchGen = personalFetchGenRef.current;
     const task = (async () => {
@@ -8902,7 +8968,7 @@ export default function AccountScreen({ navigation, route }) {
     }
   };
 
-  const updateTransactionEscrow = async (transactionUid, deliveryVerificationItems, releaseEscrow) => {
+  const updateTransactionEscrow = async (transactionUid, deliveryVerificationItems, releaseEscrow, verificationContext = null) => {
     const profileId = pendingTransactionForConfirm?.transaction_profile_id || (await getSessionProfile())?.profileUid || (await AsyncStorage.getItem("profile_uid"));
     if (!profileId) {
       Alert.alert("Error", "Cannot confirm delivery: missing profile.");
@@ -8914,6 +8980,7 @@ export default function AccountScreen({ navigation, route }) {
       transaction_in_escrow: releaseEscrow ? 0 : 1,
       delivery_verification_items: deliveryVerificationItems,
     };
+    const txnKey = String(transactionUid || "").trim();
     try {
       setUpdatingEscrow(true);
       const response = await fetch(TRANSACTIONS_ENDPOINT, {
@@ -8927,8 +8994,23 @@ export default function AccountScreen({ navigation, route }) {
         Alert.alert("Could not confirm delivery", detail);
         return;
       }
+      if (verificationContext?.purchaseRow && txnKey) {
+        const patched = applyOptimisticPurchaseDeliveryVerification(
+          verificationContext.purchaseRow,
+          verificationContext.receiptLines,
+          deliveryVerificationItems,
+          verificationContext.orderUnits,
+          verificationContext.returnRows,
+        );
+        setTransactionData((prev) =>
+          (Array.isArray(prev) ? prev : []).map((row) => {
+            const rowTxn = String(row?.transaction_uid || row?.original_transaction_uid || "").trim();
+            return rowTxn === txnKey ? patched : row;
+          }),
+        );
+      }
       resetDeliveryVerificationModal();
-      await Promise.all([refreshAccountScreenPersonal(), refreshWalletLedger()]);
+      await Promise.all([refreshAccountScreenPersonal({ force: true }), refreshWalletLedger({ force: true })]);
       if (!releaseEscrow) {
         Alert.alert("Partial delivery recorded", "Receipt confirmation saved. Earnings may remain pending until all items are verified and any return window ends.");
       } else {
@@ -12119,7 +12201,12 @@ export default function AccountScreen({ navigation, route }) {
                       }
 
                       const releaseEscrow = areAllReceiptLinesFullyReceived(deliveryVerificationReceiptData, selectedReceivedItems, receivedItemQuantities);
-                      updateTransactionEscrow(transactionUid, deliveryVerificationItems, releaseEscrow);
+                      updateTransactionEscrow(transactionUid, deliveryVerificationItems, releaseEscrow, {
+                        purchaseRow: pendingTransactionForConfirm,
+                        receiptLines: deliveryVerificationReceiptData,
+                        orderUnits: deliveryVerificationOrderUnits,
+                        returnRows: returnRowsForVerify,
+                      });
                     }}
                   >
                     {updatingEscrow ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.receiveItemModalButtonText}>Confirm</Text>}
