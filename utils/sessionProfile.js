@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { markAccountScreenPersonalStale } from "./accountScreenPersonalCache";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "./httpMiddleware";
 import { mapBusinessToMiniCard } from "./mapBusinessToMiniCard";
@@ -227,6 +228,7 @@ export async function getSessionProfile({ forceRefresh = false } = {}) {
 
 export function clearSessionProfileCache() {
   cachedSessionProfile = null;
+  void markAccountScreenPersonalStale();
   notifySessionProfileListeners(null);
 }
 

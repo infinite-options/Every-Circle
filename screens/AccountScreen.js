@@ -7,7 +7,6 @@ import AppHeader from "../components/AppHeader";
 import {
   ACCOUNT_SCREEN_PERSONAL_ENDPOINT,
   ACCOUNT_SCREEN_BUSINESS_ENDPOINT,
-  ACCOUNT_SCREEN_V2_COMPAT_ENABLED,
   WALLET_LEDGER_ENDPOINT,
   ORDERS_ENDPOINT,
   API_BASE_URL,
@@ -26,7 +25,7 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { getSessionProfile, resolveBusinessUid, subscribeSessionProfile } from "../utils/sessionProfile";
-import { consumeAccountScreenPersonalStale } from "../utils/accountScreenPersonalCache";
+import { peekAccountScreenPersonalStale, clearAccountScreenPersonalStale } from "../utils/accountScreenPersonalCache";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { restockReturnedItems, restockReturnedOfferingItems } from "../utils/purchaseService";
 import { isOfferingQtyUnlimited } from "../utils/profileOfferingShipping";
@@ -122,12 +121,15 @@ function navigateToPurchaseSeller(navigation, transaction) {
 }
 
 /**
- * GET /api/v1/account-screen/personal/:profile_id — v2 only (schema_version >= 2).
- * - purchases.rows[] — buyer purchase/return list (required)
- * - seller_transactions — seller lines as array or { code, data }
- * - bounty_results | bounty — bounty lines + totals
+ * GET /api/v1/account-screen/personal/:profile_id (schema_version 3).
+ * - purchases.rows[] — buyer purchase/return list
+ * - sales.transactions — seller order lines
+ * - bounty_results.rows — bounty lines + totals
+ * - earnings — chart + bounty totals
  * - wallet — wallet balances
- * - profile — personal_info + expertise_info (SALES table)
+ * - wallet_ledger — ledger entries
+ * - sales.offerings — SALES table sold counts
+ * - profile — personal_info + expertise_info
  */
 /** Backend may send numeric or string success codes (e.g. 200 vs "200"). */
 function isApiSuccessCode(code) {
@@ -155,39 +157,15 @@ function getAccountScreenSchemaVersion(json) {
   return Number.isFinite(v) ? v : 0;
 }
 
-function isAccountScreenV3(schemaVersion) {
-  return Number(schemaVersion) >= 3;
-}
-
-/** When false, Account UI reads v3 contract only (no legacy field fallbacks). */
-function accountScreenV2CompatEnabled() {
-  return ACCOUNT_SCREEN_V2_COMPAT_ENABLED === true;
-}
-
-/** v3-only preview mode, or v3 schema when v2 compat is on. */
-function accountScreenUsesV3Contract(schemaVersion) {
-  if (!accountScreenV2CompatEnabled()) return true;
-  return isAccountScreenV3(schemaVersion);
-}
-
-function resolveAccountScreenDisplayField(row, field, legacyValue) {
+function resolveAccountScreenDisplayField(row, field) {
   const raw = row?.display?.[field];
   if (raw != null && String(raw).trim() !== "" && String(raw).trim() !== "—") {
     return String(raw).trim();
   }
-  if (!accountScreenV2CompatEnabled()) return ACCOUNT_SCREEN_DISPLAY_NA;
-  if (legacyValue != null && String(legacyValue).trim() !== "") return String(legacyValue).trim();
   return ACCOUNT_SCREEN_DISPLAY_NA;
 }
 
-function resolveAccountScreenRowMoneyOrLegacy(row, legacyFn) {
-  const v3 = resolveAccountScreenRowMoney(row);
-  if (v3.totalKnown) return v3;
-  if (!accountScreenV2CompatEnabled()) return { total: null, totalKnown: false };
-  return legacyFn ? legacyFn() : { total: null, totalKnown: false };
-}
-
-/** v3 wallet block uses useable_balance; v2 uses wallet_useable_balance. */
+/** Wallet block: useable_balance / pending_balance / actual_balance (normalized for legacy wallet_* keys). */
 function normalizeAccountScreenWallet(wallet) {
   if (!wallet || typeof wallet !== "object" || Array.isArray(wallet)) return null;
   if (wallet.useable_balance != null || wallet.pending_balance != null || wallet.actual_balance != null) {
@@ -301,11 +279,7 @@ function parseNonNegativeInt(value) {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-function rowHasV2Units(row) {
-  return !!(row?.units && typeof row.units === "object");
-}
-
-function getRowV2DisplayLabel(row, field) {
+function getRowDisplayLabel(row, field) {
   const v = row?.display?.[field];
   if (v == null || String(v).trim() === "") return null;
   return String(v).trim();
@@ -313,7 +287,7 @@ function getRowV2DisplayLabel(row, field) {
 
 /** Purchases / orders table chip text — backend display only; NA when absent. */
 function getAccountScreenDisplayLabel(row, field) {
-  return getRowV2DisplayLabel(row, field) ?? ACCOUNT_SCREEN_DISPLAY_NA;
+  return getRowDisplayLabel(row, field) ?? ACCOUNT_SCREEN_DISPLAY_NA;
 }
 
 /** Backend-owned banner / helper copy on return rows and order detail. */
@@ -350,7 +324,7 @@ function rowAwaitingSellerConfirm(row) {
   return returnStatus === "returning" && refundStatus === "pending";
 }
 
-function getRowV2DisplayQty(row) {
+function getRowDisplayQty(row) {
   const q = parseNonNegativeInt(row?.display?.qty);
   if (q != null) return q;
   const unitsQty = parseNonNegativeInt(row?.units?.purchased_qty);
@@ -493,7 +467,7 @@ function formatDeliveryVerificationLineStatus(line, orderRow, verifiableQty, ord
   return "Ready to verify";
 }
 
-function extractAccountScreenPurchaseRowsV2(root) {
+function extractAccountScreenPurchaseRows(root) {
   const purchases = root?.purchases;
   if (purchases && typeof purchases === "object" && Array.isArray(purchases.rows)) {
     return purchases.rows;
@@ -501,17 +475,7 @@ function extractAccountScreenPurchaseRowsV2(root) {
   return [];
 }
 
-function extractAccountScreenSellerTransactions(root, payload) {
-  const salesTx = root?.sales?.transactions ?? payload?.sales?.transactions;
-  if (Array.isArray(salesTx) && salesTx.length) return salesTx;
-  const stRaw = payload?.seller_transactions ?? payload?.seller_tx ?? root?.seller_transactions ?? root?.seller_tx;
-  if (Array.isArray(stRaw)) return stRaw;
-  if (stRaw && typeof stRaw === "object" && isApiSuccessCode(stRaw.code) && Array.isArray(stRaw.data)) return stRaw.data;
-  return [];
-}
-
-/** v3 contract — sales.transactions only (no legacy seller_transactions). */
-function extractV3SalesTransactions(root, payload) {
+function extractAccountScreenSalesTransactions(root, payload) {
   const salesTx = root?.sales?.transactions ?? payload?.sales?.transactions;
   return Array.isArray(salesTx) ? salesTx : [];
 }
@@ -729,16 +693,31 @@ function findBountyResultForReceiptLine(bountyRows, receiptLine, transactionUid)
  */
 function resolveReceiptLineBountyDisplay(receiptLine, bountyRow) {
   const qty = getReceiptLineQty(receiptLine);
-  const bountyType = String(receiptLine?.bs_bounty_type || receiptLine?.ti_bs_bounty_type || bountyRow?.bs_bounty_type || "")
+  const bountyType = String(
+    receiptLine?.bs_bounty_type || receiptLine?.ti_bs_bounty_type || bountyRow?.profile_expertise_bounty_type || bountyRow?.bs_bounty_type || "per_item",
+  )
     .trim()
     .toLowerCase();
-  const unitRaw = parseFloat(receiptLine?.bs_bounty ?? receiptLine?.ti_bs_bounty ?? receiptLine?.bounty_amount ?? receiptLine?.item_bounty ?? NaN);
+  const unitRaw = parseFloat(
+    receiptLine?.bs_bounty ??
+      receiptLine?.ti_bs_bounty ??
+      receiptLine?.bounty_amount ??
+      receiptLine?.item_bounty ??
+      receiptLine?.profile_expertise_bounty ??
+      bountyRow?.bs_bounty ??
+      NaN,
+  );
   let lineBounty = Number.isFinite(unitRaw) && unitRaw > 0 ? (bountyType === "total" ? unitRaw : unitRaw * Math.max(1, qty)) : null;
 
   const earnedRaw = parseFloat(bountyRow?.bounty_earned ?? bountyRow?.tb_amount ?? receiptLine?.bounty_earned ?? receiptLine?.tb_amount ?? NaN);
   const earned = Number.isFinite(earnedRaw) ? earnedRaw : null;
   const pctRaw = parseFloat(bountyRow?.tb_percentage ?? receiptLine?.tb_percentage ?? receiptLine?.bounty_percentage ?? NaN);
   const percentage = Number.isFinite(pctRaw) ? pctRaw : null;
+
+  if (lineBounty == null && earned != null && percentage != null && percentage > 0) {
+    const pctFactor = percentage > 0 && percentage <= 1 ? percentage : percentage / 100;
+    if (pctFactor > 0) lineBounty = earned / pctFactor;
+  }
 
   if (lineBounty == null && earned == null) return null;
 
@@ -758,17 +737,6 @@ function resolveReceiptLineBountyDisplay(receiptLine, bountyRow) {
   return { itemLabel, shareLabel, lineBounty, earned, percentage };
 }
 
-/** Format tb_percentage for display (0.25 → 25%, 25 → 25%). */
-function formatBountySharePercentLabel(percentage) {
-  if (percentage == null || !Number.isFinite(Number(percentage))) return null;
-  const pct = Number(percentage);
-  return pct > 0 && pct <= 1 ? `${Math.round(pct * 1000) / 10}%` : `${Math.round(pct * 10) / 10}%`;
-}
-
-/** Personal bounty_results row: total pool bounty, this user's earned share, and %. */
-function resolveBountyResultsRowDisplay(item) {
-  return resolveReceiptLineBountyDisplay(item, item);
-}
 
 /** Below receipt line items: merchandise, tax, shipping, bounty, card fees, total. */
 function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, darkMode }) {
@@ -878,14 +846,6 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
   );
 }
 
-/** Wallet block from account-screen/personal (root, data, or inside bounty_results). */
-function extractPersonalWallet(root, payload, bountyBlock) {
-  const bag = payload && typeof payload === "object" ? payload : null;
-  const bountyBag = bountyBlock && typeof bountyBlock === "object" ? bountyBlock : null;
-  const w = root?.wallet ?? bag?.wallet ?? bag?.bounty_results?.wallet ?? bountyBag?.wallet ?? null;
-  return w && typeof w === "object" && !Array.isArray(w) ? w : null;
-}
-
 /** Normalize bounty_results / legacy bounty shapes to { data, total_bounty_earned, total_bounties }. */
 function normalizePersonalBounty(bountyRaw, root, payload) {
   if (bountyRaw == null) return null;
@@ -923,21 +883,20 @@ function formatWalletUsd(val) {
   return `$${parsePrice(val).toFixed(2)}`;
 }
 
-function formatLedgerAmount(val) {
-  const amount = parsePrice(val);
-  const prefix = amount >= 0 ? "+" : "−";
-  return `${prefix}$${Math.abs(amount).toFixed(2)}`;
+/** Wallet ledger Pending/Useable columns — v3 display.* labels only (no client-side column routing). */
+function resolveWalletLedgerDisplayLabel(entry, field) {
+  const label = entry?.display?.[field];
+  if (label == null || String(label).trim() === "") return ACCOUNT_SCREEN_DISPLAY_NA;
+  return String(label).trim();
 }
 
-function formatLedgerColumnAmount(val) {
-  if (val == null || val === "" || Math.abs(parsePrice(val)) < 0.0001) return "—";
-  return formatLedgerAmount(val);
-}
-
-function ledgerAmountColor(amount, darkMode) {
-  const n = parsePrice(amount);
-  if (Math.abs(n) < 0.0001) return undefined;
-  return n >= 0 ? (darkMode ? "#81c784" : "#2e7d32") : darkMode ? "#ef5350" : "#c62828";
+function ledgerDisplayLabelColor(label, darkMode) {
+  const raw = String(label ?? "").trim();
+  if (!raw || raw === "—" || raw === "-" || raw === ACCOUNT_SCREEN_DISPLAY_NA || raw === "NA") return undefined;
+  if (raw.startsWith("+")) return darkMode ? "#81c784" : "#2e7d32";
+  if (raw.startsWith("−") || raw.startsWith("-")) return darkMode ? "#ef5350" : "#c62828";
+  if (/^\$/.test(raw)) return darkMode ? "#81c784" : "#2e7d32";
+  return undefined;
 }
 
 function formatLedgerEntryDate(entry) {
@@ -948,92 +907,7 @@ function formatLedgerEntryDate(entry) {
   });
 }
 
-function enrichBountyLineFromPurchases(line, transactionData) {
-  if (!line || !Array.isArray(transactionData)) return line;
-  const linkedTxnUid = String(line.ti_transaction_id || line.transaction_uid || "").trim();
-  const linkedTxn = linkedTxnUid ? transactionData.find((t) => String(t.transaction_uid || "").trim() === linkedTxnUid) : null;
-  if (!linkedTxn) return line;
-  return {
-    ...line,
-    ti_received_qty: line.ti_received_qty ?? linkedTxn.ti_received_qty ?? linkedTxn.received_item_count,
-    ti_bs_qty: line.ti_bs_qty ?? linkedTxn.ti_bs_qty ?? linkedTxn.item_count,
-    ti_bs_return_window_days: line.ti_bs_return_window_days ?? linkedTxn.ti_bs_return_window_days ?? linkedTxn.return_window_days,
-    ti_bs_is_returnable: line.ti_bs_is_returnable ?? linkedTxn.ti_bs_is_returnable ?? linkedTxn.is_returnable,
-    bounty_released_at: line.bounty_released_at ?? linkedTxn.bounty_released_at,
-  };
-}
-
-/** Bounty dollars still pending on a chart date (earned by then, not yet released by then). */
-function bountyAmountPendingOnChartDate(line, dateKey, ledgerAvailabilityByTxnUid, ledgerRows) {
-  const amount = parseFloat(line.bounty_earned) || 0;
-  if (amount <= 0) return 0;
-  const earnedDt = parseTransactionDateTime(line);
-  if (!earnedDt || localDateKey(earnedDt) > dateKey) return 0;
-
-  const releasedRaw = line?.bounty_released_at;
-  if (releasedRaw != null && String(releasedRaw).trim() !== "") {
-    const releaseDt = new Date(releasedRaw);
-    if (!Number.isNaN(releaseDt.getTime()) && localDateKey(releaseDt) <= dateKey) return 0;
-    return amount;
-  }
-
-  const status = bountyProceedsStatus(line, ledgerAvailabilityByTxnUid, ledgerRows);
-  return status === "useable" ? 0 : amount;
-}
-
-/** Match a wallet ledger row to a bounty_results line (transaction + earned amount). */
-function resolveLedgerAvailabilityForBountyLine(line, ledgerRows) {
-  if (!line || !Array.isArray(ledgerRows)) return null;
-  const txnUid = String(line?.ti_transaction_id || line?.transaction_uid || "").trim();
-  if (!txnUid) return null;
-  const earned = parsePrice(line?.bounty_earned ?? line?.tb_amount);
-  const candidates = ledgerRows.filter((entry) => {
-    if (String(entry?.transaction_uid || "").trim() !== txnUid) return false;
-    const type = String(entry?.entry_type || "")
-      .trim()
-      .toLowerCase();
-    return type === "bounty_earned" || type === "bounty_reversal";
-  });
-  if (!candidates.length) return null;
-  if (Number.isFinite(earned) && earned > 0) {
-    const byAmount = candidates.find((entry) => Math.abs(parsePrice(entry.amount) - earned) < 0.01);
-    if (byAmount?.availability) return byAmount.availability;
-  }
-  if (candidates.some((entry) => entry.availability === "pending")) return "pending";
-  if (candidates.some((entry) => entry.availability === "useable")) return "useable";
-  return candidates[0]?.availability ?? null;
-}
-
-function bountyLineIsReleased(line) {
-  const releasedAt = line?.bounty_released_at;
-  return releasedAt != null && String(releasedAt).trim() !== "";
-}
-
-/** Prefer wallet ledger availability when present; otherwise infer from line + wallet rules. */
-function bountyProceedsStatus(line, ledgerAvailabilityByTxnUid, ledgerRows = null) {
-  const ledgerAvail = resolveLedgerAvailabilityForBountyLine(line, ledgerRows);
-  const txnUid = String(line?.ti_transaction_id || line?.transaction_uid || "").trim();
-  const ledgerAvailTxn = !ledgerAvail && txnUid && ledgerAvailabilityByTxnUid ? ledgerAvailabilityByTxnUid[txnUid] : null;
-  const availability = ledgerAvail || ledgerAvailTxn;
-
-  if (availability === "useable") return "useable";
-  if (availability === "pending") {
-    const received = parsePrice(line?.ti_received_qty ?? 0);
-    const ordered = parsePrice(line?.ti_bs_qty ?? 0);
-    const verified = ordered > 0 && received >= ordered;
-    return verified ? "pending_until_window" : "pending";
-  }
-
-  const received = parsePrice(line?.ti_received_qty ?? 0);
-  const ordered = parsePrice(line?.ti_bs_qty ?? 0);
-  const verified = ordered > 0 && received >= ordered;
-  const returnWindowDays = parsePrice(line?.ti_bs_return_window_days ?? line?.return_window_days ?? 0);
-  const isReturnable = parseOptionalBoolean(line?.ti_bs_is_returnable ?? line?.is_returnable ?? line?.bs_is_returnable) !== false;
-  if (!verified || !bountyLineIsReleased(line)) return "pending";
-  if (isReturnable && returnWindowDays > 0) return "pending_until_window";
-  return "useable";
-}
-
+/** Map backend proceeds_status enum to display label. */
 function bountyProceedsStatusLabel(status) {
   switch (status) {
     case "useable":
@@ -1042,21 +916,8 @@ function bountyProceedsStatusLabel(status) {
       return "Pending (return window)";
     case "pending":
     default:
-      return "Pending";
+      return status ? "Pending" : ACCOUNT_SCREEN_DISPLAY_NA;
   }
-}
-
-/** Latest ledger availability per transaction_uid (bounty + sale proceeds entries). Pending wins over useable. */
-function buildLedgerAvailabilityByTxnUid(ledgerRows) {
-  const map = {};
-  if (!Array.isArray(ledgerRows)) return map;
-  for (const entry of ledgerRows) {
-    const txnUid = String(entry?.transaction_uid || "").trim();
-    if (!txnUid || !entry.availability) continue;
-    if (entry.availability === "pending") map[txnUid] = "pending";
-    else if (!map[txnUid] && entry.availability === "useable") map[txnUid] = "useable";
-  }
-  return map;
 }
 
 function resolveOrderUidForTransactionUid(txnUid, ...sources) {
@@ -1072,11 +933,6 @@ function resolveOrderUidForTransactionUid(txnUid, ...sources) {
     }
   }
   return null;
-}
-
-/** Seller net earnings follow the same verification / return-window rules as bounty. */
-function sellerProceedsStatus(row, ledgerAvailabilityByTxnUid, ledgerRows = null) {
-  return bountyProceedsStatus(row, ledgerAvailabilityByTxnUid, ledgerRows);
 }
 
 /** Settings Debug Mode: log account-screen/personal purchase extraction (txRaw + duplicate txn uids). */
@@ -1130,35 +986,28 @@ function mapAccountScreenPersonalResponse(json, options = {}) {
   const root = json && typeof json === "object" ? json : {};
   const schemaVersion = getAccountScreenSchemaVersion(root);
   const payload = root.data !== undefined && root.data !== null && typeof root.data === "object" && !Array.isArray(root.data) ? root.data : root;
-  const useV3Contract = accountScreenUsesV3Contract(schemaVersion);
 
-  const transactions = extractAccountScreenPurchaseRowsV2({ ...root, ...payload, purchases: root.purchases ?? payload.purchases }).map(normalizeAccountScreenListRow);
+  const transactions = extractAccountScreenPurchaseRows({ ...root, ...payload, purchases: root.purchases ?? payload.purchases }).map(normalizeAccountScreenListRow);
 
   if (options.debug) {
     logAccountScreenPersonalPurchasesDebug({
-      source: useV3Contract ? "purchases.rows (v3 contract)" : "purchases.rows (v2)",
+      source: "purchases.rows (v3)",
       purchasesRawKey: "root.purchases.rows",
       txRaw: root.purchases,
       transactions,
     });
   }
 
-  const bountyRaw = useV3Contract
-    ? root.bounty_results ?? payload.bounty_results ?? null
-    : root.bounty_results ?? payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
+  const bountyRaw = root.bounty_results ?? payload.bounty_results ?? null;
   const bounty = normalizePersonalBounty(bountyRaw, root, payload);
-  const wallet = normalizeAccountScreenWallet(
-    useV3Contract ? root.wallet ?? payload.wallet : extractPersonalWallet(root, payload, bountyRaw),
-  );
-  const sellerTransactions = (useV3Contract ? extractV3SalesTransactions(root, payload) : extractAccountScreenSellerTransactions(root, payload)).map(
-    normalizeAccountScreenListRow,
-  );
+  const wallet = normalizeAccountScreenWallet(root.wallet ?? payload.wallet);
+  const sellerTransactions = extractAccountScreenSalesTransactions(root, payload).map(normalizeAccountScreenListRow);
   const profile = root.profile ?? payload.profile ?? payload.user_profile ?? payload.personal_profile ?? null;
-  const earnings = useV3Contract ? root.earnings ?? payload.earnings ?? null : null;
-  const walletLedger = useV3Contract ? root.wallet_ledger ?? payload.wallet_ledger ?? null : null;
-  const salesOfferings = useV3Contract && Array.isArray(root.sales?.offerings ?? payload.sales?.offerings) ? root.sales.offerings ?? payload.sales.offerings : [];
+  const earnings = root.earnings ?? payload.earnings ?? null;
+  const walletLedger = root.wallet_ledger ?? payload.wallet_ledger ?? null;
+  const salesOfferings = Array.isArray(root.sales?.offerings ?? payload.sales?.offerings) ? root.sales.offerings ?? payload.sales.offerings : [];
 
-  return { transactions, bounty, sellerTransactions, profile, wallet, schemaVersion, earnings, walletLedger, salesOfferings, useV3Contract };
+  return { transactions, bounty, sellerTransactions, profile, wallet, schemaVersion, earnings, walletLedger, salesOfferings };
 }
 
 /**
@@ -1781,8 +1630,8 @@ function extractReturnRefundState(source = {}, override = {}) {
 function resolveReturnLogisticsLabels(row, override = {}) {
   if (!row || typeof row !== "object") return null;
 
-  const displayDelivered = getRowV2DisplayLabel(row, "delivered_label");
-  const displayReceived = getRowV2DisplayLabel(row, "received_label");
+  const displayDelivered = getRowDisplayLabel(row, "delivered_label");
+  const displayReceived = getRowDisplayLabel(row, "received_label");
   const state = extractReturnRefundState(row, override);
   const hasReturnSignal =
     state.active ||
@@ -1848,7 +1697,7 @@ function isPreShipCancelReturn(row) {
     .trim()
     .toLowerCase();
   if (status === "cancelled" || status === "canceled") return true;
-  const displayDelivered = getRowV2DisplayLabel(row, "delivered_label");
+  const displayDelivered = getRowDisplayLabel(row, "delivered_label");
   if (displayDelivered === "Cancelled" || displayDelivered === "Cancelling") return true;
   const displayStatus = String(row.display_status || "");
   if (/^cancell?(?:ed|ing)\s*[-–]/i.test(displayStatus)) return true;
@@ -2297,91 +2146,6 @@ function resolveReturnLineBountyAmounts(line, returnQty, bountyRows, transaction
   };
 }
 
-/** Prefer the return/refund money fields — never fall back to the original sale total. */
-function resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines) {
-  const fromPending = resolvePendingReturnTableMoney(row);
-  const listTxnUid = String(row?.transaction_uid ?? "").trim();
-  const orderUid = resolveListRowOrderUid(row);
-  const cached = row?._pending_return_money;
-  let totalKnown = !!(fromPending.total || fromPending.bountyPaid);
-  let bountyKnown = !!fromPending.bountyPaid;
-
-  let total = fromPending.total;
-  let bountyPaid = fromPending.bountyPaid;
-
-  // pending_return often has customer credit but omits bounty_to_reclaim — keep looking for bounty.
-  if (cached && typeof cached === "object") {
-    const cachedTotal = Number(cached.total);
-    const cachedBounty = Number(cached.bountyPaid);
-    if (!total && Number.isFinite(cachedTotal) && cachedTotal !== 0) {
-      total = cachedTotal > 0 ? -Math.abs(cachedTotal) : cachedTotal;
-      totalKnown = true;
-    }
-    if (!bountyPaid && Number.isFinite(cachedBounty) && cachedBounty !== 0) {
-      bountyPaid = cachedBounty > 0 ? -Math.abs(cachedBounty) : cachedBounty;
-      bountyKnown = true;
-    }
-  }
-
-  if (!total) {
-    const fromComponents = resolveReturnCustomerCreditTotal(row);
-    if (fromComponents) {
-      total = fromComponents;
-      totalKnown = true;
-    } else {
-      const totalRaw = parseFloat(
-        row?.transaction_total ?? row?.returned_total ?? row?.return_total ?? row?.refund_total ?? row?.pending_return?.total ?? row?.pending_return?.transaction_total ?? NaN,
-      );
-      if (Number.isFinite(totalRaw) && totalRaw !== 0) {
-        total = totalRaw;
-        totalKnown = true;
-      } else {
-        total = 0;
-      }
-      // Display returns as credits (negative). Keep already-negative API values.
-      if (total > 0) total = -Math.abs(total);
-    }
-  } else {
-    totalKnown = true;
-    const fromComponents = resolveReturnCustomerCreditTotal(row);
-    if (fromComponents && Math.abs(fromComponents) > Math.abs(total) + 0.01) {
-      total = fromComponents;
-    }
-  }
-
-  if (!bountyPaid) {
-    const fromList = resolveListRowBountyPaid(row, null, null, bountyByTransactionUid);
-    if (Number.isFinite(fromList) && fromList !== 0) {
-      bountyPaid = fromList;
-      bountyKnown = true;
-    }
-  } else {
-    bountyKnown = true;
-  }
-  const saleTxnUid = String(row?.original_transaction_uid || row?.order_uid || orderUid || "").trim();
-  // Real return txns may omit bounty_paid — use matching sale bounty lines / return lines when present.
-  if ((!Number.isFinite(bountyPaid) || bountyPaid === 0) && Array.isArray(bountyLines) && bountyLines.length) {
-    const returnLines = [...(Array.isArray(row?.return_lines) ? row.return_lines : []), ...(Array.isArray(row?.lines) ? row.lines : [])];
-    const pendingItems = row?.pending_return?.items || row?.transaction_return_items || returnLines || [];
-    if (Array.isArray(pendingItems) && pendingItems.length) {
-      const fromLines = pendingItems.reduce((sum, item) => {
-        const qty = Math.max(1, parseInt(item.return_quantity ?? item.ti_bs_qty ?? item.quantity, 10) || 1);
-        const amounts = resolveReturnLineBountyAmounts(item, qty, bountyLines, saleTxnUid || listTxnUid || orderUid);
-        return sum + amounts.bountyPaidReversed;
-      }, 0);
-      if (fromLines > 0) {
-        bountyPaid = fromLines;
-        bountyKnown = true;
-      }
-    }
-  }
-  if (!Number.isFinite(bountyPaid)) bountyPaid = 0;
-  if (bountyPaid > 0) bountyPaid = -Math.abs(bountyPaid);
-  else if (bountyPaid < 0) bountyPaid = -Math.abs(bountyPaid);
-
-  return { total, bountyPaid, totalKnown, bountyKnown };
-}
-
 /** Snapshot pending-return fields from GET /orders/:uid onto a seller list row (legacy helper). */
 function pendingReturnFieldsFromOrderDetail(orderDetail, _bountyLines = []) {
   if (!orderDetail || typeof orderDetail !== "object") return null;
@@ -2439,13 +2203,11 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
           totalKnown: true,
           bountyKnown: row?.bounty?.bounty_to_reclaim != null || row?.bounty_paid != null,
         }
-      : accountScreenV2CompatEnabled()
-        ? resolveReturnRowMoney(row, null, null)
-        : { total: null, bountyPaid: 0, totalKnown: false, bountyKnown: false };
+      : { total: null, bountyPaid: 0, totalKnown: false, bountyKnown: false };
     const trrUid = trrUidEarly;
     const trrUids = normalizeTrrUidList(row);
-    const delivered = resolveAccountScreenDisplayField(row, "delivered_label", returnLogistics?.delivered);
-    const received = resolveAccountScreenDisplayField(row, "received_label", returnLogistics?.received);
+    const delivered = resolveAccountScreenDisplayField(row, "delivered_label");
+    const received = resolveAccountScreenDisplayField(row, "received_label");
     return {
       key: resolveSellerListRowKey(row) || String(trrUid || row.transaction_uid || `return-${orderUid}-${dateMs}`),
       orderUid,
@@ -2456,7 +2218,7 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
       isReturn: true,
       isSyntheticReturn: false,
       placedBy: resolveSalePlacedByUid(row),
-      dateLabel: display?.date_label || (accountScreenV2CompatEnabled() ? formatOrderShortDate(dateMs) : ACCOUNT_SCREEN_DISPLAY_NA),
+      dateLabel: display?.date_label || ACCOUNT_SCREEN_DISPLAY_NA,
       dateMs,
       total: money.total,
       bountyPaid: money.bountyPaid,
@@ -2465,26 +2227,18 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
       delivered,
       received,
       attentionLevel: row.attention_level ?? resolveSellerReturnRowAttentionLevel(row),
-      daysOpen: shouldDisplayOrderDaysOpen(delivered, received) ? formatOrderDaysOpen(dateMs) : "—",
+      daysOpen: display?.days_open || ACCOUNT_SCREEN_DISPLAY_NA,
       returnLogistics,
       rawRow: row,
     };
   }
 
   const v3Money = resolveAccountScreenRowMoney(row);
-  let total = null;
-  let totalKnown = false;
-  if (v3Money.totalKnown) {
-    total = v3Money.total;
-    totalKnown = true;
-  } else if (accountScreenV2CompatEnabled()) {
-    const legacyTotal = productSummary ? resolveProductSummaryLineTotal(row) : parseFloat(row.transaction_total);
-    total = Number.isFinite(legacyTotal) ? legacyTotal : 0;
-    totalKnown = Number.isFinite(legacyTotal);
-  }
+  const total = v3Money.totalKnown ? v3Money.total : null;
+  const totalKnown = v3Money.totalKnown;
   const bountyPaid = productSummary ? resolveProductSummaryLineBounty(row) : resolveSellerOrderTableBounty(row);
-  const delivered = resolveAccountScreenDisplayField(row, "delivered_label", formatOrderDeliveredStatusLabel([row], sellerLines));
-  const received = resolveAccountScreenDisplayField(row, "received_label", formatOrderReceivedStatusLabel([row], sellerLines));
+  const delivered = resolveAccountScreenDisplayField(row, "delivered_label");
+  const received = resolveAccountScreenDisplayField(row, "received_label");
   const attentionLevel = row.attention_level ?? resolveSellerOrderAttentionLevel(row, sellerLines);
   return {
     key: resolveSellerListRowKey(row) || String(row.transaction_uid || `${orderUid}-${dateMs}`),
@@ -2495,7 +2249,7 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
     isReturn: false,
     isSyntheticReturn: false,
     placedBy: resolveSalePlacedByUid(row),
-    dateLabel: display?.date_label || (accountScreenV2CompatEnabled() ? formatOrderShortDate(dateMs) : ACCOUNT_SCREEN_DISPLAY_NA),
+    dateLabel: display?.date_label || ACCOUNT_SCREEN_DISPLAY_NA,
     dateMs,
     total: totalKnown ? total : 0,
     totalKnown,
@@ -2503,9 +2257,7 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
     delivered,
     received,
     attentionLevel,
-    daysOpen:
-      display?.days_open ||
-      (accountScreenV2CompatEnabled() && shouldDisplayOrderDaysOpen(delivered, received) ? formatOrderDaysOpen(dateMs) : ACCOUNT_SCREEN_DISPLAY_NA),
+    daysOpen: display?.days_open || ACCOUNT_SCREEN_DISPLAY_NA,
     returnLogistics,
     rawRow: row,
   };
@@ -2521,35 +2273,23 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
  */
 function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines, options = {}) {
   if (!Array.isArray(sellerLines)) return [];
-  const bountyByTransactionUid = buildBountyPaidByTransactionUid(bountyLines);
   const mapped = sellerLines.map((row) => {
     const saleSibling = isReturnListRow(row) ? findSaleSiblingForReturnRow(row, sellerLines) : null;
     const mappedRow = mapTransactionListRowToOrderTableRow(row, saleSibling, sellerLines, options);
-    if (mappedRow.isReturn) {
-      const enrichedRow = mergeReturnRowWithSaleContext(row, saleSibling);
-      let money = resolveReturnRowMoney(enrichedRow, bountyByTransactionUid, bountyLines);
-      if (!money.totalKnown && saleSibling) {
-        const scoped = resolveScopedPendingReturnMoney(row, saleSibling, {
-          productUid: options.productUid,
-          saleTiUids: options.saleTiUids,
-        });
-        if (scoped?.totalKnown) {
-          money = {
-            ...money,
-            total: scoped.total || money.total,
-            bountyPaid: scoped.bountyPaid || money.bountyPaid,
-            totalKnown: true,
-            bountyKnown: money.bountyKnown || scoped.bountyKnown,
-          };
-        }
+    if (mappedRow.isReturn && !mappedRow.totalKnown && saleSibling) {
+      const scoped = resolveScopedPendingReturnMoney(row, saleSibling, {
+        productUid: options.productUid,
+        saleTiUids: options.saleTiUids,
+      });
+      if (scoped?.totalKnown) {
+        return {
+          ...mappedRow,
+          total: scoped.total ?? mappedRow.total,
+          bountyPaid: scoped.bountyPaid ?? mappedRow.bountyPaid,
+          totalKnown: true,
+          bountyKnown: scoped.bountyKnown ?? mappedRow.bountyKnown,
+        };
       }
-      if (saleSibling && !money.bountyPaid) {
-        const fromSale = resolveReturnBountyFromSaleRow(enrichedRow, saleSibling);
-        if (fromSale) {
-          money = { ...money, bountyPaid: fromSale, bountyKnown: true };
-        }
-      }
-      return { ...mappedRow, total: money.total, bountyPaid: money.bountyPaid, totalKnown: money.totalKnown, bountyKnown: money.bountyKnown };
     }
     return mappedRow;
   });
@@ -2763,32 +2503,7 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, bountyLines = []) {
         original_transaction_uid: row.original_transaction_uid || row.transaction_original_uid || saleSibling?.transaction_uid || null,
       };
     }
-    if (!accountScreenV2CompatEnabled()) return row;
-    const orderUid = resolveListRowOrderUid(row);
-    const saleSibling = orderSaleByUid[orderUid] || null;
-    const money = resolveReturnRowMoney(row, null, bountyLines);
-    const total = money.total;
-    const bountyPaid = money.bountyPaid;
-    const itemSummary = resolveReturnRowItemSummary(row, saleSibling);
-    const rawPurchasedItem = String(row.purchased_item || "").trim();
-    const purchasedItemLooksLikeUid = /^\d{3}-\d+$/.test(rawPurchasedItem);
-    return {
-      ...row,
-      business_name: row.business_name || saleSibling?.business_name || saleSibling?.transaction_business_name || null,
-      seller_id: row.seller_id || saleSibling?.seller_id || saleSibling?.transaction_business_id || null,
-      transaction_business_id: row.transaction_business_id || saleSibling?.transaction_business_id || saleSibling?.seller_id || null,
-      purchase_type: row.purchase_type || saleSibling?.purchase_type || null,
-      ti_bs_id: row.ti_bs_id || saleSibling?.ti_bs_id || null,
-      transaction_total: total,
-      seller_total: total,
-      bounty_paid: bountyPaid,
-      _pending_return_money: { total, bountyPaid, totalKnown: money.totalKnown, bountyKnown: money.bountyKnown },
-      stripe_refund: row.stripe_refund || saleSibling?.stripe_refund || saleSibling?.pending_return?.stripe_refund,
-      purchased_item:
-        itemSummary.purchased_item || (itemSummary.qty != null || purchasedItemLooksLikeUid ? null : rawPurchasedItem && rawPurchasedItem.toLowerCase() !== "item" ? rawPurchasedItem : null),
-      ...(itemSummary.qty != null ? { ti_bs_qty: itemSummary.qty } : getRowV2DisplayQty(row) != null ? { ti_bs_qty: getRowV2DisplayQty(row) } : {}),
-      original_transaction_uid: row.original_transaction_uid || row.transaction_original_uid || saleSibling?.transaction_uid || null,
-    };
+    return row;
   });
 
   return normalizedPurchaseRows.sort((a, b) => {
@@ -6483,96 +6198,36 @@ function isPurchaseFullyReceivedByQty(transaction) {
   return false;
 }
 
-/** Buyer PURCHASES Delivered column — backend display.delivered_label only. */
-function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}) {
-  if (isReturnListRow(transaction)) {
-    const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
-    return returnLogistics?.delivered || ACCOUNT_SCREEN_DISPLAY_NA;
-  }
-  if (!transaction) return ACCOUNT_SCREEN_DISPLAY_NA;
-  return getAccountScreenDisplayLabel(transaction, "delivered_label");
+/** Extract v3 purchases.rows[] item from PUT /api/v1/transactions (delivery verification / fulfillment). */
+function extractPurchaseRowFromTransactionWriteResponse(json) {
+  const root = json && typeof json === "object" ? json : {};
+  const data = root.data && typeof root.data === "object" ? root.data : root;
+  if (data.purchase_row && typeof data.purchase_row === "object") return data.purchase_row;
+  if (root.purchase_row && typeof root.purchase_row === "object") return root.purchase_row;
+  const rows = data.purchases?.rows ?? root.purchases?.rows;
+  if (Array.isArray(rows) && rows.length === 1 && rows[0] && typeof rows[0] === "object") return rows[0];
+  return null;
 }
 
-/** Buyer PURCHASES Received column — backend display.received_label only. */
-function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}) {
-  if (isReturnListRow(transaction)) {
-    const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
-    return returnLogistics?.received || ACCOUNT_SCREEN_DISPLAY_NA;
-  }
-  if (!transaction) return ACCOUNT_SCREEN_DISPLAY_NA;
-  return getAccountScreenDisplayLabel(transaction, "received_label");
-}
-
-/** Immediate Purchases Received chip after buyer confirms delivery (before account-screen refresh lands). */
-function applyOptimisticPurchaseDeliveryVerification(purchaseRow, receiptLines, deliveryVerificationItems, orderUnits = null, returnRows = null) {
-  if (!purchaseRow || typeof purchaseRow !== "object" || !Array.isArray(receiptLines) || !receiptLines.length) {
-    return purchaseRow;
-  }
-
-  const verifiedByTi = {};
-  for (const line of receiptLines) {
-    const ti = getReceiptLineTransactionItemUid(line);
-    if (!ti) continue;
-    verifiedByTi[ti] = getPreviouslyReceivedQty(line);
-  }
-  for (const item of deliveryVerificationItems || []) {
-    const ti = String(item?.transaction_item_uid || "").trim();
-    if (!ti) continue;
-    verifiedByTi[ti] = (verifiedByTi[ti] || 0) + Math.max(0, parseInt(item.received_quantity, 10) || 0);
-  }
-
-  let verifiedTotal = 0;
-  let purchasedTotal = 0;
-  let verifiableRemaining = 0;
-  for (const line of receiptLines) {
-    const ti = getReceiptLineTransactionItemUid(line);
-    const purchased = Math.max(0, getReceivableQty(line));
-    purchasedTotal += purchased;
-    const verified = ti && verifiedByTi[ti] != null ? verifiedByTi[ti] : getPreviouslyReceivedQty(line);
-    verifiedTotal += verified;
-    verifiableRemaining += getVerifiableReceiveRemaining({ ...line, ti_received_qty: verified }, purchaseRow, returnRows, orderUnits);
-  }
-
-  const unitsPurchased =
-    parseNonNegativeInt(orderUnits?.purchased_qty) ??
-    parseNonNegativeInt(purchaseRow?.units?.purchased_qty) ??
-    parseNonNegativeInt(getRowV2DisplayQty(purchaseRow)) ??
-    parseNonNegativeInt(purchaseRow?.ti_bs_qty) ??
-    purchasedTotal;
-  const purchased = Math.max(purchasedTotal, unitsPurchased || 0);
-  const verified = purchased > 0 ? Math.min(verifiedTotal, purchased) : verifiedTotal;
-
-  let receivedLabel = purchaseRow?.display?.received_label;
-  if (verified > 0) {
-    receivedLabel = purchased > 0 && verified >= purchased ? "Yes" : `${verified}/${purchased}`;
-  }
-  const receivedAction = verifiableRemaining > 0 ? "verify" : "status";
-
-  return {
-    ...purchaseRow,
-    ti_received_qty: verified,
-    units: {
-      ...(purchaseRow.units && typeof purchaseRow.units === "object" ? purchaseRow.units : {}),
-      ...(orderUnits && typeof orderUnits === "object" ? orderUnits : {}),
-      purchased_qty: purchased,
-      verified_qty: verified,
-      verifiable_remaining_qty: verifiableRemaining,
-    },
-    display: {
-      ...(purchaseRow.display && typeof purchaseRow.display === "object" ? purchaseRow.display : {}),
-      received_label: receivedLabel,
-      received_action: receivedAction,
-    },
-  };
+function applyAccountScreenPurchaseRowUpdate(rows, purchaseRow) {
+  if (!purchaseRow || typeof purchaseRow !== "object") return Array.isArray(rows) ? rows : [];
+  const list = Array.isArray(rows) ? rows : [];
+  const txnKey = String(purchaseRow.transaction_uid || purchaseRow.order_uid || purchaseRow.row_uid || "").trim();
+  if (!txnKey) return list;
+  let replaced = false;
+  const next = list.map((row) => {
+    const rowTxn = String(row?.transaction_uid || row?.original_transaction_uid || row?.order_uid || row?.row_uid || "").trim();
+    if (rowTxn !== txnKey) return row;
+    replaced = true;
+    return { ...row, ...purchaseRow };
+  });
+  return replaced ? next : list;
 }
 
 /** True when backend marks this purchase row as ready for buyer delivery verification. */
 function buyerPurchaseNeedsReceiptVerification(transaction) {
   if (!transaction || isReturnListRow(transaction)) return false;
-  if (transaction.display?.received_action === "verify") return true;
-  if (transaction.display?.received_action === "status") return false;
-  const v2Label = getRowV2DisplayLabel(transaction, "received_label");
-  return v2Label === "Verify";
+  return transaction.display?.received_action === "verify";
 }
 
 /** Yes/No/Partial from ti_received_qty vs purchased units on list rows (buyer-confirmed receipt). */
@@ -7058,7 +6713,7 @@ function resolveProductSummaryPurchasedQty(row) {
     const q = parseNonNegativeInt(units.purchased_qty);
     if (q != null && q > 0) return q;
   }
-  const fromDisplay = getRowV2DisplayQty(row);
+  const fromDisplay = getRowDisplayQty(row);
   if (fromDisplay != null && fromDisplay > 0) return fromDisplay;
   return getSaleLineQty(row);
 }
@@ -7148,63 +6803,14 @@ function resolveProductSummaryOrderTotal(row) {
   if (v3Money.totalKnown && v3Money.total != null) {
     return { total: v3Money.total, totalKnown: true };
   }
-  if (!accountScreenV2CompatEnabled()) return { total: null, totalKnown: false };
-  const lineTotal = parseFloat(row.line_total ?? row.line_merchandise_total ?? NaN);
-  if (Number.isFinite(lineTotal)) {
-    return { total: lineTotal, totalKnown: true };
-  }
-  const qty = resolveProductSummaryPurchasedQty(row);
-  const unitPrice = resolveProductSummaryOrderUnitPrice(row);
-  if (qty > 0 && unitPrice > 0) {
-    return { total: Math.round(qty * unitPrice * 100) / 100, totalKnown: true };
-  }
-  return { total: 0, totalKnown: false };
-}
-
-/** Product Summary line total — orders unchanged; returns combine refund + cancellation credit. */
-function resolveProductSummaryDisplayTotal(row, isReturn, mappedRow = null) {
-  if (!row || typeof row !== "object") return { total: 0, totalKnown: false };
-  if (isReturn) {
-    const v3Money = resolveAccountScreenRowMoney(row);
-    if (v3Money.totalKnown) {
-      return { total: v3Money.total, totalKnown: true };
-    }
-    if (!accountScreenV2CompatEnabled()) return { total: null, totalKnown: false };
-
-    const shippedQty = resolveProductSummaryReturnShippedQty(row);
-    const cancelQty = resolveProductSummaryReturnCancelQty(row);
-    const combinedQty = shippedQty + cancelQty;
-
-    if (mappedRow?.totalKnown !== false && mappedRow?.total != null && Number(mappedRow.total) !== 0) {
-      return { total: mappedRow.total, totalKnown: true };
-    }
-
-    const credit = resolveReturnCustomerCreditTotal(row);
-    if (credit !== 0) return { total: credit, totalKnown: true };
-
-    const line = getProductSummaryLinePayload(row);
-    const unit =
-      resolveProductSummaryOrderUnitPrice(row) ||
-      Math.abs(parseFloat(line?.ti_bs_cost ?? line?.bs_cost ?? NaN)) ||
-      0;
-    if (unit > 0 && combinedQty > 0) {
-      return { total: -Math.round(unit * combinedQty * 100) / 100, totalKnown: true };
-    }
-    if (combinedQty === 0) return { total: 0, totalKnown: true };
-    return { total: 0, totalKnown: false };
-  }
-  return resolveProductSummaryOrderTotal(row);
+  return { total: null, totalKnown: false };
 }
 
 function enrichProductSummaryTableRow(mappedRow) {
   const raw = mappedRow?.rawRow && typeof mappedRow.rawRow === "object" ? mappedRow.rawRow : mappedRow;
   const isReturn = !!mappedRow?.isReturn;
   const v3Money = resolveAccountScreenRowMoney(raw);
-  const money = v3Money.totalKnown
-    ? { total: v3Money.total, totalKnown: true }
-    : accountScreenV2CompatEnabled()
-      ? resolveProductSummaryDisplayTotal(raw, isReturn, mappedRow)
-      : { total: null, totalKnown: false };
+  const money = v3Money.totalKnown ? { total: v3Money.total, totalKnown: true } : { total: null, totalKnown: false };
   return {
     ...mappedRow,
     lineQty: isReturn ? resolveProductSummaryReturnShippedQty(raw) : resolveProductSummaryPurchasedQty(raw),
@@ -8057,14 +7663,6 @@ function buildExpertiseRows(expertiseList, sellerTransactions, salesOfferings = 
     let soldQty = offeringSoldByUid[offeringUid];
     if (soldQty == null) {
       soldQty = 0;
-      if (accountScreenV2CompatEnabled()) {
-        sellerTx.forEach((transaction) => {
-          if (String(transaction.ti_bs_id || "").trim() !== offeringUid) return;
-          if (!isSellerSaleListRow(transaction)) return;
-          soldQty += getSignedProductSalesLineQty(transaction);
-        });
-      }
-      soldQty = Math.max(0, soldQty);
     }
     const remainingLabel = resolveExpertiseRemainingLabel(exp, soldQty);
     const remaining = remainingLabel === "∞" || remainingLabel === "NA" ? null : parseInt(remainingLabel, 10);
@@ -9036,19 +8634,21 @@ export default function AccountScreen({ navigation, route }) {
   /** GET /api/v1/account-screen/personal/:profile_id — maps to purchases, bounties, sales (expertise qty). One in-flight request; no GET /transactions fallbacks. */
   const refreshAccountScreenPersonal = async (options = {}) => {
     const force = options?.force === true;
-    const staleFromLogin = await consumeAccountScreenPersonalStale();
     const rawProfileId = await AsyncStorage.getItem("profile_uid");
     const profileId = rawProfileId ? String(rawProfileId).trim() : "";
     const lastProfileId = accountScreenPersonalProfileIdRef.current || "";
-    const sessionChanged =
-      staleFromLogin || profileId !== lastProfileId;
-    if (sessionChanged && (staleFromLogin || lastProfileId || accountScreenPersonalLoadedRef.current)) {
+    const staleFlagged = await peekAccountScreenPersonalStale();
+    const profileChanged = profileId !== lastProfileId;
+    const sessionChanged = staleFlagged || profileChanged;
+
+    if (sessionChanged && (staleFlagged || lastProfileId || accountScreenPersonalLoadedRef.current)) {
       personalFetchGenRef.current += 1;
       refreshPersonalInFlightRef.current = null;
       refreshWalletLedgerInFlightRef.current = null;
       clearPersonalAccountSections();
     }
-    const needsFetch = force || accountScreenPersonalDirtyRef.current || !accountScreenPersonalLoadedRef.current;
+
+    const needsFetch = force || sessionChanged || accountScreenPersonalDirtyRef.current || !accountScreenPersonalLoadedRef.current;
     if (!needsFetch) {
       return Array.isArray(sellerTxDataRef.current) ? sellerTxDataRef.current : [];
     }
@@ -9100,6 +8700,7 @@ export default function AccountScreen({ navigation, route }) {
           accountScreenPersonalDirtyRef.current = false;
           accountScreenPersonalLoadedRef.current = true;
           accountScreenPersonalProfileIdRef.current = profileId;
+          await clearAccountScreenPersonalStale();
           await fetchPersonalProfileData();
           return [];
         }
@@ -9137,7 +8738,7 @@ export default function AccountScreen({ navigation, route }) {
         }
         setPersonalWallet(mapped.wallet ?? null);
 
-        if (mapped.useV3Contract && mapped.walletLedger) {
+        if (mapped.walletLedger) {
           const ledgerEntries = Array.isArray(mapped.walletLedger.entries) ? mapped.walletLedger.entries : [];
           setWalletLedgerRows(ledgerEntries);
           setWalletLedgerTotalEntries(Number(mapped.walletLedger.total_entries) || ledgerEntries.length);
@@ -9178,12 +8779,10 @@ export default function AccountScreen({ navigation, route }) {
         sellerTxDataRef.current = sellerTx;
         setExpertiseCatalog(mergedExpertiseList);
         setExpertiseData(buildExpertiseRows(mergedExpertiseList, sellerTx, mapped.salesOfferings));
-        if (!mapped.useV3Contract) {
-          await refreshWalletLedger();
-        }
         accountScreenPersonalDirtyRef.current = false;
         accountScreenPersonalLoadedRef.current = true;
         accountScreenPersonalProfileIdRef.current = profileId;
+        await clearAccountScreenPersonalStale();
         return sellerTx;
       } catch (error) {
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return [];
@@ -9215,17 +8814,24 @@ export default function AccountScreen({ navigation, route }) {
   /** Profile uid may hydrate after login while Account stays mounted — refetch when session profile changes. */
   useEffect(() => {
     return subscribeSessionProfile((session) => {
-      const nextProfileId = String(session?.profileUid || "").trim();
+      if (!session?.profileUid) {
+        if (accountScreenPersonalLoadedRef.current || accountScreenPersonalProfileIdRef.current) {
+          personalFetchGenRef.current += 1;
+          refreshPersonalInFlightRef.current = null;
+          refreshWalletLedgerInFlightRef.current = null;
+          clearPersonalAccountSections();
+        }
+        return;
+      }
+      const nextProfileId = String(session.profileUid || "").trim();
       if (!nextProfileId || selectedAccountRef.current !== "personal") return;
       const lastProfileId = accountScreenPersonalProfileIdRef.current || "";
       if (nextProfileId === lastProfileId && accountScreenPersonalLoadedRef.current) return;
-      if (nextProfileId !== lastProfileId) {
-        personalFetchGenRef.current += 1;
-        refreshPersonalInFlightRef.current = null;
-        refreshWalletLedgerInFlightRef.current = null;
-        clearPersonalAccountSections();
-        void refreshAccountScreenPersonal();
-      }
+      personalFetchGenRef.current += 1;
+      refreshPersonalInFlightRef.current = null;
+      refreshWalletLedgerInFlightRef.current = null;
+      clearPersonalAccountSections();
+      void refreshAccountScreenPersonal();
     });
   }, []);
 
@@ -9268,10 +8874,6 @@ export default function AccountScreen({ navigation, route }) {
         const rows = Array.isArray(json.data) ? json.data : [];
         setWalletLedgerRows(rows);
         setWalletLedgerTotalEntries(Number(json.total_entries) || rows.length);
-        const ledgerWallet = json?.wallet && typeof json.wallet === "object" && !Array.isArray(json.wallet) ? json.wallet : null;
-        if (!accountScreenUsesV3Contract(accountScreenSchemaVersionRef.current) && ledgerWallet) {
-          setPersonalWallet(normalizeAccountScreenWallet(ledgerWallet));
-        }
         return rows;
       } catch (error) {
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return [];
@@ -9355,24 +8957,24 @@ export default function AccountScreen({ navigation, route }) {
         Alert.alert("Could not confirm delivery", detail);
         return;
       }
-      if (verificationContext?.purchaseRow && txnKey) {
-        const patched = applyOptimisticPurchaseDeliveryVerification(
-          verificationContext.purchaseRow,
-          verificationContext.receiptLines,
-          deliveryVerificationItems,
-          verificationContext.orderUnits,
-          verificationContext.returnRows,
-        );
-        setTransactionData((prev) =>
-          (Array.isArray(prev) ? prev : []).map((row) => {
-            const rowTxn = String(row?.transaction_uid || row?.original_transaction_uid || "").trim();
-            return rowTxn === txnKey ? patched : row;
-          }),
-        );
+      let writePurchaseRow = null;
+      try {
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const result = await response.json();
+          writePurchaseRow = extractPurchaseRowFromTransactionWriteResponse(result);
+        }
+      } catch (parseErr) {
+        console.warn("Delivery verification PUT response parse failed:", parseErr?.message || parseErr);
+      }
+      if (writePurchaseRow && txnKey) {
+        setTransactionData((prev) => applyAccountScreenPurchaseRowUpdate(prev, writePurchaseRow));
       }
       resetDeliveryVerificationModal();
       markAccountScreenPersonalDirty();
-      await refreshAccountScreenPersonal({ force: true });
+      void refreshWalletLedger({ force: true });
+      // Defer full account-screen refresh to tab focus / explicit reload so a lagging
+      // purchases.rows aggregate cannot overwrite the PUT purchase_row snapshot.
       if (!releaseEscrow) {
         Alert.alert("Partial delivery recorded", "Receipt confirmation saved. Earnings may remain pending until all items are verified and any return window ends.");
       } else {
@@ -9988,8 +9590,8 @@ export default function AccountScreen({ navigation, route }) {
           const total = parseFloat(item.transaction_total || 0);
           const taxes = parseFloat(item.transaction_taxes || 0);
           const bounty = bountyDataByTransaction[txnId]?.total_bounty || 0;
-          const proceedsStatus = sellerProceedsStatus(item, null);
-          const netEarning = proceedsStatus === "useable" ? total - bounty - taxes : 0;
+          const proceedsStatus = item.proceeds_status || null;
+          const netEarning = proceedsStatus === "useable" ? total - bounty - taxes : item.net_earning != null ? parseFloat(item.net_earning) : 0;
           transactionMap[txnId] = {
             transaction_uid: item.transaction_uid,
             transaction_datetime: item.transaction_datetime,
@@ -10038,7 +9640,7 @@ export default function AccountScreen({ navigation, route }) {
 
   const reloadAccountScreen = useCallback(() => {
     checkAuth();
-    void refreshAccountScreenPersonal();
+    void refreshAccountScreenPersonal({ force: true });
 
     const loadBusinessData = async () => {
       await refreshFromSession({ forceRefresh: true });
@@ -10092,69 +9694,6 @@ export default function AccountScreen({ navigation, route }) {
   ];
 
   const screenWidth = Dimensions.get("window").width - 40;
-
-  // Process bounty data for Bounties chart with dual axes
-  const processBountyDataForChart = (ledgerAvailabilityByTxnUid = {}, ledgerRows = [], purchaseRows = []) => {
-    if (!bountyData || !bountyData.data || !Array.isArray(bountyData.data) || bountyData.data.length === 0) {
-      return {
-        dates: [],
-        dailyBounty: [],
-        cumulativeBounty: [],
-        cumulativePending: [],
-        cumulativeUseable: [],
-        maxDaily: 0,
-        maxCumulative: 0,
-      };
-    }
-
-    const enrichedRows = bountyData.data.map((row) => enrichBountyLineFromPurchases(row, purchaseRows));
-
-    // Group bounty by date and calculate cumulative
-    const bountyByDate = {};
-
-    enrichedRows.forEach((transaction) => {
-      if (!transaction.transaction_datetime || transaction.bounty_earned == null) return;
-
-      const date = parseTransactionDateTime(transaction);
-      if (!date) return;
-      const dateKey = localDateKey(date);
-
-      if (!bountyByDate[dateKey]) {
-        bountyByDate[dateKey] = 0;
-      }
-      bountyByDate[dateKey] += parseFloat(transaction.bounty_earned) || 0;
-    });
-
-    const recentDates = lastNDaysKeys(12);
-
-    const dailyBounty = recentDates.map((date) => bountyByDate[date] || 0);
-
-    // Build cumulative bounty, pending, and useable (same right-axis scale)
-    const cumulativeBounty = [];
-    const cumulativePending = [];
-    const cumulativeUseable = [];
-    let runningTotal = 0;
-    recentDates.forEach((date) => {
-      runningTotal += bountyByDate[date] || 0;
-      cumulativeBounty.push(runningTotal);
-      const pendingTotal = enrichedRows.reduce((sum, row) => sum + bountyAmountPendingOnChartDate(row, date, ledgerAvailabilityByTxnUid, ledgerRows), 0);
-      cumulativePending.push(pendingTotal);
-      cumulativeUseable.push(Math.max(0, runningTotal - pendingTotal));
-    });
-
-    const maxDaily = Math.max(...dailyBounty, 0.01);
-    const maxCumulative = Math.max(...cumulativeBounty, ...cumulativePending, ...cumulativeUseable, 0.01);
-
-    return {
-      dates: recentDates,
-      dailyBounty,
-      cumulativeBounty,
-      cumulativePending,
-      cumulativeUseable,
-      maxDaily,
-      maxCumulative,
-    };
-  };
 
   // Process business transaction data for business Bounties chart
   const processBusinessTransactionDataForChart = () => {
@@ -10306,11 +9845,7 @@ export default function AccountScreen({ navigation, route }) {
   };
 
   const NetEarningChart = () => {
-    const chartData = personalEarnings?.chart?.series?.length
-      ? processEarningsChartFromApi(personalEarnings)
-      : accountScreenV2CompatEnabled()
-        ? processBountyDataForChart(ledgerAvailabilityByTxnUid, walletLedgerRows, transactionData)
-        : processEarningsChartFromApi(null);
+    const chartData = processEarningsChartFromApi(personalEarnings);
     const screenWidth = Dimensions.get("window").width - 40;
     const chartWidth = screenWidth;
     const chartHeight = 200; // Increased from 180 to make room for x-axis label
@@ -10652,34 +10187,15 @@ export default function AccountScreen({ navigation, route }) {
     );
   };
 
-  const ledgerAvailabilityByTxnUid = useMemo(() => buildLedgerAvailabilityByTxnUid(walletLedgerRows), [walletLedgerRows]);
-
   const personalPendingBountyTotal = useMemo(() => {
     if (personalEarnings?.bounty_pending != null) return parsePrice(personalEarnings.bounty_pending);
-    if (!accountScreenV2CompatEnabled()) return null;
-    if (personalWallet?.wallet_pending != null) return parsePrice(personalWallet.wallet_pending);
-    if (!bountyData?.data || !Array.isArray(bountyData.data)) return 0;
-    return bountyData.data.reduce((sum, item) => {
-      const status = item.proceeds_status || bountyProceedsStatus(item, ledgerAvailabilityByTxnUid, walletLedgerRows);
-      if (status === "useable") return sum;
-      return sum + parseFloat(item.bounty_earned || 0);
-    }, 0);
-  }, [personalEarnings, personalWallet, bountyData, ledgerAvailabilityByTxnUid, walletLedgerRows]);
+    return null;
+  }, [personalEarnings]);
 
   const personalUseableBountyTotal = useMemo(() => {
     if (personalEarnings?.bounty_useable != null) return parsePrice(personalEarnings.bounty_useable);
-    if (!accountScreenV2CompatEnabled()) return null;
-    if (!bountyData?.data || !Array.isArray(bountyData.data)) {
-      return Math.max(0, parsePrice(bountyData?.total_bounty_earned) - (personalPendingBountyTotal || 0));
-    }
-    return bountyData.data.reduce((sum, item) => {
-      const status = item.proceeds_status || bountyProceedsStatus(item, ledgerAvailabilityByTxnUid, walletLedgerRows);
-      if (status === "useable") {
-        return sum + parseFloat(item.bounty_earned || 0);
-      }
-      return sum;
-    }, 0);
-  }, [personalEarnings, bountyData, ledgerAvailabilityByTxnUid, walletLedgerRows, personalPendingBountyTotal]);
+    return null;
+  }, [personalEarnings]);
 
   const businessNetEarningsTotal = businessTransactionData.reduce((s, t) => {
     if (t.proceeds_status && t.proceeds_status !== "useable") return s;
@@ -10829,22 +10345,6 @@ export default function AccountScreen({ navigation, route }) {
                 </View>
               </TouchableOpacity>
             )}
-        {selectedAccount === "personal" && !accountScreenV2CompatEnabled() ? (
-          <View
-            style={{
-              backgroundColor: darkMode ? "#3d3520" : "#fff3cd",
-              padding: 12,
-              marginBottom: 16,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: darkMode ? "#ffc107" : "#ffecb5",
-            }}
-          >
-            <Text style={{ fontSize: 13, color: darkMode ? "#ffe082" : "#856404", lineHeight: 18 }}>
-              v3-only preview — legacy v2 fallbacks are off. Missing backend fields show as NA. Set ACCOUNT_SCREEN_V2_COMPAT_ENABLED = true in apiConfig.js to restore v2 behavior.
-            </Text>
-          </View>
-        ) : null}
         {/* Select Profile Dropdown Row */}
         <View style={styles.selectProfileRow}>
           <Text style={styles.selectProfileLabel}>Select Profile</Text>
@@ -10969,21 +10469,9 @@ export default function AccountScreen({ navigation, route }) {
                         const sellerId = resolvePurchaseSellerId(transaction);
                         const rowDisplay = transaction.display && typeof transaction.display === "object" ? transaction.display : null;
                         const v3Money = resolveAccountScreenRowMoney(transaction);
-                        const returnMoney =
-                          isReturnRow && !v3Money.totalKnown && accountScreenV2CompatEnabled()
-                            ? resolveReturnRowMoney(transaction, null, bountyData?.data || [])
-                            : null;
                         const displayAmount =
                           rowDisplay?.amount_label ||
-                          (v3Money.totalKnown
-                            ? formatSignedOrderMoney(v3Money.total)
-                            : isReturnRow
-                              ? returnMoney?.totalKnown
-                                ? formatSignedOrderMoney(returnMoney.total)
-                                : ACCOUNT_SCREEN_DISPLAY_NA
-                              : accountScreenV2CompatEnabled()
-                                ? formatSignedOrderMoney(parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0))
-                                : ACCOUNT_SCREEN_DISPLAY_NA);
+                          (v3Money.totalKnown ? formatSignedOrderMoney(v3Money.total) : ACCOUNT_SCREEN_DISPLAY_NA);
                         const rowIdentity = resolveTrrUid(transaction) || transaction.transaction_uid || transaction.ti_uid || "purchase";
                         const rowKey = `${rowIdentity}-${isReturnRow ? "return" : "sale"}-${i}`;
                         const openPurchaseRowDetail = () => {
@@ -10994,7 +10482,7 @@ export default function AccountScreen({ navigation, route }) {
                               listTransactionUid: String(transaction.original_transaction_uid || orderUid).trim(),
                               trrUid: resolveTrrUid(transaction) || undefined,
                               trrUids: normalizeTrrUidList(transaction),
-                              bountyPaid: returnMoney?.bountyPaid ?? transaction.bounty_paid ?? 0,
+                              bountyPaid: transaction.bounty?.bounty_to_reclaim ?? transaction.bounty_paid ?? 0,
                               rawRow: transaction,
                             });
                             return;
@@ -11012,7 +10500,7 @@ export default function AccountScreen({ navigation, route }) {
                             ) : null}
                             {showPurchasesTypeColumn ? (
                               <Text style={styles.transactionPurchaseType}>
-                                {resolveAccountScreenDisplayField(transaction, "type_label", isReturnRow ? "Return" : transaction.purchase_type || "N/A")}
+                                {resolveAccountScreenDisplayField(transaction, "type_label")}
                               </Text>
                             ) : null}
                             <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
@@ -11041,30 +10529,12 @@ export default function AccountScreen({ navigation, route }) {
                             ) : null}
                             {!compactTx && (
                               <Text style={[styles.transactionQty, isReturnRow && { color: "#B71C1C" }]}>
-                                {resolveAccountScreenDisplayField(
-                                  transaction,
-                                  "qty_label",
-                                  (() => {
-                                    const v2Qty = accountScreenV2CompatEnabled() ? getRowV2DisplayQty(transaction) : null;
-                                    if (v2Qty != null) return v2Qty;
-                                    return isReturnRow ? Math.abs(parseInt(transaction.ti_bs_qty, 10) || 1) : transaction.ti_bs_qty || 1;
-                                  })(),
-                                )}
+                                {resolveAccountScreenDisplayField(transaction, "qty_label")}
                               </Text>
                             )}
                             {(() => {
-                              const txnUid = String(transaction.original_transaction_uid || transaction.transaction_uid || "").trim();
-                              const statusOverride = isReturnRow ? { returnRequested: true } : {};
-                              const deliveredLabel = resolveAccountScreenDisplayField(
-                                transaction,
-                                "delivered_label",
-                                getBuyerPurchaseDeliveredLabel(transaction, statusOverride),
-                              );
-                              const receivedLabel = resolveAccountScreenDisplayField(
-                                transaction,
-                                "received_label",
-                                getBuyerPurchaseReceivedLabel(transaction, statusOverride),
-                              );
+                              const deliveredLabel = resolveAccountScreenDisplayField(transaction, "delivered_label");
+                              const receivedLabel = resolveAccountScreenDisplayField(transaction, "received_label");
                               const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
                               const canVerifyReceipt = buyerPurchaseNeedsReceiptVerification(transaction);
                               const receivedDisplayLabel = receivedLabel;
@@ -11150,9 +10620,7 @@ export default function AccountScreen({ navigation, route }) {
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>
                           {personalEarnings?.bounty_total_earned != null
                             ? `$${Number(personalEarnings.bounty_total_earned).toFixed(2)}`
-                            : accountScreenV2CompatEnabled()
-                              ? `$${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}`
-                              : ACCOUNT_SCREEN_DISPLAY_NA}
+                            : ACCOUNT_SCREEN_DISPLAY_NA}
                         </Text>
                       </View>
                       <View style={styles.walletBalanceRow}>
@@ -11172,7 +10640,7 @@ export default function AccountScreen({ navigation, route }) {
                           </View>
                           <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingBountyTotal.toFixed(2)}</Text>
                         </View>
-                      ) : personalPendingBountyTotal == null && !accountScreenV2CompatEnabled() ? (
+                      ) : personalPendingBountyTotal == null ? (
                         <View style={styles.walletBalanceRow}>
                           <View style={styles.walletBalanceLabelCol}>
                             <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
@@ -11263,37 +10731,11 @@ export default function AccountScreen({ navigation, route }) {
                         </View>
                         {bountyData.data.map((item, index) => {
                           const itemDisplay = item.display && typeof item.display === "object" ? item.display : null;
-                          const linkedTxnUid = String(item.ti_transaction_id || item.transaction_uid || "").trim();
-                          const linkedTxn = linkedTxnUid && accountScreenV2CompatEnabled() ? transactionData.find((t) => String(t.transaction_uid || "").trim() === linkedTxnUid) : null;
-                          const enrichedItem = linkedTxn
-                            ? {
-                                ...item,
-                                ti_received_qty: item.ti_received_qty ?? linkedTxn.ti_received_qty ?? linkedTxn.received_item_count,
-                                ti_bs_qty: item.ti_bs_qty ?? linkedTxn.ti_bs_qty ?? linkedTxn.item_count,
-                                ti_bs_return_window_days: item.ti_bs_return_window_days ?? linkedTxn.ti_bs_return_window_days ?? linkedTxn.return_window_days,
-                                ti_bs_is_returnable: item.ti_bs_is_returnable ?? linkedTxn.ti_bs_is_returnable ?? linkedTxn.is_returnable,
-                                bounty_released_at: item.bounty_released_at ?? linkedTxn.bounty_released_at,
-                              }
-                            : item;
-                          const proceedsStatus =
-                            item.proceeds_status ?? (accountScreenV2CompatEnabled() ? bountyProceedsStatus(enrichedItem, ledgerAvailabilityByTxnUid, walletLedgerRows) : null);
+                          const proceedsStatus = item.proceeds_status || null;
                           const statusLabel = itemDisplay?.status_label || (proceedsStatus ? bountyProceedsStatusLabel(proceedsStatus) : ACCOUNT_SCREEN_DISPLAY_NA);
-                          const bountyDisplay = accountScreenV2CompatEnabled() ? resolveBountyResultsRowDisplay(item) : null;
-                          const totalLabel =
-                            itemDisplay?.pool_label ||
-                            (accountScreenV2CompatEnabled() && bountyDisplay?.lineBounty != null && bountyDisplay.lineBounty > 0
-                              ? `$${bountyDisplay.lineBounty.toFixed(2)}`
-                              : ACCOUNT_SCREEN_DISPLAY_NA);
-                          const percentLabel =
-                            itemDisplay?.percent_label ||
-                            (accountScreenV2CompatEnabled() ? formatBountySharePercentLabel(bountyDisplay?.percentage) || "—" : ACCOUNT_SCREEN_DISPLAY_NA);
-                          const earnedAmount = itemDisplay?.earned_label
-                            ? itemDisplay.earned_label
-                            : accountScreenV2CompatEnabled() && bountyDisplay?.earned != null
-                              ? `$${bountyDisplay.earned.toFixed(2)}`
-                              : accountScreenV2CompatEnabled()
-                                ? `$${(parseFloat(item.bounty_earned || 0) || 0).toFixed(2)}`
-                                : ACCOUNT_SCREEN_DISPLAY_NA;
+                          const totalLabel = itemDisplay?.pool_label || ACCOUNT_SCREEN_DISPLAY_NA;
+                          const percentLabel = itemDisplay?.percent_label || ACCOUNT_SCREEN_DISPLAY_NA;
+                          const earnedAmount = itemDisplay?.earned_label || ACCOUNT_SCREEN_DISPLAY_NA;
                           return (
                             <View key={item.bounty_line_uid || item.tb_uid || item.ti_transaction_id || index} style={styles.transactionRow}>
                               {showPurchasesTxnIdColumn ? <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text> : null}
@@ -11353,12 +10795,10 @@ export default function AccountScreen({ navigation, route }) {
                           <Text style={[styles.transactionHeaderAmount, { flex: 0.95 }]}>Spendable Balance</Text>
                         </View>
                         {walletLedgerRows.map((entry, index) => {
-                          const isPending = entry.availability === "pending";
-                          const isUseable = entry.availability === "useable";
-                          const pendingAmount = isPending ? entry.amount : null;
-                          const useableAmount = isUseable ? entry.amount : null;
-                          const pendingColor = ledgerAmountColor(pendingAmount, darkMode);
-                          const useableColor = ledgerAmountColor(useableAmount, darkMode);
+                          const pendingLabel = resolveWalletLedgerDisplayLabel(entry, "pending_amount_label");
+                          const useableLabel = resolveWalletLedgerDisplayLabel(entry, "useable_amount_label");
+                          const pendingColor = ledgerDisplayLabelColor(pendingLabel, darkMode);
+                          const useableColor = ledgerDisplayLabelColor(useableLabel, darkMode);
                           const ledgerOrderUid =
                             resolveOrderUidForTransactionUid(entry.transaction_uid, transactionData, bountyData?.data, sellerTxData, businessSellerTransactionList) ||
                             (String(entry.transaction_uid || "").startsWith("500-") ? String(entry.transaction_uid).trim() : null);
@@ -11391,10 +10831,10 @@ export default function AccountScreen({ navigation, route }) {
                                 {entry.description || entry.counterparty_name || "—"}
                               </Text>
                               <Text style={[styles.transactionAmount, { flex: 0.75 }, pendingColor ? { color: pendingColor } : null]}>
-                                {entry.display?.pending_amount_label || formatLedgerColumnAmount(pendingAmount)}
+                                {pendingLabel}
                               </Text>
                               <Text style={[styles.transactionAmount, { flex: 0.75 }, useableColor ? { color: useableColor } : null]}>
-                                {entry.display?.useable_amount_label || formatLedgerColumnAmount(useableAmount)}
+                                {useableLabel}
                               </Text>
                               <Text style={[styles.transactionAmount, { flex: 0.85 }]}>{formatWalletUsd(entry.balance_after)}</Text>
                               <Text style={[styles.transactionAmount, { flex: 0.95 }]}>{formatWalletUsd(entry.useable_balance_after)}</Text>
@@ -11775,8 +11215,6 @@ export default function AccountScreen({ navigation, route }) {
 
                         if (isOfferingReceipt) {
                           const offeringName = String(item.bs_service_name || item.bs_service_desc || "N/A").trim() || "N/A";
-                          const offeringFields = resolveOfferingDisplayFields(item, receiptTransaction);
-                          const rateDisplay = offeringFields.rateDisplay;
                           const lineTotal = baseCost * qty;
                           return (
                             <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
@@ -11784,7 +11222,6 @@ export default function AccountScreen({ navigation, route }) {
                                 <Text style={{ fontSize: 12, color: darkMode ? "#eee" : "#333", lineHeight: 17 }} numberOfLines={3}>
                                   {offeringName}
                                 </Text>
-                                {rateDisplay ? <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#777", fontStyle: "italic", lineHeight: 14 }}>{rateDisplay}</Text> : null}
                               </View>
                               <Text style={[styles.receiptTableCell, styles.receiptTableCellQty, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
                                 {qty}

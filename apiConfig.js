@@ -100,7 +100,8 @@ export const SEARCH_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/search_referral`;
 
 // Transaction and Rating Endpoints
 export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;
-/** PUT body: profile_id, transaction_uid, transaction_in_escrow, delivery_verification_items */
+/** PUT body: profile_id, transaction_uid, transaction_in_escrow, delivery_verification_items.
+ *  PUT response (delivery verification): include purchase_row — v3 account-screen purchases.rows[] item (post-commit). */
 /** POST — buyer submit return request (note + line items) */
 export const TRANSACTIONS_RETURN_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/return`;
 /** PUT — seller confirm receipt (action=confirm) or reject return (action=decline).
@@ -110,16 +111,14 @@ export const TRANSACTIONS_RETURN_ENDPOINT = `${API_BASE_URL}/api/v1/transactions
 export const TRANSACTIONS_RETURN_CONFIRM_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/return/confirm`;
 /** GET list / PUT resolve — admin declined returns queue */
 export const TRANSACTIONS_RETURNS_DECLINED_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/returns/declined`;
-/** Aggregated Account screen payloads (Flask: AccountScreenPersonal / AccountScreenBusiness) */
+/** Aggregated Account screen payloads — schema_version 3 (Flask: AccountScreenPersonal / AccountScreenBusiness) */
 export const ACCOUNT_SCREEN_PERSONAL_ENDPOINT = `${API_BASE_URL}/api/v1/account-screen/personal`;
 export const ACCOUNT_SCREEN_BUSINESS_ENDPOINT = `${API_BASE_URL}/api/v1/account-screen/business`;
 /**
- * When false, Account page list/summary UI uses only v3 fields (money.*, display.*, earnings.*).
- * Legacy v2 fallbacks (client-side money math, ledger joins, chip inference) are skipped — missing
- * backend fields show NA. Set true to restore dual v2/v3 behavior.
+ * GET /:profile_id — wallet ledger entries (bounties, sale proceeds, wallet payments/refunds).
+ * v3: Pending/Useable columns use entry.display.pending_amount_label / useable_amount_label only
+ * (including return/cancel clawbacks — BE must populate signed labels, not "—" when balance moves).
  */
-export const ACCOUNT_SCREEN_V2_COMPAT_ENABLED = false;
-/** GET /:profile_id — wallet ledger entries (bounties, sale proceeds, wallet payments/refunds) */
 export const WALLET_LEDGER_ENDPOINT = `${API_BASE_URL}/api/v1/wallet_ledger`;
 /** GET /:orderUid?profile_id= | ?business_uid= — combined sale + returns order detail */
 export const ORDERS_ENDPOINT = `${API_BASE_URL}/api/v1/orders`;

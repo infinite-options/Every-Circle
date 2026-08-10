@@ -166,9 +166,7 @@ export async function clearSessionAsyncStorageOnLogin({ userUid, previousUserUid
     clearSessionProfileCache();
   }
 
-  if (!sameUserResuming) {
-    await markAccountScreenPersonalStale();
-  }
+  await markAccountScreenPersonalStale();
 
   return toRemove.length;
 }
