@@ -113,6 +113,12 @@ export const TRANSACTIONS_RETURNS_DECLINED_ENDPOINT = `${API_BASE_URL}/api/v1/tr
 /** Aggregated Account screen payloads (Flask: AccountScreenPersonal / AccountScreenBusiness) */
 export const ACCOUNT_SCREEN_PERSONAL_ENDPOINT = `${API_BASE_URL}/api/v1/account-screen/personal`;
 export const ACCOUNT_SCREEN_BUSINESS_ENDPOINT = `${API_BASE_URL}/api/v1/account-screen/business`;
+/**
+ * When false, Account page list/summary UI uses only v3 fields (money.*, display.*, earnings.*).
+ * Legacy v2 fallbacks (client-side money math, ledger joins, chip inference) are skipped — missing
+ * backend fields show NA. Set true to restore dual v2/v3 behavior.
+ */
+export const ACCOUNT_SCREEN_V2_COMPAT_ENABLED = false;
 /** GET /:profile_id — wallet ledger entries (bounties, sale proceeds, wallet payments/refunds) */
 export const WALLET_LEDGER_ENDPOINT = `${API_BASE_URL}/api/v1/wallet_ledger`;
 /** GET /:orderUid?profile_id= | ?business_uid= — combined sale + returns order detail */

@@ -7,6 +7,7 @@ import AppHeader from "../components/AppHeader";
 import {
   ACCOUNT_SCREEN_PERSONAL_ENDPOINT,
   ACCOUNT_SCREEN_BUSINESS_ENDPOINT,
+  ACCOUNT_SCREEN_V2_COMPAT_ENABLED,
   WALLET_LEDGER_ENDPOINT,
   ORDERS_ENDPOINT,
   API_BASE_URL,
@@ -24,7 +25,8 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
-import { getSessionProfile, resolveBusinessUid } from "../utils/sessionProfile";
+import { getSessionProfile, resolveBusinessUid, subscribeSessionProfile } from "../utils/sessionProfile";
+import { consumeAccountScreenPersonalStale } from "../utils/accountScreenPersonalCache";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { restockReturnedItems, restockReturnedOfferingItems } from "../utils/purchaseService";
 import { isOfferingQtyUnlimited } from "../utils/profileOfferingShipping";
@@ -151,6 +153,147 @@ function getAccountScreenSchemaVersion(json) {
   const root = json && typeof json === "object" ? json : {};
   const v = parseInt(root.schema_version, 10);
   return Number.isFinite(v) ? v : 0;
+}
+
+function isAccountScreenV3(schemaVersion) {
+  return Number(schemaVersion) >= 3;
+}
+
+/** When false, Account UI reads v3 contract only (no legacy field fallbacks). */
+function accountScreenV2CompatEnabled() {
+  return ACCOUNT_SCREEN_V2_COMPAT_ENABLED === true;
+}
+
+/** v3-only preview mode, or v3 schema when v2 compat is on. */
+function accountScreenUsesV3Contract(schemaVersion) {
+  if (!accountScreenV2CompatEnabled()) return true;
+  return isAccountScreenV3(schemaVersion);
+}
+
+function resolveAccountScreenDisplayField(row, field, legacyValue) {
+  const raw = row?.display?.[field];
+  if (raw != null && String(raw).trim() !== "" && String(raw).trim() !== "—") {
+    return String(raw).trim();
+  }
+  if (!accountScreenV2CompatEnabled()) return ACCOUNT_SCREEN_DISPLAY_NA;
+  if (legacyValue != null && String(legacyValue).trim() !== "") return String(legacyValue).trim();
+  return ACCOUNT_SCREEN_DISPLAY_NA;
+}
+
+function resolveAccountScreenRowMoneyOrLegacy(row, legacyFn) {
+  const v3 = resolveAccountScreenRowMoney(row);
+  if (v3.totalKnown) return v3;
+  if (!accountScreenV2CompatEnabled()) return { total: null, totalKnown: false };
+  return legacyFn ? legacyFn() : { total: null, totalKnown: false };
+}
+
+/** v3 wallet block uses useable_balance; v2 uses wallet_useable_balance. */
+function normalizeAccountScreenWallet(wallet) {
+  if (!wallet || typeof wallet !== "object" || Array.isArray(wallet)) return null;
+  if (wallet.useable_balance != null || wallet.pending_balance != null || wallet.actual_balance != null) {
+    return {
+      ...wallet,
+      wallet_useable_balance: wallet.useable_balance ?? wallet.wallet_useable_balance,
+      wallet_pending: wallet.pending_balance ?? wallet.wallet_pending,
+      wallet_actual_balance: wallet.actual_balance ?? wallet.wallet_actual_balance,
+    };
+  }
+  return wallet;
+}
+
+/** Authoritative customer total/credit from account-screen v3 row.money. */
+function parseAccountScreenMoneyField(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function resolveAccountScreenRowPurchasedQty(row) {
+  const units = row?.units;
+  if (units && typeof units === "object") {
+    const fromUnits = parseNonNegativeInt(units.purchased_qty);
+    if (fromUnits != null && fromUnits > 0) return fromUnits;
+  }
+  const fromQty = parseNonNegativeInt(row?.ti_bs_qty);
+  if (fromQty != null && fromQty > 0) return fromQty;
+  return null;
+}
+
+/** Read BE-persisted line snapshots when money block is absent (no order-level allocation). */
+function resolveAccountScreenRowMoneyFromSnapshots(row) {
+  if (!row || typeof row !== "object") return null;
+  const money = row.money;
+  if (money && typeof money === "object" && money.known !== false) {
+    return null;
+  }
+
+  const credit = parseAccountScreenMoneyField(money?.customer_credit);
+  if (credit != null) return { total: credit, totalKnown: true };
+
+  const explicitTotal = parseAccountScreenMoneyField(money?.customer_total);
+  if (explicitTotal != null) return { total: explicitTotal, totalKnown: true };
+
+  let merchandise = parseAccountScreenMoneyField(money?.merchandise);
+  if (merchandise == null) {
+    const unitCost = parseAccountScreenMoneyField(row.ti_bs_cost ?? row.unit_price);
+    const qty = resolveAccountScreenRowPurchasedQty(row);
+    if (unitCost != null && qty != null) {
+      merchandise = Math.round(unitCost * qty * 100) / 100;
+    }
+  }
+
+  const tax = parseAccountScreenMoneyField(money?.tax ?? row.ti_line_tax_amount ?? row.line_tax_amount);
+  const shipping = parseAccountScreenMoneyField(money?.shipping ?? row.ti_line_shipping_amount ?? row.line_shipping_amount);
+
+  if (merchandise != null && tax != null && shipping != null) {
+    return { total: Math.round((merchandise + tax + shipping) * 100) / 100, totalKnown: true };
+  }
+  return null;
+}
+
+function resolveAccountScreenRowMoney(row) {
+  const money = row?.money;
+  if (money && typeof money === "object" && money.known !== false) {
+    if (money.customer_credit != null && money.customer_credit !== "") {
+      return { total: Number(money.customer_credit), totalKnown: Number.isFinite(Number(money.customer_credit)) };
+    }
+    if (money.customer_total != null && money.customer_total !== "") {
+      return { total: Number(money.customer_total), totalKnown: Number.isFinite(Number(money.customer_total)) };
+    }
+  }
+  const fromSnapshots = resolveAccountScreenRowMoneyFromSnapshots(row);
+  if (fromSnapshots) return fromSnapshots;
+  return { total: null, totalKnown: false };
+}
+
+function processEarningsChartFromApi(earnings) {
+  const empty = {
+    dates: [],
+    dailyBounty: [],
+    cumulativeBounty: [],
+    cumulativePending: [],
+    cumulativeUseable: [],
+    maxDaily: 0.01,
+    maxCumulative: 0.01,
+  };
+  const series = earnings?.chart?.series;
+  if (!Array.isArray(series) || !series.length) return empty;
+  const dates = series.map((point) => String(point.date || "").trim()).filter(Boolean);
+  const dailyBounty = series.map((point) => parseFloat(point.daily) || 0);
+  const cumulativeBounty = series.map((point) => parseFloat(point.cumulative) || 0);
+  const pendingTotal = parseFloat(earnings?.bounty_pending);
+  const useableTotal = parseFloat(earnings?.bounty_useable);
+  const cumulativePending = dates.map(() => (Number.isFinite(pendingTotal) ? pendingTotal : 0));
+  const cumulativeUseable = dates.map(() => (Number.isFinite(useableTotal) ? useableTotal : 0));
+  return {
+    dates,
+    dailyBounty,
+    cumulativeBounty,
+    cumulativePending,
+    cumulativeUseable,
+    maxDaily: Math.max(...dailyBounty, 0.01),
+    maxCumulative: Math.max(...cumulativeBounty, ...cumulativePending, ...cumulativeUseable, 0.01),
+  };
 }
 
 function parseNonNegativeInt(value) {
@@ -359,10 +502,18 @@ function extractAccountScreenPurchaseRowsV2(root) {
 }
 
 function extractAccountScreenSellerTransactions(root, payload) {
+  const salesTx = root?.sales?.transactions ?? payload?.sales?.transactions;
+  if (Array.isArray(salesTx) && salesTx.length) return salesTx;
   const stRaw = payload?.seller_transactions ?? payload?.seller_tx ?? root?.seller_transactions ?? root?.seller_tx;
   if (Array.isArray(stRaw)) return stRaw;
   if (stRaw && typeof stRaw === "object" && isApiSuccessCode(stRaw.code) && Array.isArray(stRaw.data)) return stRaw.data;
   return [];
+}
+
+/** v3 contract — sales.transactions only (no legacy seller_transactions). */
+function extractV3SalesTransactions(root, payload) {
+  const salesTx = root?.sales?.transactions ?? payload?.sales?.transactions;
+  return Array.isArray(salesTx) ? salesTx : [];
 }
 
 function normalizeAccountScreenListRow(row) {
@@ -738,6 +889,14 @@ function extractPersonalWallet(root, payload, bountyBlock) {
 /** Normalize bounty_results / legacy bounty shapes to { data, total_bounty_earned, total_bounties }. */
 function normalizePersonalBounty(bountyRaw, root, payload) {
   if (bountyRaw == null) return null;
+  const earnings = root?.earnings ?? payload?.earnings;
+  if (bountyRaw && typeof bountyRaw === "object" && Array.isArray(bountyRaw.rows)) {
+    return {
+      data: bountyRaw.rows,
+      total_bounty_earned: earnings?.bounty_total_earned ?? bountyRaw.total_bounty_earned ?? root?.total_bounty_earned ?? payload?.total_bounty_earned,
+      total_bounties: bountyRaw.rows.length,
+    };
+  }
   if (Array.isArray(bountyRaw)) {
     return {
       data: bountyRaw,
@@ -971,25 +1130,35 @@ function mapAccountScreenPersonalResponse(json, options = {}) {
   const root = json && typeof json === "object" ? json : {};
   const schemaVersion = getAccountScreenSchemaVersion(root);
   const payload = root.data !== undefined && root.data !== null && typeof root.data === "object" && !Array.isArray(root.data) ? root.data : root;
+  const useV3Contract = accountScreenUsesV3Contract(schemaVersion);
 
   const transactions = extractAccountScreenPurchaseRowsV2({ ...root, ...payload, purchases: root.purchases ?? payload.purchases }).map(normalizeAccountScreenListRow);
 
   if (options.debug) {
     logAccountScreenPersonalPurchasesDebug({
-      source: "purchases.rows (v2)",
+      source: useV3Contract ? "purchases.rows (v3 contract)" : "purchases.rows (v2)",
       purchasesRawKey: "root.purchases.rows",
       txRaw: root.purchases,
       transactions,
     });
   }
 
-  const bountyRaw = root.bounty_results ?? payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
+  const bountyRaw = useV3Contract
+    ? root.bounty_results ?? payload.bounty_results ?? null
+    : root.bounty_results ?? payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
   const bounty = normalizePersonalBounty(bountyRaw, root, payload);
-  const wallet = extractPersonalWallet(root, payload, bountyRaw);
-  const sellerTransactions = extractAccountScreenSellerTransactions(root, payload).map(normalizeAccountScreenListRow);
+  const wallet = normalizeAccountScreenWallet(
+    useV3Contract ? root.wallet ?? payload.wallet : extractPersonalWallet(root, payload, bountyRaw),
+  );
+  const sellerTransactions = (useV3Contract ? extractV3SalesTransactions(root, payload) : extractAccountScreenSellerTransactions(root, payload)).map(
+    normalizeAccountScreenListRow,
+  );
   const profile = root.profile ?? payload.profile ?? payload.user_profile ?? payload.personal_profile ?? null;
+  const earnings = useV3Contract ? root.earnings ?? payload.earnings ?? null : null;
+  const walletLedger = useV3Contract ? root.wallet_ledger ?? payload.wallet_ledger ?? null : null;
+  const salesOfferings = useV3Contract && Array.isArray(root.sales?.offerings ?? payload.sales?.offerings) ? root.sales.offerings ?? payload.sales.offerings : [];
 
-  return { transactions, bounty, sellerTransactions, profile, wallet, schemaVersion };
+  return { transactions, bounty, sellerTransactions, profile, wallet, schemaVersion, earnings, walletLedger, salesOfferings, useV3Contract };
 }
 
 /**
@@ -2253,6 +2422,7 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
   const dateMs = transactionDateMs(row);
   const trrUidEarly = resolveTrrUid(row);
   const listTransactionUid = String(row.transaction_uid || trrUidEarly || "").trim();
+  const display = row?.display && typeof row.display === "object" ? row.display : null;
   const statusOverride = {};
   const returnLogistics = resolveReturnLogisticsLabels(row, {
     ...statusOverride,
@@ -2261,23 +2431,32 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
 
   // Keep Order rows on shipping/receipt chips. Return logistics belong on the Return row only.
   if (isReturn) {
-    // Prefer pending_return for total/bounty when present, but still fill missing bounty via return txn / lines.
-    const money = resolveReturnRowMoney(row, null, null);
+    const v3Money = resolveAccountScreenRowMoney(row);
+    const money = v3Money.totalKnown
+      ? {
+          total: v3Money.total,
+          bountyPaid: parseFloat(row?.bounty?.bounty_to_reclaim ?? row?.bounty_paid ?? 0) || 0,
+          totalKnown: true,
+          bountyKnown: row?.bounty?.bounty_to_reclaim != null || row?.bounty_paid != null,
+        }
+      : accountScreenV2CompatEnabled()
+        ? resolveReturnRowMoney(row, null, null)
+        : { total: null, bountyPaid: 0, totalKnown: false, bountyKnown: false };
     const trrUid = trrUidEarly;
     const trrUids = normalizeTrrUidList(row);
-    const delivered = returnLogistics?.delivered || "";
-    const received = returnLogistics?.received || "";
+    const delivered = resolveAccountScreenDisplayField(row, "delivered_label", returnLogistics?.delivered);
+    const received = resolveAccountScreenDisplayField(row, "received_label", returnLogistics?.received);
     return {
       key: resolveSellerListRowKey(row) || String(trrUid || row.transaction_uid || `return-${orderUid}-${dateMs}`),
       orderUid,
-      rowLabel: "Return",
+      rowLabel: display?.type_label || "Return",
       listTransactionUid,
       trrUid: trrUid || undefined,
       trrUids: trrUids.length ? trrUids : undefined,
       isReturn: true,
       isSyntheticReturn: false,
       placedBy: resolveSalePlacedByUid(row),
-      dateLabel: formatOrderShortDate(dateMs),
+      dateLabel: display?.date_label || (accountScreenV2CompatEnabled() ? formatOrderShortDate(dateMs) : ACCOUNT_SCREEN_DISPLAY_NA),
       dateMs,
       total: money.total,
       bountyPaid: money.bountyPaid,
@@ -2285,35 +2464,48 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
       bountyKnown: money.bountyKnown,
       delivered,
       received,
-      attentionLevel: resolveSellerReturnRowAttentionLevel(row),
+      attentionLevel: row.attention_level ?? resolveSellerReturnRowAttentionLevel(row),
       daysOpen: shouldDisplayOrderDaysOpen(delivered, received) ? formatOrderDaysOpen(dateMs) : "—",
       returnLogistics,
       rawRow: row,
     };
   }
 
-  const total = productSummary ? resolveProductSummaryLineTotal(row) : parseFloat(row.transaction_total);
+  const v3Money = resolveAccountScreenRowMoney(row);
+  let total = null;
+  let totalKnown = false;
+  if (v3Money.totalKnown) {
+    total = v3Money.total;
+    totalKnown = true;
+  } else if (accountScreenV2CompatEnabled()) {
+    const legacyTotal = productSummary ? resolveProductSummaryLineTotal(row) : parseFloat(row.transaction_total);
+    total = Number.isFinite(legacyTotal) ? legacyTotal : 0;
+    totalKnown = Number.isFinite(legacyTotal);
+  }
   const bountyPaid = productSummary ? resolveProductSummaryLineBounty(row) : resolveSellerOrderTableBounty(row);
-  const delivered = formatOrderDeliveredStatusLabel([row], sellerLines);
-  const received = formatOrderReceivedStatusLabel([row], sellerLines);
-  const attentionLevel = resolveSellerOrderAttentionLevel(row, sellerLines);
+  const delivered = resolveAccountScreenDisplayField(row, "delivered_label", formatOrderDeliveredStatusLabel([row], sellerLines));
+  const received = resolveAccountScreenDisplayField(row, "received_label", formatOrderReceivedStatusLabel([row], sellerLines));
+  const attentionLevel = row.attention_level ?? resolveSellerOrderAttentionLevel(row, sellerLines);
   return {
     key: resolveSellerListRowKey(row) || String(row.transaction_uid || `${orderUid}-${dateMs}`),
     orderUid,
-    rowLabel: "Order",
+    rowLabel: display?.type_label || "Order",
     listTransactionUid,
     trrUid: resolveTrrUid(row) || undefined,
     isReturn: false,
     isSyntheticReturn: false,
     placedBy: resolveSalePlacedByUid(row),
-    dateLabel: formatOrderShortDate(dateMs),
+    dateLabel: display?.date_label || (accountScreenV2CompatEnabled() ? formatOrderShortDate(dateMs) : ACCOUNT_SCREEN_DISPLAY_NA),
     dateMs,
-    total: Number.isFinite(total) ? total : 0,
+    total: totalKnown ? total : 0,
+    totalKnown,
     bountyPaid: Number.isFinite(bountyPaid) ? bountyPaid : 0,
     delivered,
     received,
     attentionLevel,
-    daysOpen: shouldDisplayOrderDaysOpen(delivered, received) ? formatOrderDaysOpen(dateMs) : "—",
+    daysOpen:
+      display?.days_open ||
+      (accountScreenV2CompatEnabled() && shouldDisplayOrderDaysOpen(delivered, received) ? formatOrderDaysOpen(dateMs) : ACCOUNT_SCREEN_DISPLAY_NA),
     returnLogistics,
     rawRow: row,
   };
@@ -2556,6 +2748,22 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, bountyLines = []) {
 
   const normalizedPurchaseRows = purchaseRows.map((row) => {
     if (!isReturnListRow(row)) return row;
+    const v3Money = resolveAccountScreenRowMoney(row);
+    if (v3Money.totalKnown) {
+      const orderUid = resolveListRowOrderUid(row);
+      const saleSibling = orderSaleByUid[orderUid] || null;
+      return {
+        ...row,
+        business_name: row.business_name || saleSibling?.business_name || saleSibling?.transaction_business_name || null,
+        seller_id: row.seller_id || saleSibling?.seller_id || saleSibling?.transaction_business_id || null,
+        transaction_business_id: row.transaction_business_id || saleSibling?.transaction_business_id || saleSibling?.seller_id || null,
+        purchase_type: row.purchase_type || saleSibling?.purchase_type || null,
+        transaction_total: v3Money.total,
+        seller_total: v3Money.total,
+        original_transaction_uid: row.original_transaction_uid || row.transaction_original_uid || saleSibling?.transaction_uid || null,
+      };
+    }
+    if (!accountScreenV2CompatEnabled()) return row;
     const orderUid = resolveListRowOrderUid(row);
     const saleSibling = orderSaleByUid[orderUid] || null;
     const money = resolveReturnRowMoney(row, null, bountyLines);
@@ -6871,20 +7079,44 @@ function resolveProductSummaryReturnQty(row) {
 }
 
 function resolveProductSummaryReturnCancelQty(row) {
+  const units = row?.units;
+  if (units && typeof units === "object") {
+    const fromUnits = parseNonNegativeInt(units.cancel_unshipped_qty);
+    if (fromUnits != null && fromUnits > 0) return fromUnits;
+  }
   const line = getProductSummaryLinePayload(row);
-  if (!line || typeof line !== "object") return 0;
-  if (line.cancel_unshipped_qty != null && String(line.cancel_unshipped_qty).trim() !== "") {
-    return Math.max(0, parseInt(line.cancel_unshipped_qty, 10) || 0);
+  if (line && typeof line === "object") {
+    if (line.cancel_unshipped_qty != null && String(line.cancel_unshipped_qty).trim() !== "") {
+      return Math.max(0, parseInt(line.cancel_unshipped_qty, 10) || 0);
+    }
+  }
+  for (const eventLine of collectReturnEventLinesFromRow(row)) {
+    const split = parseReturnEventLineSplit(eventLine, row);
+    if (split.unshipped > 0) return split.unshipped;
+  }
+  if (isPreShipCancelReturn(row)) {
+    return resolveProductSummaryReturnQty(row);
   }
   return 0;
 }
 
 function resolveProductSummaryReturnShippedQty(row) {
-  const line = getProductSummaryLinePayload(row);
-  if (!line || typeof line !== "object") return 0;
-  if (line.return_shipped_qty != null && String(line.return_shipped_qty).trim() !== "") {
-    return Math.max(0, parseInt(line.return_shipped_qty, 10) || 0);
+  const units = row?.units;
+  if (units && typeof units === "object") {
+    const fromUnits = parseNonNegativeInt(units.return_shipped_qty);
+    if (fromUnits != null && fromUnits > 0) return fromUnits;
   }
+  const line = getProductSummaryLinePayload(row);
+  if (line && typeof line === "object") {
+    if (line.return_shipped_qty != null && String(line.return_shipped_qty).trim() !== "") {
+      return Math.max(0, parseInt(line.return_shipped_qty, 10) || 0);
+    }
+  }
+  for (const eventLine of collectReturnEventLinesFromRow(row)) {
+    const split = parseReturnEventLineSplit(eventLine, row);
+    if (split.shipped > 0) return split.shipped;
+  }
+  if (isPreShipCancelReturn(row)) return 0;
   const total = resolveProductSummaryReturnQty(row);
   const cancelUnshipped = resolveProductSummaryReturnCancelQty(row);
   if (cancelUnshipped > 0 && total > cancelUnshipped) return total - cancelUnshipped;
@@ -6909,34 +7141,56 @@ function resolveProductSummaryCancelledQty(row) {
   return completed + inProgress;
 }
 
-/** Order total: line_total minus cancelled_pre_ship × unit_price. */
+/** Order total: v3 money.customer_total, else original line_total. */
 function resolveProductSummaryOrderTotal(row) {
   if (!row || typeof row !== "object") return { total: 0, totalKnown: false };
-  const cancelQty = resolveProductSummaryCancelledQty(row);
-  const unitPrice = resolveProductSummaryOrderUnitPrice(row);
-  const cancelDeduction = cancelQty > 0 && unitPrice > 0 ? Math.round(cancelQty * unitPrice * 100) / 100 : 0;
+  const v3Money = resolveAccountScreenRowMoney(row);
+  if (v3Money.totalKnown && v3Money.total != null) {
+    return { total: v3Money.total, totalKnown: true };
+  }
+  if (!accountScreenV2CompatEnabled()) return { total: null, totalKnown: false };
   const lineTotal = parseFloat(row.line_total ?? row.line_merchandise_total ?? NaN);
   if (Number.isFinite(lineTotal)) {
-    return { total: Math.round((lineTotal - cancelDeduction) * 100) / 100, totalKnown: true };
+    return { total: lineTotal, totalKnown: true };
   }
   const qty = resolveProductSummaryPurchasedQty(row);
+  const unitPrice = resolveProductSummaryOrderUnitPrice(row);
   if (qty > 0 && unitPrice > 0) {
-    return { total: Math.round((qty * unitPrice - cancelDeduction) * 100) / 100, totalKnown: true };
+    return { total: Math.round(qty * unitPrice * 100) / 100, totalKnown: true };
   }
   return { total: 0, totalKnown: false };
 }
 
-/** Product Summary line total — orders net of pre-ship cancel; returns use return_shipped_qty × ti_bs_cost. */
-function resolveProductSummaryDisplayTotal(row, isReturn) {
+/** Product Summary line total — orders unchanged; returns combine refund + cancellation credit. */
+function resolveProductSummaryDisplayTotal(row, isReturn, mappedRow = null) {
   if (!row || typeof row !== "object") return { total: 0, totalKnown: false };
   if (isReturn) {
-    const line = getProductSummaryLinePayload(row);
-    const qty = resolveProductSummaryReturnShippedQty(row);
-    const unit = Math.abs(parseFloat(line.ti_bs_cost ?? line.bs_cost ?? NaN));
-    if (Number.isFinite(unit) && unit > 0 && qty > 0) {
-      return { total: -Math.round(unit * qty * 100) / 100, totalKnown: true };
+    const v3Money = resolveAccountScreenRowMoney(row);
+    if (v3Money.totalKnown) {
+      return { total: v3Money.total, totalKnown: true };
     }
-    if (qty === 0) return { total: 0, totalKnown: true };
+    if (!accountScreenV2CompatEnabled()) return { total: null, totalKnown: false };
+
+    const shippedQty = resolveProductSummaryReturnShippedQty(row);
+    const cancelQty = resolveProductSummaryReturnCancelQty(row);
+    const combinedQty = shippedQty + cancelQty;
+
+    if (mappedRow?.totalKnown !== false && mappedRow?.total != null && Number(mappedRow.total) !== 0) {
+      return { total: mappedRow.total, totalKnown: true };
+    }
+
+    const credit = resolveReturnCustomerCreditTotal(row);
+    if (credit !== 0) return { total: credit, totalKnown: true };
+
+    const line = getProductSummaryLinePayload(row);
+    const unit =
+      resolveProductSummaryOrderUnitPrice(row) ||
+      Math.abs(parseFloat(line?.ti_bs_cost ?? line?.bs_cost ?? NaN)) ||
+      0;
+    if (unit > 0 && combinedQty > 0) {
+      return { total: -Math.round(unit * combinedQty * 100) / 100, totalKnown: true };
+    }
+    if (combinedQty === 0) return { total: 0, totalKnown: true };
     return { total: 0, totalKnown: false };
   }
   return resolveProductSummaryOrderTotal(row);
@@ -6945,11 +7199,16 @@ function resolveProductSummaryDisplayTotal(row, isReturn) {
 function enrichProductSummaryTableRow(mappedRow) {
   const raw = mappedRow?.rawRow && typeof mappedRow.rawRow === "object" ? mappedRow.rawRow : mappedRow;
   const isReturn = !!mappedRow?.isReturn;
-  const money = resolveProductSummaryDisplayTotal(raw, isReturn);
+  const v3Money = resolveAccountScreenRowMoney(raw);
+  const money = v3Money.totalKnown
+    ? { total: v3Money.total, totalKnown: true }
+    : accountScreenV2CompatEnabled()
+      ? resolveProductSummaryDisplayTotal(raw, isReturn, mappedRow)
+      : { total: null, totalKnown: false };
   return {
     ...mappedRow,
     lineQty: isReturn ? resolveProductSummaryReturnShippedQty(raw) : resolveProductSummaryPurchasedQty(raw),
-    cancelledQty: isReturn ? 0 : resolveProductSummaryCancelledQty(raw),
+    cancelledQty: isReturn ? resolveProductSummaryReturnCancelQty(raw) : 0,
     total: money.total,
     totalKnown: money.totalKnown,
   };
@@ -6980,9 +7239,10 @@ function groupProductSummaryRowsByOrder(rows) {
       group.placedBy = anchor.placedBy || group.placedBy;
     }
     group.rows.sort((a, b) => {
-      const byType = (b.isReturn ? 1 : 0) - (a.isReturn ? 1 : 0);
-      if (byType !== 0) return byType;
-      return (b.dateMs || 0) - (a.dateMs || 0);
+      const byDate = (a.dateMs || 0) - (b.dateMs || 0);
+      if (byDate !== 0) return byDate;
+      // Same timestamp: original order before returns/cancellations.
+      return (a.isReturn ? 1 : 0) - (b.isReturn ? 1 : 0);
     });
   }
   return [...map.values()].sort((a, b) => (b.dateMs || 0) - (a.dateMs || 0));
@@ -7048,10 +7308,13 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
     const openOrder = () => {
       if (typeof onOrderPress === "function") onOrderPress(row);
     };
-    const cancelledLabel = !isReturnRow && row.cancelledQty > 0 ? String(row.cancelledQty) : "—";
+    const cancelledLabel = row.cancelledQty > 0 ? String(row.cancelledQty) : "—";
 
     return (
       <View key={row.key} style={[styles.productSummaryLineRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailDataRowDark]}>
+        <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate, darkMode && { color: "#ccc" }]} numberOfLines={1}>
+          {row.dateLabel || "—"}
+        </Text>
         <Text style={[styles.productSalesDetailCell, styles.productSummaryColType, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}>
           {row.rowLabel || "Order"}
         </Text>
@@ -7101,7 +7364,7 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator nestedScrollEnabled>
-      <ScrollView style={{ maxHeight: maxBodyHeight, minWidth: 600 }} nestedScrollEnabled showsVerticalScrollIndicator>
+      <ScrollView style={{ maxHeight: maxBodyHeight, minWidth: 680 }} nestedScrollEnabled showsVerticalScrollIndicator>
       {groups.map((group, groupIndex) => {
         const openGroupOrder = () => {
           const saleRow = group.rows.find((row) => !row.isReturn) || group.rows[0];
@@ -7131,6 +7394,9 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
               )}
             </View>
             <View style={[styles.productSummaryLineHeaderRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailHeaderRowDark]}>
+              <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColDate, { color: headerColor }]} numberOfLines={1}>
+                Date
+              </Text>
               <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColType, { color: headerColor }]} numberOfLines={1}>
                 Type
               </Text>
@@ -7158,6 +7424,7 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
         );
       })}
       <View style={[styles.productSummaryGrandTotalRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailTotalRowDark]}>
+        <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate]} />
         <Text style={[styles.productSalesDetailTotalLabel, styles.productSummaryColType, darkMode && { color: "#eee" }]}>Total</Text>
         <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty]} />
         <Text style={[styles.productSalesDetailCell, styles.productSummaryColCancelled]} />
@@ -7761,9 +8028,17 @@ function parseExpertiseInfo(raw) {
   }
 }
 
-function buildExpertiseRows(expertiseList, sellerTransactions) {
+function buildExpertiseRows(expertiseList, sellerTransactions, salesOfferings = null) {
   const list = Array.isArray(expertiseList) ? expertiseList : [];
   const sellerTx = Array.isArray(sellerTransactions) ? sellerTransactions : [];
+  const offeringSoldByUid = {};
+  if (Array.isArray(salesOfferings)) {
+    for (const offering of salesOfferings) {
+      const uid = String(offering.offering_uid || offering.profile_expertise_uid || "").trim();
+      if (!uid) continue;
+      offeringSoldByUid[uid] = Math.max(0, parseInt(offering.quantity_sold, 10) || 0);
+    }
+  }
   return list.map((exp) => {
     const expertiseUid = exp.profile_expertise_uid;
     const costString = exp.profile_expertise_cost || "";
@@ -7778,14 +8053,19 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
         cost = costString;
       }
     }
-    let soldQty = 0;
     const offeringUid = String(expertiseUid || "").trim();
-    sellerTx.forEach((transaction) => {
-      if (String(transaction.ti_bs_id || "").trim() !== offeringUid) return;
-      if (!isSellerSaleListRow(transaction)) return;
-      soldQty += getSignedProductSalesLineQty(transaction);
-    });
-    soldQty = Math.max(0, soldQty);
+    let soldQty = offeringSoldByUid[offeringUid];
+    if (soldQty == null) {
+      soldQty = 0;
+      if (accountScreenV2CompatEnabled()) {
+        sellerTx.forEach((transaction) => {
+          if (String(transaction.ti_bs_id || "").trim() !== offeringUid) return;
+          if (!isSellerSaleListRow(transaction)) return;
+          soldQty += getSignedProductSalesLineQty(transaction);
+        });
+      }
+      soldQty = Math.max(0, soldQty);
+    }
     const remainingLabel = resolveExpertiseRemainingLabel(exp, soldQty);
     const remaining = remainingLabel === "∞" || remainingLabel === "NA" ? null : parseInt(remainingLabel, 10);
     return {
@@ -7909,6 +8189,7 @@ export default function AccountScreen({ navigation, route }) {
   const [bountyData, setBountyData] = useState(null);
   const [bountyLoading, setBountyLoading] = useState(true);
   const [personalWallet, setPersonalWallet] = useState(null);
+  const [personalEarnings, setPersonalEarnings] = useState(null);
   const [walletLedgerRows, setWalletLedgerRows] = useState([]);
   const [walletLedgerTotalEntries, setWalletLedgerTotalEntries] = useState(0);
   const [walletLedgerLoading, setWalletLedgerLoading] = useState(true);
@@ -8035,6 +8316,14 @@ export default function AccountScreen({ navigation, route }) {
 
   /** Coalesce overlapping refreshAccountScreenPersonal calls (focus + escrow update, Strict Mode, etc.) */
   const refreshPersonalInFlightRef = useRef(null);
+  const accountScreenSchemaVersionRef = useRef(0);
+  const [accountScreenSchemaVersion, setAccountScreenSchemaVersion] = useState(0);
+  /** Skip account-screen/personal GET until a mutation marks data stale; cleared after HTTP 200. */
+  const accountScreenPersonalDirtyRef = useRef(true);
+  const accountScreenPersonalLoadedRef = useRef(false);
+  /** profile_uid last applied to account-screen/personal state (detect logout/login while screen stays mounted). */
+  const accountScreenPersonalProfileIdRef = useRef("");
+  const sellerTxDataRef = useRef([]);
   /** Coalesce overlapping wallet ledger fetches (focus + selectedAccount effect on mount). */
   const refreshWalletLedgerInFlightRef = useRef(null);
   /** Skip wallet fetch in selectedAccount effect when useFocusEffect already loaded it. */
@@ -8062,6 +8351,10 @@ export default function AccountScreen({ navigation, route }) {
   }, [expertiseCatalog]);
 
   const clearPersonalAccountSections = () => {
+    accountScreenPersonalLoadedRef.current = false;
+    accountScreenPersonalDirtyRef.current = true;
+    accountScreenPersonalProfileIdRef.current = "";
+    sellerTxDataRef.current = [];
     setTransactionData([]);
     setExpertiseData([]);
     setExpertiseCatalog([]);
@@ -8228,7 +8521,8 @@ export default function AccountScreen({ navigation, route }) {
       setReturnItemQuantities({});
       setReturnItemSplitQty({});
       if (selectedAccountRef.current === "personal") {
-        await Promise.all([refreshAccountScreenPersonal(), refreshWalletLedger()]);
+        markAccountScreenPersonalDirty();
+        await refreshAccountScreenPersonal();
       }
       return true;
     } catch (error) {
@@ -8682,6 +8976,7 @@ export default function AccountScreen({ navigation, route }) {
           }
         } else if (confirmSucceeded) {
           try {
+            markAccountScreenPersonalDirty();
             await refreshAccountScreenPersonal();
           } catch (refreshErr) {
             console.warn("Error refreshing personal account after return confirm:", refreshErr);
@@ -8734,9 +9029,29 @@ export default function AccountScreen({ navigation, route }) {
     }
   };
 
+  const markAccountScreenPersonalDirty = useCallback(() => {
+    accountScreenPersonalDirtyRef.current = true;
+  }, []);
+
   /** GET /api/v1/account-screen/personal/:profile_id — maps to purchases, bounties, sales (expertise qty). One in-flight request; no GET /transactions fallbacks. */
   const refreshAccountScreenPersonal = async (options = {}) => {
     const force = options?.force === true;
+    const staleFromLogin = await consumeAccountScreenPersonalStale();
+    const rawProfileId = await AsyncStorage.getItem("profile_uid");
+    const profileId = rawProfileId ? String(rawProfileId).trim() : "";
+    const lastProfileId = accountScreenPersonalProfileIdRef.current || "";
+    const sessionChanged =
+      staleFromLogin || profileId !== lastProfileId;
+    if (sessionChanged && (staleFromLogin || lastProfileId || accountScreenPersonalLoadedRef.current)) {
+      personalFetchGenRef.current += 1;
+      refreshPersonalInFlightRef.current = null;
+      refreshWalletLedgerInFlightRef.current = null;
+      clearPersonalAccountSections();
+    }
+    const needsFetch = force || accountScreenPersonalDirtyRef.current || !accountScreenPersonalLoadedRef.current;
+    if (!needsFetch) {
+      return Array.isArray(sellerTxDataRef.current) ? sellerTxDataRef.current : [];
+    }
     if (refreshPersonalInFlightRef.current) {
       if (!force) return refreshPersonalInFlightRef.current;
       try {
@@ -8748,16 +9063,18 @@ export default function AccountScreen({ navigation, route }) {
     const fetchGen = personalFetchGenRef.current;
     const task = (async () => {
       try {
-        setTransactionData([]);
-        setExpertiseData([]);
-        setExpertiseCatalog([]);
+        const isInitialLoad = !accountScreenPersonalLoadedRef.current;
+        if (isInitialLoad) {
+          setTransactionData([]);
+          setExpertiseData([]);
+          setExpertiseCatalog([]);
+        }
         setTransactionLoading(true);
         setBountyLoading(true);
         setExpertiseLoading(true);
-        const rawProfileId = await AsyncStorage.getItem("profile_uid");
-        const profileId = rawProfileId ? String(rawProfileId).trim() : "";
         if (!profileId) {
           console.log("No profile ID found, skipping account-screen personal fetch");
+          accountScreenPersonalProfileIdRef.current = "";
           if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
           setTransactionData([]);
           setBountyData(null);
@@ -8778,6 +9095,11 @@ export default function AccountScreen({ navigation, route }) {
           setBountyData({ data: [] });
           setExpertiseCatalog([]);
           setExpertiseData([]);
+          setSellerTxData([]);
+          sellerTxDataRef.current = [];
+          accountScreenPersonalDirtyRef.current = false;
+          accountScreenPersonalLoadedRef.current = true;
+          accountScreenPersonalProfileIdRef.current = profileId;
           await fetchPersonalProfileData();
           return [];
         }
@@ -8799,11 +9121,14 @@ export default function AccountScreen({ navigation, route }) {
           } catch (_) {}
         }
         const mapped = mapAccountScreenPersonalResponse(json, { debug: debugPurchases });
+        accountScreenSchemaVersionRef.current = mapped.schemaVersion || 0;
+        setAccountScreenSchemaVersion(mapped.schemaVersion || 0);
 
         const normalizedPurchases = Array.isArray(mapped.transactions) ? mapped.transactions : [];
 
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setTransactionData(normalizedPurchases);
+        setPersonalEarnings(mapped.earnings ?? null);
 
         if (mapped.bounty) {
           setBountyData(mapped.bounty);
@@ -8811,6 +9136,14 @@ export default function AccountScreen({ navigation, route }) {
           setBountyData({ data: [] });
         }
         setPersonalWallet(mapped.wallet ?? null);
+
+        if (mapped.useV3Contract && mapped.walletLedger) {
+          const ledgerEntries = Array.isArray(mapped.walletLedger.entries) ? mapped.walletLedger.entries : [];
+          setWalletLedgerRows(ledgerEntries);
+          setWalletLedgerTotalEntries(Number(mapped.walletLedger.total_entries) || ledgerEntries.length);
+          setWalletLedgerError(null);
+          setWalletLedgerLoading(false);
+        }
 
         if (mapped.profile?.personal_info) {
           const result = mapped.profile;
@@ -8842,15 +9175,24 @@ export default function AccountScreen({ navigation, route }) {
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return [];
         const mergedExpertiseList = expertiseList;
         setSellerTxData(sellerTx);
+        sellerTxDataRef.current = sellerTx;
         setExpertiseCatalog(mergedExpertiseList);
-        setExpertiseData(buildExpertiseRows(mergedExpertiseList, sellerTx));
+        setExpertiseData(buildExpertiseRows(mergedExpertiseList, sellerTx, mapped.salesOfferings));
+        if (!mapped.useV3Contract) {
+          await refreshWalletLedger();
+        }
+        accountScreenPersonalDirtyRef.current = false;
+        accountScreenPersonalLoadedRef.current = true;
+        accountScreenPersonalProfileIdRef.current = profileId;
         return sellerTx;
       } catch (error) {
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return [];
         console.error("Error loading account-screen personal:", error);
+        accountScreenPersonalLoadedRef.current = false;
         setTransactionData([]);
         setBountyData({ error: error.message });
         setPersonalWallet(null);
+        setPersonalEarnings(null);
         setExpertiseData([]);
         setExpertiseCatalog([]);
         return [];
@@ -8869,6 +9211,23 @@ export default function AccountScreen({ navigation, route }) {
     });
     return task;
   };
+
+  /** Profile uid may hydrate after login while Account stays mounted — refetch when session profile changes. */
+  useEffect(() => {
+    return subscribeSessionProfile((session) => {
+      const nextProfileId = String(session?.profileUid || "").trim();
+      if (!nextProfileId || selectedAccountRef.current !== "personal") return;
+      const lastProfileId = accountScreenPersonalProfileIdRef.current || "";
+      if (nextProfileId === lastProfileId && accountScreenPersonalLoadedRef.current) return;
+      if (nextProfileId !== lastProfileId) {
+        personalFetchGenRef.current += 1;
+        refreshPersonalInFlightRef.current = null;
+        refreshWalletLedgerInFlightRef.current = null;
+        clearPersonalAccountSections();
+        void refreshAccountScreenPersonal();
+      }
+    });
+  }, []);
 
   /** GET /api/v1/wallet_ledger/:profile_id — bounty credits, sale proceeds, wallet payments/refunds. */
   const refreshWalletLedger = async (options = {}) => {
@@ -8910,7 +9269,9 @@ export default function AccountScreen({ navigation, route }) {
         setWalletLedgerRows(rows);
         setWalletLedgerTotalEntries(Number(json.total_entries) || rows.length);
         const ledgerWallet = json?.wallet && typeof json.wallet === "object" && !Array.isArray(json.wallet) ? json.wallet : null;
-        if (ledgerWallet) setPersonalWallet(ledgerWallet);
+        if (!accountScreenUsesV3Contract(accountScreenSchemaVersionRef.current) && ledgerWallet) {
+          setPersonalWallet(normalizeAccountScreenWallet(ledgerWallet));
+        }
         return rows;
       } catch (error) {
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return [];
@@ -9010,7 +9371,8 @@ export default function AccountScreen({ navigation, route }) {
         );
       }
       resetDeliveryVerificationModal();
-      await Promise.all([refreshAccountScreenPersonal({ force: true }), refreshWalletLedger({ force: true })]);
+      markAccountScreenPersonalDirty();
+      await refreshAccountScreenPersonal({ force: true });
       if (!releaseEscrow) {
         Alert.alert("Partial delivery recorded", "Receipt confirmation saved. Earnings may remain pending until all items are verified and any return window ends.");
       } else {
@@ -9091,26 +9453,13 @@ export default function AccountScreen({ navigation, route }) {
     });
   }, []);
 
-  const openOfferingSalesHistory = useCallback(
-    async (item) => {
-      if (!item) return;
-      const expertiseUid = String(item.expertiseUid || "").trim();
-      setSalesModal({ visible: true, item, transactions: [], sellerLines: null, loading: true });
-
-      let sellerLines = [];
-      try {
-        const refreshed = await refreshAccountScreenPersonal({ force: true });
-        sellerLines = Array.isArray(refreshed) ? refreshed : [];
-      } catch (error) {
-        console.warn("[AccountScreen] offering sales refresh failed:", error?.message || error);
-        sellerLines = Array.isArray(sellerTxData) ? sellerTxData : [];
-      }
-
-      const transactions = sellerLines.filter((tx) => isSellerSaleListRow(tx) && String(tx.ti_bs_id || "").trim() === expertiseUid);
-      setSalesModal({ visible: true, item, transactions, sellerLines, loading: false });
-    },
-    [sellerTxData, refreshAccountScreenPersonal],
-  );
+  const openOfferingSalesHistory = useCallback((item) => {
+    if (!item) return;
+    const expertiseUid = String(item.expertiseUid || "").trim();
+    const sellerLines = Array.isArray(sellerTxDataRef.current) ? sellerTxDataRef.current : [];
+    const transactions = sellerLines.filter((tx) => isSellerSaleListRow(tx) && String(tx.ti_bs_id || "").trim() === expertiseUid);
+    setSalesModal({ visible: true, item, transactions, sellerLines, loading: false });
+  }, []);
 
   useEffect(() => {
     const expertiseUid = String(route?.params?.offeringSalesUid || "").trim();
@@ -9448,6 +9797,7 @@ export default function AccountScreen({ navigation, route }) {
         if (selectedAccount !== "personal") {
           await refreshAccountScreenBusiness();
         } else {
+          markAccountScreenPersonalDirty();
           await refreshAccountScreenPersonal({ force: true });
         }
         let refreshedLedgerRows = null;
@@ -9688,10 +10038,7 @@ export default function AccountScreen({ navigation, route }) {
 
   const reloadAccountScreen = useCallback(() => {
     checkAuth();
-    void (async () => {
-      await refreshAccountScreenPersonal();
-      await refreshWalletLedger();
-    })();
+    void refreshAccountScreenPersonal();
 
     const loadBusinessData = async () => {
       await refreshFromSession({ forceRefresh: true });
@@ -9732,8 +10079,6 @@ export default function AccountScreen({ navigation, route }) {
       refreshAccountScreenPersonal();
       if (skipWalletOnNextPersonalEffectRef.current) {
         skipWalletOnNextPersonalEffectRef.current = false;
-      } else {
-        refreshWalletLedger();
       }
       return;
     }
@@ -9961,7 +10306,11 @@ export default function AccountScreen({ navigation, route }) {
   };
 
   const NetEarningChart = () => {
-    const chartData = processBountyDataForChart(ledgerAvailabilityByTxnUid, walletLedgerRows, transactionData);
+    const chartData = personalEarnings?.chart?.series?.length
+      ? processEarningsChartFromApi(personalEarnings)
+      : accountScreenV2CompatEnabled()
+        ? processBountyDataForChart(ledgerAvailabilityByTxnUid, walletLedgerRows, transactionData)
+        : processEarningsChartFromApi(null);
     const screenWidth = Dimensions.get("window").width - 40;
     const chartWidth = screenWidth;
     const chartHeight = 200; // Increased from 180 to make room for x-axis label
@@ -10306,26 +10655,31 @@ export default function AccountScreen({ navigation, route }) {
   const ledgerAvailabilityByTxnUid = useMemo(() => buildLedgerAvailabilityByTxnUid(walletLedgerRows), [walletLedgerRows]);
 
   const personalPendingBountyTotal = useMemo(() => {
+    if (personalEarnings?.bounty_pending != null) return parsePrice(personalEarnings.bounty_pending);
+    if (!accountScreenV2CompatEnabled()) return null;
     if (personalWallet?.wallet_pending != null) return parsePrice(personalWallet.wallet_pending);
     if (!bountyData?.data || !Array.isArray(bountyData.data)) return 0;
     return bountyData.data.reduce((sum, item) => {
-      const status = bountyProceedsStatus(item, ledgerAvailabilityByTxnUid, walletLedgerRows);
+      const status = item.proceeds_status || bountyProceedsStatus(item, ledgerAvailabilityByTxnUid, walletLedgerRows);
       if (status === "useable") return sum;
       return sum + parseFloat(item.bounty_earned || 0);
     }, 0);
-  }, [personalWallet, bountyData, ledgerAvailabilityByTxnUid, walletLedgerRows]);
+  }, [personalEarnings, personalWallet, bountyData, ledgerAvailabilityByTxnUid, walletLedgerRows]);
 
   const personalUseableBountyTotal = useMemo(() => {
+    if (personalEarnings?.bounty_useable != null) return parsePrice(personalEarnings.bounty_useable);
+    if (!accountScreenV2CompatEnabled()) return null;
     if (!bountyData?.data || !Array.isArray(bountyData.data)) {
-      return Math.max(0, parsePrice(bountyData?.total_bounty_earned) - personalPendingBountyTotal);
+      return Math.max(0, parsePrice(bountyData?.total_bounty_earned) - (personalPendingBountyTotal || 0));
     }
     return bountyData.data.reduce((sum, item) => {
-      if (bountyProceedsStatus(item, ledgerAvailabilityByTxnUid, walletLedgerRows) === "useable") {
+      const status = item.proceeds_status || bountyProceedsStatus(item, ledgerAvailabilityByTxnUid, walletLedgerRows);
+      if (status === "useable") {
         return sum + parseFloat(item.bounty_earned || 0);
       }
       return sum;
     }, 0);
-  }, [bountyData, ledgerAvailabilityByTxnUid, walletLedgerRows, personalPendingBountyTotal]);
+  }, [personalEarnings, bountyData, ledgerAvailabilityByTxnUid, walletLedgerRows, personalPendingBountyTotal]);
 
   const businessNetEarningsTotal = businessTransactionData.reduce((s, t) => {
     if (t.proceeds_status && t.proceeds_status !== "useable") return s;
@@ -10475,6 +10829,22 @@ export default function AccountScreen({ navigation, route }) {
                 </View>
               </TouchableOpacity>
             )}
+        {selectedAccount === "personal" && !accountScreenV2CompatEnabled() ? (
+          <View
+            style={{
+              backgroundColor: darkMode ? "#3d3520" : "#fff3cd",
+              padding: 12,
+              marginBottom: 16,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: darkMode ? "#ffc107" : "#ffecb5",
+            }}
+          >
+            <Text style={{ fontSize: 13, color: darkMode ? "#ffe082" : "#856404", lineHeight: 18 }}>
+              v3-only preview — legacy v2 fallbacks are off. Missing backend fields show as NA. Set ACCOUNT_SCREEN_V2_COMPAT_ENABLED = true in apiConfig.js to restore v2 behavior.
+            </Text>
+          </View>
+        ) : null}
         {/* Select Profile Dropdown Row */}
         <View style={styles.selectProfileRow}>
           <Text style={styles.selectProfileLabel}>Select Profile</Text>
@@ -10597,12 +10967,23 @@ export default function AccountScreen({ navigation, route }) {
                         const orderUid = resolveListRowOrderUid(transaction);
                         const compactTx = compactPurchasesLayout;
                         const sellerId = resolvePurchaseSellerId(transaction);
-                        const returnMoney = isReturnRow ? resolveReturnRowMoney(transaction, null, bountyData?.data || []) : null;
-                        const displayAmount = isReturnRow
-                          ? returnMoney?.totalKnown
-                            ? returnMoney.total
-                            : ACCOUNT_SCREEN_DISPLAY_NA
-                          : parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0);
+                        const rowDisplay = transaction.display && typeof transaction.display === "object" ? transaction.display : null;
+                        const v3Money = resolveAccountScreenRowMoney(transaction);
+                        const returnMoney =
+                          isReturnRow && !v3Money.totalKnown && accountScreenV2CompatEnabled()
+                            ? resolveReturnRowMoney(transaction, null, bountyData?.data || [])
+                            : null;
+                        const displayAmount =
+                          rowDisplay?.amount_label ||
+                          (v3Money.totalKnown
+                            ? formatSignedOrderMoney(v3Money.total)
+                            : isReturnRow
+                              ? returnMoney?.totalKnown
+                                ? formatSignedOrderMoney(returnMoney.total)
+                                : ACCOUNT_SCREEN_DISPLAY_NA
+                              : accountScreenV2CompatEnabled()
+                                ? formatSignedOrderMoney(parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0))
+                                : ACCOUNT_SCREEN_DISPLAY_NA);
                         const rowIdentity = resolveTrrUid(transaction) || transaction.transaction_uid || transaction.ti_uid || "purchase";
                         const rowKey = `${rowIdentity}-${isReturnRow ? "return" : "sale"}-${i}`;
                         const openPurchaseRowDetail = () => {
@@ -10629,7 +11010,11 @@ export default function AccountScreen({ navigation, route }) {
                                 <Text style={[styles.transactionId, orderUid !== "—" && styles.receiptLink]}>{isSyntheticReturn ? orderUid : transaction.transaction_uid || "N/A"}</Text>
                               </TouchableOpacity>
                             ) : null}
-                            {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{isReturnRow ? "Return" : transaction.purchase_type || "N/A"}</Text> : null}
+                            {showPurchasesTypeColumn ? (
+                              <Text style={styles.transactionPurchaseType}>
+                                {resolveAccountScreenDisplayField(transaction, "type_label", isReturnRow ? "Return" : transaction.purchase_type || "N/A")}
+                              </Text>
+                            ) : null}
                             <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
                               <TouchableOpacity onPress={() => navigateToPurchaseSeller(navigation, transaction)} activeOpacity={0.7} disabled={!sellerId}>
                                 <Text style={[styles.transactionBusiness, sellerId ? styles.receiptLink : null]} numberOfLines={4}>
@@ -10656,18 +11041,30 @@ export default function AccountScreen({ navigation, route }) {
                             ) : null}
                             {!compactTx && (
                               <Text style={[styles.transactionQty, isReturnRow && { color: "#B71C1C" }]}>
-                                {(() => {
-                                  const v2Qty = getRowV2DisplayQty(transaction);
-                                  if (v2Qty != null) return v2Qty;
-                                  return isReturnRow ? Math.abs(parseInt(transaction.ti_bs_qty, 10) || 1) : transaction.ti_bs_qty || 1;
-                                })()}
+                                {resolveAccountScreenDisplayField(
+                                  transaction,
+                                  "qty_label",
+                                  (() => {
+                                    const v2Qty = accountScreenV2CompatEnabled() ? getRowV2DisplayQty(transaction) : null;
+                                    if (v2Qty != null) return v2Qty;
+                                    return isReturnRow ? Math.abs(parseInt(transaction.ti_bs_qty, 10) || 1) : transaction.ti_bs_qty || 1;
+                                  })(),
+                                )}
                               </Text>
                             )}
                             {(() => {
                               const txnUid = String(transaction.original_transaction_uid || transaction.transaction_uid || "").trim();
                               const statusOverride = isReturnRow ? { returnRequested: true } : {};
-                              const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction, statusOverride);
-                              const receivedLabel = getBuyerPurchaseReceivedLabel(transaction, statusOverride);
+                              const deliveredLabel = resolveAccountScreenDisplayField(
+                                transaction,
+                                "delivered_label",
+                                getBuyerPurchaseDeliveredLabel(transaction, statusOverride),
+                              );
+                              const receivedLabel = resolveAccountScreenDisplayField(
+                                transaction,
+                                "received_label",
+                                getBuyerPurchaseReceivedLabel(transaction, statusOverride),
+                              );
                               const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
                               const canVerifyReceipt = buyerPurchaseNeedsReceiptVerification(transaction);
                               const receivedDisplayLabel = receivedLabel;
@@ -10716,7 +11113,7 @@ export default function AccountScreen({ navigation, route }) {
                             })()}
                             <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7} disabled={orderUid === "—"}>
                               <Text style={[styles.transactionAmount, isReturnRow && { color: "#B71C1C" }, orderUid !== "—" && styles.receiptLink]}>
-                                {typeof displayAmount === "string" ? displayAmount : formatSignedOrderMoney(displayAmount)}
+                                {displayAmount}
                               </Text>
                             </TouchableOpacity>
                           </View>
@@ -10750,22 +11147,38 @@ export default function AccountScreen({ navigation, route }) {
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.balanceContainer}>
                         <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
-                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>
+                          {personalEarnings?.bounty_total_earned != null
+                            ? `$${Number(personalEarnings.bounty_total_earned).toFixed(2)}`
+                            : accountScreenV2CompatEnabled()
+                              ? `$${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}`
+                              : ACCOUNT_SCREEN_DISPLAY_NA}
+                        </Text>
                       </View>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
                           <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Useable</Text>
                           <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on purchases</Text>
                         </View>
-                        <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>${personalUseableBountyTotal.toFixed(2)}</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>
+                          {personalUseableBountyTotal != null ? `$${personalUseableBountyTotal.toFixed(2)}` : ACCOUNT_SCREEN_DISPLAY_NA}
+                        </Text>
                       </View>
-                      {personalPendingBountyTotal > 0 ? (
+                      {personalPendingBountyTotal != null && personalPendingBountyTotal > 0 ? (
                         <View style={styles.walletBalanceRow}>
                           <View style={styles.walletBalanceLabelCol}>
                             <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
                             <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Earned but not yet available — waiting for delivery confirmation or return window</Text>
                           </View>
                           <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingBountyTotal.toFixed(2)}</Text>
+                        </View>
+                      ) : personalPendingBountyTotal == null && !accountScreenV2CompatEnabled() ? (
+                        <View style={styles.walletBalanceRow}>
+                          <View style={styles.walletBalanceLabelCol}>
+                            <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
+                            <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Earned but not yet available — waiting for delivery confirmation or return window</Text>
+                          </View>
+                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{ACCOUNT_SCREEN_DISPLAY_NA}</Text>
                         </View>
                       ) : null}
                     </View>
@@ -10849,8 +11262,9 @@ export default function AccountScreen({ navigation, route }) {
                           <Text style={styles.transactionHeaderAmount}>Bounty</Text>
                         </View>
                         {bountyData.data.map((item, index) => {
+                          const itemDisplay = item.display && typeof item.display === "object" ? item.display : null;
                           const linkedTxnUid = String(item.ti_transaction_id || item.transaction_uid || "").trim();
-                          const linkedTxn = linkedTxnUid ? transactionData.find((t) => String(t.transaction_uid || "").trim() === linkedTxnUid) : null;
+                          const linkedTxn = linkedTxnUid && accountScreenV2CompatEnabled() ? transactionData.find((t) => String(t.transaction_uid || "").trim() === linkedTxnUid) : null;
                           const enrichedItem = linkedTxn
                             ? {
                                 ...item,
@@ -10861,16 +11275,29 @@ export default function AccountScreen({ navigation, route }) {
                                 bounty_released_at: item.bounty_released_at ?? linkedTxn.bounty_released_at,
                               }
                             : item;
-                          const proceedsStatus = bountyProceedsStatus(enrichedItem, ledgerAvailabilityByTxnUid, walletLedgerRows);
-                          const statusLabel = bountyProceedsStatusLabel(proceedsStatus);
-                          const bountyDisplay = resolveBountyResultsRowDisplay(item);
-                          const totalLabel = bountyDisplay?.lineBounty != null && bountyDisplay.lineBounty > 0 ? `$${bountyDisplay.lineBounty.toFixed(2)}` : "—";
-                          const percentLabel = formatBountySharePercentLabel(bountyDisplay?.percentage) || "—";
-                          const earnedAmount = bountyDisplay?.earned != null ? bountyDisplay.earned : parseFloat(item.bounty_earned || 0) || 0;
+                          const proceedsStatus =
+                            item.proceeds_status ?? (accountScreenV2CompatEnabled() ? bountyProceedsStatus(enrichedItem, ledgerAvailabilityByTxnUid, walletLedgerRows) : null);
+                          const statusLabel = itemDisplay?.status_label || (proceedsStatus ? bountyProceedsStatusLabel(proceedsStatus) : ACCOUNT_SCREEN_DISPLAY_NA);
+                          const bountyDisplay = accountScreenV2CompatEnabled() ? resolveBountyResultsRowDisplay(item) : null;
+                          const totalLabel =
+                            itemDisplay?.pool_label ||
+                            (accountScreenV2CompatEnabled() && bountyDisplay?.lineBounty != null && bountyDisplay.lineBounty > 0
+                              ? `$${bountyDisplay.lineBounty.toFixed(2)}`
+                              : ACCOUNT_SCREEN_DISPLAY_NA);
+                          const percentLabel =
+                            itemDisplay?.percent_label ||
+                            (accountScreenV2CompatEnabled() ? formatBountySharePercentLabel(bountyDisplay?.percentage) || "—" : ACCOUNT_SCREEN_DISPLAY_NA);
+                          const earnedAmount = itemDisplay?.earned_label
+                            ? itemDisplay.earned_label
+                            : accountScreenV2CompatEnabled() && bountyDisplay?.earned != null
+                              ? `$${bountyDisplay.earned.toFixed(2)}`
+                              : accountScreenV2CompatEnabled()
+                                ? `$${(parseFloat(item.bounty_earned || 0) || 0).toFixed(2)}`
+                                : ACCOUNT_SCREEN_DISPLAY_NA;
                           return (
-                            <View key={item.tb_uid || item.ti_transaction_id || index} style={styles.transactionRow}>
+                            <View key={item.bounty_line_uid || item.tb_uid || item.ti_transaction_id || index} style={styles.transactionRow}>
                               {showPurchasesTxnIdColumn ? <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text> : null}
-                              <Text style={styles.transactionDate}>{formatTransactionDate(item)}</Text>
+                              <Text style={styles.transactionDate}>{itemDisplay?.date_label || formatTransactionDate(item)}</Text>
                               <Text style={styles.transactionBusiness} numberOfLines={4}>
                                 {item.purchaser_name || item.transaction_profile_id || "N/A"}
                               </Text>
@@ -10882,7 +11309,7 @@ export default function AccountScreen({ navigation, route }) {
                               </View>
                               <Text style={styles.transactionTotalBounty}>{totalLabel}</Text>
                               <Text style={styles.transactionSharePct}>{percentLabel}</Text>
-                              <Text style={styles.transactionAmount}>${earnedAmount.toFixed(2)}</Text>
+                              <Text style={styles.transactionAmount}>{earnedAmount}</Text>
                             </View>
                           );
                         })}
@@ -10952,8 +11379,8 @@ export default function AccountScreen({ navigation, route }) {
                           const LedgerRowWrapper = ledgerOrderUid ? TouchableOpacity : View;
                           const ledgerRowProps = ledgerOrderUid ? { onPress: openLedgerEntry, activeOpacity: 0.7 } : {};
                           return (
-                            <LedgerRowWrapper key={entry.entry_id || `ledger-${index}`} style={styles.transactionRow} {...ledgerRowProps}>
-                              <Text style={styles.transactionDate}>{formatLedgerEntryDate(entry)}</Text>
+                            <LedgerRowWrapper key={entry.ledger_entry_uid || entry.entry_id || `ledger-${index}`} style={styles.transactionRow} {...ledgerRowProps}>
+                              <Text style={styles.transactionDate}>{entry.display?.date_label || formatLedgerEntryDate(entry)}</Text>
                               <Text style={[styles.transactionId, ledgerOrderUid && styles.receiptLink]} numberOfLines={1}>
                                 {entry.transaction_uid || "—"}
                               </Text>
@@ -10963,8 +11390,12 @@ export default function AccountScreen({ navigation, route }) {
                               <Text style={[styles.transactionPurchasedItem, { flex: 1.2 }, ledgerOrderUid && styles.receiptLink]} numberOfLines={3}>
                                 {entry.description || entry.counterparty_name || "—"}
                               </Text>
-                              <Text style={[styles.transactionAmount, { flex: 0.75 }, pendingColor ? { color: pendingColor } : null]}>{formatLedgerColumnAmount(pendingAmount)}</Text>
-                              <Text style={[styles.transactionAmount, { flex: 0.75 }, useableColor ? { color: useableColor } : null]}>{formatLedgerColumnAmount(useableAmount)}</Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.75 }, pendingColor ? { color: pendingColor } : null]}>
+                                {entry.display?.pending_amount_label || formatLedgerColumnAmount(pendingAmount)}
+                              </Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.75 }, useableColor ? { color: useableColor } : null]}>
+                                {entry.display?.useable_amount_label || formatLedgerColumnAmount(useableAmount)}
+                              </Text>
                               <Text style={[styles.transactionAmount, { flex: 0.85 }]}>{formatWalletUsd(entry.balance_after)}</Text>
                               <Text style={[styles.transactionAmount, { flex: 0.95 }]}>{formatWalletUsd(entry.useable_balance_after)}</Text>
                             </LedgerRowWrapper>
@@ -11896,6 +12327,7 @@ export default function AccountScreen({ navigation, route }) {
                         } catch (_) {}
                       } else {
                         try {
+                          markAccountScreenPersonalDirty();
                           await refreshAccountScreenPersonal();
                         } catch (_) {}
                       }

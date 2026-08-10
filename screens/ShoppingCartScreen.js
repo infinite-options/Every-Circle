@@ -44,7 +44,7 @@ import { parsePrice } from "../utils/priceUtils";
 import { getItemizedChoiceLines, normalizeSelectedChoiceItemsForApi } from "../utils/selectedChoiceItems";
 import { recordServicePurchase } from "../utils/purchaseService";
 import { invalidateCachedSearchResults } from "../utils/clearAppAsyncStorage";
-import { expertiseLineMerchandiseAndTax, roundCartMoney, taxRatePercentForCalculation } from "../utils/cartLineTax";
+import { roundCartMoney, cartLineMerchandiseAndTax } from "../utils/cartLineTax";
 import {
   getOfferingBountyLineTotal,
   getOfferingBountyTypeForCheckout,
@@ -67,7 +67,7 @@ import {
   getCreditCardFeeBase,
 } from "../utils/cartCreditCardFee";
 import {
-  buildFulfillmentApiFields,
+  buildCheckoutApiLineFields,
   cartItemRequiresShippingAddress,
   formatCartPickupLocationHint,
   FULFILLMENT_PICKUP,
@@ -346,46 +346,12 @@ function buildShippingAddressPayload({ enabled, firstName, lastName, streetLine1
   return payload;
 }
 
-/** Whether this service line is subject to sales tax (expertise handled separately). */
-function isLineTaxable(item) {
-  if (!item || item.itemType === "expertise") return false;
-  const v = item.bs_is_taxable;
-  if (v === undefined || v === null || v === "") {
-    return parsePrice(item.bs_tax_rate) > 0;
-  }
-  if (v === false || v === 0) return false;
-  if (typeof v === "string") {
-    const t = v.trim().toLowerCase();
-    if (t === "0" || t === "false" || t === "no") return false;
-    if (t === "1" || t === "true" || t === "yes") return true;
-    const n = parseInt(t, 10);
-    if (!Number.isNaN(n)) return n !== 0;
-  }
-  if (typeof v === "number") return v !== 0;
-  return Boolean(v);
-}
-
 /**
  * Pretax line total, sales tax, and metadata for cart display / checkout.
  * Services: pretax = bs_cost × qty; tax when taxable and rate > 0.
  */
 function lineMerchandiseAndTax(item) {
-  const qty = parseInt(item.quantity, 10) || 1;
-  if (item.itemType === "expertise") {
-    return expertiseLineMerchandiseAndTax(item);
-  }
-  const pretax = roundMoney(parsePrice(item.bs_cost_with_extras || item.bs_cost) * qty);
-  const rawTaxRate = item.bs_tax_rate;
-  const taxable = isLineTaxable(item);
-  const ratePercent = taxRatePercentForCalculation(rawTaxRate);
-  const tax = taxable && ratePercent > 0 ? roundMoney(pretax * (ratePercent / 100)) : 0;
-  return {
-    pretax,
-    tax,
-    taxable,
-    rawTaxRate,
-    ratePercentUsed: taxable && ratePercent > 0 ? ratePercent : null,
-  };
+  return cartLineMerchandiseAndTax(item);
 }
 
 function calculateSubtotalForCartItems(items) {
@@ -1332,11 +1298,11 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const items = group.items.map((item) => {
         const normalizedItem = normalizeCartItemFulfillment(item);
         const qty = parseInt(normalizedItem.quantity, 10) || 1;
-        const fulfillmentFields = buildFulfillmentApiFields(normalizedItem);
+        const checkoutLineFields = buildCheckoutApiLineFields(normalizedItem);
         const bountyType = normalizedItem.itemType === "expertise" ? getOfferingBountyTypeForCheckout(normalizedItem) : normalizedItem.bs_bounty_type || "per_item";
         const bounty = normalizedItem.itemType === "expertise" ? parseOfferingBountyAmount(normalizedItem) : parsePrice(normalizedItem.bs_bounty);
         const sellerBusinessId = normalizedItem.business_uid || normalizedItem.profile_uid;
-        const { pretax, tax } = lineMerchandiseAndTax(normalizedItem);
+        const { pretax, tax } = cartLineMerchandiseAndTax(normalizedItem);
         const isExpertise = normalizedItem.itemType === "expertise";
         const expertiseUid = isExpertise ? String(normalizedItem.expertise_uid || "").trim() : "";
         const unitPrice = isExpertise
@@ -1355,12 +1321,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           recommender_profile_id: normalizedItem.bounty_recommender_profile_id || defaultRecommender,
           choices_extra_cost: normalizedItem.choicesExtraCost || 0,
           unit_price: unitPrice,
-          ...(isExpertise ? { ti_bs_cost: unitPrice } : {}),
+          ti_bs_cost: unitPrice,
           selected_choices: normalizedItem.selectedChoices || {},
           selected_choice_labels: normalizedItem.selectedChoiceLabels || {},
           selected_choice_items: normalizeSelectedChoiceItemsForApi(normalizedItem),
           special_instructions: normalizedItem.specialInstructions || "",
-          ...fulfillmentFields,
+          ...checkoutLineFields,
         };
       });
 
