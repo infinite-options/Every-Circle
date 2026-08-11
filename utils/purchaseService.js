@@ -77,13 +77,38 @@ export const recordServiceRestock = async (bs_uid, quantity = 1, ctx = {}) => {
   }
 };
 
+/** Sum quantities when hybrid return/cancel splits map to the same product uid. */
+export function consolidateRestockItemsByProduct(items) {
+  const byKey = new Map();
+  for (const item of items || []) {
+    if (!item || typeof item !== "object") continue;
+    const profileExpertiseUid = String(item.profile_expertise_uid || "").trim();
+    const bsUid = String(item.bs_uid || "").trim();
+    const key = profileExpertiseUid ? `offering:${profileExpertiseUid}` : bsUid ? `business:${bsUid}` : "";
+    if (!key) continue;
+    const quantity = Math.max(0, parseInt(item.quantity, 10) || 0);
+    if (quantity <= 0) continue;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.quantity += quantity;
+    } else {
+      byKey.set(key, {
+        ...(profileExpertiseUid ? { profile_expertise_uid: profileExpertiseUid } : { bs_uid: bsUid }),
+        quantity,
+        ...(item.kind ? { kind: item.kind } : {}),
+      });
+    }
+  }
+  return [...byKey.values()];
+}
+
 /**
  * Restock multiple products after a return/cancel confirm.
  * @param {Array<{ bs_uid: string, quantity: number }>} items
  * @param {{ sellerId?: string, trrUid?: string, orderUid?: string }} [ctx]
  */
 export const restockReturnedItems = async (items, ctx = {}) => {
-  const payload = (items || []).filter((item) => item && String(item.bs_uid || "").trim() && (parseInt(item.quantity, 10) || 0) > 0);
+  const payload = consolidateRestockItemsByProduct(items).filter((item) => item.bs_uid && (parseInt(item.quantity, 10) || 0) > 0);
   if (!payload.length) return { ok: true, results: [], failures: [] };
 
   const results = [];
@@ -157,8 +182,8 @@ export const recordOfferingRestock = async (profile_expertise_uid, quantity = 1,
  * @param {{ sellerId?: string, trrUid?: string, orderUid?: string }} [ctx]
  */
 export const restockReturnedOfferingItems = async (items, ctx = {}) => {
-  const payload = (items || []).filter(
-    (item) => item && String(item.profile_expertise_uid || "").trim() && (parseInt(item.quantity, 10) || 0) > 0,
+  const payload = consolidateRestockItemsByProduct(items).filter(
+    (item) => item.profile_expertise_uid && (parseInt(item.quantity, 10) || 0) > 0,
   );
   if (!payload.length) return { ok: true, results: [], failures: [] };
 
