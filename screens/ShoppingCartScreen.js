@@ -42,7 +42,6 @@ import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
 import { parsePrice } from "../utils/priceUtils";
 import { getItemizedChoiceLines, normalizeSelectedChoiceItemsForApi } from "../utils/selectedChoiceItems";
-import { recordServicePurchase } from "../utils/purchaseService";
 import { invalidateCachedSearchResults } from "../utils/clearAppAsyncStorage";
 import { roundCartMoney, cartLineMerchandiseAndTax } from "../utils/cartLineTax";
 import {
@@ -704,8 +703,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   };
 
   const finishWebCheckoutSuccess = async () => {
-    await decrementStockForPurchasedItems();
-
     webCheckoutSessionRef.current = null;
     setWebCheckoutSession(null);
 
@@ -958,8 +955,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         await invalidateCachedSearchResults();
 
         Alert.alert("Success", "Payment successful! Your order has been placed.", [{ text: "OK" }]);
-
-        await decrementStockForPurchasedItems();
       } catch (error) {
         console.error("Error clearing cart data:", error);
         Alert.alert("Error", "There was an error clearing your cart. Please try again.");
@@ -1125,45 +1120,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       console.error("Error updating quantity:", error);
       Alert.alert("Error", "Failed to update quantity");
     }
-  };
-
-  // Decrement business-product stock via separate endpoint (offerings: inventory in POST /transactions).
-  const decrementStockForPurchasedItems = async () => {
-    const eligibleItems = cartItems.filter((item) => {
-      if (item.itemType === "expertise") return false;
-      const qty = item.bs_quantity;
-      if (!qty || String(qty).toLowerCase() === "unlimited") return false;
-      return true;
-    });
-
-    const results = await Promise.allSettled(eligibleItems.map((item) => recordServicePurchase(item.bs_uid, item.quantity || 1)));
-
-    // Update local cartItems state with new remaining quantities from backend response
-    setCartItems((prev) =>
-      prev.map((item) => {
-        if (item.itemType === "expertise") return item;
-        const eligibleIndex = eligibleItems.findIndex((e) => e.bs_uid === item.bs_uid);
-        if (eligibleIndex === -1) return item;
-
-        const result = results[eligibleIndex];
-        if (result.status === "fulfilled" && result.value?.success) {
-          const remaining = result.value.remaining;
-          return {
-            ...item,
-            bs_quantity: remaining === null ? "unlimited" : String(remaining),
-          };
-        }
-        return item;
-      }),
-    );
-
-    results.forEach((result, i) => {
-      if (result.status === "rejected") {
-        console.error(`Stock decrement failed for item index ${i}:`, result.reason);
-      } else if (!result.value?.success) {
-        console.warn(`Stock decrement returned failure for item index ${i}:`, result.value);
-      }
-    });
   };
 
   const calculateTotal = () => {

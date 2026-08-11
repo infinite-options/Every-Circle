@@ -97,7 +97,7 @@ function buildTransactionReceiptUrl(transaction, profileIdOverride, { sellerId }
 /** Business product purchases use business profile; offerings/seeking use personal profile. */
 function isPurchaseFromBusiness(transaction) {
   const purchaseType = String(transaction?.purchase_type || "").toLowerCase();
-  if (purchaseType === "business") return true;
+  if (purchaseType === "business" || purchaseType === "service") return true;
   const serviceId = String(transaction?.ti_bs_id ?? transaction?.bs_uid ?? "").trim();
   if (serviceId.startsWith("250-")) return true;
   // Prefer UID prefix when list rows omit purchase_type (common on return rows).
@@ -158,6 +158,23 @@ function resolveReturnLineMerchandiseFromApi(line) {
     "line_total_refund",
     "merchandise_refund",
   ]);
+}
+
+/** Sale-line merchandise from API (v3 — no unit cost × qty on FE). */
+function resolveSaleLineMerchandiseFromApi(line) {
+  const fromLine = parseAccountScreenLineMoneyField(line, [
+    "line_merchandise_total",
+    "line_merchandise",
+    "line_total",
+    "merchandise_amount",
+    "ti_line_merchandise",
+  ]);
+  if (fromLine != null) return fromLine;
+  const money = line?.money;
+  if (money && typeof money === "object") {
+    return parseAccountScreenLineMoneyField(money, ["merchandise", "line_total"]);
+  }
+  return null;
 }
 
 function resolveReturnLineTaxFromApi(line) {
@@ -285,15 +302,7 @@ function resolveAccountScreenRowMoneyFromSnapshots(row) {
   const explicitTotal = parseAccountScreenMoneyField(money?.customer_total);
   if (explicitTotal != null) return { total: explicitTotal, totalKnown: true };
 
-  let merchandise = parseAccountScreenMoneyField(money?.merchandise);
-  if (merchandise == null) {
-    const unitCost = parseAccountScreenMoneyField(row.ti_bs_cost ?? row.unit_price);
-    const qty = resolveAccountScreenRowPurchasedQty(row);
-    if (unitCost != null && qty != null) {
-      merchandise = Math.round(unitCost * qty * 100) / 100;
-    }
-  }
-
+  const merchandise = parseAccountScreenMoneyField(money?.merchandise);
   const tax = parseAccountScreenMoneyField(money?.tax ?? row.ti_line_tax_amount ?? row.line_tax_amount);
   const shipping = parseAccountScreenMoneyField(money?.shipping ?? row.ti_line_shipping_amount ?? row.line_shipping_amount);
 
@@ -678,15 +687,17 @@ function areAllReceiptLinesFullyReceived(receiptRows, selectedItemIds, receivedQ
   });
 }
 
-/** Unit cost × qty for each receipt row (same rule as return modal: qty defaults to 1). */
+/** Sum line merchandise from API fields only (v3 — no unit cost × qty). */
 function sumReceiptLineMerchandise(rows) {
-  if (!Array.isArray(rows)) return 0;
-  return rows.reduce((sum, row) => {
-    const unit = parsePrice(row.ti_bs_cost);
-    const q = parsePrice(row.ti_bs_qty);
-    const qty = q > 0 ? q : 1;
-    return sum + unit * qty;
-  }, 0);
+  if (!Array.isArray(rows) || !rows.length) return { total: 0, allKnown: false };
+  let total = 0;
+  let allKnown = true;
+  for (const row of rows) {
+    const merch = resolveSaleLineMerchandiseFromApi(row);
+    if (merch != null) total += merch;
+    else allKnown = false;
+  }
+  return { total: Math.round(total * 100) / 100, allKnown };
 }
 
 /** Merchandise subtotal from receipt API: transaction_amount only (not transaction_total). */
@@ -699,11 +710,12 @@ function getReceiptTransactionAmount(receiptRows) {
   return null;
 }
 
-/** Merchandise subtotal: transaction_amount when present, else sum of line unit × qty. */
+/** Merchandise subtotal: transaction_amount when present, else sum of API line merchandise. */
 function getReceiptMerchandiseSubtotal(receiptRows) {
   const txnMerch = getReceiptTransactionAmount(receiptRows);
   if (txnMerch != null) return txnMerch;
-  return sumReceiptLineMerchandise(receiptRows);
+  const fromLines = sumReceiptLineMerchandise(receiptRows);
+  return fromLines.allKnown ? fromLines.total : null;
 }
 
 function isReturnReceipt(receiptRows) {
@@ -864,7 +876,8 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
   if (!Array.isArray(receiptRows) || receiptRows.length === 0) return null;
   const first = receiptRows[0] || {};
   const fallback = transactionFallback && typeof transactionFallback === "object" ? transactionFallback : {};
-  const fromLines = sumReceiptLineMerchandise(receiptRows);
+  const lineMerchSum = sumReceiptLineMerchandise(receiptRows);
+  const fromLines = lineMerchSum.allKnown ? lineMerchSum.total : null;
   const txnMerch = getReceiptTransactionAmount(receiptRows);
   const txnTaxes = receiptMoneyFromSources(first, fallback, ["transaction_taxes", "total_taxes"]);
   const txnFeesReported = receiptMoneyFromSources(first, fallback, ["transaction_fees", "total_fees"]);
@@ -899,7 +912,7 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
   const totalStr = txnTotal != null ? formatReceiptUsd(txnTotal) : ACCOUNT_SCREEN_DISPLAY_NA;
   const showBounty = txnBounty != null && txnBounty > 0;
 
-  const linesVsMerch = txnMerch != null && fromLines > 0 && Math.abs(fromLines - txnMerch) > RECEIPT_TOTAL_EPS;
+  const linesVsMerch = txnMerch != null && fromLines != null && fromLines > 0 && Math.abs(fromLines - txnMerch) > RECEIPT_TOTAL_EPS;
 
   let verifyText = "";
   let verifyColor = secondaryColor;
@@ -1138,11 +1151,11 @@ function mapAccountScreenPersonalResponse(json, options = {}) {
  * - data.business | business_profile | profile (optional): same field names as GET /api/v1/businessinfo/:uid `business` object for MiniCard
  * - data.services | business_services | business_info.services: product catalog for Product Inventory
  */
-/** Seller line is a business product sale (API uses purchase_type and/or bs_uid 250-*, not always ti_bs_id on the line). */
+/** Seller line is a business product sale (purchase_type "service" or bs_uid 250-*). */
 function isBusinessProductSellerLine(item) {
   if (!item || typeof item !== "object") return false;
   const purchaseType = String(item.purchase_type || "").toLowerCase();
-  if (purchaseType === "business") return true;
+  if (purchaseType === "business" || purchaseType === "service") return true;
   const serviceId = String(item.ti_bs_id ?? item.bs_uid ?? "").trim();
   return serviceId.startsWith("250-");
 }
@@ -1197,7 +1210,8 @@ function aggregateBusinessProductSales(bountyLines) {
 
     const bucket = byProduct[productUid];
     bucket.unitsSold += qty;
-    bucket.revenue += unitCost * qty;
+    const lineRevenue = resolveSaleLineMerchandiseFromApi(row);
+    if (lineRevenue != null) bucket.revenue += lineRevenue;
     bucket.bountyPaid += bountyPaid;
     if (bucket.productName === "Unknown product" && productName !== "Unknown product") {
       bucket.productName = productName;
@@ -1225,9 +1239,13 @@ function findReceiptLineForProductSale(receiptLines, saleRow, productUid) {
 }
 
 function getProductSaleAmountCharged(saleRow, receiptLine) {
-  const qty = receiptLine ? getReceiptLineQty(receiptLine) : getSaleLineQty(saleRow);
-  const unitPrice = receiptLine ? getReceiptLineUnitPrice(receiptLine) : getSaleLineUnitCost(saleRow);
-  return unitPrice * qty;
+  const fromReceipt = receiptLine ? resolveSaleLineMerchandiseFromApi(receiptLine) : null;
+  if (fromReceipt != null) return fromReceipt;
+  const fromSale = resolveSaleLineMerchandiseFromApi(saleRow);
+  if (fromSale != null) return fromSale;
+  const v3Money = resolveAccountScreenRowMoney(saleRow);
+  if (v3Money.totalKnown && v3Money.total != null) return v3Money.total;
+  return null;
 }
 
 function formatProductSaleReceivedStatus(receiptLine, saleRow) {
@@ -1327,12 +1345,13 @@ function resolveSellerListRowKey(row) {
   return resolveListRowOrderUid(row);
 }
 
-/** Product Summary money — line fields when present, else unit cost × qty. */
+/** Product Summary money — API line fields only (no unit cost × qty). */
 function resolveProductSummaryLineTotal(row) {
-  const lineTotal = parseFloat(row?.line_total ?? row?.line_merchandise_total ?? NaN);
-  if (Number.isFinite(lineTotal)) return lineTotal;
-  const qty = Math.abs(getSignedProductSalesLineQty(row));
-  return getSaleLineUnitCost(row) * qty;
+  const fromApi = resolveSaleLineMerchandiseFromApi(row);
+  if (fromApi != null) return fromApi;
+  const v3Money = resolveAccountScreenRowMoney(row);
+  if (v3Money.totalKnown && v3Money.total != null) return v3Money.total;
+  return null;
 }
 
 function resolveProductSummaryLineBounty(row) {
@@ -1626,8 +1645,7 @@ function resolveRefundBusinessCode(sellerNote) {
 
 /**
  * Split a return credit between wallet restore and Stripe card refund.
- * Uses estimated_refund.wallet_refund / stripe_refund when present; otherwise
- * derives from sale.transaction_wallet_amount vs transaction_total.
+ * Uses estimated_refund.wallet_refund / stripe_refund from BE only — no FE ratio.
  */
 function splitReturnRefundByPaymentMethod(sale, refundGrand, estimatedRefund = null) {
   const totalCredit = Math.max(0, Math.abs(Number(refundGrand) || 0));
@@ -1640,16 +1658,12 @@ function splitReturnRefundByPaymentMethod(sale, refundGrand, estimatedRefund = n
       stripeRefund: Math.round(Math.max(0, stripeFromEst) * 100) / 100,
     };
   }
-  const orderTotal = Math.abs(Number(sale?.transaction_total) || 0);
   const walletPaid = Math.abs(Number(sale?.transaction_wallet_amount) || 0);
-  if (!(orderTotal > 0) || !(walletPaid > 0) || !(totalCredit > 0)) {
-    return { walletRefund: 0, stripeRefund: Math.round(totalCredit * 100) / 100 };
+  // Mixed wallet+card refunds require BE split; do not infer from payment ratio.
+  if (walletPaid > 0 && totalCredit > 0) {
+    return { walletRefund: 0, stripeRefund: 0 };
   }
-  const cappedWallet = Math.min(walletPaid, orderTotal);
-  const walletRatio = cappedWallet / orderTotal;
-  const walletRefund = Math.round(totalCredit * walletRatio * 100) / 100;
-  const stripeRefund = Math.round(Math.max(0, totalCredit - walletRefund) * 100) / 100;
-  return { walletRefund, stripeRefund };
+  return { walletRefund: 0, stripeRefund: Math.round(totalCredit * 100) / 100 };
 }
 
 /**
@@ -3419,13 +3433,17 @@ function getReturnLinePerUnitShippingAmount(line) {
   return null;
 }
 
-/** Line shipping for display — per_unit × qty when per-unit exists; else flat per-line amount. */
-function getOrderLineShippingAmount(line, qty = 1) {
+/** Line shipping for display — BE-computed ti_line_shipping_amount / line_shipping_amount only (no FE per-unit scaling). */
+function getOrderLineShippingAmount(line, _qty = 1) {
   if (!line || typeof line !== "object") return null;
-  const perUnit = getReturnLinePerUnitShippingAmount(line);
-  if (perUnit != null) {
-    const safeQty = Math.max(1, parseInt(qty, 10) || 1);
-    return Math.round(perUnit * safeQty * 100) / 100;
+  for (const key of ["ti_line_shipping_amount", "line_shipping_amount"]) {
+    const flat = receiptMoneyNullable(line[key]);
+    if (flat != null) return flat;
+  }
+  const money = line?.money;
+  if (money && typeof money === "object") {
+    const fromMoney = receiptMoneyNullable(money.shipping);
+    if (fromMoney != null) return fromMoney;
   }
   const perLine = getReturnLinePerLineShippingAmount(line);
   if (perLine != null) return perLine;
@@ -3841,7 +3859,7 @@ function buildReturnDetailDisplayItems(orderDetail, bountyRows = [], scope = nul
     const baseCost = Math.abs(parseFloat(line.unit_price ?? line.ti_unit_price ?? line.base_cost ?? line.ti_bs_cost ?? unitCost) || 0);
     const lineMerchFromApi = resolveReturnLineMerchandiseFromApi(line);
     const lineTotalKnown = lineMerchFromApi != null;
-    const lineTotal = lineMerchFromApi != null ? lineMerchFromApi : unitCost * qty;
+    const lineTotal = lineMerchFromApi ?? 0;
     const lineTaxFromApi = resolveReturnLineTaxFromApi(line);
     const taxKnown = lineTaxFromApi != null;
     const choiceSource = line;
@@ -4221,14 +4239,7 @@ function sumPendingReturnItemMoney(items, sale, saleLine = null) {
 
     const merch = parseAccountScreenLineMoneyField(item, ["line_merchandise_refund", "line_refund_amount", "line_merchandise", "merchandise_refund"]);
     if (merch != null) merchandise += merch;
-    else {
-      const shipped = Math.max(0, parseInt(item.return_shipped_qty, 10) || 0);
-      const cancelled = Math.max(0, parseInt(item.cancel_unshipped_qty, 10) || 0);
-      const qty = shipped + cancelled || Math.max(0, parseInt(item.return_quantity ?? item.quantity, 10) || 0);
-      const unit = Math.abs(getReceiptLineUnitPrice(orderLine) || parseFloat(orderLine?.ti_bs_cost) || 0);
-      if (qty > 0 && unit > 0) merchandise += unit * qty;
-      else merchandiseKnown = false;
-    }
+    else merchandiseKnown = false;
 
     const lineTax = parseAccountScreenLineMoneyField(item, ["line_tax_refund", "tax_refund", "line_tax_amount", "ti_line_tax_amount"]);
     if (lineTax != null) tax += lineTax;
@@ -4275,16 +4286,7 @@ function resolvePendingReturnSummaryDisplay(pendingReturn, { saleLine = null, sa
   if ((shipping == null || shipping === 0) && lineShipping != null) shipping = lineShipping;
 
   const apiTotal = parseOrderMoneyField(estimated.total ?? estimated.total_customer_credit ?? pendingReturn.estimated_total ?? pendingReturn.total);
-  const componentTotal =
-    subtotal != null && taxes != null ? Math.round((Math.abs(subtotal) + Math.abs(taxes) + Math.abs(shipping || 0)) * 100) / 100 : null;
-  let total = apiTotal;
-  if (componentTotal != null && componentTotal > 0) {
-    if (apiTotal == null || Math.abs(Math.abs(apiTotal) - componentTotal) > 0.02) {
-      total = componentTotal;
-    } else {
-      total = Math.abs(apiTotal);
-    }
-  }
+  const total = apiTotal;
   const bounty = parseOrderMoneyField(pendingReturn.bounty_to_reclaim);
   return { subtotal, taxes, shipping, total, bounty };
 }
@@ -4776,9 +4778,9 @@ function OrderDetailLinesTable({
     const choiceLines = getItemizedChoiceLines(line);
     const specialInstructions = receiptLineSpecialInstructions(line);
     const unitCost = Math.abs(getReceiptLineUnitPrice(line) || parseFloat(line.ti_bs_cost) || 0);
-    const lineMerchFromApi = signedRows ? resolveReturnLineMerchandiseFromApi(line) : null;
+    const lineMerchFromApi = signedRows ? resolveReturnLineMerchandiseFromApi(line) : resolveSaleLineMerchandiseFromApi(line);
     const lineTotalKnown = lineMerchFromApi != null;
-    const lineTotal = lineMerchFromApi != null ? lineMerchFromApi : unitCost * qty;
+    const lineTotal = lineMerchFromApi ?? 0;
     const rawLineShipping = signedRows ? getReturnLineRefundableShippingAmount(line, qty) : getOrderLineShippingAmount(line, qty);
     const lineShippingKnown = rawLineShipping != null;
     const lineShipping = lineShippingKnown ? Math.abs(rawLineShipping) : null;
@@ -4859,7 +4861,8 @@ function OrderDetailLinesTable({
       </Text>
     );
   };
-  const footerValue = footerAmount ?? detailRows.reduce((sum, row) => sum + row.lineTotal, 0);
+  const footerAllLinesKnown = detailRows.every((row) => row.lineTotalKnown);
+  const footerValue = footerAmount ?? (footerAllLinesKnown ? detailRows.reduce((sum, row) => sum + row.lineTotal, 0) : null);
   const signedCellStyle = signedRows ? { color: "#B71C1C" } : null;
   const optionTextColor = darkMode ? "#bbb" : "#666";
   const noteTextColor = darkMode ? "#aaa" : "#777";
@@ -4972,9 +4975,11 @@ function OrderDetailLinesTable({
               <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
                 {formatCellAmount(row.unitCost)}
               </Text>
-              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]} numberOfLines={1}>
-                {formatCellAmount(row.lineTotal)}
-              </Text>
+              {renderAccountMoneyCell(
+                row.lineTotal,
+                row.lineTotalKnown !== false,
+                [styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, signedCellStyle],
+              )}
               {renderAccountMoneyCell(
                 row.lineShipping,
                 row.shippingKnown !== false,
@@ -5084,9 +5089,15 @@ function OrderDetailLinesTable({
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty]} />
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost]} />
             <Text
-              style={[styles.orderDetailLineTableFooterValue, styles.businessOrderDetailColMoney, footerAmountSigned && { color: "#B71C1C" }, darkMode && !footerAmountSigned && { color: "#eee" }]}
+              style={[
+                styles.orderDetailLineTableFooterValue,
+                styles.businessOrderDetailColMoney,
+                footerAmountSigned && { color: "#B71C1C" },
+                darkMode && !footerAmountSigned && { color: "#eee" },
+                footerValue == null && { color: ACCOUNT_SCREEN_MISSING_MONEY_COLOR, fontWeight: "600" },
+              ]}
             >
-              {formatFooterAmount(footerValue)}
+              {footerValue != null ? formatFooterAmount(footerValue) : ACCOUNT_SCREEN_DISPLAY_NA}
             </Text>
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColShipping]} />
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBounty]} />
@@ -6454,6 +6465,7 @@ function resolveScopedPendingReturnMoney(returnRow, saleSibling, { productUid, s
   let scopedItemCount = 0;
   let totalItemCount = 0;
   let bountyPaid = 0;
+  let subtotalKnown = true;
 
   for (const pending of pendingList) {
     const items = Array.isArray(pending.items) ? pending.items : [];
@@ -6467,8 +6479,9 @@ function resolveScopedPendingReturnMoney(returnRow, saleSibling, { productUid, s
       const cancelUnshipped = Math.max(0, parseInt(item.cancel_unshipped_qty, 10) || 0);
       const qty = Math.max(0, parseInt(item.return_quantity ?? item.quantity ?? item.qty, 10) || shippedRet + cancelUnshipped);
       if (qty <= 0) continue;
-      const unit = Math.abs(parseFloat(item.ti_bs_cost ?? saleLine.ti_bs_cost ?? saleLine.unit_cost ?? 0) || 0);
-      subtotal += unit * qty;
+      const lineMerch = parseAccountScreenLineMoneyField(item, ["line_merchandise_refund", "line_refund_amount", "line_merchandise", "merchandise_refund"]);
+      if (lineMerch != null) subtotal += lineMerch;
+      else subtotalKnown = false;
       const lineShip = parseReturnRefundShippingFromSource(item, ["line_shipping_refund", "shipping_refund", "returned_shipping", "refund_shipping"]);
       if (lineShip != null) {
         shipping += lineShip;
@@ -6480,7 +6493,7 @@ function resolveScopedPendingReturnMoney(returnRow, saleSibling, { productUid, s
     }
   }
 
-  if (subtotal <= 0 && shipping <= 0) return null;
+  if (!subtotalKnown && subtotal <= 0 && shipping <= 0) return null;
 
   // When every pending item belongs to this product, use the API estimated_refund total (includes tax).
   if (hasScope && scopedItemCount > 0 && scopedItemCount === totalItemCount && pendingList.length === 1) {
@@ -6493,6 +6506,15 @@ function resolveScopedPendingReturnMoney(returnRow, saleSibling, { productUid, s
         bountyKnown: !!(entryMoney.bountyPaid || bountyPaid),
       };
     }
+  }
+
+  if (!subtotalKnown) {
+    return {
+      total: null,
+      bountyPaid: bountyPaid > 0 ? -bountyPaid : 0,
+      totalKnown: false,
+      bountyKnown: bountyPaid > 0,
+    };
   }
 
   const totalAbs = Math.round((subtotal + shipping) * 100) / 100;
@@ -9153,7 +9175,13 @@ export default function AccountScreen({ navigation, route }) {
       // Only refund the card portion to Stripe. Wallet-paid amounts are restored
       // to the buyer's useable balance by the backend confirm/ledger path.
       if (paymentIntent && stripeRefund > 0 && buyerUid) {
-        const stripeTaxShare = refundAmount > 0 ? Math.round(refundTax * (stripeRefund / refundAmount) * 100) / 100 : 0;
+        const stripeTaxFromApi = parseOrderMoneyField(pendingEstimated?.stripe_tax ?? pendingEstimated?.taxes_stripe);
+        const stripeTaxShare =
+          stripeTaxFromApi != null
+            ? Math.abs(stripeTaxFromApi)
+            : refundAmount > 0 && stripeRefund > 0 && stripeRefund >= refundAmount - 0.01
+              ? refundTax
+              : 0;
         stripeRefundResult = await createStripeRefund({
           customerUid: buyerUid,
           businessCode,
@@ -11933,7 +11961,8 @@ export default function AccountScreen({ navigation, route }) {
 
                         if (isOfferingReceipt) {
                           const offeringName = String(item.bs_service_name || item.bs_service_desc || "N/A").trim() || "N/A";
-                          const lineTotal = baseCost * qty;
+                          const lineMerch = resolveSaleLineMerchandiseFromApi(item);
+                          const lineTotalLabel = lineMerch != null ? `$${lineMerch.toFixed(2)}` : ACCOUNT_SCREEN_DISPLAY_NA;
                           return (
                             <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
                               <View style={styles.receiptTableCellItem}>
@@ -11957,7 +11986,7 @@ export default function AccountScreen({ navigation, route }) {
                                 ${baseCost.toFixed(2)}
                               </Text>
                               <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, styles.receiptMoneyText, { fontWeight: "600", color: moneyCellColor }]} numberOfLines={1}>
-                                ${lineTotal.toFixed(2)}
+                                {lineTotalLabel}
                               </Text>
                               <Text style={[styles.receiptTableCell, styles.receiptTableCellShipping, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
                                 {shippingCell}
@@ -11967,7 +11996,8 @@ export default function AccountScreen({ navigation, route }) {
                         }
 
                         const unitPrice = getReceiptLineUnitPrice(item);
-                        const lineTotal = unitPrice * qty;
+                        const lineMerch = resolveSaleLineMerchandiseFromApi(item);
+                        const lineTotalLabel = lineMerch != null ? `$${lineMerch.toFixed(2)}` : ACCOUNT_SCREEN_DISPLAY_NA;
                         const summaryDescription = String(item.bs_service_desc || item.bs_service_name || "N/A").trim() || "N/A";
 
                         return (
@@ -12005,7 +12035,7 @@ export default function AccountScreen({ navigation, route }) {
                               ${unitPrice.toFixed(2)}
                             </Text>
                             <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, styles.receiptMoneyText, { fontWeight: "600", color: moneyCellColor }]} numberOfLines={1}>
-                              ${lineTotal.toFixed(2)}
+                              {lineTotalLabel}
                             </Text>
                             <Text style={[styles.receiptTableCell, styles.receiptTableCellShipping, styles.receiptMoneyText, { color: moneyCellColor }]} numberOfLines={1}>
                               {shippingCell}

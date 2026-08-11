@@ -2,18 +2,18 @@ import { axiosMiddleware as axios } from "./httpMiddleware";
 import { BUSINESS_SERVICE_PURCHASE_ENDPOINT, BUSINESS_SERVICE_RESTOCK_ENDPOINT, PROFILE_EXPERTISE_RESTOCK_ENDPOINT } from "../apiConfig";
 
 /**
- * Decrement stock for a service after a confirmed purchase.
- * Called after Stripe payment succeeds — never blocks the success flow.
- *
- * @param {string} bs_uid      - Service UID
- * @param {number} quantity    - Units purchased (default 1)
- * @returns {{ success: boolean, remaining: number|null, outOfStock: boolean }}
+ * @deprecated Inventory is decremented in POST /api/v1/transactions. Do not call after checkout.
+ * Legacy fallback only — pass transaction_uid for idempotent replay.
  */
-export const recordServicePurchase = async (bs_uid, quantity = 1) => {
+export const recordServicePurchase = async (bs_uid, quantity = 1, transaction_uid = null) => {
   try {
+    const body = { bs_uid, quantity };
+    const txnUid = transaction_uid != null ? String(transaction_uid).trim() : "";
+    if (txnUid) body.transaction_uid = txnUid;
+
     const res = await axios.post(
       BUSINESS_SERVICE_PURCHASE_ENDPOINT,
-      { bs_uid, quantity },
+      body,
       { headers: { "Content-Type": "application/json" } }
     );
 
