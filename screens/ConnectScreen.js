@@ -92,6 +92,7 @@ function viewerToCardUser(viewer) {
     tagLineIsPublic: viewer.viewer_tag_line_is_public === 1 || viewer.viewer_tag_line_is_public === "1",
     imageIsPublic: viewer.viewer_image_is_public === 1 || viewer.viewer_image_is_public === "1",
     locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
+    relationship: viewer.circle_relationship || viewer.viewer_relationship || viewer.relationship || null,
   };
 }
 
@@ -659,7 +660,7 @@ const ConnectScreen = ({ navigation }) => {
   const [viewersSelectedAccount, setViewersSelectedAccount] = useState("personal");
   const [showViewersAccountDropdown, setShowViewersAccountDropdown] = useState(false);
   const [showProfileViewersMenu, setShowProfileViewersMenu] = useState(false);
-  const [profileViewersCardMode, setProfileViewersCardMode] = useState("mini");
+  const [profileViewersCardMode, setProfileViewersCardMode] = useState("micro");
   const [connectDirectlyVisible, setConnectDirectlyVisible] = useState(false);
 
   const connectDirectlyMergedNetworkData = useMemo(() => mergeNetworkNodesForReferral(connectionsNetworkCache, circlesNetworkCache), [connectionsNetworkCache, circlesNetworkCache]);
@@ -3514,6 +3515,18 @@ const ConnectScreen = ({ navigation }) => {
               ) : profileViewers.length > 0 ? (
                 profileViewers.map((viewer, index) => {
                   const cardUser = viewerToCardUser(viewer);
+                  const viewerUid = String(viewer.view_viewer_id || "").trim();
+                  if (viewerUid && !cardUser.relationship) {
+                    const networkNode = connectDirectlyMergedNetworkData.find(
+                      (n) => String(n.network_profile_personal_uid || n.profile_personal_uid || "").trim() === viewerUid,
+                    );
+                    if (networkNode?.circle_relationship) {
+                      cardUser.relationship = networkNode.circle_relationship;
+                    }
+                  }
+                  const viewedLabel = getLatestProfileViewTimestamp(viewer.view_timestamp)
+                    ? `Viewed: ${formatProfileViewedDate(viewer.view_timestamp) || "—"}`
+                    : null;
                   return (
                     <TouchableOpacity
                       key={`viewer-${viewer.view_viewer_id || "anon"}-${index}`}
@@ -3521,12 +3534,14 @@ const ConnectScreen = ({ navigation }) => {
                       onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "Connect" })}
                       style={{ paddingHorizontal: 8, marginTop: index > 0 ? 4 : 0 }}
                     >
-                      {profileViewersCardMode === "micro" ? (
-                        <MicroCard user={cardUser} showRelationship={false} embedded />
+                      {profileViewersCardMode === "mini" ? (
+                        <>
+                          <MiniCard user={cardUser} />
+                          {viewedLabel ? <Text style={styles.viewedTimestamp}>{viewedLabel}</Text> : null}
+                        </>
                       ) : (
-                        <MiniCard user={cardUser} />
+                        <MicroCard showRelationship relationshipMeta={viewedLabel} user={cardUser} />
                       )}
-                      {getLatestProfileViewTimestamp(viewer.view_timestamp) ? <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text> : null}
                     </TouchableOpacity>
                   );
                 })

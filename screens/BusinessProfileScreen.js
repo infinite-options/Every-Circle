@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, Touchable
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
+import MicroCard from "../components/MicroCard";
 import ProductCard from "../components/ProductCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -1521,14 +1522,20 @@ export default function BusinessProfileScreen({ route, navigation }) {
               </TouchableOpacity>
               {showBusinessViewers &&
                 (businessViewers.length > 0 ? (
-                  businessViewers.map((viewer, index) => (
+                  businessViewers.map((viewer, index) => {
+                    const viewedLabel = getLatestProfileViewTimestamp(viewer.view_timestamp)
+                      ? `Viewed: ${formatProfileViewedDate(viewer.view_timestamp) || "—"}`
+                      : null;
+                    return (
                     <TouchableOpacity
                       key={`viewer-${viewer.view_viewer_id || "anon"}-${index}`}
                       activeOpacity={0.7}
                       onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "BusinessProfile" })}
                       style={index > 0 ? { marginTop: 4 } : undefined}
                     >
-                      <MiniCard
+                      <MicroCard
+                        showRelationship
+                        relationshipMeta={viewedLabel}
                         user={{
                           firstName: viewer.viewer_first_name || "",
                           lastName: viewer.viewer_last_name || "",
@@ -1543,13 +1550,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
                           tagLineIsPublic: viewer.viewer_tag_line_is_public === 1 || viewer.viewer_tag_line_is_public === "1",
                           imageIsPublic: viewer.viewer_image_is_public === 1 || viewer.viewer_image_is_public === "1",
                           locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
+                          relationship: viewer.circle_relationship || viewer.viewer_relationship || viewer.relationship || null,
                         }}
                       />
-                      {getLatestProfileViewTimestamp(viewer.view_timestamp) ? (
-                        <Text style={{ fontSize: 11, color: "#999", paddingHorizontal: 12, paddingBottom: 6 }}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text>
-                      ) : null}
                     </TouchableOpacity>
-                  ))
+                    );
+                  })
                 ) : (
                   <Text style={{ fontStyle: "italic", color: "#666", padding: 12 }}>No business profile views yet</Text>
                 ))}

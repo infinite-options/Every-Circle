@@ -25,7 +25,6 @@ import { Ionicons } from "@expo/vector-icons";
 import SeekingCardDetails from "../components/SeekingCardDetails";
 import OfferingCardDetails from "../components/OfferingCardDetails";
 import MiniCard from "../components/MiniCard";
-import MicroCard from "../components/MicroCard";
 import ConnectionPathChain from "../components/ConnectionPathChain";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import BottomNavBar from "../components/BottomNavBar";
@@ -1884,19 +1883,6 @@ const ProfileScreen = ({ route, navigation }) => {
                 defaultSource={require("../assets/profile.png")}
               />
             </View>
-          </View>
-
-          <View style={{ marginBottom: 12 }}>
-            <MicroCard
-              showRelationship={!!routeProfileUID && !isCurrentUserProfile}
-              user={{
-                ...user,
-                relationship: relationshipType || existingRelationship?.circle_relationship || null,
-                imageIsPublic: user.imageIsPublic,
-                profileImage: isCurrentUserProfile || user.imageIsPublic ? user.profileImage : "",
-                tagLineIsPublic: user.tagLineIsPublic,
-              }}
-            />
           </View>
 
           <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>

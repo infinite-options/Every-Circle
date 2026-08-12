@@ -31,7 +31,7 @@ function formatRelationship(user) {
   return "Relationship not Assigned";
 }
 
-const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix = null, headerAccessory = null }) => {
+const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix = null, headerAccessory = null, relationshipFooter = null, relationshipMeta = null }) => {
   const { darkMode } = useDarkMode();
 
   const firstName = sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
@@ -54,6 +54,8 @@ const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix
 
   const showTagline = tagLineIsPublic && isSafeForConditional(tagLine) && tagLine !== "." && tagLine.trim() !== "";
   const relationshipText = formatRelationship(user);
+  const metaText = relationshipMeta != null && String(relationshipMeta).trim() !== "" ? String(relationshipMeta).trim() : null;
+  const showRelationshipColumn = showRelationship || !!relationshipFooter || !!metaText;
 
   return (
     <View style={[styles.cardContainer, embedded && styles.embeddedCardContainer, darkMode && styles.darkCardContainer, embedded && darkMode && styles.darkEmbeddedCardContainer]}>
@@ -78,10 +80,20 @@ const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix
         ) : null}
       </View>
 
-      {showRelationship ? (
-        <Text style={[styles.relationship, darkMode && styles.darkText]} numberOfLines={2}>
-          {relationshipText}
-        </Text>
+      {showRelationshipColumn ? (
+        <View style={styles.relationshipColumn}>
+          {showRelationship ? (
+            <Text style={[styles.relationship, darkMode && styles.darkText]} numberOfLines={1} ellipsizeMode='clip'>
+              {relationshipText}
+            </Text>
+          ) : null}
+          {metaText ? (
+            <Text style={[styles.relationshipMeta, darkMode && styles.darkRelationshipMeta]} numberOfLines={1} ellipsizeMode='clip'>
+              {metaText}
+            </Text>
+          ) : null}
+          {relationshipFooter}
+        </View>
       ) : null}
     </View>
   );
@@ -158,13 +170,28 @@ const styles = StyleSheet.create({
   darkText: {
     color: "#ccc",
   },
+  relationshipColumn: {
+    flexShrink: 0,
+    alignItems: "flex-end",
+  },
   relationship: {
     fontSize: 13,
     color: "#666",
     fontStyle: "italic",
     textAlign: "right",
-    maxWidth: 96,
     flexShrink: 0,
+    ...(Platform.OS === "web" ? { whiteSpace: "nowrap" } : {}),
+  },
+  relationshipMeta: {
+    fontSize: 11,
+    color: "#999",
+    textAlign: "right",
+    marginTop: 2,
+    flexShrink: 0,
+    ...(Platform.OS === "web" ? { whiteSpace: "nowrap" } : {}),
+  },
+  darkRelationshipMeta: {
+    color: "#888",
   },
 });
 
