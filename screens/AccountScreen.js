@@ -151,24 +151,12 @@ function parseAccountScreenLineMoneyField(source, keys) {
 }
 
 function resolveReturnLineMerchandiseFromApi(line) {
-  return parseAccountScreenLineMoneyField(line, [
-    "line_merchandise_refund",
-    "line_refund_amount",
-    "line_merchandise",
-    "line_total_refund",
-    "merchandise_refund",
-  ]);
+  return parseAccountScreenLineMoneyField(line, ["line_merchandise_refund", "line_refund_amount", "line_merchandise", "line_total_refund", "merchandise_refund"]);
 }
 
 /** Sale-line merchandise from API (v3 — no unit cost × qty on FE). */
 function resolveSaleLineMerchandiseFromApi(line) {
-  const fromLine = parseAccountScreenLineMoneyField(line, [
-    "line_merchandise_total",
-    "line_merchandise",
-    "line_total",
-    "merchandise_amount",
-    "ti_line_merchandise",
-  ]);
+  const fromLine = parseAccountScreenLineMoneyField(line, ["line_merchandise_total", "line_merchandise", "line_total", "merchandise_amount", "ti_line_merchandise"]);
   if (fromLine != null) return fromLine;
   const money = line?.money;
   if (money && typeof money === "object") {
@@ -179,13 +167,7 @@ function resolveSaleLineMerchandiseFromApi(line) {
 
 /** Sale-line sales tax from API (v3 — display only; no FE estimation). */
 function resolveSaleLineTaxFromApi(line) {
-  const fromLine = parseAccountScreenLineMoneyField(line, [
-    "line_tax_amount",
-    "ti_line_tax_amount",
-    "sales_tax",
-    "tax_amount",
-    "line_sales_tax",
-  ]);
+  const fromLine = parseAccountScreenLineMoneyField(line, ["line_tax_amount", "ti_line_tax_amount", "sales_tax", "tax_amount", "line_sales_tax"]);
   if (fromLine != null) return fromLine;
   const money = line?.money;
   if (money && typeof money === "object") {
@@ -195,14 +177,7 @@ function resolveSaleLineTaxFromApi(line) {
 }
 
 function resolveReturnLineTaxFromApi(line) {
-  const fromLine = parseAccountScreenLineMoneyField(line, [
-    "line_tax_refund",
-    "tax_refund",
-    "line_tax_amount",
-    "ti_line_tax_amount",
-    "returned_tax",
-    "sales_tax",
-  ]);
+  const fromLine = parseAccountScreenLineMoneyField(line, ["line_tax_refund", "tax_refund", "line_tax_amount", "ti_line_tax_amount", "returned_tax", "sales_tax"]);
   if (fromLine != null) return fromLine;
   const money = line?.money;
   if (money && typeof money === "object") {
@@ -229,9 +204,7 @@ function resolveReturnLineBountyFromApi(line, { isSellerView = false } = {}) {
   if (fromLine != null) return fromLine;
   const money = line?.money;
   if (money && typeof money === "object") {
-    const mk = isSellerView
-      ? ["bounty_paid", "bounty_reclaim", "bounty_to_reclaim", "bounty_paid_reversed"]
-      : ["bounty", "bounty_reclaim", "bounty_return", "bounty_refund"];
+    const mk = isSellerView ? ["bounty_paid", "bounty_reclaim", "bounty_to_reclaim", "bounty_paid_reversed"] : ["bounty", "bounty_reclaim", "bounty_return", "bounty_refund"];
     return parseAccountScreenLineMoneyField(money, mk);
   }
   return null;
@@ -815,19 +788,11 @@ function findBountyResultForReceiptLine(bountyRows, receiptLine, transactionUid)
  */
 function resolveReceiptLineBountyDisplay(receiptLine, bountyRow) {
   const qty = getReceiptLineQty(receiptLine);
-  const bountyType = String(
-    receiptLine?.bs_bounty_type || receiptLine?.ti_bs_bounty_type || bountyRow?.profile_expertise_bounty_type || bountyRow?.bs_bounty_type || "per_item",
-  )
+  const bountyType = String(receiptLine?.bs_bounty_type || receiptLine?.ti_bs_bounty_type || bountyRow?.profile_expertise_bounty_type || bountyRow?.bs_bounty_type || "per_item")
     .trim()
     .toLowerCase();
   const unitRaw = parseFloat(
-    receiptLine?.bs_bounty ??
-      receiptLine?.ti_bs_bounty ??
-      receiptLine?.bounty_amount ??
-      receiptLine?.item_bounty ??
-      receiptLine?.profile_expertise_bounty ??
-      bountyRow?.bs_bounty ??
-      NaN,
+    receiptLine?.bs_bounty ?? receiptLine?.ti_bs_bounty ?? receiptLine?.bounty_amount ?? receiptLine?.item_bounty ?? receiptLine?.profile_expertise_bounty ?? bountyRow?.bs_bounty ?? NaN,
   );
   let lineBounty = Number.isFinite(unitRaw) && unitRaw > 0 ? (bountyType === "total" ? unitRaw : unitRaw * Math.max(1, qty)) : null;
 
@@ -1171,7 +1136,7 @@ function mapAccountScreenPersonalResponse(json, options = {}) {
   const profile = root.profile ?? payload.profile ?? payload.user_profile ?? payload.personal_profile ?? null;
   const earnings = root.earnings ?? payload.earnings ?? null;
   const walletLedger = root.wallet_ledger ?? payload.wallet_ledger ?? null;
-  const salesOfferings = Array.isArray(root.sales?.offerings ?? payload.sales?.offerings) ? root.sales.offerings ?? payload.sales.offerings : [];
+  const salesOfferings = Array.isArray(root.sales?.offerings ?? payload.sales?.offerings) ? (root.sales.offerings ?? payload.sales.offerings) : [];
 
   return { transactions, bounty, sellerTransactions, profile, wallet, schemaVersion, earnings, walletLedger, salesOfferings };
 }
@@ -3087,12 +3052,9 @@ function buildReturnModalCapsFromV2Units(units, row) {
   const purchasedQty = parseNonNegativeInt(units.purchased_qty) ?? Math.max(0, row?.purchasedQty ?? 0);
   const remainingLeft = maxReturnShipped;
   const remainingNotLeft = maxCancelUnshipped;
-  const returnedFromLeft =
-    (parseNonNegativeInt(units.returned_shipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.return_in_progress_shipped_qty) ?? 0);
+  const returnedFromLeft = (parseNonNegativeInt(units.returned_shipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.return_in_progress_shipped_qty) ?? 0);
   const returnedFromNotLeft =
-    (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0) +
-    (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) +
-    (parseNonNegativeInt(units.return_in_progress_unshipped_qty) ?? 0);
+    (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) + (parseNonNegativeInt(units.return_in_progress_unshipped_qty) ?? 0);
   const verifiedQty = parseNonNegativeInt(units.verified_qty);
   const shippedOnLine = parseNonNegativeInt(units.shipped_qty) ?? 0;
   const unshippedOnLine = parseNonNegativeInt(units.remaining_to_ship_qty) ?? Math.max(0, purchasedQty - shippedOnLine);
@@ -3358,10 +3320,7 @@ function buildReturnModalFulfillmentSubtitle(row, caps) {
   if (shippedDisplay < 1 && notShippedCount < 1 && shippedOnOrder < 1) return null;
 
   const forShipping = lineWasPurchasedForShipping(line);
-  const verifiedQty =
-    caps?.verifiedQty != null && Number.isFinite(Number(caps.verifiedQty))
-      ? Math.max(0, Number(caps.verifiedQty))
-      : Math.min(shippedOnOrder, getPreviouslyReceivedQty(line));
+  const verifiedQty = caps?.verifiedQty != null && Number.isFinite(Number(caps.verifiedQty)) ? Math.max(0, Number(caps.verifiedQty)) : Math.min(shippedOnOrder, getPreviouslyReceivedQty(line));
   const returnableNow = Math.max(0, caps?.maxReturnShippedQty ?? 0);
   const unverifiedShipped = Math.max(0, shippedOnOrder - verifiedQty);
   const parts = [];
@@ -3463,7 +3422,16 @@ function parseOrderTransactionShipping(source, fallback) {
   return value != null ? value : null;
 }
 
-const ORDER_LINE_SHIPPING_PER_LINE_KEYS = ["ti_shipping_amount_per_line", "ti_line_shipping_amount", "line_shipping_amount", "ti_shipping_total", "line_shipping_total", "shipping_total", "ti_total_shipping", "total_line_shipping"];
+const ORDER_LINE_SHIPPING_PER_LINE_KEYS = [
+  "ti_shipping_amount_per_line",
+  "ti_line_shipping_amount",
+  "line_shipping_amount",
+  "ti_shipping_total",
+  "line_shipping_total",
+  "shipping_total",
+  "ti_total_shipping",
+  "total_line_shipping",
+];
 const ORDER_LINE_SHIPPING_PER_UNIT_KEYS = ["ti_shipping_amount_per_unit", "ti_shipping_amount", "ti_shipping_unit", "shipping_unit", "ti_shipping_per_unit", "unit_shipping"];
 const ORDER_LINE_SHIPPING_LEGACY_KEYS = ["line_shipping", "shipping_amount", "shipping_cost", "shipping", "ti_shipping", "ti_shipping_cost", "item_shipping"];
 
@@ -3973,9 +3941,7 @@ function sumReturnDetailItemsMoney(items, { isSellerView = false } = {}) {
     merchandise: merchandiseKnown ? rows.reduce((sum, row) => sum + (Number(row.lineTotal) || 0), 0) : null,
     tax: taxKnown ? rows.reduce((sum, row) => sum + (Number(row.lineTax) || 0), 0) : null,
     shipping: shippingKnown ? rows.reduce((sum, row) => sum + (Number(row.refundableShipping) || 0), 0) : null,
-    bounty: bountyKnown
-      ? rows.reduce((sum, row) => sum + (Number(isSellerView ? row.bountyPaidReversed : row.lineBounty) || 0), 0)
-      : null,
+    bounty: bountyKnown ? rows.reduce((sum, row) => sum + (Number(isSellerView ? row.bountyPaidReversed : row.lineBounty) || 0), 0) : null,
     merchandiseKnown,
     taxKnown,
     shippingKnown,
@@ -4095,8 +4061,7 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
 
   const lineSums = sumReturnDetailItemsMoney(items, { isSellerView });
   const pending = pendingReturn || sale?.pending_return || null;
-  const pendingBountyExplicit =
-    pending?.bounty_to_reclaim != null && String(pending.bounty_to_reclaim).trim() !== "" ? parseOrderMoneyField(pending.bounty_to_reclaim) : null;
+  const pendingBountyExplicit = pending?.bounty_to_reclaim != null && String(pending.bounty_to_reclaim).trim() !== "" ? parseOrderMoneyField(pending.bounty_to_reclaim) : null;
   const bountyResolved = resolveReverseTransactionBountyAmount({
     items,
     itemBounty: lineSums.bounty,
@@ -4178,9 +4143,7 @@ function resolveOrderDetailPendingReturn(orderDetail, listRow = null, ledgerEntr
     (Array.isArray(orderDetail.pending_returns) && orderDetail.pending_returns.length ? orderDetail.pending_returns : null) ||
     (Array.isArray(sale?.pending_returns) && sale.pending_returns.length ? sale.pending_returns : null) ||
     null;
-  const candidates = pendingReturns?.length
-    ? pendingReturns
-    : [orderDetail.pending_return, sale?.pending_return].filter((entry) => entry && typeof entry === "object");
+  const candidates = pendingReturns?.length ? pendingReturns : [orderDetail.pending_return, sale?.pending_return].filter((entry) => entry && typeof entry === "object");
   if (!candidates.length) return null;
   if (listRow) {
     const matched = candidates.find((pendingReturn) => pendingReturnAppliesToListRow(pendingReturn, listRow));
@@ -4199,11 +4162,7 @@ function resolveOrderDetailPendingReturn(orderDetail, listRow = null, ledgerEntr
 /** Match pending_return scope to a wallet-ledger sale-proceeds entry (via entry.lines ti_uid). */
 function pendingReturnMatchesWalletLedgerEntry(pendingReturn, entry, { exact = false } = {}) {
   if (!pendingReturn || !entry || typeof pendingReturn !== "object") return false;
-  const ledgerTiUids = new Set(
-    (Array.isArray(entry.lines) ? entry.lines : [])
-      .map((line) => String(line?.ti_uid || line?.transaction_item_uid || "").trim())
-      .filter(Boolean),
-  );
+  const ledgerTiUids = new Set((Array.isArray(entry.lines) ? entry.lines : []).map((line) => String(line?.ti_uid || line?.transaction_item_uid || "").trim()).filter(Boolean));
   if (!ledgerTiUids.size) return false;
   const items = Array.isArray(pendingReturn.items) ? pendingReturn.items : [];
   const itemTiUids = items.map((item) => String(item.ti_uid || item.transaction_item_uid || "").trim()).filter(Boolean);
@@ -4308,8 +4267,7 @@ function sumPendingReturnItemMoney(items, sale, saleLine = null) {
     else bountyKnown = false;
   }
 
-  const total =
-    merchandiseKnown && taxKnown && shippingKnown ? Math.round((merchandise + tax + shipping) * 100) / 100 : null;
+  const total = merchandiseKnown && taxKnown && shippingKnown ? Math.round((merchandise + tax + shipping) * 100) / 100 : null;
   return { merchandise, tax, shipping, bounty, total, merchandiseKnown, taxKnown, shippingKnown, bountyKnown, totalKnown: total != null };
 }
 
@@ -4370,8 +4328,7 @@ function walletLedgerEntryMatchesSaleLine(entry, saleLine, sale, pendingReturns 
   }
 
   const entryMerch = Math.abs(
-    resolveWalletLedgerEntryMerchandiseAmount(entry) ??
-      ledgerLines.reduce((sum, line) => sum + Math.abs(parseWalletLedgerEntryMoney(line, ["merchandise_amount", "line_total", "amount"]) ?? 0), 0),
+    resolveWalletLedgerEntryMerchandiseAmount(entry) ?? ledgerLines.reduce((sum, line) => sum + Math.abs(parseWalletLedgerEntryMoney(line, ["merchandise_amount", "line_total", "amount"]) ?? 0), 0),
   );
   if (entryMerch <= 0) return false;
 
@@ -4674,7 +4631,18 @@ function OrderDetailWalletLedgerBreakdownTable({ breakdown, darkMode }) {
   );
 }
 
-function OrderDetailWalletLedgerSummary({ entries, highlightEntryId, darkMode, sale, bountyRows = [], transactionUid = "", saleBountyPaid = 0, salePurchasedQty = null, isSellerView = true, embedded = false }) {
+function OrderDetailWalletLedgerSummary({
+  entries,
+  highlightEntryId,
+  darkMode,
+  sale,
+  bountyRows = [],
+  transactionUid = "",
+  saleBountyPaid = 0,
+  salePurchasedQty = null,
+  isSellerView = true,
+  embedded = false,
+}) {
   if (!Array.isArray(entries) || !entries.length) return null;
   const labelStyle = [styles.orderDetailSectionText, darkMode && { color: "#ddd" }];
   const valueStyle = [styles.orderDetailSummaryValue, darkMode && { color: "#eee" }];
@@ -4909,12 +4877,7 @@ function OrderDetailLinesTable({
     const formatted = formatAccountScreenMoneyCell(value, { signed: signedRows, known });
     return (
       <Text
-        style={[
-          extraStyle,
-          signedCellStyle,
-          darkMode && !signedRows && { color: "#ccc" },
-          formatted.missing && { color: ACCOUNT_SCREEN_MISSING_MONEY_COLOR, fontWeight: "600" },
-        ]}
+        style={[extraStyle, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }, formatted.missing && { color: ACCOUNT_SCREEN_MISSING_MONEY_COLOR, fontWeight: "600" }]}
         numberOfLines={1}
       >
         {formatted.text}
@@ -5038,21 +5001,9 @@ function OrderDetailLinesTable({
               <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
                 {formatCellAmount(row.unitCost)}
               </Text>
-              {renderAccountMoneyCell(
-                row.lineTotal,
-                row.lineTotalKnown !== false,
-                [styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, signedCellStyle],
-              )}
-              {renderAccountMoneyCell(
-                row.lineTax,
-                row.taxKnown !== false,
-                [styles.businessOrderDetailCell, styles.businessOrderDetailColTax, signedCellStyle],
-              )}
-              {renderAccountMoneyCell(
-                row.lineShipping,
-                row.shippingKnown !== false,
-                [styles.businessOrderDetailCell, styles.businessOrderDetailColShipping, signedCellStyle],
-              )}
+              {renderAccountMoneyCell(row.lineTotal, row.lineTotalKnown !== false, [styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, signedCellStyle])}
+              {renderAccountMoneyCell(row.lineTax, row.taxKnown !== false, [styles.businessOrderDetailCell, styles.businessOrderDetailColTax, signedCellStyle])}
+              {renderAccountMoneyCell(row.lineShipping, row.shippingKnown !== false, [styles.businessOrderDetailCell, styles.businessOrderDetailColShipping, signedCellStyle])}
               {renderAccountMoneyCell(row.bounty, row.bountyKnown !== false, [styles.businessOrderDetailCell, styles.businessOrderDetailColBounty, signedCellStyle])}
               {showBuyerShareColumns ? (
                 <>
@@ -5218,17 +5169,7 @@ function sortOrderDetailWalletLedgerEntries(entries) {
   return [original, ...rest];
 }
 
-function OrderDetailWalletLedgerEntryCard({
-  entry,
-  sale,
-  darkMode,
-  highlighted,
-  buyerLabel,
-  bountyRows = [],
-  transactionUid = "",
-  saleBountyPaid = 0,
-  salePurchasedQty = null,
-}) {
+function OrderDetailWalletLedgerEntryCard({ entry, sale, darkMode, highlighted, buyerLabel, bountyRows = [], transactionUid = "", saleBountyPaid = 0, salePurchasedQty = null }) {
   if (!entry) return null;
   const amount = parsePrice(entry.amount);
   const signed = amount < 0 ? amount : amount > 0 ? amount : 0;
@@ -5254,14 +5195,7 @@ function OrderDetailWalletLedgerEntryCard({
   const valueStyle = [styles.orderDetailSummaryValue, darkMode && { color: "#eee" }];
 
   return (
-    <View
-      style={[
-        styles.orderDetailSummaryCard,
-        darkMode && styles.orderDetailSectionCardDark,
-        { marginTop: 12 },
-        highlighted && { backgroundColor: darkMode ? "#3a2a2a" : "#fff8f8" },
-      ]}
-    >
+    <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }, highlighted && { backgroundColor: darkMode ? "#3a2a2a" : "#fff8f8" }]}>
       <View style={[styles.orderDetailSummaryRow, { alignItems: "flex-start", paddingVertical: 4 }]}>
         <View style={{ flex: 1, paddingRight: 8 }}>
           <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { fontSize: 15 }]} numberOfLines={4}>
@@ -5271,9 +5205,7 @@ function OrderDetailWalletLedgerEntryCard({
             {entry.entry_type_label || entry.entry_type || "—"} · {entry.availability || "—"}
           </Text>
         </View>
-        <Text style={[...valueStyle, styles.orderDetailSummaryNet, signed < 0 && { color: "#B71C1C" }, signed > 0 && { color: "#2e7d32" }]}>
-          {formatSignedOrderMoney(signed)}
-        </Text>
+        <Text style={[...valueStyle, styles.orderDetailSummaryNet, signed < 0 && { color: "#B71C1C" }, signed > 0 && { color: "#2e7d32" }]}>{formatSignedOrderMoney(signed)}</Text>
       </View>
 
       {breakdown ? <OrderDetailWalletLedgerBreakdownTable breakdown={breakdown} darkMode={darkMode} /> : null}
@@ -5473,14 +5405,12 @@ function OrderDetailModal({
   const showFulfillmentColumns = needsShipping || saleLines.some((line) => lineRequiresShipping(line) || isLineFullyShipped(line) || getLineShippedQty(line) > 0 || !!getLineFulfillmentStatus(line));
   const useSellerProductSections = isSellerView && saleLines.length > 0;
   const pendingReturn = useSellerProductSections ? null : resolveOrderDetailPendingReturn(orderDetail, purchaseListRow, focusLedgerEntry);
-  const showPendingReturnSummary =
-    !useSellerProductSections && !!pendingReturn && String(pendingReturn.refund_status || "").toLowerCase() === "pending";
+  const showPendingReturnSummary = !useSellerProductSections && !!pendingReturn && String(pendingReturn.refund_status || "").toLowerCase() === "pending";
   const highlightPendingReturnCard =
     !useSellerProductSections &&
     isSellerView &&
     showPendingReturnSummary &&
-    ((purchaseListRow && pendingReturnAppliesToListRow(pendingReturn, purchaseListRow)) ||
-      (focusLedgerEntry && pendingReturnMatchesWalletLedgerEntry(pendingReturn, focusLedgerEntry)));
+    ((purchaseListRow && pendingReturnAppliesToListRow(pendingReturn, purchaseListRow)) || (focusLedgerEntry && pendingReturnMatchesWalletLedgerEntry(pendingReturn, focusLedgerEntry)));
   const allUnshippedSelected = unshippedItemUids.length > 0 && unshippedItemUids.every((uid) => selectedShipItemUids.includes(uid));
   const canSaveShipSelection = selectedShipItemUids.some((uid) => unshippedItemUids.includes(uid));
 
@@ -5602,9 +5532,7 @@ function OrderDetailModal({
                   {isSellerView && saleProceedsStatusNotes.length ? (
                     <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
                       <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>Order payment status</Text>
-                      <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
-                        Wallet ledger summary for this order (all products). Line counts above are per product.
-                      </Text>
+                      <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>Wallet ledger summary for this order (all products). Line counts above are per product.</Text>
                       {saleProceedsStatusNotes.map((note) => (
                         <Text key={note.entryId || note.statusNote} style={[styles.orderDetailSectionText, darkMode && { color: "#ddd" }, { marginTop: 6 }]}>
                           {note.statusNote}
@@ -5762,9 +5690,7 @@ function OrderDetailModal({
                 </>
               ) : null}
 
-              {showPendingReturnSummary ? (
-                <OrderDetailPendingReturnSummary pendingReturn={pendingReturn} darkMode={darkMode} highlighted={highlightPendingReturnCard} />
-              ) : null}
+              {showPendingReturnSummary ? <OrderDetailPendingReturnSummary pendingReturn={pendingReturn} darkMode={darkMode} highlighted={highlightPendingReturnCard} /> : null}
 
               {!useSellerProductSections && orderWalletEntries.length > 0 ? (
                 <OrderDetailWalletLedgerSummary
@@ -5789,8 +5715,7 @@ function OrderDetailModal({
                     orderReturnLogistics.refund_status === "refunded" ? styles.businessOrderDetailReturnBannerAccepted : styles.businessOrderDetailReturnBanner,
                   ]}
                 >
-                  {orderReturnLogistics.display_status ||
-                    `Delivery Status: ${orderReturnLogistics.delivered || "—"} - Received Status: ${orderReturnLogistics.received || "—"}`}
+                  {orderReturnLogistics.display_status || `Delivery Status: ${orderReturnLogistics.delivered || "—"} - Received Status: ${orderReturnLogistics.received || "—"}`}
                 </Text>
               ) : null}
             </ScrollView>
@@ -5863,8 +5788,7 @@ function ReturnDetailsModal({
     refundTotalFallback,
     isSellerView,
   });
-  const statusSource =
-    (lineScope && sourceReturnRow) || (scoped.hasScope && scoped.scopedPending) || sourceReturnRow || (scoped.hasScope && scoped.matchedReturns[0]) || sale || orderDetail || {};
+  const statusSource = (lineScope && sourceReturnRow) || (scoped.hasScope && scoped.scopedPending) || sourceReturnRow || (scoped.hasScope && scoped.matchedReturns[0]) || sale || orderDetail || {};
   const logistics = resolveReturnLogisticsLabels(statusSource, {
     returnRequested: true,
     ...(statusOverride || {}),
@@ -6985,12 +6909,7 @@ function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel = null
   if (action === "verify") return true;
   if (action === "status") return false;
 
-  const label = String(
-    receivedLabel ||
-      transaction.display?.received_label ||
-      getRowDisplayLabel(transaction, "received_label") ||
-      "",
-  ).trim();
+  const label = String(receivedLabel || transaction.display?.received_label || getRowDisplayLabel(transaction, "received_label") || "").trim();
   if (/^verify$/i.test(label)) return true;
   if (/^(yes|refunded|pending|rejected|cc issue|stripe fail|stripe_fail|—|–|-|na|n\/a)$/i.test(label)) {
     return false;
@@ -7000,20 +6919,10 @@ function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel = null
   const needsVerifyLabel = label === "No" || label === "Partial" || !!fraction;
   if (!needsVerifyLabel) return false;
 
-  const delivered = String(
-    deliveredLabel ||
-      transaction.display?.delivered_label ||
-      getRowDisplayLabel(transaction, "delivered_label") ||
-      "",
-  )
+  const delivered = String(deliveredLabel || transaction.display?.delivered_label || getRowDisplayLabel(transaction, "delivered_label") || "")
     .trim()
     .toLowerCase();
-  const deliveredIndicatesShipped =
-    delivered === "partial" ||
-    delivered === "shipped" ||
-    delivered === "delivered" ||
-    delivered === "returning" ||
-    !!parseFractionStatusLabel(delivered);
+  const deliveredIndicatesShipped = delivered === "partial" || delivered === "shipped" || delivered === "delivered" || delivered === "returning" || !!parseFractionStatusLabel(delivered);
 
   if (deliveredIndicatesShipped) return true;
   // Still in escrow with incomplete receipt — allow verify even if delivered label is sparse.
@@ -7722,17 +7631,10 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
         <Text style={[styles.productSalesDetailCell, styles.productSummaryColType, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}>
           {row.rowLabel || "Order"}
         </Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty, darkMode && { color: "#ccc" }]}>
-          {row.lineQty > 0 ? row.lineQty : "—"}
-        </Text>
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty, darkMode && { color: "#ccc" }]}>{row.lineQty > 0 ? row.lineQty : "—"}</Text>
         <Text style={[styles.productSalesDetailCell, styles.productSummaryColCancelled, darkMode && { color: "#ccc" }]}>{cancelledLabel}</Text>
         <Text
-          style={[
-            styles.productSalesDetailCell,
-            styles.productSummaryColTotal,
-            isReturnRow && { color: "#B71C1C", fontWeight: "600" },
-            darkMode && !isReturnRow && { color: "#ccc" },
-          ]}
+          style={[styles.productSalesDetailCell, styles.productSummaryColTotal, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}
           numberOfLines={1}
         >
           {formatSignedOrderMoneyOrNa(row.total, row.totalKnown !== false)}
@@ -7769,76 +7671,76 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator nestedScrollEnabled>
       <ScrollView style={{ maxHeight: maxBodyHeight, minWidth: 680 }} nestedScrollEnabled showsVerticalScrollIndicator>
-      {groups.map((group, groupIndex) => {
-        const openGroupOrder = () => {
-          const saleRow = group.rows.find((row) => !row.isReturn) || group.rows[0];
-          if (saleRow && typeof onOrderPress === "function") onOrderPress(saleRow);
-        };
-        return (
-          <View key={group.orderUid} style={[styles.productSummaryOrderGroup, groupIndex > 0 && styles.productSummaryOrderGroupSpacing, darkMode && styles.productSummaryOrderGroupDark]}>
-            <View style={styles.productSummaryOrderHeader}>
-              {onOrderPress ? (
-                <TouchableOpacity onPress={openGroupOrder} activeOpacity={0.7}>
+        {groups.map((group, groupIndex) => {
+          const openGroupOrder = () => {
+            const saleRow = group.rows.find((row) => !row.isReturn) || group.rows[0];
+            if (saleRow && typeof onOrderPress === "function") onOrderPress(saleRow);
+          };
+          return (
+            <View key={group.orderUid} style={[styles.productSummaryOrderGroup, groupIndex > 0 && styles.productSummaryOrderGroupSpacing, darkMode && styles.productSummaryOrderGroupDark]}>
+              <View style={styles.productSummaryOrderHeader}>
+                {onOrderPress ? (
+                  <TouchableOpacity onPress={openGroupOrder} activeOpacity={0.7}>
+                    <Text style={styles.productSummaryOrderHeaderLine} numberOfLines={2}>
+                      <Text style={[styles.productSummaryOrderHeaderUid, styles.productSalesDetailTxnLink]}>{group.orderUid}</Text>
+                      <Text style={[styles.productSummaryOrderHeaderMeta, { color: metaColor }]}>
+                        {"  "}
+                        {group.dateLabel || "—"} · Placed by {group.placedBy || "—"}
+                      </Text>
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
                   <Text style={styles.productSummaryOrderHeaderLine} numberOfLines={2}>
-                    <Text style={[styles.productSummaryOrderHeaderUid, styles.productSalesDetailTxnLink]}>{group.orderUid}</Text>
+                    <Text style={[styles.productSummaryOrderHeaderUid, darkMode && { color: "#eee" }]}>{group.orderUid}</Text>
                     <Text style={[styles.productSummaryOrderHeaderMeta, { color: metaColor }]}>
                       {"  "}
                       {group.dateLabel || "—"} · Placed by {group.placedBy || "—"}
                     </Text>
                   </Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={styles.productSummaryOrderHeaderLine} numberOfLines={2}>
-                  <Text style={[styles.productSummaryOrderHeaderUid, darkMode && { color: "#eee" }]}>{group.orderUid}</Text>
-                  <Text style={[styles.productSummaryOrderHeaderMeta, { color: metaColor }]}>
-                    {"  "}
-                    {group.dateLabel || "—"} · Placed by {group.placedBy || "—"}
-                  </Text>
+                )}
+              </View>
+              <View style={[styles.productSummaryLineHeaderRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailHeaderRowDark]}>
+                <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColDate, { color: headerColor }]} numberOfLines={1}>
+                  Date
                 </Text>
-              )}
+                <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColType, { color: headerColor }]} numberOfLines={1}>
+                  Type
+                </Text>
+                <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColQty, { color: headerColor }]} numberOfLines={1}>
+                  Qty
+                </Text>
+                <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColCancelled, { color: headerColor }]} numberOfLines={1}>
+                  Cancelled
+                </Text>
+                <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColTotal, { color: headerColor }]} numberOfLines={1}>
+                  Total
+                </Text>
+                <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColStatus, { color: headerColor }]} numberOfLines={1}>
+                  Shipped
+                </Text>
+                <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColStatus, { color: headerColor }]} numberOfLines={1}>
+                  Received
+                </Text>
+                <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColDaysOpen, { color: headerColor }]} numberOfLines={1}>
+                  Days open
+                </Text>
+              </View>
+              {group.rows.map(renderLineRow)}
             </View>
-            <View style={[styles.productSummaryLineHeaderRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailHeaderRowDark]}>
-              <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColDate, { color: headerColor }]} numberOfLines={1}>
-                Date
-              </Text>
-              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColType, { color: headerColor }]} numberOfLines={1}>
-                Type
-              </Text>
-              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColQty, { color: headerColor }]} numberOfLines={1}>
-                Qty
-              </Text>
-              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColCancelled, { color: headerColor }]} numberOfLines={1}>
-                Cancelled
-              </Text>
-              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColTotal, { color: headerColor }]} numberOfLines={1}>
-                Total
-              </Text>
-              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColStatus, { color: headerColor }]} numberOfLines={1}>
-                Shipped
-              </Text>
-              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColStatus, { color: headerColor }]} numberOfLines={1}>
-                Received
-              </Text>
-              <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColDaysOpen, { color: headerColor }]} numberOfLines={1}>
-                Days open
-              </Text>
-            </View>
-            {group.rows.map(renderLineRow)}
-          </View>
-        );
-      })}
-      <View style={[styles.productSummaryGrandTotalRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailTotalRowDark]}>
-        <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate]} />
-        <Text style={[styles.productSalesDetailTotalLabel, styles.productSummaryColType, darkMode && { color: "#eee" }]}>Total</Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty]} />
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColCancelled]} />
-        <Text style={[styles.productSalesDetailTotalValue, styles.productSummaryColTotal, darkMode && { color: "#eee" }]} numberOfLines={1}>
-          {formatSignedOrderMoneyOrNa(grandTotal.total, grandTotal.allKnown)}
-        </Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColStatus]} />
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColStatus]} />
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColDaysOpen]} />
-      </View>
+          );
+        })}
+        <View style={[styles.productSummaryGrandTotalRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailTotalRowDark]}>
+          <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate]} />
+          <Text style={[styles.productSalesDetailTotalLabel, styles.productSummaryColType, darkMode && { color: "#eee" }]}>Total</Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty]} />
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColCancelled]} />
+          <Text style={[styles.productSalesDetailTotalValue, styles.productSummaryColTotal, darkMode && { color: "#eee" }]} numberOfLines={1}>
+            {formatSignedOrderMoneyOrNa(grandTotal.total, grandTotal.allKnown)}
+          </Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColStatus]} />
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColStatus]} />
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColDaysOpen]} />
+        </View>
       </ScrollView>
     </ScrollView>
   );
@@ -8111,12 +8013,7 @@ function mapAccountScreenBusinessResponse(json) {
   }
 
   let sellerLines = [];
-  const sellerRaw =
-    payload.sales?.transactions ??
-    root.sales?.transactions ??
-    payload.seller_transactions ??
-    payload.transactions_seller ??
-    payload.business_seller_transactions;
+  const sellerRaw = payload.sales?.transactions ?? root.sales?.transactions ?? payload.seller_transactions ?? payload.transactions_seller ?? payload.business_seller_transactions;
   if (Array.isArray(sellerRaw)) {
     sellerLines = sellerRaw;
   } else if (sellerRaw && isApiSuccessCode(sellerRaw.code) && Array.isArray(sellerRaw.data)) {
@@ -9339,12 +9236,7 @@ export default function AccountScreen({ navigation, route }) {
       // to the buyer's useable balance by the backend confirm/ledger path.
       if (paymentIntent && stripeRefund > 0 && buyerUid) {
         const stripeTaxFromApi = parseOrderMoneyField(pendingEstimated?.stripe_tax ?? pendingEstimated?.taxes_stripe);
-        const stripeTaxShare =
-          stripeTaxFromApi != null
-            ? Math.abs(stripeTaxFromApi)
-            : refundAmount > 0 && stripeRefund > 0 && stripeRefund >= refundAmount - 0.01
-              ? refundTax
-              : 0;
+        const stripeTaxShare = stripeTaxFromApi != null ? Math.abs(stripeTaxFromApi) : refundAmount > 0 && stripeRefund > 0 && stripeRefund >= refundAmount - 0.01 ? refundTax : 0;
         stripeRefundResult = await createStripeRefund({
           customerUid: buyerUid,
           businessCode,
@@ -9362,11 +9254,7 @@ export default function AccountScreen({ navigation, route }) {
           },
         });
         if (!stripeRefundResult.ok) {
-          Alert.alert(
-            "Refund failed",
-            stripeRefundResult.message ||
-              "Could not refund the buyer's card. The return was not confirmed and inventory was not restocked.",
-          );
+          Alert.alert("Refund failed", stripeRefundResult.message || "Could not refund the buyer's card. The return was not confirmed and inventory was not restocked.");
           setReturnDetailModal((prev) => ({ ...prev, visible: true }));
           return;
         }
@@ -9532,6 +9420,10 @@ export default function AccountScreen({ navigation, route }) {
 
     const needsFetch = force || sessionChanged || accountScreenPersonalDirtyRef.current || !accountScreenPersonalLoadedRef.current;
     if (!needsFetch) {
+      return Array.isArray(sellerTxDataRef.current) ? sellerTxDataRef.current : [];
+    }
+    // Account focus / mutations should not hit personal while a business profile is selected.
+    if (selectedAccountRef.current && selectedAccountRef.current !== "personal") {
       return Array.isArray(sellerTxDataRef.current) ? sellerTxDataRef.current : [];
     }
     if (refreshPersonalInFlightRef.current) {
@@ -10170,18 +10062,14 @@ export default function AccountScreen({ navigation, route }) {
         let orderDetail = await fetchOrderDetailApi(orderUid, ctx);
         orderDetail = mergeOrderDetailWithListSaleRow(orderDetail, listSaleRow);
         const saleLines = Array.isArray(orderDetail?.sale?.lines) ? orderDetail.sale.lines : [];
-        const purchaseListRowResolved =
-          purchaseListRowInitial ||
-          (ledgerEntry && isSellerView ? resolvePurchaseListRowFromWalletLedgerEntry(ledgerEntry, saleLines, orderUid) : null);
+        const purchaseListRowResolved = purchaseListRowInitial || (ledgerEntry && isSellerView ? resolvePurchaseListRowFromWalletLedgerEntry(ledgerEntry, saleLines, orderUid) : null);
         const focusTiUid = resolveOrderDetailFocusTiUid({
           purchaseListRow: purchaseListRowResolved,
           focusLedgerEntry: ledgerEntry,
           saleLines,
           orderDetail,
         });
-        const purchaseListRowFinal =
-          (focusTiUid && saleLines.find((line) => String(line.ti_uid || line.transaction_item_uid || "").trim() === focusTiUid)) ||
-          purchaseListRowResolved;
+        const purchaseListRowFinal = (focusTiUid && saleLines.find((line) => String(line.ti_uid || line.transaction_item_uid || "").trim() === focusTiUid)) || purchaseListRowResolved;
         const txnUid = String(orderDetail?.sale?.transaction_uid || "").trim();
         const bountyRowsForOrder = resolveOrderDetailBountyRows(isSellerView, selectedAccount, bountyData, businessBountyData, sellerTxData, businessSellerTransactionList, txnUid);
         const bountyPaidFallback =
@@ -10191,9 +10079,7 @@ export default function AccountScreen({ navigation, route }) {
             sellerTransactionRows: sellerTxData,
           });
         const resolvedLedgerEntries = patchWalletLedgerEntriesPendingShipment(
-          ledgerEntries.length
-            ? ledgerEntries
-            : filterWalletLedgerEntriesForOrder(selectedAccount !== "personal" ? businessWalletLedgerRows : walletLedgerRows, orderUid),
+          ledgerEntries.length ? ledgerEntries : filterWalletLedgerEntriesForOrder(selectedAccount !== "personal" ? businessWalletLedgerRows : walletLedgerRows, orderUid),
           orderDetail?.sale,
         );
         setOrderDetailModal((prev) => ({
@@ -10383,63 +10269,13 @@ export default function AccountScreen({ navigation, route }) {
     }
 
     const task = (async () => {
-    const fetchGen = businessFetchGenRef.current;
-    const targetBusinessUID = selectedAccountRef.current !== "personal" ? selectedAccountRef.current : (primaryBusinessUidOverride ?? businessUIDRef.current);
+      const fetchGen = businessFetchGenRef.current;
+      const targetBusinessUID = selectedAccountRef.current !== "personal" ? selectedAccountRef.current : (primaryBusinessUidOverride ?? businessUIDRef.current);
 
-    const shouldApplyBusinessResponse = () =>
-      fetchGen === businessFetchGenRef.current && selectedAccountRef.current !== "personal" && targetBusinessUID != null && String(selectedAccountRef.current) === String(targetBusinessUID);
+      const shouldApplyBusinessResponse = () =>
+        fetchGen === businessFetchGenRef.current && selectedAccountRef.current !== "personal" && targetBusinessUID != null && String(selectedAccountRef.current) === String(targetBusinessUID);
 
-    try {
-      setBusinessTransactionData([]);
-      setBusinessBountyData(null);
-      setBusinessSalesProducts([]);
-      setBusinessWallet(null);
-      setBusinessWalletLedgerRows([]);
-      setBusinessWalletLedgerTotalEntries(0);
-      setBusinessWalletLedgerError(null);
-      setBusinessSellerTransactionList([]);
-      setBusinessServices([]);
-      setBusinessTransactionLoading(true);
-      setBusinessBountyLoading(true);
-      setBusinessWalletLedgerLoading(true);
-
-      if (!targetBusinessUID) {
-        console.log("No business UID available");
-        if (!shouldApplyBusinessResponse()) return;
-        setBusinessReceiptCache({});
-        businessReceiptFetchedRef.current = new Set();
-        setSelectedBusinessFullData(null);
-        setBusinessServices([]);
-        return;
-      }
-
-      businessReceiptFetchedRef.current = new Set();
-      setBusinessReceiptCache({});
-
-      const response = await fetch(withTimeZoneQuery(`${ACCOUNT_SCREEN_BUSINESS_ENDPOINT}/${targetBusinessUID}`), {
-        method: "GET",
-      });
-
-      if (!shouldApplyBusinessResponse()) return;
-
-      if (response.status === 400) {
-        setBusinessBountyData({ data: [] });
-        setBusinessTransactionData([]);
-        setBusinessWallet(null);
-        setBusinessWalletLedgerRows([]);
-        setBusinessWalletLedgerTotalEntries(0);
-        setBusinessWalletLedgerError(null);
-        setBusinessWalletLedgerLoading(false);
-        setBusinessServices([]);
-        setBusinessReceiptCache({});
-        businessReceiptFetchedRef.current = new Set();
-        const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
-        setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
-        return;
-      }
-
-      if (!response.ok) {
-        console.error(`account-screen business HTTP ${response.status}`);
+      try {
         setBusinessTransactionData([]);
         setBusinessBountyData(null);
         setBusinessSalesProducts([]);
@@ -10447,157 +10283,207 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessWalletLedgerRows([]);
         setBusinessWalletLedgerTotalEntries(0);
         setBusinessWalletLedgerError(null);
-        setBusinessWalletLedgerLoading(false);
+        setBusinessSellerTransactionList([]);
         setBusinessServices([]);
+        setBusinessTransactionLoading(true);
+        setBusinessBountyLoading(true);
+        setBusinessWalletLedgerLoading(true);
+
+        if (!targetBusinessUID) {
+          console.log("No business UID available");
+          if (!shouldApplyBusinessResponse()) return;
+          setBusinessReceiptCache({});
+          businessReceiptFetchedRef.current = new Set();
+          setSelectedBusinessFullData(null);
+          setBusinessServices([]);
+          return;
+        }
+
         businessReceiptFetchedRef.current = new Set();
-        const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
-        setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
-        return;
-      }
+        setBusinessReceiptCache({});
 
-      const json = await response.json();
-      if (!shouldApplyBusinessResponse()) return;
-      if (!accountScreenResponseMatches(json, "business", targetBusinessUID)) return;
-
-      const {
-        bountyResult,
-        sellerLines,
-        businessForMiniCardRaw,
-        businessServices: servicesFromPayload,
-        offerings: offeringsFromPayload,
-        salesProducts,
-        wallet: walletFromPayload,
-        walletLedger,
-      } = mapAccountScreenBusinessResponse(json);
-      setBusinessServices(Array.isArray(servicesFromPayload) ? servicesFromPayload : []);
-      setBusinessSalesProducts(Array.isArray(salesProducts) ? salesProducts : []);
-      setBusinessWallet(walletFromPayload ?? null);
-      if (walletLedger) {
-        const ledgerEntries = Array.isArray(walletLedger.entries) ? walletLedger.entries : [];
-        setBusinessWalletLedgerRows(ledgerEntries);
-        setBusinessWalletLedgerTotalEntries(Number(walletLedger.total_entries) || ledgerEntries.length);
-        setBusinessWalletLedgerError(null);
-      } else {
-        setBusinessWalletLedgerRows([]);
-        setBusinessWalletLedgerTotalEntries(0);
-      }
-      setBusinessWalletLedgerLoading(false);
-      if (Array.isArray(offeringsFromPayload) && offeringsFromPayload.length) {
-        setExpertiseCatalog(offeringsFromPayload);
-      }
-
-      const selectedBusiness = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
-
-      let miniForCard = businessForMiniCardRaw ? mapRawBusinessToSelectedBusinessFullData(businessForMiniCardRaw) : null;
-      if (!miniForCard) miniForCard = mapSessionBusinessRowToMiniCard(selectedBusiness);
-      setSelectedBusinessFullData(miniForCard);
-
-      const bountyRows = bountyResult?.data && Array.isArray(bountyResult.data) ? bountyResult.data : [];
-      if (bountyRows.length) {
-        const normalizedBountyResult = { ...bountyResult, data: bountyRows };
-        normalizedBountyResult.data.forEach((bounty) => {
-          bounty.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || bounty.business_name || "Unknown Business";
+        const response = await fetch(withTimeZoneQuery(`${ACCOUNT_SCREEN_BUSINESS_ENDPOINT}/${targetBusinessUID}`), {
+          method: "GET",
         });
-        normalizedBountyResult.data.sort((a, b) => {
+
+        if (!shouldApplyBusinessResponse()) return;
+
+        if (response.status === 400) {
+          setBusinessBountyData({ data: [] });
+          setBusinessTransactionData([]);
+          setBusinessWallet(null);
+          setBusinessWalletLedgerRows([]);
+          setBusinessWalletLedgerTotalEntries(0);
+          setBusinessWalletLedgerError(null);
+          setBusinessWalletLedgerLoading(false);
+          setBusinessServices([]);
+          setBusinessReceiptCache({});
+          businessReceiptFetchedRef.current = new Set();
+          const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
+          setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
+          return;
+        }
+
+        if (!response.ok) {
+          console.error(`account-screen business HTTP ${response.status}`);
+          setBusinessTransactionData([]);
+          setBusinessBountyData(null);
+          setBusinessSalesProducts([]);
+          setBusinessWallet(null);
+          setBusinessWalletLedgerRows([]);
+          setBusinessWalletLedgerTotalEntries(0);
+          setBusinessWalletLedgerError(null);
+          setBusinessWalletLedgerLoading(false);
+          setBusinessServices([]);
+          businessReceiptFetchedRef.current = new Set();
+          const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
+          setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
+          return;
+        }
+
+        const json = await response.json();
+        if (!shouldApplyBusinessResponse()) return;
+        if (!accountScreenResponseMatches(json, "business", targetBusinessUID)) return;
+
+        const {
+          bountyResult,
+          sellerLines,
+          businessForMiniCardRaw,
+          businessServices: servicesFromPayload,
+          offerings: offeringsFromPayload,
+          salesProducts,
+          wallet: walletFromPayload,
+          walletLedger,
+        } = mapAccountScreenBusinessResponse(json);
+        setBusinessServices(Array.isArray(servicesFromPayload) ? servicesFromPayload : []);
+        setBusinessSalesProducts(Array.isArray(salesProducts) ? salesProducts : []);
+        setBusinessWallet(walletFromPayload ?? null);
+        if (walletLedger) {
+          const ledgerEntries = Array.isArray(walletLedger.entries) ? walletLedger.entries : [];
+          setBusinessWalletLedgerRows(ledgerEntries);
+          setBusinessWalletLedgerTotalEntries(Number(walletLedger.total_entries) || ledgerEntries.length);
+          setBusinessWalletLedgerError(null);
+        } else {
+          setBusinessWalletLedgerRows([]);
+          setBusinessWalletLedgerTotalEntries(0);
+        }
+        setBusinessWalletLedgerLoading(false);
+        if (Array.isArray(offeringsFromPayload) && offeringsFromPayload.length) {
+          setExpertiseCatalog(offeringsFromPayload);
+        }
+
+        const selectedBusiness = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
+
+        let miniForCard = businessForMiniCardRaw ? mapRawBusinessToSelectedBusinessFullData(businessForMiniCardRaw) : null;
+        if (!miniForCard) miniForCard = mapSessionBusinessRowToMiniCard(selectedBusiness);
+        setSelectedBusinessFullData(miniForCard);
+
+        const bountyRows = bountyResult?.data && Array.isArray(bountyResult.data) ? bountyResult.data : [];
+        if (bountyRows.length) {
+          const normalizedBountyResult = { ...bountyResult, data: bountyRows };
+          normalizedBountyResult.data.forEach((bounty) => {
+            bounty.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || bounty.business_name || "Unknown Business";
+          });
+          normalizedBountyResult.data.sort((a, b) => {
+            const dateA = parseTransactionDateTime(a);
+            const dateB = parseTransactionDateTime(b);
+            return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
+          });
+          setBusinessBountyData(normalizedBountyResult);
+        } else {
+          setBusinessBountyData(null);
+        }
+
+        const bountyDataByTransaction = {};
+        if (bountyRows.length) {
+          bountyRows.forEach((item) => {
+            const txnId = item.transaction_uid;
+            if (!bountyDataByTransaction[txnId]) {
+              bountyDataByTransaction[txnId] = { total_bounty: 0, items: [] };
+            }
+            const bountyPaid = parseFloat(item.bounty_paid) || 0;
+            bountyDataByTransaction[txnId].total_bounty += bountyPaid;
+            bountyDataByTransaction[txnId].items.push(item);
+          });
+        }
+
+        if (!sellerLines.length) {
+          setBusinessSellerTransactionList([]);
+          setBusinessTransactionData([]);
+          setBusinessReceiptCache({});
+          businessReceiptFetchedRef.current = new Set();
+          if (!shouldApplyBusinessResponse()) return;
+          setBusinessTransactionLoading(false);
+          setBusinessBountyLoading(false);
+          return;
+        }
+
+        const normalizedSellerLines = sellerLines;
+        setBusinessSellerTransactionList(normalizedSellerLines);
+
+        const businessTransactions = sellerLines.filter(isBusinessProductSellerLine).filter((row) => !isReturnListRow(row));
+        businessTransactions.forEach((txn) => {
+          txn.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
+        });
+
+        const transactionMap = {};
+        businessTransactions.forEach((item) => {
+          const txnId = item.transaction_uid;
+          if (!transactionMap[txnId]) {
+            const total = parseFloat(item.transaction_total || 0);
+            const taxes = parseFloat(item.transaction_taxes || 0);
+            const bounty = bountyDataByTransaction[txnId]?.total_bounty || 0;
+            const proceedsStatus = item.proceeds_status || null;
+            const netEarning = proceedsStatus === "useable" ? total - bounty - taxes : item.net_earning != null ? parseFloat(item.net_earning) : 0;
+            transactionMap[txnId] = {
+              transaction_uid: item.transaction_uid,
+              transaction_datetime: item.transaction_datetime,
+              transaction_profile_id: item.transaction_profile_id,
+              transaction_business_id: item.transaction_business_id,
+              transaction_total: total,
+              transaction_taxes: taxes,
+              bounty_paid: bounty,
+              net_earning: netEarning,
+              proceeds_status: proceedsStatus,
+              business_name: item.business_name,
+              transaction_return_requested: item.transaction_return_requested || 0,
+              transaction_return_note: item.transaction_return_note || "",
+              transaction_return_status: item.return_status || item.transaction_return_status || "",
+              transaction_refund_status: item.refund_status || item.transaction_refund_status || "",
+              return_status: item.return_status || item.transaction_return_status || "",
+              refund_status: item.refund_status || item.transaction_refund_status || "",
+              display_status: item.display_status || "",
+            };
+          }
+        });
+
+        const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
           const dateA = parseTransactionDateTime(a);
           const dateB = parseTransactionDateTime(b);
           return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
         });
-        setBusinessBountyData(normalizedBountyResult);
-      } else {
-        setBusinessBountyData(null);
-      }
 
-      const bountyDataByTransaction = {};
-      if (bountyRows.length) {
-        bountyRows.forEach((item) => {
-          const txnId = item.transaction_uid;
-          if (!bountyDataByTransaction[txnId]) {
-            bountyDataByTransaction[txnId] = { total_bounty: 0, items: [] };
-          }
-          const bountyPaid = parseFloat(item.bounty_paid) || 0;
-          bountyDataByTransaction[txnId].total_bounty += bountyPaid;
-          bountyDataByTransaction[txnId].items.push(item);
-        });
-      }
-
-      if (!sellerLines.length) {
-        setBusinessSellerTransactionList([]);
+        if (!shouldApplyBusinessResponse()) return;
+        setBusinessTransactionData(filteredTransactions);
+      } catch (error) {
+        if (!shouldApplyBusinessResponse()) return;
+        console.error("Error loading account-screen business:", error);
         setBusinessTransactionData([]);
+        setBusinessBountyData({ error: error.message });
+        setBusinessWallet(null);
+        setBusinessWalletLedgerRows([]);
+        setBusinessWalletLedgerTotalEntries(0);
+        setBusinessWalletLedgerError(error?.message || "Unable to load wallet ledger.");
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
+        const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
+        setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
+      } finally {
         if (!shouldApplyBusinessResponse()) return;
         setBusinessTransactionLoading(false);
         setBusinessBountyLoading(false);
-        return;
+        setBusinessWalletLedgerLoading(false);
       }
-
-      const normalizedSellerLines = sellerLines;
-      setBusinessSellerTransactionList(normalizedSellerLines);
-
-      const businessTransactions = sellerLines.filter(isBusinessProductSellerLine).filter((row) => !isReturnListRow(row));
-      businessTransactions.forEach((txn) => {
-        txn.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
-      });
-
-      const transactionMap = {};
-      businessTransactions.forEach((item) => {
-        const txnId = item.transaction_uid;
-        if (!transactionMap[txnId]) {
-          const total = parseFloat(item.transaction_total || 0);
-          const taxes = parseFloat(item.transaction_taxes || 0);
-          const bounty = bountyDataByTransaction[txnId]?.total_bounty || 0;
-          const proceedsStatus = item.proceeds_status || null;
-          const netEarning = proceedsStatus === "useable" ? total - bounty - taxes : item.net_earning != null ? parseFloat(item.net_earning) : 0;
-          transactionMap[txnId] = {
-            transaction_uid: item.transaction_uid,
-            transaction_datetime: item.transaction_datetime,
-            transaction_profile_id: item.transaction_profile_id,
-            transaction_business_id: item.transaction_business_id,
-            transaction_total: total,
-            transaction_taxes: taxes,
-            bounty_paid: bounty,
-            net_earning: netEarning,
-            proceeds_status: proceedsStatus,
-            business_name: item.business_name,
-            transaction_return_requested: item.transaction_return_requested || 0,
-            transaction_return_note: item.transaction_return_note || "",
-            transaction_return_status: item.return_status || item.transaction_return_status || "",
-            transaction_refund_status: item.refund_status || item.transaction_refund_status || "",
-            return_status: item.return_status || item.transaction_return_status || "",
-            refund_status: item.refund_status || item.transaction_refund_status || "",
-            display_status: item.display_status || "",
-          };
-        }
-      });
-
-      const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
-        const dateA = parseTransactionDateTime(a);
-        const dateB = parseTransactionDateTime(b);
-        return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
-      });
-
-      if (!shouldApplyBusinessResponse()) return;
-      setBusinessTransactionData(filteredTransactions);
-    } catch (error) {
-      if (!shouldApplyBusinessResponse()) return;
-      console.error("Error loading account-screen business:", error);
-      setBusinessTransactionData([]);
-      setBusinessBountyData({ error: error.message });
-      setBusinessWallet(null);
-      setBusinessWalletLedgerRows([]);
-      setBusinessWalletLedgerTotalEntries(0);
-      setBusinessWalletLedgerError(error?.message || "Unable to load wallet ledger.");
-      setBusinessReceiptCache({});
-      businessReceiptFetchedRef.current = new Set();
-      const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
-      setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
-    } finally {
-      if (!shouldApplyBusinessResponse()) return;
-      setBusinessTransactionLoading(false);
-      setBusinessBountyLoading(false);
-      setBusinessWalletLedgerLoading(false);
-    }
     })();
 
     refreshBusinessInFlightRef.current = task;
@@ -10611,19 +10497,20 @@ export default function AccountScreen({ navigation, route }) {
 
   const reloadAccountScreen = useCallback(() => {
     checkAuth();
-    void refreshAccountScreenPersonal({ force: true });
 
-    const loadBusinessData = async () => {
+    const loadAccountData = async () => {
       await refreshFromSession({ forceRefresh: true });
-      // Session cache fills the dropdown; skip account-screen/business until a business profile is selected (or tab refocus while on business).
-      if (selectedAccountRef.current !== "personal") {
+      // Only refresh the active profile. Personal was previously force-fetched on every
+      // Account focus even while viewing a business, which doubled network traffic.
+      if (selectedAccountRef.current && selectedAccountRef.current !== "personal") {
         await refreshAccountScreenBusiness();
       } else {
         setBusinessTransactionLoading(false);
         setBusinessBountyLoading(false);
+        void refreshAccountScreenPersonal({ force: true });
       }
     };
-    loadBusinessData();
+    loadAccountData();
 
     (async () => {
       try {
@@ -11437,9 +11324,7 @@ export default function AccountScreen({ navigation, route }) {
                         const sellerId = resolvePurchaseSellerId(transaction);
                         const rowDisplay = transaction.display && typeof transaction.display === "object" ? transaction.display : null;
                         const v3Money = resolveAccountScreenRowMoney(transaction);
-                        const displayAmount =
-                          rowDisplay?.amount_label ||
-                          (v3Money.totalKnown ? formatSignedOrderMoney(v3Money.total) : ACCOUNT_SCREEN_DISPLAY_NA);
+                        const displayAmount = rowDisplay?.amount_label || (v3Money.totalKnown ? formatSignedOrderMoney(v3Money.total) : ACCOUNT_SCREEN_DISPLAY_NA);
                         const rowIdentity = resolveTrrUid(transaction) || transaction.transaction_uid || transaction.ti_uid || "purchase";
                         const rowKey = `${rowIdentity}-${isReturnRow ? "return" : "sale"}-${i}`;
                         const openPurchaseRowDetail = () => {
@@ -11466,11 +11351,7 @@ export default function AccountScreen({ navigation, route }) {
                                 <Text style={[styles.transactionId, orderUid !== "—" && styles.receiptLink]}>{isSyntheticReturn ? orderUid : transaction.transaction_uid || "N/A"}</Text>
                               </TouchableOpacity>
                             ) : null}
-                            {showPurchasesTypeColumn ? (
-                              <Text style={styles.transactionPurchaseType}>
-                                {resolveAccountScreenDisplayField(transaction, "type_label")}
-                              </Text>
-                            ) : null}
+                            {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{resolveAccountScreenDisplayField(transaction, "type_label")}</Text> : null}
                             <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
                               <TouchableOpacity onPress={() => navigateToPurchaseSeller(navigation, transaction)} activeOpacity={0.7} disabled={!sellerId}>
                                 <Text style={[styles.transactionBusiness, sellerId ? styles.receiptLink : null]} numberOfLines={4}>
@@ -11495,11 +11376,7 @@ export default function AccountScreen({ navigation, route }) {
                                 )}
                               </View>
                             ) : null}
-                            {!compactTx && (
-                              <Text style={[styles.transactionQty, isReturnRow && { color: "#B71C1C" }]}>
-                                {resolveAccountScreenDisplayField(transaction, "qty_label")}
-                              </Text>
-                            )}
+                            {!compactTx && <Text style={[styles.transactionQty, isReturnRow && { color: "#B71C1C" }]}>{resolveAccountScreenDisplayField(transaction, "qty_label")}</Text>}
                             {(() => {
                               const deliveredLabel = resolveAccountScreenDisplayField(transaction, "delivered_label");
                               const receivedLabel = resolveAccountScreenDisplayField(transaction, "received_label");
@@ -11550,9 +11427,7 @@ export default function AccountScreen({ navigation, route }) {
                               );
                             })()}
                             <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7} disabled={orderUid === "—"}>
-                              <Text style={[styles.transactionAmount, isReturnRow && { color: "#B71C1C" }, orderUid !== "—" && styles.receiptLink]}>
-                                {displayAmount}
-                              </Text>
+                              <Text style={[styles.transactionAmount, isReturnRow && { color: "#B71C1C" }, orderUid !== "—" && styles.receiptLink]}>{displayAmount}</Text>
                             </TouchableOpacity>
                           </View>
                         );
@@ -11586,9 +11461,7 @@ export default function AccountScreen({ navigation, route }) {
                       <View style={styles.balanceContainer}>
                         <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>
-                          {personalEarnings?.bounty_total_earned != null
-                            ? `$${Number(personalEarnings.bounty_total_earned).toFixed(2)}`
-                            : ACCOUNT_SCREEN_DISPLAY_NA}
+                          {personalEarnings?.bounty_total_earned != null ? `$${Number(personalEarnings.bounty_total_earned).toFixed(2)}` : ACCOUNT_SCREEN_DISPLAY_NA}
                         </Text>
                       </View>
                       <View style={styles.walletBalanceRow}>
@@ -11703,9 +11576,7 @@ export default function AccountScreen({ navigation, route }) {
                           const statusLabel = itemDisplay?.status_label || (proceedsStatus ? bountyProceedsStatusLabel(proceedsStatus) : ACCOUNT_SCREEN_DISPLAY_NA);
                           const bountyDisplay = resolveBountyResultsRowDisplay(item);
                           const totalLabel =
-                            bountyDisplay?.lineBounty != null && bountyDisplay.lineBounty > 0
-                              ? `$${bountyDisplay.lineBounty.toFixed(2)}`
-                              : itemDisplay?.pool_label || ACCOUNT_SCREEN_DISPLAY_NA;
+                            bountyDisplay?.lineBounty != null && bountyDisplay.lineBounty > 0 ? `$${bountyDisplay.lineBounty.toFixed(2)}` : itemDisplay?.pool_label || ACCOUNT_SCREEN_DISPLAY_NA;
                           const percentLabel = itemDisplay?.percent_label || formatBountySharePercentLabel(bountyDisplay?.percentage) || ACCOUNT_SCREEN_DISPLAY_NA;
                           const earnedAmount = itemDisplay?.earned_label || ACCOUNT_SCREEN_DISPLAY_NA;
                           return (
@@ -11802,12 +11673,8 @@ export default function AccountScreen({ navigation, route }) {
                               <Text style={[styles.transactionPurchasedItem, { flex: 1.2 }, ledgerOrderUid && styles.receiptLink]} numberOfLines={3}>
                                 {entry.description || entry.counterparty_name || "—"}
                               </Text>
-                              <Text style={[styles.transactionAmount, { flex: 0.75 }, pendingColor ? { color: pendingColor } : null]}>
-                                {pendingLabel}
-                              </Text>
-                              <Text style={[styles.transactionAmount, { flex: 0.75 }, useableColor ? { color: useableColor } : null]}>
-                                {useableLabel}
-                              </Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.75 }, pendingColor ? { color: pendingColor } : null]}>{pendingLabel}</Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.75 }, useableColor ? { color: useableColor } : null]}>{useableLabel}</Text>
                               <Text style={[styles.transactionAmount, { flex: 0.85 }]}>{formatWalletUsd(entry.balance_after)}</Text>
                               <Text style={[styles.transactionAmount, { flex: 0.95 }]}>{formatWalletUsd(entry.useable_balance_after)}</Text>
                             </LedgerRowWrapper>
@@ -11855,16 +11722,18 @@ export default function AccountScreen({ navigation, route }) {
                         const bountyCell = formatProductSalesCell(product.bountyPaid, product.bountyPaidKnown, { money: true });
                         const naStyle = { color: ACCOUNT_SCREEN_MISSING_MONEY_COLOR };
                         return (
-                        <TouchableOpacity key={product.productUid} style={styles.productSalesTableRow} onPress={() => openProductSalesModal(product)} activeOpacity={0.7}>
-                          <Text style={[styles.productSalesCell, styles.productSalesCellProduct, styles.productSalesCellLink, nameCell.missing && naStyle]} numberOfLines={2}>
-                            {nameCell.text}
-                          </Text>
-                          <Text style={[styles.productSalesCell, uidCell.missing && naStyle]}>{uidCell.text}</Text>
-                          <Text style={[styles.productSalesCell, soldCell.missing && naStyle]}>{soldCell.text}</Text>
-                          <Text style={[styles.productSalesCell, availCell.missing && naStyle, !availCell.missing && product.unitsAvailable === "0" && { color: "#c00", fontWeight: "600" }]}>{availCell.text}</Text>
-                          <Text style={[styles.productSalesCell, revenueCell.missing && naStyle]}>{revenueCell.text}</Text>
-                          <Text style={[styles.productSalesCell, bountyCell.missing && naStyle]}>{bountyCell.text}</Text>
-                        </TouchableOpacity>
+                          <TouchableOpacity key={product.productUid} style={styles.productSalesTableRow} onPress={() => openProductSalesModal(product)} activeOpacity={0.7}>
+                            <Text style={[styles.productSalesCell, styles.productSalesCellProduct, styles.productSalesCellLink, nameCell.missing && naStyle]} numberOfLines={2}>
+                              {nameCell.text}
+                            </Text>
+                            <Text style={[styles.productSalesCell, uidCell.missing && naStyle]}>{uidCell.text}</Text>
+                            <Text style={[styles.productSalesCell, soldCell.missing && naStyle]}>{soldCell.text}</Text>
+                            <Text style={[styles.productSalesCell, availCell.missing && naStyle, !availCell.missing && product.unitsAvailable === "0" && { color: "#c00", fontWeight: "600" }]}>
+                              {availCell.text}
+                            </Text>
+                            <Text style={[styles.productSalesCell, revenueCell.missing && naStyle]}>{revenueCell.text}</Text>
+                            <Text style={[styles.productSalesCell, bountyCell.missing && naStyle]}>{bountyCell.text}</Text>
+                          </TouchableOpacity>
                         );
                       })}
                     </View>
@@ -11899,9 +11768,7 @@ export default function AccountScreen({ navigation, route }) {
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
                           <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
-                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>
-                            Sale proceeds not yet released — pending shipment, buyer verification, or return window
-                          </Text>
+                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Sale proceeds not yet released — pending shipment, buyer verification, or return window</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{formatWalletUsd(businessWallet.wallet_pending)}</Text>
                       </View>
@@ -11985,12 +11852,8 @@ export default function AccountScreen({ navigation, route }) {
                               <Text style={[styles.transactionPurchasedItem, { flex: 1.2 }, ledgerOrderUid && styles.receiptLink]} numberOfLines={3}>
                                 {entry.description || entry.counterparty_name || entry.purchaser_name || "—"}
                               </Text>
-                              <Text style={[styles.transactionAmount, { flex: 0.75 }, pendingColor ? { color: pendingColor } : null]}>
-                                {pendingLabel}
-                              </Text>
-                              <Text style={[styles.transactionAmount, { flex: 0.75 }, useableColor ? { color: useableColor } : null]}>
-                                {useableLabel}
-                              </Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.75 }, pendingColor ? { color: pendingColor } : null]}>{pendingLabel}</Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.75 }, useableColor ? { color: useableColor } : null]}>{useableLabel}</Text>
                               <Text style={[styles.transactionAmount, { flex: 0.85 }]}>{formatWalletUsd(entry.balance_after)}</Text>
                               <Text style={[styles.transactionAmount, { flex: 0.95 }]}>{formatWalletUsd(entry.useable_balance_after)}</Text>
                             </LedgerRowWrapper>
@@ -12505,15 +12368,11 @@ export default function AccountScreen({ navigation, route }) {
                     const simplePickerMax = caps.allUnshipped ? caps.maxCancelUnshippedQty : caps.maxReturnShippedQty;
                     // Show qty stepper whenever more than one unit can be chosen in this mode
                     // (or remaining > 1 on multi-qty lines so users can dial the count down).
-                    const needsSimpleQtyPicker =
-                      isSelected && !caps.hasMixedFulfillment && caps.purchasedQty > 1 && caps.remainingQty > 1 && simplePickerMax >= 1;
+                    const needsSimpleQtyPicker = isSelected && !caps.hasMixedFulfillment && caps.purchasedQty > 1 && caps.remainingQty > 1 && simplePickerMax >= 1;
                     const fulfillmentSubtitle = !alreadyReturned && !returnIneligible ? buildReturnModalFulfillmentSubtitle(row, caps) : null;
                     const actionableLeft = Math.max(0, caps.remainingQty);
                     const unverifiedShipped = Math.max(0, (caps.shippedOnLine || 0) - (caps.verifiedQty != null ? caps.verifiedQty : 0));
-                    const showVerifyReceivedCta =
-                      !alreadyReturned &&
-                      !returnIneligible &&
-                      (caps.needsVerificationBeforeReturn || unverifiedShipped > 0);
+                    const showVerifyReceivedCta = !alreadyReturned && !returnIneligible && (caps.needsVerificationBeforeReturn || unverifiedShipped > 0);
 
                     return (
                       <View
