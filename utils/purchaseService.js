@@ -2,18 +2,18 @@ import { axiosMiddleware as axios } from "./httpMiddleware";
 import { BUSINESS_SERVICE_PURCHASE_ENDPOINT, BUSINESS_SERVICE_RESTOCK_ENDPOINT, PROFILE_EXPERTISE_RESTOCK_ENDPOINT } from "../apiConfig";
 
 /**
- * Decrement stock for a service after a confirmed purchase.
- * Called after Stripe payment succeeds — never blocks the success flow.
- *
- * @param {string} bs_uid      - Service UID
- * @param {number} quantity    - Units purchased (default 1)
- * @returns {{ success: boolean, remaining: number|null, outOfStock: boolean }}
+ * @deprecated Inventory is decremented in POST /api/v1/transactions. Do not call after checkout.
+ * Legacy fallback only — pass transaction_uid for idempotent replay.
  */
-export const recordServicePurchase = async (bs_uid, quantity = 1) => {
+export const recordServicePurchase = async (bs_uid, quantity = 1, transaction_uid = null) => {
   try {
+    const body = { bs_uid, quantity };
+    const txnUid = transaction_uid != null ? String(transaction_uid).trim() : "";
+    if (txnUid) body.transaction_uid = txnUid;
+
     const res = await axios.post(
       BUSINESS_SERVICE_PURCHASE_ENDPOINT,
-      { bs_uid, quantity },
+      body,
       { headers: { "Content-Type": "application/json" } }
     );
 
@@ -77,13 +77,38 @@ export const recordServiceRestock = async (bs_uid, quantity = 1, ctx = {}) => {
   }
 };
 
+/** Sum quantities when hybrid return/cancel splits map to the same product uid. */
+export function consolidateRestockItemsByProduct(items) {
+  const byKey = new Map();
+  for (const item of items || []) {
+    if (!item || typeof item !== "object") continue;
+    const profileExpertiseUid = String(item.profile_expertise_uid || "").trim();
+    const bsUid = String(item.bs_uid || "").trim();
+    const key = profileExpertiseUid ? `offering:${profileExpertiseUid}` : bsUid ? `business:${bsUid}` : "";
+    if (!key) continue;
+    const quantity = Math.max(0, parseInt(item.quantity, 10) || 0);
+    if (quantity <= 0) continue;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.quantity += quantity;
+    } else {
+      byKey.set(key, {
+        ...(profileExpertiseUid ? { profile_expertise_uid: profileExpertiseUid } : { bs_uid: bsUid }),
+        quantity,
+        ...(item.kind ? { kind: item.kind } : {}),
+      });
+    }
+  }
+  return [...byKey.values()];
+}
+
 /**
  * Restock multiple products after a return/cancel confirm.
  * @param {Array<{ bs_uid: string, quantity: number }>} items
  * @param {{ sellerId?: string, trrUid?: string, orderUid?: string }} [ctx]
  */
 export const restockReturnedItems = async (items, ctx = {}) => {
-  const payload = (items || []).filter((item) => item && String(item.bs_uid || "").trim() && (parseInt(item.quantity, 10) || 0) > 0);
+  const payload = consolidateRestockItemsByProduct(items).filter((item) => item.bs_uid && (parseInt(item.quantity, 10) || 0) > 0);
   if (!payload.length) return { ok: true, results: [], failures: [] };
 
   const results = [];
@@ -157,8 +182,8 @@ export const recordOfferingRestock = async (profile_expertise_uid, quantity = 1,
  * @param {{ sellerId?: string, trrUid?: string, orderUid?: string }} [ctx]
  */
 export const restockReturnedOfferingItems = async (items, ctx = {}) => {
-  const payload = (items || []).filter(
-    (item) => item && String(item.profile_expertise_uid || "").trim() && (parseInt(item.quantity, 10) || 0) > 0,
+  const payload = consolidateRestockItemsByProduct(items).filter(
+    (item) => item.profile_expertise_uid && (parseInt(item.quantity, 10) || 0) > 0,
   );
   if (!payload.length) return { ok: true, results: [], failures: [] };
 

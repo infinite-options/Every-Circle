@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { markAccountScreenPersonalStale } from "./accountScreenPersonalCache";
 import { USER_PROFILE_JSON_CACHE_KEY, clearSessionProfileCache } from "./sessionProfile";
 
 /**
@@ -165,6 +166,8 @@ export async function clearSessionAsyncStorageOnLogin({ userUid, previousUserUid
     clearSessionProfileCache();
   }
 
+  await markAccountScreenPersonalStale();
+
   return toRemove.length;
 }
 
@@ -187,6 +190,7 @@ export async function clearSessionAsyncStorage(options = {}) {
     await AsyncStorage.multiRemove(toRemove);
   }
   clearSessionProfileCache();
+  await markAccountScreenPersonalStale();
   return toRemove.length;
 }
 

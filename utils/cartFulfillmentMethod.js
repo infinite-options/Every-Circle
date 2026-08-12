@@ -14,6 +14,7 @@ import {
   listingDeliveredFulfillmentAllowed,
   parseListingModeFlags,
 } from "./listingFulfillmentMode";
+import { buildCheckoutLineTaxApiFields } from "./cartLineTax";
 
 export const FULFILLMENT_VIRTUAL = "virtual";
 export const FULFILLMENT_SHIP = "ship";
@@ -63,6 +64,19 @@ function cartItemHasConfiguredDeliveryOption(item) {
   return listingDeliveredFulfillmentAllowed(item) || parseListingModeFlags(item).delivered;
 }
 
+/** Fixed per-unit delivery charge from listing/offering config (pass-through; not order-level allocation). */
+export function getCartItemFixedShippingPerUnit(item) {
+  if (!item || typeof item !== "object") return null;
+  const shipping = parseBsShipping(getCartItemShippingCarrier(item));
+  if (shipping !== BS_SHIPPING_BUYER_FIXED) return null;
+  const carrier = getCartItemShippingCarrier(item);
+  const raw = carrier.bs_shipping_amount ?? carrier.bs_fixed_shipping_amount;
+  let unitAmount = parseBsShippingAmount(raw);
+  if (unitAmount == null && (raw === 0 || raw === "0" || raw === "0.00")) unitAmount = 0;
+  if (unitAmount == null) return null;
+  return unitAmount;
+}
+
 function buyerShippingChargeForMethod(item, method) {
   if (!item || typeof item !== "object" || skipsShippingForMethod(method)) return null;
 
@@ -70,11 +84,7 @@ function buyerShippingChargeForMethod(item, method) {
   const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
 
   if (shipping === BS_SHIPPING_BUYER_FIXED) {
-    const carrier = getCartItemShippingCarrier(item);
-    const raw = carrier.bs_shipping_amount ?? carrier.bs_fixed_shipping_amount;
-    let unitAmount = parseBsShippingAmount(raw);
-    if (unitAmount == null && (raw === 0 || raw === "0" || raw === "0.00")) unitAmount = 0;
-    if (unitAmount == null) unitAmount = 0;
+    const unitAmount = getCartItemFixedShippingPerUnit(item) ?? 0;
     return {
       type: "fixed",
       unitAmount,
@@ -251,10 +261,19 @@ export function sumBuyerShippingCharges(items) {
 
 export function buildFulfillmentApiFields(item) {
   const line = resolveCartLine(item);
+  const qty = Math.max(1, parseInt(item?.quantity, 10) || 1);
+  const perUnitShipping = getCartItemFixedShippingPerUnit(item);
   const fields = {
     fulfillment_method: line.fulfillment_method,
-    line_shipping_amount: line.lineShippingAmount,
+    line_shipping_amount: perUnitShipping != null ? Math.round(perUnitShipping * qty * 100) / 100 : line.lineShippingAmount,
   };
+  if (perUnitShipping != null) {
+    fields.ti_shipping_amount_per_unit = perUnitShipping;
+    fields.ti_shipping_amount = perUnitShipping;
+  }
+  if (fields.line_shipping_amount != null && fields.line_shipping_amount !== "") {
+    fields.ti_line_shipping_amount = fields.line_shipping_amount;
+  }
   if (line.skipsShippingCharge) {
     fields.shipping_not_required = 1;
   }
@@ -267,6 +286,14 @@ export function buildFulfillmentApiFields(item) {
   }
 
   return fields;
+}
+
+/** Fulfillment + per-line tax snapshots for POST /api/v1/transactions (single spread at checkout). */
+export function buildCheckoutApiLineFields(item) {
+  return {
+    ...buildFulfillmentApiFields(item),
+    ...buildCheckoutLineTaxApiFields(item),
+  };
 }
 
 export function formatCartPickupLocationHint(item) {
