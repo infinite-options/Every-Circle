@@ -3042,22 +3042,46 @@ function resolveLineReturnEligibility(line) {
   return { eligible: true, reason: null };
 }
 
-function buildReturnModalCapsFromV2Units(units, row) {
-  const maxReturnShipped = parseNonNegativeInt(units.max_return_shipped_qty);
-  const maxCancelUnshipped = parseNonNegativeInt(units.max_cancel_unshipped_qty);
+function resolveActionableReturnCancelFromUnits(units, { purchasedQty = 0 } = {}) {
+  if (!units || typeof units !== "object") return null;
+  let maxReturnShipped = parseNonNegativeInt(units.max_return_shipped_qty);
+  let maxCancelUnshipped = parseNonNegativeInt(units.max_cancel_unshipped_qty);
   if (maxReturnShipped == null || maxCancelUnshipped == null) return null;
 
-  // Actionable caps are the source of truth for the modal steppers / "X left".
-  const remainingQty = maxReturnShipped + maxCancelUnshipped;
-  const purchasedQty = parseNonNegativeInt(units.purchased_qty) ?? Math.max(0, row?.purchasedQty ?? 0);
-  const remainingLeft = maxReturnShipped;
-  const remainingNotLeft = maxCancelUnshipped;
-  const returnedFromLeft = (parseNonNegativeInt(units.returned_shipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.return_in_progress_shipped_qty) ?? 0);
-  const returnedFromNotLeft =
-    (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) + (parseNonNegativeInt(units.return_in_progress_unshipped_qty) ?? 0);
-  const verifiedQty = parseNonNegativeInt(units.verified_qty);
   const shippedOnLine = parseNonNegativeInt(units.shipped_qty) ?? 0;
   const unshippedOnLine = parseNonNegativeInt(units.remaining_to_ship_qty) ?? Math.max(0, purchasedQty - shippedOnLine);
+  const returnInProgressUnshipped = parseNonNegativeInt(units.return_in_progress_unshipped_qty) ?? 0;
+
+  // Concurrent returns: keep cancel available for unshipped units not already in a pending cancel.
+  if (unshippedOnLine > 0) {
+    const cancelableUnshipped = Math.max(0, unshippedOnLine - returnInProgressUnshipped);
+    if (cancelableUnshipped > maxCancelUnshipped) {
+      maxCancelUnshipped = cancelableUnshipped;
+    }
+  }
+
+  return {
+    maxReturnShipped,
+    maxCancelUnshipped,
+    remainingQty: maxReturnShipped + maxCancelUnshipped,
+    shippedOnLine,
+    unshippedOnLine,
+  };
+}
+
+function buildReturnModalCapsFromV2Units(units, row) {
+  const purchasedQty = parseNonNegativeInt(units.purchased_qty) ?? Math.max(0, row?.purchasedQty ?? 0);
+  const actionable = resolveActionableReturnCancelFromUnits(units, { purchasedQty });
+  if (!actionable) return null;
+
+  const { maxReturnShipped, maxCancelUnshipped, remainingQty, shippedOnLine, unshippedOnLine } = actionable;
+  const returnedFromLeft = (parseNonNegativeInt(units.returned_shipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.return_in_progress_shipped_qty) ?? 0);
+  const returnInProgressUnshipped = parseNonNegativeInt(units.return_in_progress_unshipped_qty) ?? 0;
+  const returnedFromNotLeft =
+    (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) + returnInProgressUnshipped;
+  const verifiedQty = parseNonNegativeInt(units.verified_qty);
+  const remainingLeft = maxReturnShipped;
+  const remainingNotLeft = maxCancelUnshipped;
 
   return {
     purchasedQty,
@@ -3069,8 +3093,8 @@ function buildReturnModalCapsFromV2Units(units, row) {
     remainingNotLeft,
     returnedFromLeft,
     returnedFromNotLeft,
-    // UI: show return + cancel steppers whenever the line still has both shipped and unshipped units.
-    hasMixedFulfillment: shippedOnLine > 0 && unshippedOnLine > 0 && remainingQty > 0,
+    // Dual steppers only when both return (shipped) and cancel (unshipped) pools are actionable.
+    hasMixedFulfillment: maxReturnShipped > 0 && maxCancelUnshipped > 0,
     allShipped: remainingLeft > 0 && remainingNotLeft <= 0,
     allUnshipped: remainingNotLeft > 0 && remainingLeft <= 0,
     maxReturnShippedQty: maxReturnShipped,
@@ -3103,8 +3127,9 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, existingRetur
         const transactionItemUid = String(line.ti_uid || "").trim();
         if (!transactionItemUid) return null;
         let remainingQty;
-        if (lineUnits && parseNonNegativeInt(lineUnits.max_return_shipped_qty) != null && parseNonNegativeInt(lineUnits.max_cancel_unshipped_qty) != null) {
-          remainingQty = (parseNonNegativeInt(lineUnits.max_return_shipped_qty) || 0) + (parseNonNegativeInt(lineUnits.max_cancel_unshipped_qty) || 0);
+        const actionable = lineUnits ? resolveActionableReturnCancelFromUnits(lineUnits, { purchasedQty }) : null;
+        if (actionable) {
+          remainingQty = actionable.remainingQty;
         } else if (lineUnits && parseNonNegativeInt(lineUnits.remaining_returnable_qty) != null) {
           remainingQty = parseNonNegativeInt(lineUnits.remaining_returnable_qty);
         } else {
@@ -3158,7 +3183,10 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, existingRetur
     const purchasedQty = parseNonNegativeInt(lineUnits?.purchased_qty) ?? getReceiptLineQty(item);
     const transactionItemUid = getReceiptLineTransactionItemUid(item);
     let remainingQty;
-    if (lineUnits && parseNonNegativeInt(lineUnits.remaining_returnable_qty) != null) {
+    const actionable = lineUnits ? resolveActionableReturnCancelFromUnits(lineUnits, { purchasedQty }) : null;
+    if (actionable) {
+      remainingQty = actionable.remainingQty;
+    } else if (lineUnits && parseNonNegativeInt(lineUnits.remaining_returnable_qty) != null) {
       remainingQty = parseNonNegativeInt(lineUnits.remaining_returnable_qty);
     } else {
       const backendUnavailableQty = backendReturnQtyByLine[transactionItemUid] || 0;
@@ -3284,9 +3312,8 @@ function getReturnModalLineFulfillmentCaps(row, saleRow = null) {
     remainingLeft = Math.min(remainingLeft, remainingQty);
     remainingNotLeft = Math.min(remainingNotLeft, Math.max(0, remainingQty - remainingLeft));
   }
-  // Physical mix (shipped + unshipped still on the line) drives the dual return/cancel steppers.
-  // Actionable pools may be smaller (e.g. shipped but not yet verified → remainingLeft 0).
-  const hasMixedFulfillment = shippedOnOrder > 0 && unshippedOnOrder > 0 && remainingQty > 0;
+  // Dual steppers only when both return (shipped) and cancel (unshipped) pools are actionable.
+  const hasMixedFulfillment = maxReturnShippedQty > 0 && maxCancelUnshippedQty > 0;
   const maxReturnShippedQty = Math.min(remainingQty, remainingLeft);
   const maxCancelUnshippedQty = Math.min(remainingQty, remainingNotLeft);
   return {
@@ -9648,6 +9675,13 @@ export default function AccountScreen({ navigation, route }) {
         const rows = Array.isArray(json.data) ? json.data : [];
         setWalletLedgerRows(rows);
         setWalletLedgerTotalEntries(Number(json.total_entries) || rows.length);
+        // Some ledger responses also include the wallet snapshot — apply when present.
+        const walletFromLedger = normalizeAccountScreenWallet(
+          json.wallet ?? (json.data && !Array.isArray(json.data) ? json.data.wallet : null) ?? null,
+        );
+        if (walletFromLedger) {
+          setPersonalWallet(walletFromLedger);
+        }
         return rows;
       } catch (error) {
         if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return [];
@@ -9669,6 +9703,44 @@ export default function AccountScreen({ navigation, route }) {
       }
     });
     return task;
+  };
+
+  /**
+   * Refresh personal Wallet balances from account-screen without replacing purchases.
+   * Used after delivery verification so Available/Pending/Total update immediately
+   * (ledger already refreshes via GET /wallet_ledger) while keeping the PUT purchase_row snapshot.
+   */
+  const refreshPersonalWallet = async () => {
+    const fetchGen = personalFetchGenRef.current;
+    try {
+      if (selectedAccountRef.current && selectedAccountRef.current !== "personal") return null;
+      const rawProfileId = await AsyncStorage.getItem("profile_uid");
+      const profileId = rawProfileId ? String(rawProfileId).trim() : "";
+      if (!profileId) return null;
+      const url = withTimeZoneQuery(`${ACCOUNT_SCREEN_PERSONAL_ENDPOINT}/${profileId}`);
+      const response = await fetch(url, { method: "GET" });
+      if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return null;
+      if (!response.ok) {
+        throw new Error(`account-screen personal wallet HTTP ${response.status}`);
+      }
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("account-screen personal wallet returned non-JSON");
+      }
+      const json = await response.json();
+      if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return null;
+      const mapped = mapAccountScreenPersonalResponse(json);
+      if (mapped.wallet) {
+        setPersonalWallet(mapped.wallet);
+      }
+      if (mapped.earnings != null) {
+        setPersonalEarnings(mapped.earnings);
+      }
+      return mapped.wallet ?? null;
+    } catch (error) {
+      console.warn("[AccountScreen] personal wallet refresh failed:", error?.message || error);
+      return null;
+    }
   };
 
   const resetDeliveryVerificationModal = () => {
@@ -9747,8 +9819,9 @@ export default function AccountScreen({ navigation, route }) {
       resetDeliveryVerificationModal();
       markAccountScreenPersonalDirty();
       void refreshWalletLedger({ force: true });
-      // Defer full account-screen refresh to tab focus / explicit reload so a lagging
-      // purchases.rows aggregate cannot overwrite the PUT purchase_row snapshot.
+      // Wallet balances come from BE (account-screen.wallet) — refresh immediately like the ledger,
+      // without replacing purchases so a lagging purchases.rows aggregate cannot overwrite the PUT snapshot.
+      void refreshPersonalWallet();
       if (!releaseEscrow) {
         Alert.alert("Partial delivery recorded", "Receipt confirmation saved. Earnings may remain pending until all items are verified and any return window ends.");
       } else {
@@ -12280,9 +12353,11 @@ export default function AccountScreen({ navigation, route }) {
               <Text style={[styles.noDataText, { marginVertical: 24 }]}>No receipt data available.</Text>
             )}
 
-            {/* Return requested confirmation message */}
+            {/* Concurrent returns are allowed — this is informational, not a lock. */}
             {Number(receiptTransaction?.transaction_return_requested) === 1 && (
-              <Text style={{ color: "#B71C1C", textAlign: "center", marginTop: 12, fontWeight: "600", fontSize: 14 }}>✓ Return has been requested</Text>
+              <Text style={{ color: "#B71C1C", textAlign: "center", marginTop: 12, fontWeight: "600", fontSize: 14 }}>
+                A return is already in progress. You can request another for remaining units.
+              </Text>
             )}
 
             {!receiptIsReturnReceipt &&
@@ -12293,7 +12368,13 @@ export default function AccountScreen({ navigation, route }) {
                 const existingReturnRows = getExistingReturnRowsForOrder(transactionData, orderUid, [receiptOrderDetail?.sale, receiptOrderDetail]);
                 const selectableLines = buildReturnModalSelectableLines(returnModalLines, receiptData, existingReturnRows, returnModalSaleRow, receiptOrderDetail);
                 const allItemsReturned = selectableLines.length > 0 && selectableLines.every((line) => line.remainingQty <= 0);
-                const hasEligibleReturnItem = selectableLines.some((line) => line.remainingQty > 0 && line.returnEligible);
+                // Eligible if any line still has returnable/cancellable units — pending returns on this
+                // or other orders must not block Request Return for remaining units.
+                const hasEligibleReturnItem = selectableLines.some((line) => {
+                  if (!line.returnEligible) return false;
+                  const caps = getReturnModalLineFulfillmentCaps(line, line.saleRow);
+                  return caps.remainingQty > 0;
+                });
                 const returnButtonDisabled = allItemsReturned || !hasEligibleReturnItem;
 
                 return (
@@ -12366,9 +12447,8 @@ export default function AccountScreen({ navigation, route }) {
                     const split = returnItemSplitQty[itemId] || initialReturnItemSplitQty(row);
                     const needsMixedQtyPicker = isSelected && caps.hasMixedFulfillment;
                     const simplePickerMax = caps.allUnshipped ? caps.maxCancelUnshippedQty : caps.maxReturnShippedQty;
-                    // Show qty stepper whenever more than one unit can be chosen in this mode
-                    // (or remaining > 1 on multi-qty lines so users can dial the count down).
-                    const needsSimpleQtyPicker = isSelected && !caps.hasMixedFulfillment && caps.purchasedQty > 1 && caps.remainingQty > 1 && simplePickerMax >= 1;
+                    // Labeled qty stepper for single-pool lines (including "up to 1") so the unit box is clear.
+                    const needsSimpleQtyPicker = isSelected && !caps.hasMixedFulfillment && simplePickerMax >= 1;
                     const fulfillmentSubtitle = !alreadyReturned && !returnIneligible ? buildReturnModalFulfillmentSubtitle(row, caps) : null;
                     const actionableLeft = Math.max(0, caps.remainingQty);
                     const unverifiedShipped = Math.max(0, (caps.shippedOnLine || 0) - (caps.verifiedQty != null ? caps.verifiedQty : 0));
@@ -12471,36 +12551,32 @@ export default function AccountScreen({ navigation, route }) {
                         {needsMixedQtyPicker ? (
                           <View style={{ marginTop: 8, marginLeft: 26 }}>
                             <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>{qtyLabels.mixedIntro}</Text>
-                            {caps.maxReturnShippedQty > 0 ? (
-                              <ReturnModalQtyStepper
-                                label={qtyLabels.leftShort}
-                                value={split.shipped}
-                                max={Math.min(caps.maxReturnShippedQty, Math.max(0, caps.remainingQty - split.unshipped))}
-                                suffix={`up to ${caps.maxReturnShippedQty}`}
-                                darkMode={darkMode}
-                                onChange={(shipped) =>
-                                  setReturnItemSplitQty((prev) => ({
-                                    ...prev,
-                                    [itemId]: normalizeReturnItemSplitQty({ ...split, shipped }, caps),
-                                  }))
-                                }
-                              />
-                            ) : null}
-                            {caps.maxCancelUnshippedQty > 0 ? (
-                              <ReturnModalQtyStepper
-                                label={qtyLabels.notLeftShort}
-                                value={split.unshipped}
-                                max={Math.min(caps.maxCancelUnshippedQty, Math.max(0, caps.remainingQty - split.shipped))}
-                                suffix={`up to ${caps.maxCancelUnshippedQty}`}
-                                darkMode={darkMode}
-                                onChange={(unshipped) =>
-                                  setReturnItemSplitQty((prev) => ({
-                                    ...prev,
-                                    [itemId]: normalizeReturnItemSplitQty({ ...split, unshipped }, caps),
-                                  }))
-                                }
-                              />
-                            ) : null}
+                            <ReturnModalQtyStepper
+                              label={qtyLabels.leftShort}
+                              value={split.shipped}
+                              max={Math.min(caps.maxReturnShippedQty, Math.max(0, caps.remainingQty - split.unshipped))}
+                              suffix={`up to ${caps.maxReturnShippedQty}`}
+                              darkMode={darkMode}
+                              onChange={(shipped) =>
+                                setReturnItemSplitQty((prev) => ({
+                                  ...prev,
+                                  [itemId]: normalizeReturnItemSplitQty({ ...split, shipped }, caps),
+                                }))
+                              }
+                            />
+                            <ReturnModalQtyStepper
+                              label={qtyLabels.notLeftShort}
+                              value={split.unshipped}
+                              max={Math.min(caps.maxCancelUnshippedQty, Math.max(0, caps.remainingQty - split.shipped))}
+                              suffix={`up to ${caps.maxCancelUnshippedQty}`}
+                              darkMode={darkMode}
+                              onChange={(unshipped) =>
+                                setReturnItemSplitQty((prev) => ({
+                                  ...prev,
+                                  [itemId]: normalizeReturnItemSplitQty({ ...split, unshipped }, caps),
+                                }))
+                              }
+                            />
                           </View>
                         ) : null}
 
