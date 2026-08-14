@@ -817,9 +817,9 @@ export default function App() {
               <Text style={styles.brandText}>.com</Text>
             </Text>
             <Text style={[styles.tagline, { fontSize: taglineFontSize }]} numberOfLines={1} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.72}>
-              Connecting Circles of Influence
+              It Pays to be Connected
             </Text>
-            {/* <Text style={styles.tagline}>Connecting Circles of Influence</Text> */}
+            {/* <Text style={styles.tagline}>It Pays to be Connected</Text> */}
 
             {SHOW_HOME_BUILD_INFO && (
               <Text style={[styles.dateTimeText, { fontSize: buildInfoFontSize }]} numberOfLines={1} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.7}>
@@ -1037,75 +1037,85 @@ export default function App() {
         <SessionProfileProvider>
           <UnreadProvider>
             <NearbyAlertProvider>
-            <View style={styles.appRoot}>
-              <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
-              <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
-                <Stack.Screen name='Home' component={HomeScreen} />
-                <Stack.Screen
-                  name='Login'
-                  children={(props) => (
-                    <LoginScreen {...props} onGoogleSignIn={() => signInHandler(props.navigation)} onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation)} onError={setError} />
-                  )}
-                />
-                <Stack.Screen
-                  name='SignUp'
-                  children={(props) => (
-                    <SignUpScreen {...props} onGoogleSignUp={() => signUpHandler(props.navigation)} onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation)} onError={setError} />
-                  )}
-                />
-                <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
-                <Stack.Screen name='ContactUs' component={ContactUsScreen} />
-                <Stack.Screen name='UserInfo' component={UserInfoScreen} />
-                {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
-                <Stack.Screen name='AccountType' component={AccountTypeScreen} />
-                <Stack.Screen name='Profile' component={ProfileScreen} />
-                <Stack.Screen name='ProfileModeration' component={ProfileModerationScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='EditProfile' component={EditProfileScreen} />
-                <Stack.Screen name='Settings' component={SettingsScreen} />
-                <Stack.Screen name='Account' component={AccountScreen} />
-                <Stack.Screen name='Connect' component={ConnectScreen} />
-                <Stack.Screen name='Search' component={SearchScreen} />
-                <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
-                <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
-                <Stack.Screen name='BusinessModeration' component={BusinessModerationScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
-                <Stack.Screen name='Filters' component={FilterScreen} />
-                <Stack.Screen name='SearchTab' component={SearchTab} />
+              <View style={styles.appRoot}>
+                <NavigationContainer
+                  ref={navigationRef}
+                  linking={isWeb ? linking : undefined}
+                  onReady={() => console.log("App.js - NavigationContainer ready")}
+                  onStateChange={onNavigationStateChange}
+                >
+                  <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name='Home' component={HomeScreen} />
+                    <Stack.Screen
+                      name='Login'
+                      children={(props) => (
+                        <LoginScreen {...props} onGoogleSignIn={() => signInHandler(props.navigation)} onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation)} onError={setError} />
+                      )}
+                    />
+                    <Stack.Screen
+                      name='SignUp'
+                      children={(props) => (
+                        <SignUpScreen
+                          {...props}
+                          onGoogleSignUp={() => signUpHandler(props.navigation)}
+                          onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation)}
+                          onError={setError}
+                        />
+                      )}
+                    />
+                    <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
+                    <Stack.Screen name='ContactUs' component={ContactUsScreen} />
+                    <Stack.Screen name='UserInfo' component={UserInfoScreen} />
+                    {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
+                    <Stack.Screen name='AccountType' component={AccountTypeScreen} />
+                    <Stack.Screen name='Profile' component={ProfileScreen} />
+                    <Stack.Screen name='ProfileModeration' component={ProfileModerationScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='EditProfile' component={EditProfileScreen} />
+                    <Stack.Screen name='Settings' component={SettingsScreen} />
+                    <Stack.Screen name='Account' component={AccountScreen} />
+                    <Stack.Screen name='Connect' component={ConnectScreen} />
+                    <Stack.Screen name='Search' component={SearchScreen} />
+                    <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
+                    <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
+                    <Stack.Screen name='BusinessModeration' component={BusinessModerationScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
+                    <Stack.Screen name='Filters' component={FilterScreen} />
+                    <Stack.Screen name='SearchTab' component={SearchTab} />
 
-                <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
-                <Stack.Screen name='PrivacyPolicy' component={PrivacyPolicyScreen} options={{ title: "Privacy Policy" }} />
-                <Stack.Screen name='EditBusinessProfile' component={EditBusinessProfileScreen} />
-                <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
-                <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='ReviewDetail' component={ReviewDetailScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='OfferingDetail' component={OfferingDetailScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='OfferingResponses' component={OfferingResponsesScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='ConnectLink' component={ConnectLinkScreenWrapper} />
-                <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
-                <Stack.Screen name='ScanLanding' component={ScanLandingScreen} />
-                <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='Inbox' component={InboxScreen} />
-                <Stack.Screen name='Chat' component={ChatScreen} />
-                <Stack.Screen name='AddReviewSearch' component={AddReviewSearchScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='EveryCircleMap' component={EveryCircleMapScreen} options={{ headerShown: false }} />
-              </Stack.Navigator>
-              </NavigationContainer>
-              <MessageNotificationBanner
-                onOpen={(conversationUid, senderUid, senderName, senderImage) => {
-                  if (navigationRef.current) {
-                    navigationRef.current.navigate("Chat", {
-                      conversation_uid: conversationUid,
-                      other_uid: senderUid,
-                      other_name: senderName,
-                      other_image: senderImage || null,
-                    });
-                  }
-                }}
-              />
-              <RootNearbyAlertBanner navigationRef={navigationRef} />
-            </View>
+                    <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
+                    <Stack.Screen name='PrivacyPolicy' component={PrivacyPolicyScreen} options={{ title: "Privacy Policy" }} />
+                    <Stack.Screen name='EditBusinessProfile' component={EditBusinessProfileScreen} />
+                    <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
+                    <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='ReviewDetail' component={ReviewDetailScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='OfferingDetail' component={OfferingDetailScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='OfferingResponses' component={OfferingResponsesScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='ConnectLink' component={ConnectLinkScreenWrapper} />
+                    <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
+                    <Stack.Screen name='ScanLanding' component={ScanLandingScreen} />
+                    <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='Inbox' component={InboxScreen} />
+                    <Stack.Screen name='Chat' component={ChatScreen} />
+                    <Stack.Screen name='AddReviewSearch' component={AddReviewSearchScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='EveryCircleMap' component={EveryCircleMapScreen} options={{ headerShown: false }} />
+                  </Stack.Navigator>
+                </NavigationContainer>
+                <MessageNotificationBanner
+                  onOpen={(conversationUid, senderUid, senderName, senderImage) => {
+                    if (navigationRef.current) {
+                      navigationRef.current.navigate("Chat", {
+                        conversation_uid: conversationUid,
+                        other_uid: senderUid,
+                        other_name: senderName,
+                        other_image: senderImage || null,
+                      });
+                    }
+                  }}
+                />
+                <RootNearbyAlertBanner navigationRef={navigationRef} />
+              </View>
             </NearbyAlertProvider>
           </UnreadProvider>
         </SessionProfileProvider>

@@ -262,20 +262,31 @@ export function sumBuyerShippingCharges(items) {
 export function buildFulfillmentApiFields(item) {
   const line = resolveCartLine(item);
   const qty = Math.max(1, parseInt(item?.quantity, 10) || 1);
-  const perUnitShipping = getCartItemFixedShippingPerUnit(item);
-  const fields = {
-    fulfillment_method: line.fulfillment_method,
-    line_shipping_amount: perUnitShipping != null ? Math.round(perUnitShipping * qty * 100) / 100 : line.lineShippingAmount,
-  };
-  if (perUnitShipping != null) {
-    fields.ti_shipping_amount_per_unit = perUnitShipping;
-    fields.ti_shipping_amount = perUnitShipping;
-  }
-  if (fields.line_shipping_amount != null && fields.line_shipping_amount !== "") {
-    fields.ti_line_shipping_amount = fields.line_shipping_amount;
-  }
+
+  // Pickup / virtual: persist explicit $0 snapshots (missing ≠ 0 on account-screen / returns).
+  let fields;
   if (line.skipsShippingCharge) {
-    fields.shipping_not_required = 1;
+    fields = {
+      fulfillment_method: line.fulfillment_method,
+      line_shipping_amount: 0,
+      ti_line_shipping_amount: 0,
+      ti_shipping_amount_per_unit: 0,
+      ti_shipping_amount: 0,
+      shipping_not_required: 1,
+    };
+  } else {
+    const perUnitShipping = getCartItemFixedShippingPerUnit(item);
+    fields = {
+      fulfillment_method: line.fulfillment_method,
+      line_shipping_amount: perUnitShipping != null ? Math.round(perUnitShipping * qty * 100) / 100 : line.lineShippingAmount,
+    };
+    if (perUnitShipping != null) {
+      fields.ti_shipping_amount_per_unit = perUnitShipping;
+      fields.ti_shipping_amount = perUnitShipping;
+    }
+    if (fields.line_shipping_amount != null && fields.line_shipping_amount !== "") {
+      fields.ti_line_shipping_amount = fields.line_shipping_amount;
+    }
   }
 
   const modeStr = getListingModeString(item);
