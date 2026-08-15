@@ -49,6 +49,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { reinitializeUnreadFromOutside } from "../contexts/UnreadContext";
 import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import { saveSessionProfilePayload, clearUserProfileCacheStorage, getSessionProfile, mapSessionBusinesses, resolveBusinessUid, resolveBusinessUidFromProfileRow } from "../utils/sessionProfile";
+import { profileBusinessHasRealOwnership } from "../utils/businessOwnership";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { sanitizeText } from "../utils/textSanitizer";
 import { upsertReferralNetworkRelationship } from "../utils/searchReferralProfiles";
@@ -834,9 +835,10 @@ const ProfileScreen = ({ route, navigation }) => {
       // console.log("ProfileScreen - apiUser.business_info (raw):", apiUser.business_info);
       // console.log("ProfileScreen - apiUser.business_info type:", typeof apiUser.business_info);
 
-      // Map business_info to userData.businesses
-      // Ensure business_info is parsed correctly
-      userData.businesses = parseProfileJsonArray(apiUser.business_info).map((bus) => {
+      // Map business_info to userData.businesses (owned only — exclude unclaimed seed links)
+      userData.businesses = parseProfileJsonArray(apiUser.business_info)
+        .filter((bus) => profileBusinessHasRealOwnership(bus))
+        .map((bus) => {
         const entryVisible = bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true;
         return {
           profile_business_uid: bus.business_uid || bus.profile_business_uid || "",

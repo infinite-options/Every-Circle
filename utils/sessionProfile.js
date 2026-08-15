@@ -3,6 +3,7 @@ import { markAccountScreenPersonalStale } from "./accountScreenPersonalCache";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "./httpMiddleware";
 import { mapBusinessToMiniCard } from "./mapBusinessToMiniCard";
+import { filterOwnedProfileBusinesses } from "./businessOwnership";
 import { persistMyBusinessUidsFromProfile } from "./myBusinessUids";
 
 /** Full GET /api/v1/userprofileinfo/:id JSON for the logged-in user — persisted for offline reuse across screens */
@@ -13,7 +14,7 @@ const VIEWER_PROFILE_PATH_KEY = "viewer_profile_personal_path_v1";
 let cachedSessionProfile = null;
 const sessionListeners = new Set();
 
-/** API may return a JSON string, an array, or a single object. */
+/** API may return a JSON string, an array, or a single object (includes unclaimed seed links). */
 export function parseProfileBusinessInfo(raw) {
   if (raw == null || raw === "") return [];
   let value = raw;
@@ -29,9 +30,15 @@ export function parseProfileBusinessInfo(raw) {
   return [];
 }
 
+/** Owned businesses only — excludes reviewer-seeded `unclaimed` links. */
+export function parseOwnedProfileBusinessInfo(raw) {
+  return filterOwnedProfileBusinesses(parseProfileBusinessInfo(raw));
+}
+
 /** Canonical mapped business rows for Profile dropdown, Account dropdown, MiniCard, etc. */
-export function mapSessionBusinesses(rawBusinessInfo, { enrichEntry } = {}) {
-  return parseProfileBusinessInfo(rawBusinessInfo).map((bus, index) => {
+export function mapSessionBusinesses(rawBusinessInfo, { enrichEntry, includeUnclaimed = false } = {}) {
+  const rows = includeUnclaimed ? parseProfileBusinessInfo(rawBusinessInfo) : parseOwnedProfileBusinessInfo(rawBusinessInfo);
+  return rows.map((bus, index) => {
     const entry = {
       ...mapBusinessToMiniCard(bus),
       business_uid: bus.business_uid || "",
@@ -62,13 +69,13 @@ export function getPrimaryBusinessUid(businesses) {
 }
 
 function normalizeBizUids(profileJson) {
-  return parseProfileBusinessInfo(profileJson?.business_info)
+  return parseOwnedProfileBusinessInfo(profileJson?.business_info)
     .map((b) => b.business_uid)
     .filter(Boolean);
 }
 
 function buildSessionFromRaw(json, profileUid) {
-  const parsedBusinessInfo = parseProfileBusinessInfo(json?.business_info);
+  const parsedBusinessInfo = parseOwnedProfileBusinessInfo(json?.business_info);
   return {
     profileUid,
     businessUids: normalizeBizUids(json),

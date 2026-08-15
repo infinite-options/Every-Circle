@@ -66,6 +66,7 @@ import { businessDeliveredModeSelected, countListingModes, validateListingFulfil
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getAddressSuggestions, getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
 import { buildBusinessModerationItem, isBusinessOwnerRestricted } from "../utils/businessModeration";
+import { businessUserHasRealOwnership } from "../utils/businessOwnership";
 import {
   resolveBusinessProfileImage,
   resolveBusinessProfileImgUrl,
@@ -3528,9 +3529,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           return;
         }
 
-        // Check if current user is in the business_users list
+        // Check if current user is a real owner/editor (ignore unclaimed seed links)
         if (Array.isArray(business_users) && business_users.length > 0) {
-          const isInBusinessUsers = business_users.some((u) => u.business_user_id === userUid);
+          const isInBusinessUsers = business_users.some(
+            (u) => businessUserHasRealOwnership(u) && u.business_user_id === userUid,
+          );
           setIsOwner(isInBusinessUsers);
           return;
         }
