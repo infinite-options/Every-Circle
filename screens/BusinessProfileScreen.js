@@ -46,7 +46,17 @@ import {
 import { buildBusinessMiniCardBusiness } from "../utils/mapBusinessToMiniCard";
 import { getPlaceDetails } from "../utils/googlePlaces";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
-import { getSessionProfile, getViewerProfilePersonalPath, refreshSessionProfileFromNetwork, resolveBusinessUidFromProfileRow } from "../utils/sessionProfile";
+import {
+  getSessionProfile,
+  getViewerProfilePersonalPath,
+  refreshSessionProfileFromNetwork,
+  resolveBusinessUidFromProfileRow,
+} from "../utils/sessionProfile";
+import {
+  businessHasRealOwner,
+  businessUserHasRealOwnership,
+  profileBusinessHasRealOwnership,
+} from "../utils/businessOwnership";
 import { enrichReviewWithConnectionDegree } from "../utils/profilePathConnectionDegree";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
 import * as DocumentPicker from "expo-document-picker";
@@ -334,7 +344,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     const profileUid = await AsyncStorage.getItem("profile_uid");
     if (!userUid && !profileUid) return false;
     const list = Array.isArray(businessUsersData) ? businessUsersData : [];
-    return list.some((bu) => businessUserMatchesViewer(bu, userUid, profileUid));
+    return list.some((bu) => businessUserHasRealOwnership(bu) && businessUserMatchesViewer(bu, userUid, profileUid));
   };
 
   const resolveIsOwnerForBusiness = async (businessUsersData) => {
@@ -343,13 +353,14 @@ export default function BusinessProfileScreen({ route, navigation }) {
     if (!userUid && !profileUid) return false;
 
     const list = Array.isArray(businessUsersData) ? businessUsersData : [];
-    const matchInBusinessUsers = list.some((bu) => businessUserMatchesViewer(bu, userUid, profileUid));
+    const matchInBusinessUsers = list.some((bu) => businessUserHasRealOwnership(bu) && businessUserMatchesViewer(bu, userUid, profileUid));
     if (matchInBusinessUsers) return true;
 
     if (!profileUid) return false;
 
     const session = await getSessionProfile();
-    const businessInfo = session?.businessInfo || [];
+    // session.businessInfo is already filtered to real ownership; keep an explicit role check for safety.
+    const businessInfo = (session?.businessInfo || []).filter(profileBusinessHasRealOwnership);
     const uidStr = String(business_uid || "");
     let isInProfileBusinesses = businessInfo.some((biz) => resolveBusinessUidFromProfileRow(biz) === uidStr);
     if (!isInProfileBusinesses && Array.isArray(session?.businessUids) && session.businessUids.length > 0) {
@@ -656,7 +667,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
             const viewerUserId = await AsyncStorage.getItem("user_uid");
             if (viewerProfileId || viewerUserId) {
               const list = Array.isArray(businessUsersData) ? businessUsersData : [];
-              const viewerIsOwner = list.some((bu) => businessUserMatchesViewer(bu, viewerUserId, viewerProfileId));
+              const viewerIsOwner = list.some((bu) => businessUserHasRealOwnership(bu) && businessUserMatchesViewer(bu, viewerUserId, viewerProfileId));
               if (!viewerIsOwner) {
                 const viewPayload = {
                   profile_view_profile_id: business_uid,
@@ -1217,7 +1228,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     );
   }
 
-  const hasBusinessOwner = businessUsers.some((bu) => (bu.bu_role || bu.business_role || bu.role || "").trim() !== "");
+  const hasBusinessOwner = businessHasRealOwner(businessUsers);
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]} key={Platform.OS === "web" ? `viewport-${viewportWidth}` : undefined}>
@@ -1437,7 +1448,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
           {/* Business Editors/Owners Section */}
           {(() => {
             const visibleBusinessUsers = businessUsers.filter(
-              (u) => u.bu_individual_business_is_public === 1 || u.bu_individual_business_is_public === "1" || u.bu_individual_business_is_public === true,
+              (u) =>
+                businessUserHasRealOwnership(u) &&
+                (u.bu_individual_business_is_public === 1 || u.bu_individual_business_is_public === "1" || u.bu_individual_business_is_public === true),
             );
             if (!isOwner || visibleBusinessUsers.length === 0) return null;
             console.log("businessUsers", businessUsers);
