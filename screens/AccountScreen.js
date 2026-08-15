@@ -1270,15 +1270,36 @@ function formatProductSaleShortDate(saleRow) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/** True for return-request / cancel-request uids (not sale transaction 500-…). */
+function isReturnRequestUid(value) {
+  const s = String(value || "").trim();
+  if (!s) return false;
+  return s.startsWith("540-") || s.startsWith("return-request-") || s.startsWith("batch:");
+}
+
 function resolveListRowOrderUid(row) {
-  // Parent purchase uid: return-request sale link, completed-return original, else self.
-  const resolved = String(row?.trr_transaction_uid ?? row?.transaction_original_uid ?? row?.order_uid ?? row?.transaction_uid ?? "").trim();
-  if (resolved) return resolved;
+  // Parent purchase uid (500-…): return-request sale link, completed-return original, else self.
+  // Never treat trr_uid / pending-row transaction_uid (540-…) as the order/sale id.
+  const candidates = [
+    row?.trr_transaction_uid,
+    row?.transaction_original_uid,
+    row?.original_transaction_uid,
+    row?.order_uid,
+    row?.transaction_uid,
+  ];
+  for (const candidate of candidates) {
+    const resolved = String(candidate || "").trim();
+    if (resolved && !isReturnRequestUid(resolved)) return resolved;
+  }
   if (isReturnListRow(row)) {
     console.error("Error: cannot resolve parent sale uid for return row", {
       transaction_uid: row?.transaction_uid,
       trr_uid: row?.trr_uid,
       trr_uids: row?.trr_uids,
+      trr_transaction_uid: row?.trr_transaction_uid,
+      transaction_original_uid: row?.transaction_original_uid,
+      original_transaction_uid: row?.original_transaction_uid,
+      order_uid: row?.order_uid,
       transaction_type: row?.transaction_type,
       parent_sale_resolve_error: row?.parent_sale_resolve_error,
     });
@@ -1382,7 +1403,8 @@ function findSaleSiblingForReturnRow(returnRow, sellerLines) {
 
 /**
  * Return-request uid for concurrent pending returns.
- * Prefer explicit trr_uid / trr_uids; do not treat transaction_uid as a trr.
+ * Prefer explicit trr_uid / trr_uids; only use transaction_uid when it is clearly a 540-… request id
+ * (pending Cancel/Return list rows often put trr_uid into transaction_uid).
  */
 function resolveTrrUid(row) {
   if (!row || typeof row !== "object") return "";
@@ -1392,6 +1414,8 @@ function resolveTrrUid(row) {
   if (fromList && !fromList.startsWith("return-request-") && !fromList.startsWith("batch:")) return fromList;
   const fromPendingList = Array.isArray(row.pending_return?.trr_uids) ? String(row.pending_return.trr_uids[0] || "").trim() : "";
   if (fromPendingList && !fromPendingList.startsWith("return-request-") && !fromPendingList.startsWith("batch:")) return fromPendingList;
+  const fromTxnUid = String(row.transaction_uid || "").trim();
+  if (isReturnRequestUid(fromTxnUid)) return fromTxnUid;
   return "";
 }
 
@@ -3077,8 +3101,7 @@ function buildReturnModalCapsFromV2Units(units, row) {
   const { maxReturnShipped, maxCancelUnshipped, remainingQty, shippedOnLine, unshippedOnLine } = actionable;
   const returnedFromLeft = (parseNonNegativeInt(units.returned_shipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.return_in_progress_shipped_qty) ?? 0);
   const returnInProgressUnshipped = parseNonNegativeInt(units.return_in_progress_unshipped_qty) ?? 0;
-  const returnedFromNotLeft =
-    (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) + returnInProgressUnshipped;
+  const returnedFromNotLeft = (parseNonNegativeInt(units.returned_unshipped_completed_qty) ?? 0) + (parseNonNegativeInt(units.cancelled_pre_ship_qty) ?? 0) + returnInProgressUnshipped;
   const verifiedQty = parseNonNegativeInt(units.verified_qty);
   const remainingLeft = maxReturnShipped;
   const remainingNotLeft = maxCancelUnshipped;
@@ -9676,9 +9699,7 @@ export default function AccountScreen({ navigation, route }) {
         setWalletLedgerRows(rows);
         setWalletLedgerTotalEntries(Number(json.total_entries) || rows.length);
         // Some ledger responses also include the wallet snapshot — apply when present.
-        const walletFromLedger = normalizeAccountScreenWallet(
-          json.wallet ?? (json.data && !Array.isArray(json.data) ? json.data.wallet : null) ?? null,
-        );
+        const walletFromLedger = normalizeAccountScreenWallet(json.wallet ?? (json.data && !Array.isArray(json.data) ? json.data.wallet : null) ?? null);
         if (walletFromLedger) {
           setPersonalWallet(walletFromLedger);
         }
@@ -11391,7 +11412,6 @@ export default function AccountScreen({ navigation, route }) {
                       {/* Table Rows */}
                       {personalPurchasesDisplayList.map((transaction, i) => {
                         const isReturnRow = isReturnListRow(transaction);
-                        const isSyntheticReturn = !!transaction._isSyntheticReturn;
                         const orderUid = resolveListRowOrderUid(transaction);
                         const compactTx = compactPurchasesLayout;
                         const sellerId = resolvePurchaseSellerId(transaction);
@@ -11421,7 +11441,8 @@ export default function AccountScreen({ navigation, route }) {
                             <Text style={styles.transactionDate}>{formatTransactionDate(transaction)}</Text>
                             {showPurchasesTxnIdColumn ? (
                               <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7} disabled={orderUid === "—"}>
-                                <Text style={[styles.transactionId, orderUid !== "—" && styles.receiptLink]}>{isSyntheticReturn ? orderUid : transaction.transaction_uid || "N/A"}</Text>
+                                {/* Always show parent sale 500-… — pending Cancel/Return rows put trr_uid (540-…) in transaction_uid */}
+                                <Text style={[styles.transactionId, orderUid !== "—" && styles.receiptLink]}>{orderUid !== "—" ? orderUid : transaction.transaction_uid || "N/A"}</Text>
                               </TouchableOpacity>
                             ) : null}
                             {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{resolveAccountScreenDisplayField(transaction, "type_label")}</Text> : null}

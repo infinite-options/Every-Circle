@@ -9,11 +9,7 @@ import {
   isBuyerPaysShippingValue,
 } from "./businessServiceShipping";
 import { isOfferingShippingConfigured } from "./profileOfferingShipping";
-import {
-  getListingModeString,
-  listingDeliveredFulfillmentAllowed,
-  parseListingModeFlags,
-} from "./listingFulfillmentMode";
+import { getListingModeString, listingDeliveredFulfillmentAllowed, parseListingModeFlags } from "./listingFulfillmentMode";
 import { buildCheckoutLineTaxApiFields } from "./cartLineTax";
 
 export const FULFILLMENT_VIRTUAL = "virtual";
@@ -142,8 +138,7 @@ export function resolveCartLine(item) {
   if (!availableMethods.length) return { ...EMPTY_CART_LINE };
 
   const existing = normalizeFulfillmentMethodValue(item.fulfillment_method);
-  const fulfillment_method =
-    existing && availableMethods.includes(existing) ? existing : pickDefaultFulfillmentMethod(item, availableMethods);
+  const fulfillment_method = existing && availableMethods.includes(existing) ? existing : pickDefaultFulfillmentMethod(item, availableMethods);
 
   const buyerShippingCharge = buyerShippingChargeForMethod(item, fulfillment_method);
   const lineShippingAmount = buyerShippingCharge?.type === "fixed" ? buyerShippingCharge.amount : 0;
@@ -310,22 +305,10 @@ export function buildCheckoutApiLineFields(item) {
 export function formatCartPickupLocationHint(item) {
   if (!item || typeof item !== "object") return null;
 
-  const street =
-    item.itemType === "expertise"
-      ? String(item.profile_expertise_location || "").trim()
-      : String(item.business_location || "").trim();
-  const city =
-    item.itemType === "expertise"
-      ? String(item.profile_expertise_city || "").trim()
-      : String(item.business_city || "").trim();
-  const state =
-    item.itemType === "expertise"
-      ? String(item.profile_expertise_state || "").trim()
-      : String(item.business_state || "").trim();
-  const zip =
-    item.itemType === "expertise"
-      ? String(item.profile_expertise_zip || "").trim()
-      : String(item.business_zip || "").trim();
+  const street = item.itemType === "expertise" ? String(item.profile_expertise_location || "").trim() : String(item.business_location || "").trim();
+  const city = item.itemType === "expertise" ? String(item.profile_expertise_city || "").trim() : String(item.business_city || "").trim();
+  const state = item.itemType === "expertise" ? String(item.profile_expertise_state || "").trim() : String(item.business_state || "").trim();
+  const zip = item.itemType === "expertise" ? String(item.profile_expertise_zip || "").trim() : String(item.business_zip || "").trim();
 
   const cityStateZip = [city, state, zip].filter(Boolean).join(", ");
   if (street && cityStateZip) return `${street}, ${cityStateZip}`;
