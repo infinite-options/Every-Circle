@@ -435,6 +435,7 @@ function mapSearchExpertiseRow(item, i) {
     tags: [],
     score: item.score || 0,
     score_breakdown: item.score_breakdown || null,
+    search_result_category: item.search_result_category || null,
     passes_relevance_cutoff: item.passes_relevance_cutoff !== false,
     itemType: "expertise",
     profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
@@ -474,6 +475,7 @@ function mapSearchWishRow(item, i) {
     tags: [],
     score: item.score || 0,
     score_breakdown: item.score_breakdown || null,
+    search_result_category: item.search_result_category || null,
     passes_relevance_cutoff: item.passes_relevance_cutoff !== false,
     itemType: "seeking",
     profile_uid: item.profile_wish_profile_personal_id,
@@ -553,46 +555,98 @@ function SearchCardNetworkBadge({ degree, darkMode, style }) {
   );
 }
 
-const SEARCH_SCORE_DETAIL_LABELS = {
-  token_name: "Name Token",
-  token_tagline: "Tagline Token",
-  token_bio: "Bio Token",
-  token_tag: "Tag Token",
-  phrase_name: "Name Phrase",
-  phrase_tag: "Tag Phrase",
+function searchChannelScoreParts(item) {
+  const breakdown = item?.score_breakdown;
+  if (!breakdown || typeof breakdown !== "object") return [];
+  const lexical = Number.isFinite(breakdown.lexical_score) ? breakdown.lexical_score : breakdown.lexical_fuzzy_score;
+  const boosts = breakdown.legacy_boosts && typeof breakdown.legacy_boosts === "object" ? breakdown.legacy_boosts : {};
+  const main = [
+    ["Dense", breakdown.dense_score],
+    ["Sparse", breakdown.sparse_score],
+    ["Semantic", breakdown.semantic_score],
+    ["Lexical", lexical],
+    ["Dense+Sparse", breakdown.dense_sparse_score],
+    ["Sem+Lex", breakdown.semantic_lexical_score],
+  ];
+  const boostDetails = [
+    ["Lex boost", boosts.total_lexical_boost],
+    ["Name tok", boosts.token_name],
+    ["Tag tok", boosts.token_tag],
+    ["Tagline tok", boosts.token_tagline],
+    ["Bio tok", boosts.token_bio],
+    ["Name phr", boosts.phrase_name],
+    ["Tag phr", boosts.phrase_tag],
+    ["Lex×0.25", boosts.scaled_lexical_boost],
+    ["Legacy add", breakdown.legacy_additive_score],
+  ];
+  const parts = [
+    ...main.filter(([, value]) => Number.isFinite(value)).map(([label, value]) => `${label} ${Number(value).toFixed(3)}`),
+    ...boostDetails
+      .filter(([, value]) => Number.isFinite(value) && Number(value) > 0)
+      .map(([label, value]) => `${label} ${Number(value).toFixed(3)}`),
+  ];
+  if (boosts.proximity_boost) {
+    const miles = Number.isFinite(boosts.proximity_boost_miles) ? Number(boosts.proximity_boost_miles).toFixed(1) : null;
+    const factor = Number.isFinite(boosts.proximity_boost_factor) ? Number(boosts.proximity_boost_factor).toFixed(2) : "1.12";
+    parts.push(miles ? `Prox ×${factor} (${miles}mi)` : `Prox ×${factor}`);
+  }
+  return parts;
+}
+
+function groupResultsBySearchCategory(items) {
+  const buckets = { sparse: [], exact: [], semantic: [], other: [] };
+  for (const item of items || []) {
+    const cat = item?.search_result_category || "other";
+    if (Object.prototype.hasOwnProperty.call(buckets, cat)) {
+      buckets[cat].push(item);
+    } else {
+      buckets.other.push(item);
+    }
+  }
+  return buckets;
+}
+
+const SEARCH_CATEGORY_TYPE_SECTIONS = [
+  { key: "businesses", label: "Businesses", tabKeys: ["businesses", "organizations"] },
+  { key: "expertise", label: "Offering", tabKeys: ["expertise"] },
+  { key: "seeking", label: "Seeking", tabKeys: ["seeking"] },
+  { key: "individuals", label: "Individuals", tabKeys: ["individuals"] },
+];
+
+const DEFAULT_EXPANDED_SEARCH_CATEGORY_TYPES = {
+  sparse: { businesses: true, expertise: true, seeking: true, individuals: true },
+  exact: { businesses: true, expertise: true, seeking: true, individuals: true },
+  semantic: { businesses: true, expertise: true, seeking: true, individuals: true },
+  other: { businesses: true, expertise: true, seeking: true, individuals: true },
 };
 
-const SEARCH_SCORE_IGNORED_KEYS = new Set(["semantic_score", "lexical_fuzzy_score", "total_lexical_boost", "final_score", "rescore_mode", "rrf_k", "rrf_rank_semantic", "rrf_rank_lexical", "rrf_raw"]);
+function itemMatchesSelectedSearchTab(item, selectedSearchTabs) {
+  const type = item?.itemType || "businesses";
+  return (
+    (type === "businesses" && (selectedSearchTabs.businesses || selectedSearchTabs.organizations)) ||
+    (type === "expertise" && selectedSearchTabs.expertise) ||
+    (type === "seeking" && selectedSearchTabs.seeking) ||
+    (type === "individuals" && selectedSearchTabs.individuals)
+  );
+}
 
-/** Inline score suffix for business search rows, e.g. "(Score 0.984 Sem: 0.222, Lex 0.273, Tag Token 0.220)". */
+function isSearchCategoryTypeTabSelected(section, selectedSearchTabs) {
+  return section.tabKeys.some((tabKey) => selectedSearchTabs[tabKey]);
+}
+
+function filterItemsForSearchCategoryType(items, typeKey) {
+  return (items || []).filter((item) => {
+    const type = item?.itemType || "businesses";
+    if (typeKey === "businesses") return type === "businesses";
+    return type === typeKey;
+  });
+}
+
+/** Inline score suffix, e.g. "(Dense 0.812, Sparse 0.412, ...)". */
 function formatBusinessSearchScoreSuffix(item) {
-  const breakdown = item?.score_breakdown;
-  const segments = [];
-
-  if (Number.isFinite(item?.score)) {
-    segments.push(`Score ${Number(item.score).toFixed(3)}`);
-  } else if (breakdown && Number.isFinite(breakdown.final_score)) {
-    segments.push(`Score ${Number(breakdown.final_score).toFixed(3)}`);
-  }
-
-  if (breakdown && typeof breakdown === "object") {
-    if (Number.isFinite(breakdown.semantic_score)) {
-      segments.push(`Sem: ${Number(breakdown.semantic_score).toFixed(3)}`);
-    }
-    if (Number.isFinite(breakdown.lexical_fuzzy_score)) {
-      segments.push(`Lex ${Number(breakdown.lexical_fuzzy_score).toFixed(3)}`);
-    }
-
-    Object.entries(breakdown)
-      .filter(([key, value]) => SEARCH_SCORE_DETAIL_LABELS[key] && !SEARCH_SCORE_IGNORED_KEYS.has(key) && Number.isFinite(value) && Number(value) > 0)
-      .sort((a, b) => Number(b[1]) - Number(a[1]))
-      .forEach(([key, value]) => {
-        segments.push(`${SEARCH_SCORE_DETAIL_LABELS[key]} ${Number(value).toFixed(3)}`);
-      });
-  }
-
-  if (!segments.length) return null;
-  return `(${segments.join(", ")})`;
+  const parts = searchChannelScoreParts(item);
+  if (!parts.length) return null;
+  return `(${parts.join(", ")})`;
 }
 
 /** Merge API business_details bounty with any values already on the search row (never drop the higher amount). */
@@ -939,6 +993,15 @@ export default function SearchScreen({ route }) {
    * 0 = strong (+ min 4), 1 = +4 more, 2 = all remaining.
    */
   const [showMoreStage, setShowMoreStage] = useState(0);
+  /** Demo search server: sparse / semantic / other category headers from API. */
+  const [searchCategoryMeta, setSearchCategoryMeta] = useState(null);
+  const [expandedSearchCategories, setExpandedSearchCategories] = useState({
+    sparse: true,
+    exact: true,
+    semantic: true,
+    other: true,
+  });
+  const [expandedSearchCategoryTypes, setExpandedSearchCategoryTypes] = useState(DEFAULT_EXPANDED_SEARCH_CATEGORY_TYPES);
 
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
   /** Settings → Debug Mode = Yes: show search ranking scores on result cards. */
@@ -1007,10 +1070,17 @@ export default function SearchScreen({ route }) {
     });
   }, []);
 
-  const commitSearchResults = useCallback((list, { browseAll = false } = {}) => {
+  const commitSearchResults = useCallback((list, { browseAll = false, searchCategories = null } = {}) => {
     browseAllActiveRef.current = browseAll;
     setBrowseAllActive(browseAll);
     setShowMoreStage(0);
+    if (searchCategories?.length) {
+      setSearchCategoryMeta(searchCategories);
+      setExpandedSearchCategories({ sparse: true, exact: true, semantic: true, other: true });
+      setExpandedSearchCategoryTypes(DEFAULT_EXPANDED_SEARCH_CATEGORY_TYPES);
+    } else {
+      setSearchCategoryMeta(null);
+    }
     const filtered = filterPublicSearchModeratedResults(list);
     rawResultsRef.current = [...filtered];
     setResults(
@@ -1856,8 +1926,24 @@ export default function SearchScreen({ route }) {
   const offeringSectionResults = offeringSectionResultsAll.filter(shouldDisplayResult);
   const seekingSectionResults = seekingSectionResultsAll.filter(shouldDisplayResult);
 
+  const searchCategoryBuckets = searchCategoryMeta?.length ? groupResultsBySearchCategory(results) : null;
+
+  const toggleSearchCategory = (categoryId) => {
+    setExpandedSearchCategories((prev) => ({ ...prev, [categoryId]: !prev[categoryId] }));
+  };
+
+  const toggleSearchCategoryType = (categoryId, typeKey) => {
+    setExpandedSearchCategoryTypes((prev) => ({
+      ...prev,
+      [categoryId]: {
+        ...prev[categoryId],
+        [typeKey]: !(prev[categoryId]?.[typeKey] !== false),
+      },
+    }));
+  };
+
   const hiddenWeakerMatchCount = browseAllActive ? 0 : Math.max(0, selectedRankedResults.length - visibleResultSet.size);
-  const showMoreButtonVisible = !browseAllActive && (hiddenWeakerMatchCount > 0 || showMoreStage > 0);
+  const showMoreButtonVisible = !searchCategoryMeta?.length && !browseAllActive && (hiddenWeakerMatchCount > 0 || showMoreStage > 0);
   const nextShowMoreCount = showMoreStage === 0 ? Math.min(4, hiddenWeakerMatchCount) : hiddenWeakerMatchCount;
   const showMoreButtonLabel =
     showMoreStage >= 2 || hiddenWeakerMatchCount === 0
@@ -1883,11 +1969,13 @@ export default function SearchScreen({ route }) {
     const isProfileType = selectedSearchTabs.expertise || selectedSearchTabs.seeking;
     const showBusinessMapResults = selectedSearchTabs.businesses || selectedSearchTabs.organizations;
 
-    const visibleResults = [
-      ...(showBusinessMapResults ? businessSectionResults : []),
-      ...(selectedSearchTabs.expertise ? offeringSectionResults : []),
-      ...(selectedSearchTabs.seeking ? seekingSectionResults : []),
-    ];
+    const visibleResults = searchCategoryMeta?.length
+      ? results.filter((item) => itemMatchesSelectedSearchTab(item, selectedSearchTabs))
+      : [
+          ...(showBusinessMapResults ? businessSectionResults : []),
+          ...(selectedSearchTabs.expertise ? offeringSectionResults : []),
+          ...(selectedSearchTabs.seeking ? seekingSectionResults : []),
+        ];
 
     if (visibleResults.length === 0) {
       Alert.alert("No results", "Select at least one tab and run a search to see results on the map.");
@@ -2090,6 +2178,7 @@ export default function SearchScreen({ route }) {
         isBrowseAll,
       });
       const globalJson = sanitizeEmptyStrings(globalJsonRaw);
+      const searchCategories = Array.isArray(globalJson) ? null : globalJson.search_categories || null;
       const globalResults = Array.isArray(globalJson) ? globalJson : globalJson.results || globalJson.result || [];
       const businessResults = globalResults.filter((item) => item.itemType === "businesses");
       const expertiseResults = globalResults.filter((item) => item.itemType === "expertise");
@@ -2123,6 +2212,7 @@ export default function SearchScreen({ route }) {
         tags: b.tags || [],
         score: b.score || 0,
         score_breakdown: b.score_breakdown || null,
+        search_result_category: b.search_result_category || null,
         passes_relevance_cutoff: b.passes_relevance_cutoff !== false,
         itemType: "businesses",
         profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
@@ -2157,7 +2247,10 @@ export default function SearchScreen({ route }) {
       filteredEnriched = filterResultsByNetwork(filteredEnriched, effectiveNetwork);
       filteredEnriched = applyDistanceFilterToSearchResults(filteredEnriched, effectiveDistance, searchCoords);
       if (searchGeneration !== searchGenerationRef.current) return;
-      commitSearchResults(filteredEnriched, { browseAll: isBrowseAll });
+      commitSearchResults(filteredEnriched, {
+        browseAll: isBrowseAll || Boolean(searchCategories?.length),
+        searchCategories,
+      });
       setHasLoadedInitialSearch(true);
       setLoading(false);
       return;
@@ -2998,47 +3091,9 @@ export default function SearchScreen({ route }) {
 
   const renderScoreBreakdown = (item) => {
     if (!showSearchScores) return null;
-    const breakdown = item?.score_breakdown;
-    if (!breakdown || typeof breakdown !== "object") return null;
-    const sem = Number.isFinite(breakdown.semantic_score) ? Number(breakdown.semantic_score).toFixed(3) : null;
-    // Fuzzy lexical score used for RRF / legacy ranking (not total_lexical_boost token bonuses).
-    const lexFuzzy = Number(breakdown.lexical_fuzzy_score);
-    const lex = Number.isFinite(lexFuzzy) ? lexFuzzy.toFixed(3) : null;
-    const g = Number.isFinite(item?.global_score) ? Number(item.global_score).toFixed(3) : null;
-    const parts = [];
-    if (sem !== null) parts.push(`Sem: ${sem}`);
-    if (lex !== null) parts.push(`Lex: ${lex}`);
-    if (g !== null) parts.push(`Global: ${g}`);
-
-    const detailKeyToLabel = {
-      name_score: "Business Name",
-      tagline_score: "Tagline",
-      bio_score: "Bio",
-      service_name_score: "Product/Service Name",
-      service_tag_score: "Service Tags",
-      custom_tag_score: "Business Tags",
-      title_score: "Title",
-      description_score: "Description",
-      details_score: "Details",
-      token_name: "Name Token",
-      token_tagline: "Tagline Token",
-      token_bio: "Bio Token",
-      token_tag: "Tag Token",
-      phrase_name: "Name Phrase",
-      phrase_tag: "Tag Phrase",
-    };
-
-    const ignoredKeys = new Set(["semantic_score", "lexical_fuzzy_score", "total_lexical_boost", "final_score", "rescore_mode", "rrf_k", "rrf_rank_semantic", "rrf_rank_lexical", "rrf_raw"]);
-    const detailParts = Object.entries(breakdown)
-      .filter(([key, value]) => detailKeyToLabel[key] && !ignoredKeys.has(key) && Number.isFinite(value) && Number(value) > 0)
-      .sort((a, b) => Number(b[1]) - Number(a[1]))
-      .map(([key, value]) => `${detailKeyToLabel[key]}: ${Number(value).toFixed(3)}`);
-
-    if (!parts.length && !detailParts.length) return null;
-
-    const text = detailParts.length ? `${parts.join(" | ")}\n${detailParts.join(" | ")}` : parts.join(" | ");
-
-    return <Text style={[styles.scoreBreakdownText, darkMode && styles.darkScoreBreakdownText]}>{text}</Text>;
+    const parts = searchChannelScoreParts(item);
+    if (!parts.length) return null;
+    return <Text style={[styles.scoreBreakdownText, darkMode && styles.darkScoreBreakdownText]}>{parts.join(" | ")}</Text>;
   };
 
   const getSearchStateForRestore = () => ({
@@ -3507,7 +3562,6 @@ export default function SearchScreen({ route }) {
               <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
                 <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
               </View>
-              {showSearchScores && Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
               {showSearchScores && renderScoreBreakdown(item)}
               {(() => {
                 const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";
@@ -3930,6 +3984,62 @@ export default function SearchScreen({ route }) {
               </View>
             ) : (
               <>
+                {searchCategoryMeta?.length ? (
+                  searchCategoryMeta.map((cat) => {
+                    const catItems = searchCategoryBuckets?.[cat.id] || [];
+                    const visibleCatItems = catItems.filter((item) => itemMatchesSelectedSearchTab(item, selectedSearchTabs));
+                    const expanded = expandedSearchCategories[cat.id] !== false;
+                    return (
+                      <React.Fragment key={cat.id}>
+                        <TouchableOpacity
+                          style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]}
+                          onPress={() => toggleSearchCategory(cat.id)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>
+                            {cat.title} ({visibleCatItems.length})
+                          </Text>
+                          <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
+                        </TouchableOpacity>
+                        {expanded &&
+                          (visibleCatItems.length > 0 ? (
+                            SEARCH_CATEGORY_TYPE_SECTIONS.map((section) => {
+                              if (!isSearchCategoryTypeTabSelected(section, selectedSearchTabs)) return null;
+                              const typeItems = filterItemsForSearchCategoryType(catItems, section.key);
+                              const typeExpanded = expandedSearchCategoryTypes[cat.id]?.[section.key] !== false;
+                              return (
+                                <React.Fragment key={`${cat.id}-${section.key}`}>
+                                  <TouchableOpacity
+                                    style={[styles.globalNestedSectionHeader, darkMode && styles.darkGlobalNestedSectionHeader]}
+                                    onPress={() => toggleSearchCategoryType(cat.id, section.key)}
+                                    activeOpacity={0.8}
+                                  >
+                                    <Text style={[styles.globalNestedSectionHeaderText, darkMode && styles.darkGlobalNestedSectionHeaderText]}>
+                                      {section.label} ({typeItems.length})
+                                    </Text>
+                                    <Ionicons name={typeExpanded ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#fff" : "#333"} />
+                                  </TouchableOpacity>
+                                  {typeExpanded &&
+                                    (typeItems.length > 0 ? (
+                                      typeItems.map((item, idx) => renderResultItem(item, `${cat.id}-${section.key}-${idx}`))
+                                    ) : (
+                                      <Text style={[styles.individualsSearchHint, darkMode && styles.darkIndividualsSearchHint, styles.globalNestedSectionEmpty]}>
+                                        No {section.label.toLowerCase()} in this category.
+                                      </Text>
+                                    ))}
+                                </React.Fragment>
+                              );
+                            })
+                          ) : (
+                            <Text style={[styles.individualsSearchHint, darkMode && styles.darkIndividualsSearchHint]}>
+                              No results in this category for the selected tabs.
+                            </Text>
+                          ))}
+                      </React.Fragment>
+                    );
+                  })
+                ) : (
+                  <>
                 {selectedSearchTabs.individuals && (
                   <>
                     <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalIndividuals((prev) => !prev)} activeOpacity={0.8}>
@@ -3983,6 +4093,8 @@ export default function SearchScreen({ route }) {
                       <Ionicons name={showGlobalSeeking ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
                     </TouchableOpacity>
                     {showGlobalSeeking && seekingSectionResults.map((item, idx) => renderResultItem(item, idx))}
+                  </>
+                )}
                   </>
                 )}
 
@@ -5209,6 +5321,32 @@ const styles = StyleSheet.create({
   },
   darkGlobalSectionHeaderText: {
     color: "#fff",
+  },
+  globalNestedSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(79, 138, 139, 0.28)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 6,
+    marginLeft: 12,
+  },
+  globalNestedSectionHeaderText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
+  darkGlobalNestedSectionHeader: {
+    backgroundColor: "rgba(61, 107, 108, 0.35)",
+  },
+  darkGlobalNestedSectionHeaderText: {
+    color: "#fff",
+  },
+  globalNestedSectionEmpty: {
+    marginLeft: 12,
+    marginBottom: 8,
   },
   showMoreResultsButton: {
     marginTop: 12,
