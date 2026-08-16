@@ -117,13 +117,20 @@ const COLORS = {
 };
 
 // Default settings for Messages Privacy — persisted server-side on profile_personal
-// (profile_personal_messages_receive_from + profile_personal_messages_receive_types).
-// There is no sender-side restriction — everyone can always attempt to message anyone;
-// only the recipient's own "Can Message Me" audience setting can block it.
+// (profile_personal_messages_receive_from + profile_personal_messages_receive_types +
+//  profile_personal_messages_off + profile_personal_messages_allow_transaction).
+// Audience rules gate cold messages; allow_transaction is an independent exception for
+// people linked via purchases / offering / seeking replies.
 const DEFAULT_MESSAGES_SETTINGS = {
   receiveFrom: "all_circles", // who can message me: 'everyone' | 'all_circles' | 'specific'
   receiveFromTypes: { friends: true, colleagues: true, family: true },
 };
+
+/** Treat 1 / "1" / true as on; missing/empty defaults to `defaultValue`. */
+function parseProfileBoolFlag(value, defaultValue = false) {
+  if (value === undefined || value === null || value === "") return defaultValue;
+  return value === 1 || value === "1" || value === true;
+}
 
 /** "friends,family" -> { friends: true, colleagues: false, family: true }; empty/missing -> all true (default). */
 function parseCircleTypesCsv(csv) {
@@ -199,8 +206,11 @@ export default function SettingsScreen() {
   // Messages Privacy (who can message me) — persisted server-side
   const [messagesSettings, setMessagesSettings] = useState(DEFAULT_MESSAGES_SETTINGS);
   const [messagesPrivacyModalVisible, setMessagesPrivacyModalVisible] = useState(false);
-  // Master "turn off all messages" switch — persisted server-side (profile_personal_messages_off)
+  // Master "block all incoming" switch — persisted server-side (profile_personal_messages_off)
   const [messagesOff, setMessagesOff] = useState(false);
+  // Independent exception: allow contact from purchase / offering / seeking counterparts
+  // (profile_personal_messages_allow_transaction). Default ON when unset.
+  const [messagesAllowTransaction, setMessagesAllowTransaction] = useState(true);
 
   // Live location sharing — watcher/timer/Ably alerts live in utils/liveLocationSharing
   // (shared with Connect). Banner delivery is owned by NearbyAlertProvider.
@@ -567,11 +577,8 @@ export default function SettingsScreen() {
       receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
       receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
     });
-    setMessagesOff(
-      result.personal_info.profile_personal_messages_off === 1 ||
-        result.personal_info.profile_personal_messages_off === "1" ||
-        result.personal_info.profile_personal_messages_off === true,
-    );
+    setMessagesOff(parseProfileBoolFlag(result.personal_info.profile_personal_messages_off, false));
+    setMessagesAllowTransaction(parseProfileBoolFlag(result.personal_info.profile_personal_messages_allow_transaction, true));
   }, []);
 
   const loadProfileForSettings = useCallback(async () => {
@@ -714,6 +721,30 @@ export default function SettingsScreen() {
     } catch (e) {
       console.error("toggleMessagesOff failed:", e);
       setMessagesOff(!value);
+      Alert.alert("Error", e?.message || "Could not update your messages setting.");
+    }
+  };
+
+  const toggleMessagesAllowTransaction = async (value) => {
+    setMessagesAllowTransaction(value);
+    try {
+      const uid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (!uid) throw new Error("Not logged in");
+      const formData = new FormData();
+      formData.append("profile_uid", uid);
+      formData.append("profile_personal_messages_allow_transaction", value ? "1" : "0");
+      const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
+        method: "PUT",
+        body: formData,
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || (result.code != null && result.code !== 200)) {
+        throw new Error(result.message || `Failed to update: ${res.status}`);
+      }
+      await refreshSessionProfileFromNetwork(uid);
+    } catch (e) {
+      console.error("toggleMessagesAllowTransaction failed:", e);
+      setMessagesAllowTransaction(!value);
       Alert.alert("Error", e?.message || "Could not update your messages setting.");
     }
   };
@@ -1246,7 +1277,10 @@ export default function SettingsScreen() {
               {/* Messages Privacy — opens modal */}
               {(() => {
                 const PRIVACY_LABEL = { everyone: "Everyone", all_circles: "All Circles", specific: "Specific" };
-                const receiveLabel = messagesOff ? "No one (all messages off)" : PRIVACY_LABEL[messagesSettings.receiveFrom] || messagesSettings.receiveFrom;
+                let receiveLabel = PRIVACY_LABEL[messagesSettings.receiveFrom] || messagesSettings.receiveFrom;
+                if (messagesOff) {
+                  receiveLabel = messagesAllowTransaction ? "Blocked except purchases / offerings / seeking" : "No one (all messages off)";
+                }
                 return (
                   <TouchableOpacity
                     style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}
@@ -2099,12 +2133,22 @@ export default function SettingsScreen() {
             <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Messages Privacy</Text>
             <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>Control who can message you.</Text>
 
-            <View style={[styles.nearbyPrivacyOptionRow, { justifyContent: "space-between", paddingRight: 4 }]}>
-              <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText, { marginTop: 0 }]}>Turn Off All Messages</Text>
-              <SettingsBoolPills value={messagesOff} onValueChange={toggleMessagesOff} leftLabel='Off' rightLabel='On' darkMode={darkMode} />
+            <View style={styles.messagesPrivacyToggleRow}>
+              <Text style={[styles.nearbyPrivacyGroupLabel, styles.messagesPrivacyToggleLabel, darkMode && styles.darkItemText]}>Block all Incoming Messages</Text>
+              <SettingsBoolPills value={messagesOff} onValueChange={toggleMessagesOff} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
             </View>
 
-            <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText, { marginTop: 8, opacity: messagesOff ? 0.4 : 1 }]}>Can Message Me</Text>
+            <View style={styles.messagesPrivacyToggleRow}>
+              <View style={styles.messagesPrivacyToggleLabelWrap}>
+                <Text style={[styles.nearbyPrivacyGroupLabel, styles.messagesPrivacyToggleLabel, darkMode && styles.darkItemText]}>Allow Messages About Purchases, Offerings & Seeking</Text>
+                <Text style={[styles.messagesPrivacyToggleHint, darkMode && styles.darkNearbySubText]}>
+                  People you have an order or reply relationship with can still contact you about it.
+                </Text>
+              </View>
+              <SettingsBoolPills value={messagesAllowTransaction} onValueChange={toggleMessagesAllowTransaction} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
+            </View>
+
+            <Text style={[styles.nearbyPrivacyGroupLabel, styles.messagesPrivacySectionLabel, darkMode && styles.darkItemText, { opacity: messagesOff ? 0.4 : 1 }]}>Who can send me messages</Text>
             {[
               { key: "everyone", label: "Everyone (all app users)" },
               { key: "all_circles", label: "All Circle Members" },
@@ -2112,7 +2156,7 @@ export default function SettingsScreen() {
             ].map(({ key, label }) => (
               <TouchableOpacity
                 key={key}
-                style={[styles.nearbyPrivacyOptionRow, messagesOff && { opacity: 0.4 }]}
+                style={[styles.nearbyPrivacyOptionRow, styles.messagesPrivacyOptionRow, messagesOff && { opacity: 0.4 }]}
                 onPress={() => !messagesOff && updateMessagesSettings({ ...messagesSettings, receiveFrom: key })}
                 activeOpacity={messagesOff ? 1 : 0.7}
                 disabled={messagesOff}
@@ -2122,7 +2166,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             ))}
             {messagesSettings.receiveFrom === "specific" && !messagesOff && (
-              <View style={styles.nearbyPrivacyCheckboxGroup}>
+              <View style={[styles.nearbyPrivacyCheckboxGroup, styles.messagesPrivacyCheckboxGroup]}>
                 {[
                   { key: "friends", label: "Friends" },
                   { key: "colleagues", label: "Colleagues" },
@@ -2830,20 +2874,71 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 4,
   },
+  messagesPrivacyToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    alignSelf: "stretch",
+    width: "100%",
+    paddingVertical: 6,
+    paddingLeft: 4,
+    paddingRight: 4,
+    gap: 16,
+  },
+  messagesPrivacyToggleLabelWrap: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: "flex-start",
+  },
+  messagesPrivacyToggleLabel: {
+    flex: 1,
+    marginTop: 0,
+    marginBottom: 0,
+    textAlign: "left",
+    paddingRight: 4,
+  },
+  messagesPrivacyToggleHint: {
+    fontSize: 12,
+    color: "#777",
+    marginTop: 4,
+    textAlign: "left",
+    textTransform: "none",
+    letterSpacing: 0,
+    fontWeight: "400",
+  },
+  messagesPrivacySectionLabel: {
+    alignSelf: "stretch",
+    width: "100%",
+    textAlign: "left",
+    marginTop: 12,
+    paddingLeft: 4,
+  },
+  // Indent radios to sit under the "C" in "Who can send me messages" (uppercase "WHO ").
+  messagesPrivacyOptionRow: {
+    paddingLeft: 36,
+  },
+  messagesPrivacyCheckboxGroup: {
+    paddingLeft: 60,
+  },
   nearbyPrivacyOptionRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 5,
     paddingLeft: 4,
+    alignSelf: "stretch",
+    width: "100%",
   },
   nearbyPrivacyOptionText: {
     fontSize: 14,
     color: "#333",
+    textAlign: "left",
   },
   nearbyPrivacyCheckboxGroup: {
     paddingLeft: 28,
     marginTop: 2,
     marginBottom: 4,
+    alignSelf: "stretch",
+    width: "100%",
   },
   nearbyPrivacyCheckboxRow: {
     flexDirection: "row",

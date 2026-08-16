@@ -1021,6 +1021,23 @@ function resolveWalletLedgerDisplayLabel(entry, field) {
   return String(label).trim();
 }
 
+/**
+ * Wallet Ledger ID column: prefer the original sale / order so returns & clawbacks
+ * group with the purchase they affect (transaction_original_uid / order_uid).
+ */
+function resolveWalletLedgerDisplayTxnId(entry) {
+  const id = String(entry?.transaction_original_uid || entry?.original_transaction_uid || entry?.order_uid || entry?.transaction_uid || "").trim();
+  return id || "—";
+}
+
+/** Order detail open target for a ledger row — same original-sale preference as the ID column. */
+function resolveWalletLedgerOrderUid(entry, ...sources) {
+  const preferred = String(entry?.order_uid || entry?.transaction_original_uid || entry?.original_transaction_uid || "").trim();
+  if (preferred.startsWith("500-")) return preferred;
+  const txnUid = String(entry?.transaction_uid || "").trim();
+  return resolveOrderUidForTransactionUid(txnUid, ...sources) || (txnUid.startsWith("500-") ? txnUid : null);
+}
+
 function ledgerDisplayLabelColor(label, darkMode) {
   const raw = String(label ?? "").trim();
   if (!raw || raw === "—" || raw === "-" || raw === ACCOUNT_SCREEN_DISPLAY_NA || raw === "NA") return undefined;
@@ -4148,7 +4165,8 @@ function filterWalletLedgerEntriesForOrder(entries, orderUid) {
   return entries.filter((entry) => {
     const txnUid = String(entry?.transaction_uid || "").trim();
     const entryOrderUid = String(entry?.order_uid || "").trim();
-    return txnUid === uid || entryOrderUid === uid;
+    const originalUid = String(entry?.transaction_original_uid || entry?.original_transaction_uid || "").trim();
+    return txnUid === uid || entryOrderUid === uid || originalUid === uid;
   });
 }
 
@@ -8459,15 +8477,14 @@ function buildExpertiseRows(expertiseList, sellerTransactions, salesOfferings = 
   });
 }
 
-/** SALES "Left" column — ∞ unlimited, NA when BE omitted quantity, else numeric string. */
-function resolveExpertiseRemainingLabel(exp, soldQty) {
+/** SALES "Left" column — ∞ unlimited, NA when BE omitted quantity, else BE numeric (incl. 0). */
+function resolveExpertiseRemainingLabel(exp, _soldQty) {
   if (isOfferingQtyUnlimited(exp)) return "∞";
   const raw = exp.profile_expertise_quantity;
   if (raw == null || String(raw).trim() === "") return "NA";
   const dbQty = parseInt(raw, 10);
   if (!Number.isFinite(dbQty)) return "NA";
-  if (dbQty > 0) return String(dbQty);
-  return soldQty > 0 ? "0" : "NA";
+  return String(Math.max(0, dbQty));
 }
 
 /**
@@ -11723,7 +11740,7 @@ export default function AccountScreen({ navigation, route }) {
                       <View style={styles.transactionsContainer}>
                         <View style={styles.transactionHeaderRow}>
                           <Text style={styles.transactionHeaderDate}>Date</Text>
-                          <Text style={styles.transactionHeaderId}>Transaction ID</Text>
+                          <Text style={styles.transactionHeaderId}>Original ID</Text>
                           <Text style={[styles.transactionHeaderBusiness, { flex: 1 }]}>Type</Text>
                           <Text style={[styles.transactionHeaderPurchasedItem, { flex: 1.2 }]}>Description</Text>
                           <Text style={[styles.transactionHeaderAmount, { flex: 0.75 }]}>Pending</Text>
@@ -11736,9 +11753,7 @@ export default function AccountScreen({ navigation, route }) {
                           const useableLabel = resolveWalletLedgerDisplayLabel(entry, "useable_amount_label");
                           const pendingColor = ledgerDisplayLabelColor(pendingLabel, darkMode);
                           const useableColor = ledgerDisplayLabelColor(useableLabel, darkMode);
-                          const ledgerOrderUid =
-                            resolveOrderUidForTransactionUid(entry.transaction_uid, transactionData, bountyData?.data, sellerTxData, businessSellerTransactionList) ||
-                            (String(entry.transaction_uid || "").startsWith("500-") ? String(entry.transaction_uid).trim() : null);
+                          const ledgerOrderUid = resolveWalletLedgerOrderUid(entry, transactionData, bountyData?.data, sellerTxData, businessSellerTransactionList);
                           const openLedgerEntry = () => {
                             if (!ledgerOrderUid) return;
                             const isSellerLedgerEntry = isWalletLedgerSaleProceedsEntry(entry);
@@ -11759,7 +11774,7 @@ export default function AccountScreen({ navigation, route }) {
                             <LedgerRowWrapper key={entry.ledger_entry_uid || entry.entry_id || `ledger-${index}`} style={styles.transactionRow} {...ledgerRowProps}>
                               <Text style={styles.transactionDate}>{entry.display?.date_label || formatLedgerEntryDate(entry)}</Text>
                               <Text style={[styles.transactionId, ledgerOrderUid && styles.receiptLink]} numberOfLines={1}>
-                                {entry.transaction_uid || "—"}
+                                {resolveWalletLedgerDisplayTxnId(entry)}
                               </Text>
                               <Text style={[styles.transactionBusiness, { flex: 1 }]} numberOfLines={2}>
                                 {entry.entry_type_label || entry.entry_type || "—"}
@@ -11902,7 +11917,7 @@ export default function AccountScreen({ navigation, route }) {
                       <View style={styles.transactionsContainer}>
                         <View style={styles.transactionHeaderRow}>
                           <Text style={styles.transactionHeaderDate}>Date</Text>
-                          <Text style={styles.transactionHeaderId}>Transaction ID</Text>
+                          <Text style={styles.transactionHeaderId}>Original ID</Text>
                           <Text style={[styles.transactionHeaderBusiness, { flex: 1 }]}>Type</Text>
                           <Text style={[styles.transactionHeaderPurchasedItem, { flex: 1.2 }]}>Description</Text>
                           <Text style={[styles.transactionHeaderAmount, { flex: 0.75 }]}>Pending</Text>
@@ -11915,9 +11930,7 @@ export default function AccountScreen({ navigation, route }) {
                           const useableLabel = resolveWalletLedgerDisplayLabel(entry, "useable_amount_label");
                           const pendingColor = ledgerDisplayLabelColor(pendingLabel, darkMode);
                           const useableColor = ledgerDisplayLabelColor(useableLabel, darkMode);
-                          const ledgerOrderUid =
-                            resolveOrderUidForTransactionUid(entry.transaction_uid, businessSellerTransactionList, businessBountyData?.data) ||
-                            (String(entry.order_uid || entry.transaction_uid || "").startsWith("500-") ? String(entry.order_uid || entry.transaction_uid).trim() : null);
+                          const ledgerOrderUid = resolveWalletLedgerOrderUid(entry, businessSellerTransactionList, businessBountyData?.data);
                           const openLedgerEntry = () => {
                             if (!ledgerOrderUid) return;
                             const isSellerLedgerEntry = isWalletLedgerSaleProceedsEntry(entry);
@@ -11938,7 +11951,7 @@ export default function AccountScreen({ navigation, route }) {
                             <LedgerRowWrapper key={entry.ledger_entry_uid || entry.entry_id || `biz-ledger-${index}`} style={styles.transactionRow} {...ledgerRowProps}>
                               <Text style={styles.transactionDate}>{entry.display?.date_label || formatLedgerEntryDate(entry)}</Text>
                               <Text style={[styles.transactionId, ledgerOrderUid && styles.receiptLink]} numberOfLines={1}>
-                                {entry.transaction_uid || entry.order_uid || "—"}
+                                {resolveWalletLedgerDisplayTxnId(entry)}
                               </Text>
                               <Text style={[styles.transactionBusiness, { flex: 1 }]} numberOfLines={2}>
                                 {entry.entry_type_label || entry.entry_type || "—"}
