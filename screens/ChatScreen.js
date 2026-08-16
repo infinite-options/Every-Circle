@@ -424,15 +424,7 @@ export default function ChatScreen() {
 
   // ─── send ────────────────────────────────────────────────────────────────
 
-  const buildReplyBody = (text, context) => {
-    if (!context?.label && !context?.quote) return text;
-    const lines = [];
-    if (context?.label) lines.push(`↪ ${context.label}`);
-    if (context?.quote) lines.push(context.quote);
-    lines.push(text);
-    return lines.join("\n");
-  };
-
+  /** Legacy bodies embedded `↪ label\\nquote\\ntext`. New writes store user text only. */
   const parseReplyBody = (rawBody) => {
     const body = typeof rawBody === "string" ? rawBody : String(rawBody || "");
     const match = body.match(/^↪\s+([^\n]+)\n([\s\S]*)$/);
@@ -447,7 +439,10 @@ export default function ChatScreen() {
   const sendMessage = async () => {
     const text = inputText.trim();
     if (!text || !convUid || !myUid || sending) return;
-    const bodyToSend = buildReplyBody(text, pendingReplyContext);
+    // Persist only what the user typed. Reply label stays UI metadata for this session
+    // (POST still sends message_context_* via replyContext) — never embed quote/label in body.
+    const bodyToSend = text;
+    const replyLabel = pendingReplyContext?.label ? String(pendingReplyContext.label).trim() : "";
 
     const sentStamp = new Date().toISOString().replace("T", " ").slice(0, 19);
     const optimistic = normalizeMessageForUi({
@@ -457,6 +452,7 @@ export default function ChatScreen() {
       message_body: bodyToSend,
       message_sent_at: sentStamp,
       message_read_at: null,
+      ...(replyLabel ? { reply_context_label: replyLabel } : {}),
     });
 
     setInputText("");
@@ -530,6 +526,9 @@ export default function ChatScreen() {
     const bodyText = item.message_body ?? item.body ?? "";
     const sentAt = item.message_sent_at ?? item.sent_at ?? "";
     const parsedBody = parseReplyBody(bodyText);
+    const contextLabel = item.reply_context_label || parsedBody.contextLabel;
+    const displayText = parsedBody.isReply ? parsedBody.text : bodyText;
+    const showReplyChrome = !!(contextLabel || parsedBody.isReply);
     const prevSent = index > 0 ? messages[index - 1].message_sent_at ?? messages[index - 1].sent_at : null;
     const showDayLabel = index === 0 || !sameDay(prevSent, sentAt);
 
@@ -541,15 +540,15 @@ export default function ChatScreen() {
           </View>
         )}
         <View style={[styles.msgRow, isMine ? styles.msgRowMine : styles.msgRowTheirs]}>
-          <View style={[styles.bubble, parsedBody.isReply && styles.bubbleReply, isMine ? styles.bubbleMine : [styles.bubbleTheirs, darkMode && styles.bubbleTheirsDark]]}>
-            {parsedBody.isReply && parsedBody.contextLabel ? (
+          <View style={[styles.bubble, showReplyChrome && styles.bubbleReply, isMine ? styles.bubbleMine : [styles.bubbleTheirs, darkMode && styles.bubbleTheirsDark]]}>
+            {contextLabel ? (
               <View style={[styles.replyHeader, isMine ? styles.replyHeaderMine : styles.replyHeaderTheirs, !isMine && darkMode && styles.replyHeaderTheirsDark]}>
                 <Text style={[styles.replyHeaderText, isMine ? styles.replyHeaderTextMine : styles.replyHeaderTextTheirs, !isMine && darkMode && styles.replyHeaderTextTheirsDark]} numberOfLines={2}>
-                  {parsedBody.contextLabel}
+                  {contextLabel}
                 </Text>
               </View>
             ) : null}
-            <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : darkMode && styles.bubbleTextDark]}>{parsedBody.text}</Text>
+            <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : darkMode && styles.bubbleTextDark]}>{displayText}</Text>
           </View>
           <Text style={[styles.msgTime, isMine ? styles.msgTimeMine : darkMode && styles.msgTimeDark]}>{formatTime(sentAt)}</Text>
         </View>
