@@ -5,7 +5,12 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
 import BountyInfoTooltip, { ESCROW_INFO_COPY } from "./BountyInfoTooltip";
 import { computeCreditCardChargeTotal, computeCreditCardProcessingFee, CREDIT_CARD_FEE_DISPLAY_LABEL } from "../utils/cartCreditCardFee";
-import { getSeekingCheckoutShippingCharge } from "../utils/seekingCheckoutApi";
+import {
+  getSeekingBountyLineTotal,
+  getSeekingBountyType,
+  getSeekingCheckoutShippingCharge,
+  parseSeekingBountyUnitAmount,
+} from "../utils/seekingCheckoutApi";
 
 /**
  * Parse cost string to extract numeric value and units.
@@ -39,16 +44,11 @@ const getQuantityLabelSuffix = (units) => {
   return units;
 };
 
-const parseBounty = (bountyStr) => {
-  if (!bountyStr || String(bountyStr).toLowerCase() === "free") return 0;
-  const match = String(bountyStr).match(/[\d.]+/);
-  return match ? parseFloat(match[0]) : 0;
-};
-
 const AcceptDetailsModal = ({ show, setShow, wishData, response, onContinue, onCancel }) => {
   const { darkMode } = useDarkMode();
   const { value: costValue, units } = parseCost(wishData?.cost || "");
-  const bountyAmount = parseBounty(wishData?.bounty || "0");
+  const bountyType = getSeekingBountyType(wishData);
+  const bountyUnit = parseSeekingBountyUnitAmount(wishData);
 
   const [escrow, setEscrow] = useState(true);
   const [quantity, setQuantity] = useState("1");
@@ -66,6 +66,7 @@ const AcceptDetailsModal = ({ show, setShow, wishData, response, onContinue, onC
   const quantityLabelSuffix = isTotalUnit ? "" : getQuantityLabelSuffix(units);
   const qtyNum = isTotalUnit ? 1 : parseFloat(quantity) || 0;
   const costAmount = costValue * qtyNum;
+  const bountyAmount = getSeekingBountyLineTotal(wishData, qtyNum > 0 ? qtyNum : 1);
   const shippingCharge = getSeekingCheckoutShippingCharge(wishData, qtyNum > 0 ? qtyNum : 1);
   const shippingAmount = shippingCharge.lineAmount;
   const subtotal = costAmount + bountyAmount + shippingAmount;
@@ -172,7 +173,11 @@ const AcceptDetailsModal = ({ show, setShow, wishData, response, onContinue, onC
             )}
             {bountyAmount > 0 && (
               <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Bounty</Text>
+                <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>
+                  {bountyType === "per_item" && bountyUnit > 0
+                    ? `Bounty (${qtyNum} × $${bountyUnit.toFixed(2)})`
+                    : "Bounty"}
+                </Text>
                 <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${bountyAmount.toFixed(2)}</Text>
               </View>
             )}

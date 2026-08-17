@@ -16,6 +16,7 @@ export function pickSeekingListingCommerceFields(source = {}) {
     profile_wish_free_shipping: source.profile_wish_free_shipping,
     profile_wish_buyer_pays_shipping: source.profile_wish_buyer_pays_shipping,
     profile_wish_shipping_cost_type: source.profile_wish_shipping_cost_type,
+    profile_wish_bounty_type: source.profile_wish_bounty_type,
   };
 }
 

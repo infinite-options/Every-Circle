@@ -17,6 +17,63 @@ function roundMoney(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
+function parseSeekingBountyRawAmount(wishData) {
+  const raw = String(wishData?.bounty ?? wishData?.amount ?? wishData?.profile_wish_bounty ?? "").trim();
+  if (!raw || raw.toLowerCase() === "free") return 0;
+  const cleaned = raw.replace(/^\$/, "").trim();
+  if (!cleaned) return 0;
+  if (cleaned.toLowerCase().endsWith("total")) {
+    return parsePrice(cleaned.replace(/\s*total$/i, ""));
+  }
+  const slashIdx = cleaned.indexOf("/");
+  const amountStr = slashIdx >= 0 ? cleaned.slice(0, slashIdx).trim() : cleaned;
+  return parsePrice(amountStr);
+}
+
+/** Listing bounty type: none | per_item | total. Missing type with a bounty amount follows BE (per_item). */
+export function getSeekingBountyType(wishData) {
+  const raw = String(wishData?.profile_wish_bounty_type ?? wishData?.bounty_type ?? "")
+    .trim()
+    .toLowerCase();
+  if (raw === "total" || raw === "single") return "total";
+  if (raw === "none" || raw === "no" || raw === "no_bounty") return "none";
+  if (raw === "per_item" || raw === "per_unit" || raw === "each") return "per_item";
+  return parseSeekingBountyRawAmount(wishData) > 0 ? "per_item" : "none";
+}
+
+export function parseSeekingBountyUnitAmount(wishData) {
+  if (getSeekingBountyType(wishData) === "none") return 0;
+  const n = parseSeekingBountyRawAmount(wishData);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Buyer-paid bounty for this quantity (per_item × qty, or a single total). */
+export function getSeekingBountyLineTotal(wishData, quantity = 1) {
+  const type = getSeekingBountyType(wishData);
+  const unit = parseSeekingBountyUnitAmount(wishData);
+  if (type === "none" || unit <= 0) return 0;
+  if (type === "total") return roundMoney(unit);
+  const qty = Math.max(1, Number(quantity) || 1);
+  return roundMoney(unit * qty);
+}
+
+/**
+ * POST item bounty fields. `bounty` is the listing unit (or single total);
+ * BE multiplies per_item by quantity for paid-total and payout.
+ */
+export function getSeekingBountyApiFields(wishData, quantity = 1) {
+  const type = getSeekingBountyType(wishData);
+  const unitAmount = parseSeekingBountyUnitAmount(wishData);
+  const lineTotal = getSeekingBountyLineTotal(wishData, quantity);
+  if (type === "none" || unitAmount <= 0) {
+    return { bounty: 0, bounty_type: "total", unitAmount: 0, lineTotal: 0 };
+  }
+  if (type === "total") {
+    return { bounty: unitAmount, bounty_type: "total", unitAmount, lineTotal };
+  }
+  return { bounty: unitAmount, bounty_type: "per_item", unitAmount, lineTotal };
+}
+
 /**
  * Resolve checkout fulfillment_method from profile_wish_mode.
  * Prefer virtual → pickup → ship (no extra UI on accept today).

@@ -44,7 +44,7 @@ import StripePayment from "../components/StripePaymentWeb";
 import PaymentFailure from "../components/PaymentFailure";
 import AcceptDetailsModal from "../components/AcceptDetailsModal";
 import { computeCreditCardChargeTotal, computeCreditCardProcessingFee } from "../utils/cartCreditCardFee";
-import { buildSeekingCheckoutLineApiFields, buildSeekingCheckoutOrderMoney } from "../utils/seekingCheckoutApi";
+import { buildSeekingCheckoutLineApiFields, buildSeekingCheckoutOrderMoney, getSeekingBountyApiFields } from "../utils/seekingCheckoutApi";
 
 // Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
 const formatDateTimeForDisplay = (value) => {
@@ -289,12 +289,11 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       const qty = Math.max(1, Number(quantity) || 1);
       const unitCost = costValue != null ? parseFloat(costValue) : 0;
       const merchandiseCost = costAmount != null ? parseFloat(costAmount) : unitCost * qty;
-      const bounty = bountyAmount != null ? parseFloat(bountyAmount) : 0;
+      const bountyApi = getSeekingBountyApiFields(wishData, qty);
+      const lineBounty = bountyAmount != null ? parseFloat(bountyAmount) : bountyApi.lineTotal;
       const fee = parseFloat(processingFee) || 0;
       const recommendedId = String(recommendedProfileUid || "").trim();
       const recommenderId = String(recommenderProfileUid || recommendedProfileUid || "").trim();
-      // AcceptDetailsModal always adds bounty once (not × qty). Send "total" so BE paid-total matches the Stripe charge.
-      const bountyType = "total";
 
       const { lineFields, shipping_address, total_shipping, total_taxes } = buildSeekingCheckoutLineApiFields({
         wishData,
@@ -306,7 +305,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         unitCost,
         quantity: qty,
         costAmount: merchandiseCost,
-        bountyAmount: bounty,
+        bountyAmount: lineBounty,
         processingFee: fee,
         totalTaxes: total_taxes,
         totalShipping: total_shipping,
@@ -339,8 +338,8 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
             ti_bs_id: wishResponseUid,
             bs_uid: wishResponseUid,
             ti_bs_cost: orderMoney.unit_price,
-            bounty: orderMoney.bounty,
-            bounty_type: bountyType,
+            bounty: bountyApi.bounty,
+            bounty_type: bountyApi.bounty_type,
             quantity: qty,
             cost: merchandiseCost,
             item_cost: unitCost,
