@@ -58,6 +58,7 @@ import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import SeekingCardDetails from "../components/SeekingCardDetails";
 import OfferingCardDetails from "../components/OfferingCardDetails";
 import { buildOfferingCardModel } from "../utils/offeringResubmission";
+import { pickSeekingListingCommerceFields } from "../utils/wishResubmission";
 import { expertiseDataForCartModal } from "../utils/offeringCartUtils";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { mapBusinessToMiniCard, mapBusinessToMicroCard } from "../utils/mapBusinessToMiniCard";
@@ -499,8 +500,10 @@ function mapSearchWishRow(item, i) {
       profile_wish_longitude: item.profile_wish_longitude ?? null,
       profile_wish_city: item.profile_wish_city || "",
       profile_wish_state: item.profile_wish_state || "",
+      profile_wish_zip: item.profile_wish_zip || "",
       profile_wish_mode: item.profile_wish_mode || "",
       profile_wish_bounty_type: item.profile_wish_bounty_type || (item.profile_wish_bounty ? "per_item" : "none"),
+      ...pickSeekingListingCommerceFields(item),
       profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
       profile_wish_moderated: item.profile_wish_moderated,
       profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
@@ -2455,7 +2458,9 @@ export default function SearchScreen({ route }) {
                 profile_wish_mode: item.profile_wish_mode || "",
                 profile_wish_city: item.profile_wish_city || "",
                 profile_wish_state: item.profile_wish_state || "",
+                profile_wish_zip: item.profile_wish_zip || "",
                 profile_wish_bounty_type: item.profile_wish_bounty_type || (item.profile_wish_bounty ? "per_item" : "none"),
+                ...pickSeekingListingCommerceFields(item),
                 profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
                 profile_wish_moderated: item.profile_wish_moderated,
                 profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,

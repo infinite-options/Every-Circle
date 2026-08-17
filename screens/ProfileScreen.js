@@ -78,6 +78,7 @@ import { isPublicSocialLinkRow, isSocialLinksSectionPublic } from "../utils/prof
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED, MODERATED_TAKEN_DOWN, normalizeOfferingModeration } from "../utils/offeringModeration";
 import { buildOfferingCardModel } from "../utils/offeringResubmission";
 import { getSeekingModeratedState, isSeekingModeratedBlocked, normalizeSeekingModeration } from "../utils/seekingModeration";
+import { pickSeekingListingCommerceFields } from "../utils/wishResubmission";
 import {
   buildProfileModerationItem,
   getProfileModerationStatusLabel,
@@ -878,7 +879,9 @@ const ProfileScreen = ({ route, navigation }) => {
         profile_wish_longitude: wish.profile_wish_longitude != null ? parseFloat(wish.profile_wish_longitude) : null,
         profile_wish_city: wish.profile_wish_city || "",
         profile_wish_state: wish.profile_wish_state || "",
+        profile_wish_zip: wish.profile_wish_zip || "",
         profile_wish_mode: wish.profile_wish_mode || "",
+        ...pickSeekingListingCommerceFields(wish),
         profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
         isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
         wish_responses: wish.wish_responses || 0,
@@ -2236,7 +2239,11 @@ const ProfileScreen = ({ route, navigation }) => {
                                         profile_wish_start: wish.profile_wish_start,
                                         profile_wish_end: wish.profile_wish_end,
                                         profile_wish_location: wish.profile_wish_location,
+                                        profile_wish_city: wish.profile_wish_city,
+                                        profile_wish_state: wish.profile_wish_state,
+                                        profile_wish_zip: wish.profile_wish_zip,
                                         profile_wish_mode: wish.profile_wish_mode,
+                                        ...pickSeekingListingCommerceFields(wish),
                                         profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
                                       };
                                       const profileDataForNavigation = {
@@ -2287,7 +2294,11 @@ const ProfileScreen = ({ route, navigation }) => {
                           profile_wish_start: wish.profile_wish_start,
                           profile_wish_end: wish.profile_wish_end,
                           profile_wish_location: wish.profile_wish_location,
+                          profile_wish_city: wish.profile_wish_city,
+                          profile_wish_state: wish.profile_wish_state,
+                          profile_wish_zip: wish.profile_wish_zip,
                           profile_wish_mode: wish.profile_wish_mode,
+                          ...pickSeekingListingCommerceFields(wish),
                           profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
                           moderation: wish.moderation,
                           profile_wish_moderated: wish.profile_wish_moderated,

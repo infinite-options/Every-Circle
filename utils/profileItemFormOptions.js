@@ -47,9 +47,17 @@ export const PROFILE_RETURNABLE_OPTIONS = [
 ];
 
 export { getOfferingShippingDropdownValue, applyOfferingShippingDropdownValue } from "./profileOfferingShipping";
+export { getSeekingShippingDropdownValue, applySeekingShippingDropdownValue } from "./profileSeekingShipping";
 
 export const getOfferingReturnableDropdownValue = (item) => {
   if (item?.profile_expertise_is_returnable === 1 || item?.profile_expertise_is_returnable === "1") {
+    return "yes";
+  }
+  return "no";
+};
+
+export const getSeekingReturnableDropdownValue = (item) => {
+  if (item?.profile_wish_is_returnable === 1 || item?.profile_wish_is_returnable === "1") {
     return "yes";
   }
   return "no";

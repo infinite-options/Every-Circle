@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert, ActivityIndicator } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { getAddressSuggestions, getPlaceDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
 import { Dropdown } from "react-native-element-dropdown";
 import * as ImagePicker from "expo-image-picker";
@@ -24,7 +25,25 @@ import ProfileSeekingListCard from "./ProfileSeekingListCard";
 import BountyInfoTooltip from "./BountyInfoTooltip";
 import { isSeekingVisibilityBlocked } from "../utils/seekingModeration";
 import { seekingProfileItemCardFormStyles as formStyles, SEEKING_FORM_ACCENT, SEEKING_FORM_ACCENT_DARK } from "../utils/profileItemCardFormStyles";
-import { PROFILE_COST_UNIT_OPTIONS, PROFILE_BOUNTY_TYPE_OPTIONS } from "../utils/profileItemFormOptions";
+import {
+  PROFILE_COST_UNIT_OPTIONS,
+  PROFILE_BOUNTY_TYPE_OPTIONS,
+  PROFILE_RETURNABLE_OPTIONS,
+  getSeekingReturnableDropdownValue,
+  applySeekingShippingDropdownValue,
+} from "../utils/profileItemFormOptions";
+import {
+  isBuyerPaysSeekingShipping,
+  isFixedSeekingShipping,
+  seekingShippingAmountDisplay,
+  seekingDeliveredModeSelected,
+  validateSeekingDeliveredShipping,
+  getSeekingShippingDropdownOptions,
+  getSeekingShippingDropdownValue,
+  SEEKING_DELIVERY_CHARGE_LABEL,
+  FIXED_DELIVERY_CHARGE_AMOUNT_LABEL,
+} from "../utils/profileSeekingShipping";
+import { BS_SHIPPING_BUYER_FIXED, parseBsShippingAmount } from "../utils/businessServiceShipping";
 
 // DateTimePicker only works on native (not web)
 let DateTimePicker = null;
@@ -35,6 +54,29 @@ if (Platform.OS !== "web") {
     console.warn("DateTimePicker not available:", e.message);
   }
 }
+
+const QUANTITY_MAX_DIGITS = 10;
+const RETURN_WINDOW_MIN_DAYS = 5;
+const RETURN_WINDOW_MAX_DAYS = 30;
+const RETURN_WINDOW_DEFAULT_DAYS = String(RETURN_WINDOW_MAX_DAYS);
+const RETURN_WINDOW_MAX_DIGITS = 2;
+
+const sanitizeReturnWindowInput = (text) => {
+  const digits = String(text ?? "").replace(/\D/g, "").slice(0, RETURN_WINDOW_MAX_DIGITS);
+  if (digits === "") return "";
+  const n = parseInt(digits, 10);
+  if (Number.isFinite(n) && n > RETURN_WINDOW_MAX_DAYS) return String(RETURN_WINDOW_MAX_DAYS);
+  return digits;
+};
+
+const clampReturnWindowDays = (value) => {
+  const n = parseInt(String(value ?? "").trim(), 10);
+  if (!Number.isFinite(n) || n < RETURN_WINDOW_MIN_DAYS) return String(RETURN_WINDOW_MIN_DAYS);
+  if (n > RETURN_WINDOW_MAX_DAYS) return String(RETURN_WINDOW_MAX_DAYS);
+  return String(n);
+};
+
+export const RETURN_WINDOW_VALIDATION_MESSAGE = `Return window must be between ${RETURN_WINDOW_MIN_DAYS} and ${RETURN_WINDOW_MAX_DAYS} days.`;
 
 const getSeekingCostUnit = (cost) => {
   if (!cost) return null;
@@ -47,10 +89,17 @@ export const isSeekingItemReadyToFinish = (item) => {
   const hasTitle = !!String(item.helpNeeds || "").trim();
   const hasDescription = !!String(item.details || "").trim();
   const hasUnit = !!getSeekingCostUnit(item.cost);
-  return hasTitle && hasDescription && hasUnit;
+  if (!hasTitle || !hasDescription || !hasUnit) return false;
+  if (!validateSeekingDeliveredShipping(item)) return false;
+  if (item.profile_wish_is_returnable === 1 || item.profile_wish_is_returnable === "1") {
+    const n = parseInt(String(item.profile_wish_return_window_days ?? "").trim(), 10);
+    if (!Number.isFinite(n) || n < RETURN_WINDOW_MIN_DAYS || n > RETURN_WINDOW_MAX_DAYS) return false;
+  }
+  return true;
 };
 
-const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", profileDefaultAddress = null, darkMode = false }) => {
+const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", profileDefaultAddress = null, darkMode = false }) => {
+  const wishes = Array.isArray(wishesProp) ? wishesProp : [];
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
   const sectionHeaderRef = useRef(null);
@@ -102,6 +151,20 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     }
     const item = wishes[editingIndex];
     if (!isSeekingItemReadyToFinish(item)) {
+      if (!validateSeekingDeliveredShipping(item)) {
+        Alert.alert(
+          "Required Field",
+          "Seeking posts with Delivered mode must have Delivery charge set (Free delivery charge, Buyer pays fixed, or Buyer pays actual). Fixed delivery charge also requires an amount.",
+        );
+        return;
+      }
+      if (item?.profile_wish_is_returnable === 1 || item?.profile_wish_is_returnable === "1") {
+        const n = parseInt(String(item.profile_wish_return_window_days ?? "").trim(), 10);
+        if (!Number.isFinite(n) || n < RETURN_WINDOW_MIN_DAYS || n > RETURN_WINDOW_MAX_DAYS) {
+          Alert.alert("Validation", RETURN_WINDOW_VALIDATION_MESSAGE);
+          return;
+        }
+      }
       Alert.alert("Required Field", "Please fill in title, description, and unit before finishing this Seeking.");
       return;
     }
@@ -145,6 +208,14 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       profile_wish_state: "",
       profile_wish_zip: "",
       profile_wish_mode: "",
+      profile_wish_is_returnable: 0,
+      profile_wish_return_window_days: "",
+      profile_wish_shipping: null,
+      profile_wish_shipping_amount: "",
+      profile_wish_shipping_refundable: 0,
+      profile_wish_free_shipping: 0,
+      profile_wish_buyer_pays_shipping: 0,
+      profile_wish_shipping_cost_type: "",
       isPublic: true,
       _wishNewImageUri: "",
       _wishWebImageFile: null,
@@ -194,6 +265,40 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     const updated = [...wishes];
     updated[index][field] = value;
     setWishes(updated);
+  };
+
+  const handleSeekingShippingChange = (index, selected) => {
+    if (selected?.value == null) return;
+    const updated = [...wishes];
+    updated[index] = { ...updated[index], ...applySeekingShippingDropdownValue(selected?.value) };
+    setWishes(updated);
+  };
+
+  const handleSeekingReturnableChange = (index, selected) => {
+    if (selected?.value !== "yes" && selected?.value !== "no") return;
+    const updated = [...wishes];
+    if (selected?.value === "no") {
+      updated[index] = {
+        ...updated[index],
+        profile_wish_is_returnable: 0,
+        profile_wish_return_window_days: "",
+        profile_wish_shipping_refundable: 0,
+      };
+    } else {
+      const existingDays = String(updated[index].profile_wish_return_window_days ?? "").trim();
+      updated[index] = {
+        ...updated[index],
+        profile_wish_is_returnable: 1,
+        profile_wish_return_window_days: existingDays && existingDays !== "0" ? clampReturnWindowDays(existingDays) : RETURN_WINDOW_DEFAULT_DAYS,
+      };
+    }
+    setWishes(updated);
+  };
+
+  const handleReturnWindowBlur = (index) => {
+    const item = wishes[index];
+    if (getSeekingReturnableDropdownValue(item) !== "yes") return;
+    handleInputChange(index, "profile_wish_return_window_days", clampReturnWindowDays(item.profile_wish_return_window_days));
   };
 
   const toggleWishMode = (index, key) => {
@@ -1157,15 +1262,6 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                     activeColor={darkMode ? "#404040" : "#f0f0f0"}
                   />
                 </View>
-                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel, { marginTop: 10 }]}>Quantity</Text>
-                <TextInput
-                  style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
-                  placeholder='Count'
-                  placeholderTextColor={darkMode ? "#888" : "#999"}
-                  keyboardType='numeric'
-                  value={item.profile_wish_quantity || ""}
-                  onChangeText={(text) => handleInputChange(index, "profile_wish_quantity", text.replace(/\D/g, ""))}
-                />
               </View>
 
               <View style={formStyles.pricingCol}>
@@ -1208,6 +1304,177 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                     />
                   ) : null}
                 </View>
+              </View>
+            </View>
+
+            <View style={formStyles.fulfillmentGrid}>
+              <View style={formStyles.fulfillmentCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>
+                  {SEEKING_DELIVERY_CHARGE_LABEL}
+                  {seekingDeliveredModeSelected(item) ? " *" : ""}
+                </Text>
+                {(() => {
+                  const deliveredShippingInvalid =
+                    seekingDeliveredModeSelected(item) && !validateSeekingDeliveredShipping(item);
+                  const accentRequiredBorder = {
+                    borderColor: darkMode ? SEEKING_FORM_ACCENT_DARK : SEEKING_FORM_ACCENT,
+                    borderWidth: 2,
+                  };
+                  const highlightShippingDropdown =
+                    deliveredShippingInvalid && getSeekingShippingDropdownValue(item) === "na";
+                  const highlightFixedAmount =
+                    deliveredShippingInvalid && isFixedSeekingShipping(item);
+                  return (
+                    <>
+                      <Dropdown
+                        style={[
+                          formStyles.dropdown,
+                          formStyles.fulfillmentDropdown,
+                          darkMode && formStyles.darkDropdown,
+                          highlightShippingDropdown && accentRequiredBorder,
+                        ]}
+                        data={getSeekingShippingDropdownOptions(item)}
+                        labelField='label'
+                        valueField='value'
+                        value={getSeekingShippingDropdownValue(item)}
+                        onChange={(selected) => handleSeekingShippingChange(index, selected)}
+                        containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                        itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                        selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                        activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                        maxHeight={220}
+                        flatListProps={{ nestedScrollEnabled: true }}
+                      />
+                      {isFixedSeekingShipping(item) ? (
+                        <View style={formStyles.fulfillmentExtra}>
+                          <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>
+                            {FIXED_DELIVERY_CHARGE_AMOUNT_LABEL}
+                          </Text>
+                          <View
+                            style={[
+                              formStyles.fixedShippingRow,
+                              darkMode && formStyles.darkFixedShippingRow,
+                              highlightFixedAmount && accentRequiredBorder,
+                            ]}
+                          >
+                            <Text style={[formStyles.fixedShippingPrefix, darkMode && formStyles.darkFixedShippingPrefix]}>
+                              $
+                            </Text>
+                            <TextInput
+                              style={[formStyles.fixedShippingInput, darkMode && formStyles.darkFixedShippingInput]}
+                              value={seekingShippingAmountDisplay(item)}
+                              onChangeText={(text) => {
+                                const cleaned = String(text).replace(/[^0-9.]/g, "");
+                                const parts = cleaned.split(".");
+                                const normalized =
+                                  parts.length > 2 ? `${parts[0]}.${parts.slice(1).join("")}` : cleaned;
+                                const updated = [...wishes];
+                                updated[index] = {
+                                  ...updated[index],
+                                  profile_wish_shipping: BS_SHIPPING_BUYER_FIXED,
+                                  profile_wish_shipping_amount: normalized === "" ? "" : normalized,
+                                  profile_wish_free_shipping: 0,
+                                  profile_wish_buyer_pays_shipping: 1,
+                                  profile_wish_shipping_cost_type: "fixed",
+                                };
+                                setWishes(updated);
+                              }}
+                              onBlur={() => {
+                                if (!isFixedSeekingShipping(item)) return;
+                                const raw = String(item.profile_wish_shipping_amount ?? "").trim();
+                                if (!raw || raw === ".") {
+                                  handleInputChange(index, "profile_wish_shipping_amount", "");
+                                  return;
+                                }
+                                const amount = parseBsShippingAmount(raw);
+                                if (
+                                  amount == null &&
+                                  !(raw === "0" || raw === "0." || raw === "0.0" || raw === "0.00")
+                                ) {
+                                  return;
+                                }
+                                handleInputChange(
+                                  index,
+                                  "profile_wish_shipping_amount",
+                                  amount == null ? "0" : String(amount)
+                                );
+                              }}
+                              placeholder='Fixed delivery charge'
+                              keyboardType='decimal-pad'
+                              placeholderTextColor={darkMode ? "#888" : "#999"}
+                            />
+                          </View>
+                        </View>
+                      ) : null}
+                    </>
+                  );
+                })()}
+              </View>
+
+              <View style={formStyles.fulfillmentCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Returnable</Text>
+                <Dropdown
+                  style={[formStyles.dropdown, formStyles.fulfillmentDropdown, darkMode && formStyles.darkDropdown]}
+                  data={PROFILE_RETURNABLE_OPTIONS}
+                  labelField='label'
+                  valueField='value'
+                  value={getSeekingReturnableDropdownValue(item)}
+                  onChange={(selected) => handleSeekingReturnableChange(index, selected)}
+                  containerStyle={[formStyles.dropdownContainer, darkMode && formStyles.darkDropdownContainer]}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  maxHeight={120}
+                  flatListProps={{ nestedScrollEnabled: true }}
+                />
+                {getSeekingReturnableDropdownValue(item) === "yes" ? (
+                  <View style={formStyles.fulfillmentExtra}>
+                    <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Return window ({RETURN_WINDOW_MIN_DAYS}–{RETURN_WINDOW_MAX_DAYS} days)</Text>
+                    <View style={formStyles.fulfillmentInlineRow}>
+                      <TextInput
+                        style={[formStyles.fieldInput, formStyles.quantityInput, darkMode && formStyles.darkFieldInput]}
+                        value={String(item.profile_wish_return_window_days ?? RETURN_WINDOW_DEFAULT_DAYS)}
+                        onChangeText={(t) => handleInputChange(index, "profile_wish_return_window_days", sanitizeReturnWindowInput(t))}
+                        onBlur={() => handleReturnWindowBlur(index)}
+                        placeholder={RETURN_WINDOW_DEFAULT_DAYS}
+                        placeholderTextColor={darkMode ? "#888" : "#999"}
+                        keyboardType='number-pad'
+                        maxLength={RETURN_WINDOW_MAX_DIGITS}
+                      />
+                      <Text style={[formStyles.checkboxLabelCompact, darkMode && formStyles.darkCheckboxLabelCompact]}>days</Text>
+                      {isBuyerPaysSeekingShipping(item) ? (
+                        <TouchableOpacity
+                          style={formStyles.checkboxRowInline}
+                          onPress={() => {
+                            const checked = item.profile_wish_shipping_refundable === 1 || item.profile_wish_shipping_refundable === "1";
+                            handleInputChange(index, "profile_wish_shipping_refundable", checked ? 0 : 1);
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons
+                            name={item.profile_wish_shipping_refundable === 1 || item.profile_wish_shipping_refundable === "1" ? "checkbox" : "square-outline"}
+                            size={18}
+                            color={item.profile_wish_shipping_refundable === 1 || item.profile_wish_shipping_refundable === "1" ? "#111" : darkMode ? "#aaa" : "#666"}
+                          />
+                          <Text style={[formStyles.checkboxLabelCompact, darkMode && formStyles.darkCheckboxLabelCompact]}>{SEEKING_DELIVERY_CHARGE_LABEL} is refundable</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={formStyles.fulfillmentCol}>
+                <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Quantity</Text>
+                <TextInput
+                  style={[formStyles.fieldInput, darkMode && formStyles.darkFieldInput]}
+                  placeholder='Count'
+                  placeholderTextColor={darkMode ? "#888" : "#999"}
+                  keyboardType='number-pad'
+                  maxLength={QUANTITY_MAX_DIGITS}
+                  value={item.profile_wish_quantity || ""}
+                  onChangeText={(text) => handleInputChange(index, "profile_wish_quantity", text.replace(/\D/g, "").slice(0, QUANTITY_MAX_DIGITS))}
+                />
               </View>
             </View>
           </View>
@@ -1353,6 +1620,18 @@ export const validateSeeking = (wishes) => {
     // Skip blank placeholder entries (Seeking seeds one empty card when the user has none).
     if (!hasTitle && !hasDescription && !String(w.cost || "").trim()) return true;
     return isSeekingItemReadyToFinish(w);
+  });
+};
+
+export const validateSeekingShipping = (wishes) => {
+  return (wishes || []).every((w) => validateSeekingDeliveredShipping(w));
+};
+
+export const validateSeekingReturnWindow = (wishes) => {
+  return (wishes || []).every((w) => {
+    if (!(w.profile_wish_is_returnable === 1 || w.profile_wish_is_returnable === "1")) return true;
+    const n = parseInt(String(w.profile_wish_return_window_days ?? "").trim(), 10);
+    return Number.isFinite(n) && n >= RETURN_WINDOW_MIN_DAYS && n <= RETURN_WINDOW_MAX_DAYS;
   });
 };
 

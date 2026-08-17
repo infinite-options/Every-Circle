@@ -7,6 +7,7 @@ import SeekingModerationBanner from "./SeekingModerationBanner";
 import ProfileItemEditIcon from "./ProfileItemEditIcon";
 import { SEEKING_FORM_ACCENT, SEEKING_FORM_ACCENT_DARK } from "../utils/profileItemCardFormStyles";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
+import { pickSeekingListingCommerceFields } from "../utils/wishResubmission";
 
 function toSeekingPreview(item) {
   return {
@@ -21,11 +22,7 @@ function toSeekingPreview(item) {
     profile_wish_end: item?.profile_wish_end,
     profile_wish_location: item?.profile_wish_location,
     profile_wish_mode: item?.profile_wish_mode,
-    profile_wish_is_taxable: item?.profile_wish_is_taxable,
-    profile_wish_tax_rate: item?.profile_wish_tax_rate,
-    profile_wish_is_returnable: item?.profile_wish_is_returnable,
-    profile_wish_return_window_days: item?.profile_wish_return_window_days,
-    profile_wish_refund_policy: item?.profile_wish_refund_policy,
+    ...pickSeekingListingCommerceFields(item),
     moderation: item?.moderation,
     profile_wish_moderated: item?.profile_wish_moderated,
   };

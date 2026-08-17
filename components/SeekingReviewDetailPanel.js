@@ -3,6 +3,15 @@ import { View, Text, StyleSheet } from "react-native";
 import { formatExpertiseModeForDisplay } from "../utils/expertiseMode";
 import { formatDateTimeForDisplay } from "../utils/profileDateTime";
 import { getFlagReasonLabel, getSeekingModerationStatusLabel, normalizeSeekingReviewDetail } from "../utils/seekingModeration";
+import {
+  parseSeekingShipping,
+} from "../utils/profileSeekingShipping";
+import {
+  BS_SHIPPING_BUYER_ACTUAL,
+  BS_SHIPPING_BUYER_FIXED,
+  BS_SHIPPING_FREE,
+  parseBsShippingAmount,
+} from "../utils/businessServiceShipping";
 
 const DetailRow = ({ label, value, darkMode }) => {
   const text = value != null && String(value).trim() !== "" ? String(value).trim() : null;
@@ -24,6 +33,30 @@ const Section = ({ title, children, darkMode }) => {
     </View>
   );
 };
+
+function formatSeekingDelivery(seeking) {
+  const shipping = parseSeekingShipping(seeking);
+  if (shipping === BS_SHIPPING_FREE) return "Free delivery charge";
+  if (shipping === BS_SHIPPING_BUYER_ACTUAL) return "Buyer pays delivery charge";
+  if (shipping === BS_SHIPPING_BUYER_FIXED) {
+    const amount = parseBsShippingAmount(seeking?.profile_wish_shipping_amount);
+    if (amount == null && (seeking?.profile_wish_shipping_amount === 0 || seeking?.profile_wish_shipping_amount === "0")) {
+      return "Buyer pays $0.00";
+    }
+    if (amount == null) return "Buyer pays (fixed) delivery charge";
+    return `Buyer pays $${Number(amount).toFixed(2)}`;
+  }
+  if (seeking?.profile_wish_free_shipping === 1) return "Free delivery charge";
+  if (seeking?.profile_wish_buyer_pays_shipping === 1) return "Buyer pays delivery charge";
+  return "";
+}
+
+function formatSeekingReturns(seeking) {
+  const returnable = seeking?.profile_wish_is_returnable === 1 || seeking?.profile_wish_is_returnable === "1" || seeking?.isReturnable === 1;
+  if (!returnable) return "";
+  const days = seeking.profile_wish_return_window_days || seeking.returnWindowDays || "—";
+  return `${days} day window`;
+}
 
 function formatSeekingCost(cost) {
   const raw = String(cost || "").trim();
@@ -50,6 +83,9 @@ function buildSeekingDetailRows(seeking, darkMode) {
       <DetailRow label='Schedule' value={dateRange} darkMode={darkMode} />
       <DetailRow label='Location' value={location} darkMode={darkMode} />
       <DetailRow label='Mode' value={mode} darkMode={darkMode} />
+      <DetailRow label='Delivery charge' value={formatSeekingDelivery(seeking)} darkMode={darkMode} />
+      <DetailRow label='Returns' value={formatSeekingReturns(seeking)} darkMode={darkMode} />
+      <DetailRow label='Refund policy' value={seeking.profile_wish_refund_policy || seeking.refundPolicy} darkMode={darkMode} />
       <DetailRow label='Public' value={seeking.profile_wish_is_public === 1 || seeking.isPublic === 1 ? "Yes" : "No"} darkMode={darkMode} />
       <DetailRow label='Seeking ID' value={seeking.profile_wish_uid || seeking.wish_uid || seeking.uid} darkMode={darkMode} />
       <DetailRow label='Last updated' value={seeking.profile_wish_updated_at} darkMode={darkMode} />

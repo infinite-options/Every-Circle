@@ -12,6 +12,7 @@ import { getHeaderColors, getHeaderColor, getDarkModeHeaderColor } from "../conf
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { TRANSACTIONS_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT, PROFILE_WISH_RESPONSE_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { buildSeekingCheckoutLineApiFields } from "../utils/seekingCheckoutApi";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import SeekingCardDetails from "../components/SeekingCardDetails";
@@ -229,13 +230,20 @@ const WishDetailScreenContent = ({ route, navigation }) => {
       // Format transaction data to match the API's expected format
       // For wish purchases, cost is always 0, no payment intent needed
       // Use seller UID (profile_uid) as business_id for wish transactions
+      const { lineFields, shipping_address, total_shipping, total_taxes } = buildSeekingCheckoutLineApiFields({
+        wishData,
+        quantity: 1,
+        unitPrice: 0,
+        buyerProfile: profileData,
+      });
       const transactionData = {
         profile_id: buyerUid,
         business_id: profile_uid, // Use seller's profile UID as business_id for wishes
         stripe_payment_intent: null, // No payment intent for wishes (cost = 0)
         total_amount_paid: 0, // Wishes have no cost
         total_costs: 0, // Wishes have no cost
-        total_taxes: 0,
+        total_taxes,
+        total_shipping,
         total_fees: 0,
         items: [
           {
@@ -243,9 +251,13 @@ const WishDetailScreenContent = ({ route, navigation }) => {
             bounty: parseFloat(wishData?.bounty) || 0,
             quantity: 1,
             recommender_profile_id: null, // No recommender for direct wish purchases
+            ...lineFields,
           },
         ],
       };
+      if (shipping_address) {
+        transactionData.shipping_address = shipping_address;
+      }
 
       console.log("============================================");
       console.log("ENDPOINT: RECORD_TRANSACTIONS");

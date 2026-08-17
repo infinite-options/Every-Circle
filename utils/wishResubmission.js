@@ -1,9 +1,28 @@
 import { isSeekingVisibilityBlocked } from "./seekingModeration";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "./resolveProfileItemImageUri";
+import { applySeekingShippingFromApi, buildSeekingShippingForApi } from "./profileSeekingShipping";
+
+/** Shipping / returnable / tax fields used on Seeking listing cards and detail screens. */
+export function pickSeekingListingCommerceFields(source = {}) {
+  return {
+    profile_wish_is_taxable: source.profile_wish_is_taxable,
+    profile_wish_tax_rate: source.profile_wish_tax_rate,
+    profile_wish_is_returnable: source.profile_wish_is_returnable,
+    profile_wish_return_window_days: source.profile_wish_return_window_days,
+    profile_wish_refund_policy: source.profile_wish_refund_policy,
+    profile_wish_shipping: source.profile_wish_shipping,
+    profile_wish_shipping_amount: source.profile_wish_shipping_amount,
+    profile_wish_shipping_refundable: source.profile_wish_shipping_refundable,
+    profile_wish_free_shipping: source.profile_wish_free_shipping,
+    profile_wish_buyer_pays_shipping: source.profile_wish_buyer_pays_shipping,
+    profile_wish_shipping_cost_type: source.profile_wish_shipping_cost_type,
+  };
+}
 
 export function mapProfileWishToFormItem(wish, profileUid) {
   const rawImg = wish.profile_wish_image || "";
   const resolved = resolveProfileItemImageUri(rawImg, profileUid);
+  const shippingFields = applySeekingShippingFromApi(wish);
   return {
     profile_wish_uid: wish.profile_wish_uid || "",
     helpNeeds: wish.helpNeeds || wish.profile_wish_title || "",
@@ -27,6 +46,8 @@ export function mapProfileWishToFormItem(wish, profileUid) {
     profile_wish_tax_rate: wish.profile_wish_tax_rate ?? "",
     profile_wish_is_returnable: wish.profile_wish_is_returnable ?? 0,
     profile_wish_return_window_days: wish.profile_wish_return_window_days ?? "",
+    ...shippingFields,
+    profile_wish_shipping_refundable: wish.profile_wish_shipping_refundable ?? 0,
     profile_wish_refund_policy: wish.profile_wish_refund_policy || "",
     profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
     profile_wish_moderated: wish.profile_wish_moderated,
@@ -44,6 +65,7 @@ export function mapWishFormToPayload(w) {
   const wantsPublic = !!w.isPublic;
   const publicBlocked = isSeekingVisibilityBlocked(w);
   const isPublicValue = publicBlocked && wantsPublic ? 0 : wantsPublic ? 1 : 0;
+  const shippingFields = buildSeekingShippingForApi(w);
   return {
     profile_wish_uid: w.profile_wish_uid || "",
     profile_wish_title: w.helpNeeds || "",
@@ -67,8 +89,16 @@ export function mapWishFormToPayload(w) {
     profile_wish_is_taxable: w.profile_wish_is_taxable === 1 || w.profile_wish_is_taxable === "1" ? 1 : 0,
     profile_wish_tax_rate: w.profile_wish_tax_rate || "",
     profile_wish_is_returnable: w.profile_wish_is_returnable === 1 || w.profile_wish_is_returnable === "1" ? 1 : 0,
-    profile_wish_return_window_days: w.profile_wish_return_window_days || "",
+    profile_wish_return_window_days: (() => {
+      const returnable = w.profile_wish_is_returnable === 1 || w.profile_wish_is_returnable === "1";
+      if (!returnable) return "";
+      const n = parseInt(String(w.profile_wish_return_window_days ?? "").trim(), 10);
+      if (!Number.isFinite(n) || n < 5) return "5";
+      if (n > 30) return "30";
+      return String(n);
+    })(),
     profile_wish_refund_policy: w.profile_wish_refund_policy || "",
+    ...shippingFields,
     ...(w.profile_wish_uid && (w.profile_wish_updated_at != null || w.updated_at != null)
       ? { profile_wish_updated_at: w.profile_wish_updated_at ?? w.updated_at }
       : {}),

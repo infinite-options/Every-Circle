@@ -5,6 +5,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
 import BountyInfoTooltip, { ESCROW_INFO_COPY } from "./BountyInfoTooltip";
 import { computeCreditCardChargeTotal, computeCreditCardProcessingFee, CREDIT_CARD_FEE_DISPLAY_LABEL } from "../utils/cartCreditCardFee";
+import { getSeekingCheckoutShippingCharge } from "../utils/seekingCheckoutApi";
 
 /**
  * Parse cost string to extract numeric value and units.
@@ -65,7 +66,9 @@ const AcceptDetailsModal = ({ show, setShow, wishData, response, onContinue, onC
   const quantityLabelSuffix = isTotalUnit ? "" : getQuantityLabelSuffix(units);
   const qtyNum = isTotalUnit ? 1 : parseFloat(quantity) || 0;
   const costAmount = costValue * qtyNum;
-  const subtotal = costAmount + bountyAmount;
+  const shippingCharge = getSeekingCheckoutShippingCharge(wishData, qtyNum > 0 ? qtyNum : 1);
+  const shippingAmount = shippingCharge.lineAmount;
+  const subtotal = costAmount + bountyAmount + shippingAmount;
   const processingFee = computeCreditCardProcessingFee(subtotal, true);
   const totalWithFee = computeCreditCardChargeTotal(subtotal, true);
 
@@ -173,6 +176,27 @@ const AcceptDetailsModal = ({ show, setShow, wishData, response, onContinue, onC
                 <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${bountyAmount.toFixed(2)}</Text>
               </View>
             )}
+            {shippingCharge.type === "fixed" ? (
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>
+                  {shippingCharge.label}
+                  {qtyNum > 1 ? ` (${qtyNum} × $${Number(shippingCharge.perUnit).toFixed(2)})` : ""}
+                </Text>
+                <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${shippingAmount.toFixed(2)}</Text>
+              </View>
+            ) : null}
+            {shippingCharge.type === "free" ? (
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>{shippingCharge.label}</Text>
+                <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>Free</Text>
+              </View>
+            ) : null}
+            {shippingCharge.type === "actual" ? (
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>{shippingCharge.label} (actual)</Text>
+                <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>$0.00</Text>
+              </View>
+            ) : null}
             <View style={styles.summaryRow}>
               <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Subtotal</Text>
               <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${subtotal.toFixed(2)}</Text>

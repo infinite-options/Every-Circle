@@ -44,6 +44,7 @@ import StripePayment from "../components/StripePaymentWeb";
 import PaymentFailure from "../components/PaymentFailure";
 import AcceptDetailsModal from "../components/AcceptDetailsModal";
 import { computeCreditCardChargeTotal, computeCreditCardProcessingFee } from "../utils/cartCreditCardFee";
+import { buildSeekingCheckoutLineApiFields, buildSeekingCheckoutOrderMoney } from "../utils/seekingCheckoutApi";
 
 // Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
 const formatDateTimeForDisplay = (value) => {
@@ -283,25 +284,52 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       console.log("WishResponsesScreen - Amount (bounty):", amount);
       console.log("WishResponsesScreen - Transaction Type:", "wish_response_acceptance");
 
-      // Format transaction data to match the API's expected format
-      // For wish response acceptance, use recommended person's profile UID as business_id
-      const subtotal = parseFloat(amount);
+      // Seeking: total_costs = listing merchandise only; bounty is separate (BE adds it to paid total).
+      // Stripe still charges cost + bounty + fee; total_amount_paid must match that.
+      const qty = Math.max(1, Number(quantity) || 1);
+      const unitCost = costValue != null ? parseFloat(costValue) : 0;
+      const merchandiseCost = costAmount != null ? parseFloat(costAmount) : unitCost * qty;
+      const bounty = bountyAmount != null ? parseFloat(bountyAmount) : 0;
       const fee = parseFloat(processingFee) || 0;
-      const totalPaid = totalAmountPaid !== null ? parseFloat(totalAmountPaid) : subtotal + fee;
-
-      const roundedFee = Math.round(fee * 100) / 100;
-      const roundedSubtotal = Math.round(subtotal * 100) / 100;
       const recommendedId = String(recommendedProfileUid || "").trim();
       const recommenderId = String(recommenderProfileUid || recommendedProfileUid || "").trim();
+      // AcceptDetailsModal always adds bounty once (not × qty). Send "total" so BE paid-total matches the Stripe charge.
+      const bountyType = "total";
+
+      const { lineFields, shipping_address, total_shipping, total_taxes } = buildSeekingCheckoutLineApiFields({
+        wishData,
+        quantity: qty,
+        unitPrice: unitCost,
+        buyerProfile: profileData,
+      });
+      const orderMoney = buildSeekingCheckoutOrderMoney({
+        unitCost,
+        quantity: qty,
+        costAmount: merchandiseCost,
+        bountyAmount: bounty,
+        processingFee: fee,
+        totalTaxes: total_taxes,
+        totalShipping: total_shipping,
+      });
+      // Prefer Stripe charge total when provided (cost + bounty + fee); must match BE expected paid.
+      const totalPaid =
+        totalAmountPaid !== null && totalAmountPaid !== undefined
+          ? Math.round(parseFloat(totalAmountPaid) * 100) / 100
+          : orderMoney.total_amount_paid;
+
+      if (lineFields.fulfillment_method === "ship" && !shipping_address) {
+        throw new Error("Delivery address is required for this seeking post. Update the seeking delivery address and try again.");
+      }
 
       const transactionData = {
         profile_id: buyerUid,
         business_id: recommendedId,
         stripe_payment_intent: paymentIntent,
         total_amount_paid: totalPaid,
-        total_costs: roundedSubtotal,
-        total_taxes: 0,
-        total_fees: roundedFee,
+        total_costs: orderMoney.total_costs,
+        total_taxes: orderMoney.total_taxes,
+        total_shipping: orderMoney.total_shipping,
+        total_fees: orderMoney.total_fees,
         // Ensure tinyint: 1 or 0 only (backend expects tinyint)
         transaction_in_escrow: transactionInEscrow === true || transactionInEscrow === 1 ? 1 : 0,
         items: [
@@ -310,19 +338,21 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
             wish_response_uid: wishResponseUid,
             ti_bs_id: wishResponseUid,
             bs_uid: wishResponseUid,
-            // Backend mapping expects profile_wish_bounty -> ti_bs_cost
-            ti_bs_cost: subtotal,
-            // Bounty is the wish bounty amount (e.g. 110), not the subtotal
-            bounty: bountyAmount != null ? parseFloat(bountyAmount) : subtotal,
-            quantity: Number(quantity) || 1,
-            cost: costAmount != null ? parseFloat(costAmount) : 0,
-            item_cost: costValue != null ? parseFloat(costValue) : 0,
+            ti_bs_cost: orderMoney.unit_price,
+            bounty: orderMoney.bounty,
+            bounty_type: bountyType,
+            quantity: qty,
+            cost: merchandiseCost,
+            item_cost: unitCost,
             recommended_profile_id: recommendedId,
             recommender_profile_id: recommenderId,
-            ti_bs_sales_tax: 0,
+            ...lineFields,
           },
         ],
       };
+      if (shipping_address) {
+        transactionData.shipping_address = shipping_address;
+      }
 
       console.log("WishResponsesScreen - ============================================");
       console.log("WishResponsesScreen - ENDPOINT: RECORD_TRANSACTIONS");

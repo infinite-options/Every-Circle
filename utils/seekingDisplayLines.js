@@ -1,4 +1,17 @@
 import { parsePrice } from "./priceUtils";
+import {
+  BS_SHIPPING_BUYER_ACTUAL,
+  BS_SHIPPING_BUYER_FIXED,
+  BS_SHIPPING_FREE,
+  parseBsShippingAmount,
+} from "./businessServiceShipping";
+import {
+  isBuyerPaysSeekingShipping,
+  normSeekingShippingRefundable,
+  parseSeekingShipping,
+  SEEKING_DELIVERY_CHARGE_LABEL,
+  SEEKING_DELIVERY_OPTION_CARD_LABEL,
+} from "./profileSeekingShipping";
 
 function isTruthyFlag(v) {
   return v === 1 || v === "1" || v === true;
@@ -30,20 +43,44 @@ function getSeekingTaxBadgeValue(seeking) {
   return null;
 }
 
+function getSeekingShippingValue(seeking) {
+  if (!parseSeekingShipping(seeking)) {
+    if (isTruthyFlag(seeking?.profile_wish_free_shipping)) return "Free";
+    if (isTruthyFlag(seeking?.profile_wish_buyer_pays_shipping)) return "Buyer pays (actual)";
+    return null;
+  }
+  const shipping = parseSeekingShipping(seeking);
+  if (shipping === BS_SHIPPING_FREE) return "Free";
+  if (shipping === BS_SHIPPING_BUYER_ACTUAL) return "Buyer pays (actual)";
+  if (shipping === BS_SHIPPING_BUYER_FIXED) {
+    const amount = parseBsShippingAmount(seeking?.profile_wish_shipping_amount);
+    if (amount == null && (seeking?.profile_wish_shipping_amount === 0 || seeking?.profile_wish_shipping_amount === "0")) {
+      return "Buyer pays $0.00";
+    }
+    if (amount == null) return "Buyer pays (fixed)";
+    return `Buyer pays $${Number(amount).toFixed(2)}`;
+  }
+  return null;
+}
+
 function getSeekingReturnableBadgeValue(seeking) {
-  if (!isTruthyFlag(seeking?.profile_wish_is_returnable)) return null;
+  if (!isTruthyFlag(seeking?.profile_wish_is_returnable)) return "No";
   const days = String(seeking?.profile_wish_return_window_days ?? "").trim();
   const daysLabel = days && days !== "0" ? days : "30";
+  if (isBuyerPaysSeekingShipping(seeking) && normSeekingShippingRefundable(seeking) !== 1) {
+    return `Yes, ${daysLabel}d   (${SEEKING_DELIVERY_CHARGE_LABEL} not refundable)`;
+  }
   return `Yes, ${daysLabel}d`;
 }
 
-/** Pill badges for Seeking cards — Tax, Returnable (same pattern as ProductCard). */
+/** Pill badges for Seeking cards — Tax, Delivery option, Returnable (same pattern as Offering). */
 export function getSeekingAttributeBadges(seeking) {
   const badges = [];
   const tax = getSeekingTaxBadgeValue(seeking);
   if (tax) badges.push({ key: "tax", label: "Tax", value: tax });
-  const returnable = getSeekingReturnableBadgeValue(seeking);
-  if (returnable) badges.push({ key: "returnable", label: "Returnable", value: returnable });
+  const ship = getSeekingShippingValue(seeking);
+  if (ship) badges.push({ key: "ship", label: SEEKING_DELIVERY_OPTION_CARD_LABEL, value: ship });
+  badges.push({ key: "returnable", label: "Returnable", value: getSeekingReturnableBadgeValue(seeking) });
   return badges;
 }
 
@@ -142,6 +179,7 @@ export function getSeekingCardLayout(seeking) {
   const refundPolicyLine = getSeekingRefundPolicyValue(seeking);
 
   const fulfillmentRows = [
+    { label: SEEKING_DELIVERY_OPTION_CARD_LABEL, value: getSeekingShippingValue(seeking) },
     { label: "Tax", value: getSeekingTaxBadgeValue(seeking) },
     { label: "Returnable", value: getSeekingReturnableBadgeValue(seeking) },
     { label: "Refund policy", value: refundPolicyLine },

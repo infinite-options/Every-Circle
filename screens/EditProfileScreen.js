@@ -15,10 +15,10 @@ import ExperienceSection from "../components/ExperienceSection";
 import EducationSection from "../components/EducationSection";
 import ExpertiseSection, { validateExpertise, validateExpertiseTax, validateExpertiseShipping, validateExpertiseReturnWindow, RETURN_WINDOW_VALIDATION_MESSAGE } from "../components/ExpertiseSection";
 import { TAX_RATE_VALIDATION_MESSAGE } from "../utils/taxValidation";
-import SeekingSection, { validateSeeking } from "../components/SeekingSection";
+import SeekingSection, { validateSeeking, validateSeekingShipping, validateSeekingReturnWindow } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
-import { refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
+import { getSessionProfile, parseOwnedProfileBusinessInfo, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED } from "../utils/offeringModeration";
 import { getSeekingModeratedState, isSeekingModeratedBlocked } from "../utils/seekingModeration";
@@ -67,6 +67,70 @@ import { Ionicons } from "@expo/vector-icons";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 const DEFAULT_PROFILE_IMAGE = require("../assets/profile.png");
+
+function parseProfileJsonArray(val) {
+  if (val == null || val === "") return [];
+  let value = val;
+  if (typeof val === "string") {
+    try {
+      value = JSON.parse(val);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return [value];
+  return [];
+}
+
+function leaveEditProfile(navigation) {
+  if (navigation?.canGoBack?.()) {
+    navigation.goBack();
+    return;
+  }
+  navigation.replace("Profile");
+}
+
+/** Rebuild the Edit Profile `user` param after a refresh drops route.params. */
+function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
+  const pi = json?.personal_info || {};
+  const uid = String(profileUid || pi.profile_personal_uid || "").trim();
+  const image = pi.profile_personal_image ? String(pi.profile_personal_image) : "";
+  return {
+    profile_uid: uid,
+    email: json?.user_email || "",
+    firstName: pi.profile_personal_first_name || "",
+    lastName: pi.profile_personal_last_name || "",
+    phoneNumber: pi.profile_personal_phone_number || "",
+    tagLine: pi.profile_personal_tag_line || "",
+    city: pi.profile_personal_city || "",
+    state: pi.profile_personal_state || "",
+    shortBio: pi.profile_personal_short_bio || "",
+    homeAddress: pi.profile_personal_home_address || "",
+    personal_info: pi,
+    locationIsPublic: pi.profile_personal_location_is_public === 1,
+    emailIsPublic: pi.profile_personal_email_is_public === 1,
+    phoneIsPublic: pi.profile_personal_phone_number_is_public === 1,
+    tagLineIsPublic: pi.profile_personal_tag_line_is_public === 1,
+    shortBioIsPublic: pi.profile_personal_short_bio_is_public === 1,
+    experienceIsPublic: pi.profile_personal_experience_is_public === 1,
+    educationIsPublic: pi.profile_personal_education_is_public === 1,
+    expertiseIsPublic: pi.profile_personal_expertise_is_public === 1,
+    wishesIsPublic: pi.profile_personal_wishes_is_public === 1,
+    businessIsPublic: pi.profile_personal_business_is_public === 1,
+    socialLinksIsPublic: pi.profile_personal_social_links_is_public === 1,
+    imageIsPublic: pi.profile_personal_image_is_public === 1,
+    profileImage: image,
+    profile_personal_image: image,
+    experience: parseProfileJsonArray(json?.experience_info),
+    education: parseProfileJsonArray(json?.education_info),
+    expertise: parseProfileJsonArray(json?.expertise_info),
+    wishes: parseProfileJsonArray(json?.wishes_info),
+    businesses: Array.isArray(sessionBusinesses) && sessionBusinesses.length > 0 ? sessionBusinesses : parseOwnedProfileBusinessInfo(json?.business_info),
+    links_info: Array.isArray(json?.links_info) ? json.links_info : [],
+    profileModerationItem: buildProfileModerationItem(json),
+  };
+}
 
 function getInitialHomeLatLng(user) {
   const pi = user?.personal_info;
@@ -675,7 +739,16 @@ const EditProfileScreen = ({ route, navigation }) => {
     }
 
     if (!validateSeeking(formData.wishes)) {
-      Alert.alert("Required Field", "Please fill in title, description, and unit for all Seeking entries before submitting.");
+      if (!validateSeekingShipping(formData.wishes)) {
+        Alert.alert(
+          "Required Field",
+          "Seeking posts with Delivered mode must have Delivery charge set (Free delivery charge, Buyer pays fixed, or Buyer pays actual). Fixed delivery charge also requires an amount.",
+        );
+      } else if (!validateSeekingReturnWindow(formData.wishes)) {
+        Alert.alert("Validation", RETURN_WINDOW_VALIDATION_MESSAGE);
+      } else {
+        Alert.alert("Required Field", "Please fill in title, description, and unit for all Seeking entries before submitting.");
+      }
       return;
     }
 
@@ -1405,10 +1478,14 @@ const EditProfileScreen = ({ route, navigation }) => {
           },
           {
             text: "Yes",
-            onPress: () => navigation.goBack(),
+            onPress: () => leaveEditProfile(navigation),
           },
         ]);
         return true; // Prevent default back action
+      }
+      if (!navigation.canGoBack()) {
+        leaveEditProfile(navigation);
+        return true;
       }
       return false; // Allow default back action
     };
@@ -1418,6 +1495,59 @@ const EditProfileScreen = ({ route, navigation }) => {
       return () => sub.remove();
     }
   }, [isChanged, navigation]);
+
+  // Browser / Fast Refresh of /edit-profile drops route.params.user, so reload from session.
+  const missingRouteUser = !user;
+  useEffect(() => {
+    if (!missingRouteUser) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        let session = await getSessionProfile();
+        const cachedWishes = parseProfileJsonArray(session?.rawProfile?.wishes_info);
+        if (!session?.rawProfile || cachedWishes.length === 0) {
+          try {
+            session = (await refreshSessionProfileFromNetwork(session?.profileUid)) || session;
+          } catch (e) {
+            console.warn("EditProfileScreen - session refresh failed:", e);
+          }
+        }
+        if (cancelled) return;
+        const json = session?.rawProfile;
+        const profileUid = String(session?.profileUid || json?.personal_info?.profile_personal_uid || "").trim();
+        if (!json || !profileUid) {
+          leaveEditProfile(navigation);
+          return;
+        }
+        navigation.replace("EditProfile", {
+          user: mapRawProfileToEditUser(json, profileUid, session?.businesses),
+          profile_uid: profileUid,
+          businessesData: session?.businesses,
+        });
+      } catch (e) {
+        console.warn("EditProfileScreen - failed to restore profile after refresh:", e);
+        if (!cancelled) leaveEditProfile(navigation);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [missingRouteUser, navigation]);
+
+  if (missingRouteUser) {
+    return (
+      <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
+        <AppHeader
+          title='EDIT PROFILE'
+          {...getHeaderColors("editProfile")}
+          onBackPress={() => leaveEditProfile(navigation)}
+        />
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator size='large' color={darkMode ? "#ffffff" : "#007BFF"} />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
@@ -1429,7 +1559,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           if (isChanged) {
             setShowUnsavedChangesModal(true);
           } else {
-            navigation.goBack();
+            leaveEditProfile(navigation);
           }
         }}
       />
@@ -1543,7 +1673,7 @@ const EditProfileScreen = ({ route, navigation }) => {
               handleDelete={handleDeleteExpertise}
               profileUid={profileUID.trim()}
               profileDefaultAddress={{
-                homeAddress: formData.homeAddress,
+                homeAddress,
                 city: formData.city,
                 state: formData.state,
               }}
@@ -1578,7 +1708,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             handleDelete={handleDeleteWish}
             profileUid={profileUID.trim()}
             profileDefaultAddress={{
-              homeAddress: formData.homeAddress,
+              homeAddress,
               city: formData.city,
               state: formData.state,
             }}
@@ -1786,6 +1916,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             (!isChanged ||
               !validateExpertise(formData.expertise) ||
               !validateSeeking(formData.wishes) ||
+              !validateSeekingReturnWindow(formData.wishes) ||
               !validateExpertiseTax(formData.expertise) ||
               !validateExpertiseReturnWindow(formData.expertise)) &&
               (darkMode ? styles.darkDisabledButton : styles.disabledButton),
@@ -1797,6 +1928,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             isLoading ||
             !validateExpertise(formData.expertise) ||
             !validateSeeking(formData.wishes) ||
+            !validateSeekingReturnWindow(formData.wishes) ||
             !validateExpertiseTax(formData.expertise) ||
             !validateExpertiseReturnWindow(formData.expertise)
           }
@@ -1863,7 +1995,7 @@ const EditProfileScreen = ({ route, navigation }) => {
                     navigation.navigate(pendingNavigation);
                     setPendingNavigation(null);
                   } else {
-                    navigation.goBack();
+                    leaveEditProfile(navigation);
                   }
                 }}
               >
