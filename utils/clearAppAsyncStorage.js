@@ -29,6 +29,8 @@ const SESSION_EXACT_KEYS = new Set([
   "displayPhone",
   "darkMode",
   "isThirdPartyAuth",
+  "access_token",
+  "refresh_token",
   "businessFormData",
   "my_business_uids",
   "user_ratings_info",

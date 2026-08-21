@@ -213,14 +213,12 @@ export async function fetchOfferingModerationDetail(profileExpertiseUid) {
 }
 
 export async function reviewOfferingModeration({ profileExpertiseUid, action, note }) {
-  const adminUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
   const uid = encodeURIComponent(String(profileExpertiseUid || "").trim());
   const response = await fetch(`${MODERATION_OFFERINGS_ENDPOINT}/${uid}/review`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       action,
-      admin_uid: adminUid,
       note: note || "",
     }),
   });

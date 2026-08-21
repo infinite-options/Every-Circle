@@ -2528,10 +2528,11 @@ const ConnectScreen = ({ navigation }) => {
       return next;
     });
     try {
+      // Omit blocker_uid — backend fills the JWT profile as the actor.
       const res = await fetch(BLOCKED_USERS_ENDPOINT, {
         method: wasBlocked ? "DELETE" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blocker_uid: uid, blocked_uid: otherUid }),
+        body: JSON.stringify({ blocked_uid: otherUid }),
       });
       if (!res.ok) throw new Error("Failed to update block status");
       fetchBlockedUsers();

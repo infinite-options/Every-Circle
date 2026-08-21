@@ -16,7 +16,7 @@ const DEBUG_APPLE_SIGNIN_SKIP_BACKEND = false;
 // Suppress VirtualizedList nesting warning - we're using nestedScrollEnabled and proper configuration
 LogBox.ignoreLogs(["VirtualizedLists should never be nested inside plain ScrollViews"]);
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { NavigationContainer, getStateFromPath as parsePathToNavigationState } from "@react-navigation/native";
+import { NavigationContainer, getStateFromPath as parsePathToNavigationState, CommonActions } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -83,7 +83,10 @@ import InboxScreen from "./screens/InboxScreen";
 import ChatScreen from "./screens/ChatScreen";
 import AddReviewSearchScreen from "./screens/AddReviewSearchScreen";
 import EveryCircleMapScreen from "./screens/EveryCircleMapScreen";
-import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv, clearSessionAsyncStorageOnLogin } from "./utils/clearAppAsyncStorage";
+import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv, clearSessionAsyncStorage, clearSessionAsyncStorageOnLogin } from "./utils/clearAppAsyncStorage";
+import { fetchMiddleware as fetchCircle } from "./utils/httpMiddleware";
+import { appleCircleAuthPayload, fetchCircleAuthSocial, googleCircleAuthPayload, setOnAuthSessionExpired } from "./utils/authSession";
+import { resetSharedAblyClient } from "./utils/ablyClient";
 
 const Stack = createNativeStackNavigator();
 
@@ -216,6 +219,9 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
       previousUserUid,
       preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
     });
+    if (idToken) {
+      await fetchCircleAuthSocial(appleCircleAuthPayload(idToken), fetchCircle);
+    }
 
     const appleUserInfoPayload = {
       email: userEmail,
@@ -308,6 +314,7 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     previousUserUid,
     preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
   });
+  await fetchCircleAuthSocial(googleCircleAuthPayload(googleAuthToken, userInfo), fetchCircle);
 
   const googleUserInfo = {
     email: userInfo.user.email,
@@ -364,6 +371,23 @@ export default function App() {
   const [error, setError] = useState(null);
   const [termsAccepted, setTermsAccepted] = useState(true);
   const navigationRef = useRef(null);
+
+  useEffect(() => {
+    setOnAuthSessionExpired(async () => {
+      await clearSessionAsyncStorage();
+      resetSharedAblyClient();
+      const nav = navigationRef.current;
+      if (!nav) return;
+      nav.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: "Home" }],
+        }),
+      );
+    });
+    return () => setOnAuthSessionExpired(null);
+  }, []);
+
   // const [showSpinner, setShowSpinner] = useState(false);
   // const [signInInProgress, setSignInInProgress] = useState(false);
   // const [showUserInfo, setShowUserInfo] = useState(false);

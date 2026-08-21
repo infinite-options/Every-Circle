@@ -50,15 +50,17 @@ export const recordServicePurchase = async (bs_uid, quantity = 1, transaction_ui
  */
 export const recordServiceRestock = async (bs_uid, quantity = 1, ctx = {}) => {
   const safeQty = Math.max(0, parseInt(quantity, 10) || 0);
+  const sellerId = String(ctx.sellerId || "").trim();
   if (!bs_uid || safeQty <= 0) {
     return { success: false, remaining: null, message: "Invalid restock quantity" };
   }
+  if (!sellerId) {
+    return { success: false, remaining: null, message: "Missing seller_id for restock" };
+  }
   try {
-    const body = { bs_uid, quantity: safeQty };
-    const sellerId = String(ctx.sellerId || "").trim();
+    const body = { bs_uid, quantity: safeQty, seller_id: sellerId };
     const trrUid = String(ctx.trrUid || "").trim();
     const orderUid = String(ctx.orderUid || "").trim();
-    if (sellerId) body.seller_id = sellerId;
     if (trrUid) body.trr_uid = trrUid;
     if (orderUid) body.order_uid = orderUid;
 
@@ -136,15 +138,17 @@ export const restockReturnedItems = async (items, ctx = {}) => {
 export const recordOfferingRestock = async (profile_expertise_uid, quantity = 1, ctx = {}) => {
   const uid = String(profile_expertise_uid || "").trim();
   const safeQty = Math.max(0, parseInt(quantity, 10) || 0);
+  const sellerId = String(ctx.sellerId || "").trim();
   if (!uid || safeQty <= 0) {
     return { success: false, remaining: null, message: "Invalid restock quantity" };
   }
+  if (!sellerId) {
+    return { success: false, remaining: null, message: "Missing seller_id for restock" };
+  }
   try {
-    const body = { profile_expertise_uid: uid, quantity: safeQty };
-    const sellerId = String(ctx.sellerId || "").trim();
+    const body = { profile_expertise_uid: uid, quantity: safeQty, seller_id: sellerId };
     const trrUid = String(ctx.trrUid || "").trim();
     const orderUid = String(ctx.orderUid || "").trim();
-    if (sellerId) body.seller_id = sellerId;
     if (trrUid) body.trr_uid = trrUid;
     if (orderUid) body.order_uid = orderUid;
 

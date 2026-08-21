@@ -15,6 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import WebTextInput from "./WebTextInput";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { sanitizeText } from "../utils/textSanitizer";
 
 const FeedbackPopup = ({

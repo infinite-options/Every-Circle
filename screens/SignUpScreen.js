@@ -16,6 +16,7 @@ import { useUnread } from "../contexts/UnreadContext";
 import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import { saveSessionProfilePayload, clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+import { fetchCircleAuthLogin, fetchCircleAuthSocial, googleCircleAuthPayload, issueCircleTokensFromPassword } from "../utils/authSession";
 
 function authContinuationParams(route) {
   const p = route?.params || {};
@@ -295,6 +296,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           await AsyncStorage.clear();
           await AsyncStorage.setItem("user_uid", result.user_uid);
           await AsyncStorage.setItem("user_email_id", googleUserInfo.email);
+          await fetchCircleAuthSocial(googleCircleAuthPayload(googleUserInfo.accessToken), fetch);
           setPendingGoogleUserInfo(googleUserInfo);
 
           // Skip referral modal if referralProfileUid is provided
@@ -374,6 +376,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               // Store user credentials
               await AsyncStorage.setItem("user_uid", user_uid);
               await AsyncStorage.setItem("user_email_id", user_email);
+              await fetchCircleAuthLogin(email, hashedPassword, fetch);
 
               // Fetch user profile
               const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${user_uid}`, {
@@ -463,6 +466,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           await AsyncStorage.clear();
           await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
           await AsyncStorage.setItem("user_email_id", email);
+          await issueCircleTokensFromPassword(email, password, fetch);
           setPendingRegularSignup(true);
 
           // Skip referral modal if referralProfileUid is provided

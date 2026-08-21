@@ -2,8 +2,8 @@
 // Uncomment the appropriate line for your environment
 
 // Production/Development Environment
-export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
-// export const API_BASE_URL = "http://localhost:4090";
+// export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
+export const API_BASE_URL = "http://localhost:4090";
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";
@@ -51,6 +51,14 @@ export const GET_STRIPE_PUBLIC_KEY_ENDPOINT = "https://huo8rhh76i.execute-api.us
  */
 export const CREATE_REFUND_ENDPOINT = "https://huo8rhh76i.execute-api.us-west-1.amazonaws.com/dev/api/v2/createRefund";
 
+// Circle JWT session. Infinite Options salt/login stay as-is; after that succeeds,
+// the app exchanges credentials here for access_token + refresh_token.
+export const AUTH_LOGIN_ENDPOINT = `${API_BASE_URL}/api/v1/auth/login`;
+export const AUTH_REFRESH_ENDPOINT = `${API_BASE_URL}/api/v1/auth/refresh`;
+export const AUTH_SOCIAL_ENDPOINT = `${API_BASE_URL}/api/v1/auth/social`;
+export const AUTH_LOGOUT_ENDPOINT = `${API_BASE_URL}/api/v1/auth/logout`;
+export const AUTH_ME_ENDPOINT = `${API_BASE_URL}/api/v1/auth/me`;
+
 // User Profile Endpoints
 export const USER_INFO_ENDPOINT = `${API_BASE_URL}/userinfo`;
 export const USER_PROFILE_INFO_ENDPOINT = `${API_BASE_URL}/api/v1/userprofileinfo`;
@@ -71,9 +79,9 @@ export const PROFILE_CONNECTION_DEGREES_ENDPOINT = `${API_BASE_URL}/api/v1/profi
 export const PROFILE_VIEWS_ENDPOINT = `${API_BASE_URL}/api/v1/profile_views`;
 export const BUSINESS_TAG_SEARCH_ENDPOINT = `${API_BASE_URL}/api/v1/businesstagsearch`;
 export const BUSINESS_SERVICE_PURCHASE_ENDPOINT = `${API_BASE_URL}/business/service/purchase`;
-/** POST JSON `{ bs_uid, quantity, seller_id?, trr_uid?, order_uid? }` — increment limited inventory after return/cancel confirm */
+/** POST JSON `{ bs_uid, quantity, seller_id, trr_uid?, order_uid? }` — seller_id required (JWT profile or owned business) */
 export const BUSINESS_SERVICE_RESTOCK_ENDPOINT = `${API_BASE_URL}/business/service/restock`;
-/** POST JSON `{ profile_expertise_uid, quantity, seller_id?, trr_uid?, order_uid? }` — increment offering inventory after return/cancel */
+/** POST JSON `{ profile_expertise_uid, quantity, seller_id, trr_uid?, order_uid? }` — seller_id required (JWT profile or owned business) */
 export const PROFILE_EXPERTISE_RESTOCK_ENDPOINT = `${API_BASE_URL}/api/v1/profile-expertise/restock`;
 export const BUSINESS_CLAIM_ENDPOINT = `${API_BASE_URL}/api/v1/business_claim`;
 export const BUSINESS_MAP_ENDPOINT = `${API_BASE_URL}/api/v1/business_map`;
@@ -166,7 +174,7 @@ export const CHAT_CONVERSATIONS_ENDPOINT = `${API_BASE_URL}/api/v1/chat/conversa
 export const CHAT_MESSAGES_ENDPOINT = `${API_BASE_URL}/api/v1/chat/messages`;
 export const ABLY_TOKEN_ENDPOINT = `${API_BASE_URL}/api/v1/ably/token`;
 
-/** GET /:blocker_uid — list of blocked users; POST/DELETE body: { blocker_uid, blocked_uid } */
+/** GET /:blocker_uid — list of blocked users; POST/DELETE body: { blocked_uid } (blocker from JWT) */
 export const BLOCKED_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/blocked-users`;
 
 console.log("API Configuration loaded");

@@ -8,6 +8,7 @@ import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { profileUidFromUserProfileResponse } from "../utils/ensureSessionProfileUid";
+import { refreshCircleTokens } from "../utils/authSession";
 
 export default function UserInfoScreen({ navigation, route }) {
   // console.log("UserInfoScreen - route.params:", route.params);
@@ -242,6 +243,10 @@ export default function UserInfoScreen({ navigation, route }) {
         await AsyncStorage.setItem("profile_uid", savedProfileUid);
         setProfilePersonalUid(savedProfileUid);
         console.log("UserInfoScreen - Saved profile_uid to session:", savedProfileUid);
+      }
+
+      if (method === "POST") {
+        await refreshCircleTokens();
       }
 
       if (route?.params?.returnToScanLanding && route?.params?.profile_uid) {

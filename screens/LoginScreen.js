@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { clearSessionAsyncStorage, clearSessionAsyncStorageOnLogin } from "../utils/clearAppAsyncStorage";
+import { fetchCircleAuthLogin } from "../utils/authSession";
 import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import AppHeader from "../components/AppHeader";
@@ -160,6 +161,8 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
         previousUserUid,
         preserveKeys: ["user_uid", "user_email_id"],
       });
+
+      await fetchCircleAuthLogin(email, hashedPassword, fetch);
 
       const scanProfileUid = route?.params?.returnToScanLanding ? route?.params?.profile_uid : null;
       if (scanProfileUid) {

@@ -235,14 +235,12 @@ export async function fetchBusinessModerationDetail(businessUid) {
 }
 
 export async function reviewBusinessModeration({ businessUid, action, note }) {
-  const adminUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
   const uid = encodeURIComponent(String(businessUid || "").trim());
   const response = await fetch(`${MODERATION_BUSINESSES_ENDPOINT}/${uid}/review`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       action,
-      admin_uid: adminUid,
       note: note || "",
     }),
   });

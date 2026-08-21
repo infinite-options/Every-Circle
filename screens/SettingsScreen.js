@@ -26,6 +26,7 @@ import { clearUserProfileCacheStorage, getSessionProfile, refreshSessionProfileF
 import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { logoutCircleSession } from "../utils/authSession";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
@@ -459,6 +460,7 @@ export default function SettingsScreen() {
         // console.log("SettingsScreen.js - Web platform: Skipping Google Sign Out");
       }
 
+      await logoutCircleSession(fetch);
       await clearSessionAsyncStorage();
       // console.log("SettingsScreen.js - AsyncStorage cleared successfully");
 
@@ -841,11 +843,10 @@ export default function SettingsScreen() {
   const handleResolveClaim = async (claim_uid, action) => {
     console.log("handleResolveClaim called:", claim_uid, action);
     try {
-      const adminUid = await AsyncStorage.getItem("profile_uid");
       const response = await fetch(BUSINESS_CLAIM_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claim_uid, action, admin_uid: adminUid }),
+        body: JSON.stringify({ claim_uid, action }),
       });
       const result = await response.json();
       if (result.code === 200) {

@@ -48,12 +48,14 @@ export function chatMessageContextFields(replyContext) {
   return fields;
 }
 
-/** Body for POST /api/v1/chat/messages */
+/** Body for POST /api/v1/chat/messages. Omit sender_uid so the backend fills the JWT profile. */
 export function buildChatMessagePostBody({ conversationUid, senderUid, body, replyContext }) {
-  return {
+  const payload = {
     conversation_uid: String(conversationUid || "").trim(),
-    sender_uid: String(senderUid || "").trim(),
     body: String(body ?? ""),
     ...chatMessageContextFields(replyContext),
   };
+  const sender = String(senderUid || "").trim();
+  if (sender) payload.sender_uid = sender;
+  return payload;
 }

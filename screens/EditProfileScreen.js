@@ -18,6 +18,7 @@ import { TAX_RATE_VALIDATION_MESSAGE } from "../utils/taxValidation";
 import SeekingSection, { validateSeeking, validateSeekingShipping, validateSeekingReturnWindow } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { getSessionProfile, parseOwnedProfileBusinessInfo, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED } from "../utils/offeringModeration";

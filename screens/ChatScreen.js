@@ -472,7 +472,7 @@ export default function ChatScreen() {
         body: JSON.stringify(
           buildChatMessagePostBody({
             conversationUid: convUid,
-            senderUid: myUid,
+            senderUid: my_uid_override ? myUid : "",
             body: bodyToSend,
             replyContext: pendingReplyContext,
           }),
