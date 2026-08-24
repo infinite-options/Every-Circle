@@ -67,6 +67,7 @@ import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles"
 import { searchReferralProfiles, loadReferralNetworkByUid, mapReferralProfileToSearchItem, enrichSearchItemsWithReferralRelationships } from "../utils/searchReferralProfiles";
 import { consumeSearchResultsStaleFlag } from "../utils/clearAppAsyncStorage";
 import {
+  SEARCH_LOCATION_ANY,
   SEARCH_LOCATION_HOME,
   SEARCH_LOCATION_CUSTOM,
   MAJOR_US_SEARCH_CITIES,
@@ -74,7 +75,8 @@ import {
   getSearchLocationFilterLabel,
   getSearchLocationFullLabel,
   buildCustomSearchCity,
-  isNonHomeSearchLocation,
+  isSearchLocationAny,
+  isActiveSearchLocation,
 } from "../utils/searchLocationOptions";
 import { getCitySuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
@@ -175,9 +177,8 @@ function getBusinessDetailsRow(result, businessId) {
 }
 
 function locationFieldsFromApi(row) {
-  if (!row || typeof row !== "object") return { location_boosted: false, distance_miles: null };
+  if (!row || typeof row !== "object") return { distance_miles: null };
   return {
-    location_boosted: !!row.location_boosted,
     distance_miles: Number.isFinite(row.distance_miles) ? row.distance_miles : null,
   };
 }
@@ -419,6 +420,9 @@ function shouldIncludeSearchSeekingRow(item) {
 function itemPassesRelevanceCutoff(item) {
   if (!item || item.itemType === "individuals") return true;
   if (item?.score_breakdown?.browse_mode === true) return true;
+  if (item.search_result_category) {
+    return item.search_result_category !== "other";
+  }
   if (item.passes_relevance_cutoff === false) return false;
   return true;
 }
@@ -530,11 +534,6 @@ function formatSearchDistanceMiles(miles) {
   return `${Math.round(miles)} mi`;
 }
 
-function LocationBoostIcon({ darkMode, distanceMiles }) {
-  const label = distanceMiles != null ? `Boosted: within ${distanceMiles.toFixed(1)} miles of your home` : "Boosted: near your home address";
-  return <Ionicons name='navigate' size={14} color={darkMode ? "#7DD3FC" : "#0EA5E9"} style={{ marginLeft: 6 }} accessibilityLabel={label} />;
-}
-
 function SearchCardDistanceLabel({ miles, darkMode, style, centered = false }) {
   const label = formatSearchDistanceMiles(miles);
   if (!label) return null;
@@ -588,60 +587,24 @@ function searchChannelScoreParts(item) {
       .filter(([, value]) => Number.isFinite(value) && Number(value) > 0)
       .map(([label, value]) => `${label} ${Number(value).toFixed(3)}`),
   ];
-  if (boosts.proximity_boost) {
-    const miles = Number.isFinite(boosts.proximity_boost_miles) ? Number(boosts.proximity_boost_miles).toFixed(1) : null;
-    const factor = Number.isFinite(boosts.proximity_boost_factor) ? Number(boosts.proximity_boost_factor).toFixed(2) : "1.12";
-    parts.push(miles ? `Prox ×${factor} (${miles}mi)` : `Prox ×${factor}`);
-  }
   return parts;
 }
 
-function groupResultsBySearchCategory(items) {
-  const buckets = { sparse: [], exact: [], semantic: [], other: [] };
-  for (const item of items || []) {
-    const cat = item?.search_result_category || "other";
-    if (Object.prototype.hasOwnProperty.call(buckets, cat)) {
-      buckets[cat].push(item);
-    } else {
-      buckets.other.push(item);
-    }
+const SEARCH_CATEGORY_RANK = { sparse: 0, exact: 1, semantic: 2, other: 3 };
+
+function searchResultCategoryRank(item) {
+  const cat = item?.search_result_category;
+  if (cat && Object.prototype.hasOwnProperty.call(SEARCH_CATEGORY_RANK, cat)) {
+    return SEARCH_CATEGORY_RANK[cat];
   }
-  return buckets;
+  return SEARCH_CATEGORY_RANK.other;
 }
 
-const SEARCH_CATEGORY_TYPE_SECTIONS = [
-  { key: "businesses", label: "Businesses", tabKeys: ["businesses", "organizations"] },
-  { key: "expertise", label: "Offering", tabKeys: ["expertise"] },
-  { key: "seeking", label: "Seeking", tabKeys: ["seeking"] },
-  { key: "individuals", label: "Individuals", tabKeys: ["individuals"] },
-];
-
-const DEFAULT_EXPANDED_SEARCH_CATEGORY_TYPES = {
-  sparse: { businesses: true, expertise: true, seeking: true, individuals: true },
-  exact: { businesses: true, expertise: true, seeking: true, individuals: true },
-  semantic: { businesses: true, expertise: true, seeking: true, individuals: true },
-  other: { businesses: true, expertise: true, seeking: true, individuals: true },
-};
-
-function itemMatchesSelectedSearchTab(item, selectedSearchTabs) {
-  const type = item?.itemType || "businesses";
-  return (
-    (type === "businesses" && (selectedSearchTabs.businesses || selectedSearchTabs.organizations)) ||
-    (type === "expertise" && selectedSearchTabs.expertise) ||
-    (type === "seeking" && selectedSearchTabs.seeking) ||
-    (type === "individuals" && selectedSearchTabs.individuals)
-  );
-}
-
-function isSearchCategoryTypeTabSelected(section, selectedSearchTabs) {
-  return section.tabKeys.some((tabKey) => selectedSearchTabs[tabKey]);
-}
-
-function filterItemsForSearchCategoryType(items, typeKey) {
-  return (items || []).filter((item) => {
-    const type = item?.itemType || "businesses";
-    if (typeKey === "businesses") return type === "businesses";
-    return type === typeKey;
+function sortBySearchResultCategory(items) {
+  return [...(items || [])].sort((a, b) => {
+    const rankDiff = searchResultCategoryRank(a) - searchResultCategoryRank(b);
+    if (rankDiff !== 0) return rankDiff;
+    return (Number(b.score) || 0) - (Number(a.score) || 0);
   });
 }
 
@@ -721,19 +684,22 @@ function applyAlphabeticalSort(items, mode, { global = false } = {}) {
   return [...businesses, ...expertise, ...seeking];
 }
 
-/** Client-side ordering: browse network, alphabetical, or bounty (typed search only). */
+/** Client-side ordering of the master result list.
+ * Alphabetical for typed search is applied later to currently visible rows only
+ * (so Show more stays in relevance/category order).
+ */
 function applyClientSorts(items, { browseAll = false, searchType = "global", bounty = null, alphabetical = null } = {}) {
   const global = searchType === "global";
   const list = items || [];
 
   if (browseAll) {
+    // Browse shows everything — A→Z can reorder the full list.
     if (alphabetical) return applyAlphabeticalSort(list, alphabetical, { global });
     return applyBrowseAllOrdering(list, { global });
   }
 
-  if (alphabetical) return applyAlphabeticalSort(list, alphabetical, { global });
   if (bounty) return applyBountyFilterAndSort(list, bounty);
-  return list;
+  return sortBySearchResultCategory(list);
 }
 
 // Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
@@ -971,8 +937,8 @@ export default function SearchScreen({ route }) {
 
   // Filter states
   const [distance, setDistance] = useState(null);
-  /** Search origin for distance filter and proximity ranking — home, preset city, or custom city. */
-  const [searchLocation, setSearchLocation] = useState(SEARCH_LOCATION_HOME);
+  /** Search origin for distance radius filter — any (off), home, preset city, or custom city. */
+  const [searchLocation, setSearchLocation] = useState(SEARCH_LOCATION_ANY);
   /** Coords/label when searchLocation === SEARCH_LOCATION_CUSTOM. */
   const [customSearchCity, setCustomSearchCity] = useState(null);
   const [citySearchQuery, setCitySearchQuery] = useState("");
@@ -996,15 +962,6 @@ export default function SearchScreen({ route }) {
    * 0 = strong (+ min 4), 1 = +4 more, 2 = all remaining.
    */
   const [showMoreStage, setShowMoreStage] = useState(0);
-  /** Demo search server: sparse / semantic / other category headers from API. */
-  const [searchCategoryMeta, setSearchCategoryMeta] = useState(null);
-  const [expandedSearchCategories, setExpandedSearchCategories] = useState({
-    sparse: true,
-    exact: true,
-    semantic: true,
-    other: true,
-  });
-  const [expandedSearchCategoryTypes, setExpandedSearchCategoryTypes] = useState(DEFAULT_EXPANDED_SEARCH_CATEGORY_TYPES);
 
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
   /** Settings → Debug Mode = Yes: show search ranking scores on result cards. */
@@ -1073,17 +1030,10 @@ export default function SearchScreen({ route }) {
     });
   }, []);
 
-  const commitSearchResults = useCallback((list, { browseAll = false, searchCategories = null } = {}) => {
+  const commitSearchResults = useCallback((list, { browseAll = false } = {}) => {
     browseAllActiveRef.current = browseAll;
     setBrowseAllActive(browseAll);
     setShowMoreStage(0);
-    if (searchCategories?.length) {
-      setSearchCategoryMeta(searchCategories);
-      setExpandedSearchCategories({ sparse: true, exact: true, semantic: true, other: true });
-      setExpandedSearchCategoryTypes(DEFAULT_EXPANDED_SEARCH_CATEGORY_TYPES);
-    } else {
-      setSearchCategoryMeta(null);
-    }
     const filtered = filterPublicSearchModeratedResults(list);
     rawResultsRef.current = [...filtered];
     setResults(
@@ -1606,7 +1556,7 @@ export default function SearchScreen({ route }) {
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [activeFilterMenu, setActiveFilterMenu] = useState(null);
   const [filterPanelDraft, setFilterPanelDraft] = useState({
-    searchLocation: SEARCH_LOCATION_HOME,
+    searchLocation: SEARCH_LOCATION_ANY,
     customSearchCity: null,
     distance: null,
     network: null,
@@ -1633,13 +1583,20 @@ export default function SearchScreen({ route }) {
     }
   }, [selectedSearchTabs.individuals]);
   const distanceOptions = [5, 10, 15, 25, 50, 100];
+  /** Applied automatically when the user picks a location origin so city/home actually filters. */
+  const DEFAULT_SEARCH_DISTANCE_MILES = 25;
   /** First modal row: omit user_lat / max_distance on Qdrant search. */
   const distanceModalOptions = [{ key: "any", label: "Any distance (no filter)", miles: null }, ...distanceOptions.map((d) => ({ key: String(d), label: `${d} mi`, miles: d }))];
   const networkOptions = [1, 2, 3, 4, 5];
 
+  const distanceForSearchLocation = (locationKey, currentDistance) => {
+    if (isSearchLocationAny(locationKey)) return null;
+    return currentDistance != null ? currentDistance : DEFAULT_SEARCH_DISTANCE_MILES;
+  };
+
   const activeFilterCount = useMemo(() => {
     let count = 0;
-    if (isNonHomeSearchLocation(searchLocation)) count += 1;
+    if (isActiveSearchLocation(searchLocation)) count += 1;
     if (distance !== null) count += 1;
     if (network !== null) count += 1;
     if (bounty !== null) count += 1;
@@ -1751,7 +1708,7 @@ export default function SearchScreen({ route }) {
   };
 
   const clearAllFilters = () => {
-    setSearchLocation(SEARCH_LOCATION_HOME);
+    setSearchLocation(SEARCH_LOCATION_ANY);
     setCustomSearchCity(null);
     clearCitySearchUi();
     setDistance(null);
@@ -1761,7 +1718,7 @@ export default function SearchScreen({ route }) {
     setSortAlphabetical(null);
     setActiveFilterMenu(null);
     setFilterPanelDraft({
-      searchLocation: SEARCH_LOCATION_HOME,
+      searchLocation: SEARCH_LOCATION_ANY,
       customSearchCity: null,
       distance: null,
       network: null,
@@ -1773,7 +1730,7 @@ export default function SearchScreen({ route }) {
       distanceMiles: null,
       networkValue: null,
       ratingValue: null,
-      searchLocationValue: SEARCH_LOCATION_HOME,
+      searchLocationValue: SEARCH_LOCATION_ANY,
       customSearchCityValue: null,
     });
   };
@@ -1781,7 +1738,7 @@ export default function SearchScreen({ route }) {
   const applyFilterPanel = () => {
     const nextSearchLocation = filterPanelDraft.searchLocation;
     const nextCustomCity = filterPanelDraft.customSearchCity;
-    const nextDistance = filterPanelDraft.distance;
+    const nextDistance = distanceForSearchLocation(nextSearchLocation, filterPanelDraft.distance);
     const nextNetwork = filterPanelDraft.network;
     const nextRating = filterPanelDraft.rating;
     const nextBounty = filterPanelDraft.bounty;
@@ -1844,14 +1801,14 @@ export default function SearchScreen({ route }) {
     return (items || []).filter((item) => itemPassesNetworkFilter(item, maxDegree));
   };
 
-  /** Send home coords for proximity ranking (independent of distance filter). */
+  /** Send home/city coords only when a distance radius filter is active. */
   const appendHomeCoordsParams = (baseUrl, coords) => {
     if (coords?.lat == null || coords?.lng == null) return baseUrl;
     const sep = baseUrl.includes("?") ? "&" : "?";
     return `${baseUrl}${sep}user_lat=${encodeURIComponent(coords.lat)}&user_lon=${encodeURIComponent(coords.lng)}`;
   };
 
-  /** Append Qdrant distance filter params (user home → result coordinates). */
+  /** Append Qdrant distance filter params (search origin → result coordinates). */
   const appendDistanceParams = (baseUrl, miles, coords) => {
     if (miles == null || coords?.lat == null || coords?.lng == null) return baseUrl;
     const sep = baseUrl.includes("?") ? "&" : "?";
@@ -1867,14 +1824,6 @@ export default function SearchScreen({ route }) {
   const getSearchCardDistanceMiles = (item) => {
     if (distance == null) return null;
     return itemDistanceMiles(item, activeSearchCoords);
-  };
-
-  const renderBusinessCardHeaderAccessory = (item) => {
-    if (distance != null) return null;
-    if (item.location_boosted) {
-      return <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />;
-    }
-    return null;
   };
 
   const renderOfferingSearchDistance = (item) => {
@@ -1925,28 +1874,18 @@ export default function SearchScreen({ route }) {
   const visibleResultSet = new Set([...defaultVisibleResults, ...remainingWeakerResults.slice(0, extraVisibleCount)]);
   const shouldDisplayResult = (item) => browseAllActive || visibleResultSet.has(item);
 
-  const businessSectionResults = businessSectionResultsAll.filter(shouldDisplayResult);
-  const offeringSectionResults = offeringSectionResultsAll.filter(shouldDisplayResult);
-  const seekingSectionResults = seekingSectionResultsAll.filter(shouldDisplayResult);
-
-  const searchCategoryBuckets = searchCategoryMeta?.length ? groupResultsBySearchCategory(results) : null;
-
-  const toggleSearchCategory = (categoryId) => {
-    setExpandedSearchCategories((prev) => ({ ...prev, [categoryId]: !prev[categoryId] }));
+  /** A→Z only reorders cards currently on screen; hidden Show more rows keep category/relevance order. */
+  const sortVisibleSection = (items) => {
+    if (!sortAlphabetical || browseAllActive) return items;
+    return applyAlphabeticalSort(items, sortAlphabetical, { global: false });
   };
 
-  const toggleSearchCategoryType = (categoryId, typeKey) => {
-    setExpandedSearchCategoryTypes((prev) => ({
-      ...prev,
-      [categoryId]: {
-        ...prev[categoryId],
-        [typeKey]: !(prev[categoryId]?.[typeKey] !== false),
-      },
-    }));
-  };
+  const businessSectionResults = sortVisibleSection(businessSectionResultsAll.filter(shouldDisplayResult));
+  const offeringSectionResults = sortVisibleSection(offeringSectionResultsAll.filter(shouldDisplayResult));
+  const seekingSectionResults = sortVisibleSection(seekingSectionResultsAll.filter(shouldDisplayResult));
 
   const hiddenWeakerMatchCount = browseAllActive ? 0 : Math.max(0, selectedRankedResults.length - visibleResultSet.size);
-  const showMoreButtonVisible = !searchCategoryMeta?.length && !browseAllActive && (hiddenWeakerMatchCount > 0 || showMoreStage > 0);
+  const showMoreButtonVisible = !browseAllActive && (hiddenWeakerMatchCount > 0 || showMoreStage > 0);
   const nextShowMoreCount = showMoreStage === 0 ? Math.min(4, hiddenWeakerMatchCount) : hiddenWeakerMatchCount;
   const showMoreButtonLabel =
     showMoreStage >= 2 || hiddenWeakerMatchCount === 0
@@ -1972,13 +1911,11 @@ export default function SearchScreen({ route }) {
     const isProfileType = selectedSearchTabs.expertise || selectedSearchTabs.seeking;
     const showBusinessMapResults = selectedSearchTabs.businesses || selectedSearchTabs.organizations;
 
-    const visibleResults = searchCategoryMeta?.length
-      ? results.filter((item) => itemMatchesSelectedSearchTab(item, selectedSearchTabs))
-      : [
-          ...(showBusinessMapResults ? businessSectionResults : []),
-          ...(selectedSearchTabs.expertise ? offeringSectionResults : []),
-          ...(selectedSearchTabs.seeking ? seekingSectionResults : []),
-        ];
+    const visibleResults = [
+      ...(showBusinessMapResults ? businessSectionResults : []),
+      ...(selectedSearchTabs.expertise ? offeringSectionResults : []),
+      ...(selectedSearchTabs.seeking ? seekingSectionResults : []),
+    ];
 
     if (visibleResults.length === 0) {
       Alert.alert("No results", "Select at least one tab and run a search to see results on the map.");
@@ -2036,14 +1973,11 @@ export default function SearchScreen({ route }) {
       selectedSearchTabs,
     });
   }, [businessSectionResults, navigation, offeringSectionResults, results, searchQuery, seekingSectionResults, selectedSearchTabs]);
-  /** Append home coords and optional max_distance for business distance filtering / proximity boost. */
-  const appendLocationSearchParams = (baseUrl, { distanceMiles, coords, sendProximityCoords = false }) => {
+  /** Append origin coords and max_distance when a radius filter is active. */
+  const appendLocationSearchParams = (baseUrl, { distanceMiles, coords }) => {
     let apiUrl = baseUrl;
-    const shouldSendCoords = sendProximityCoords || distanceMiles != null;
-    if (shouldSendCoords && coords?.lat != null && coords?.lng != null) {
-      apiUrl = appendHomeCoordsParams(apiUrl, coords);
-    }
     if (distanceMiles != null && coords?.lat != null && coords?.lng != null) {
+      apiUrl = appendHomeCoordsParams(apiUrl, coords);
       apiUrl = appendDistanceParams(apiUrl, distanceMiles, coords);
     }
     return apiUrl;
@@ -2058,7 +1992,6 @@ export default function SearchScreen({ route }) {
     apiUrl = appendLocationSearchParams(apiUrl, {
       distanceMiles,
       coords: homeCoords,
-      sendProximityCoords: true,
     });
 
     const fetchOptions =
@@ -2138,7 +2071,7 @@ export default function SearchScreen({ route }) {
     }
 
     let searchCoords = resolveSearchLocationCoords(effectiveSearchLocation, userHomeCoords, effectiveCustomCity);
-    if (effectiveSearchLocation === SEARCH_LOCATION_HOME && (effectiveDistance != null || searchTypeSupportsDistanceFilter())) {
+    if (effectiveSearchLocation === SEARCH_LOCATION_HOME && effectiveDistance != null) {
       const freshCoords = await loadUserHomeCoords();
       if (freshCoords?.lat != null && freshCoords?.lng != null) {
         searchCoords = freshCoords;
@@ -2146,8 +2079,9 @@ export default function SearchScreen({ route }) {
     }
 
     if (effectiveDistance != null && (searchCoords.lat == null || searchCoords.lng == null)) {
-      const alertMessage =
-        effectiveSearchLocation === SEARCH_LOCATION_HOME
+      const alertMessage = isSearchLocationAny(effectiveSearchLocation)
+        ? "Pick My home or a city first to filter search results by distance."
+        : effectiveSearchLocation === SEARCH_LOCATION_HOME
           ? "Set your home address coordinates in Settings to filter search results by distance."
           : "Unable to use the selected search location for distance filtering.";
       Alert.alert("Location needed", alertMessage, [
@@ -2181,7 +2115,6 @@ export default function SearchScreen({ route }) {
         isBrowseAll,
       });
       const globalJson = sanitizeEmptyStrings(globalJsonRaw);
-      const searchCategories = Array.isArray(globalJson) ? null : globalJson.search_categories || null;
       const globalResults = Array.isArray(globalJson) ? globalJson : globalJson.results || globalJson.result || [];
       const businessResults = globalResults.filter((item) => item.itemType === "businesses");
       const expertiseResults = globalResults.filter((item) => item.itemType === "expertise");
@@ -2250,10 +2183,7 @@ export default function SearchScreen({ route }) {
       filteredEnriched = filterResultsByNetwork(filteredEnriched, effectiveNetwork);
       filteredEnriched = applyDistanceFilterToSearchResults(filteredEnriched, effectiveDistance, searchCoords);
       if (searchGeneration !== searchGenerationRef.current) return;
-      commitSearchResults(filteredEnriched, {
-        browseAll: isBrowseAll || Boolean(searchCategories?.length),
-        searchCategories,
-      });
+      commitSearchResults(filteredEnriched, { browseAll: isBrowseAll });
       setHasLoadedInitialSearch(true);
       setLoading(false);
       return;
@@ -2287,7 +2217,6 @@ export default function SearchScreen({ route }) {
           apiUrl = appendLocationSearchParams(apiUrl, {
             distanceMiles: effectiveDistance,
             coords: searchCoords,
-            sendProximityCoords: type === "global" || type === "businesses",
           });
         }
 
@@ -2844,6 +2773,7 @@ export default function SearchScreen({ route }) {
         nestedScrollEnabled
         keyboardShouldPersistTaps='handled'
       >
+        {renderFilterChip("Any", isSearchLocationAny(selectedLocation), () => onSelectPreset(SEARCH_LOCATION_ANY, null), "search-location-any")}
         {renderFilterChip("My home", selectedLocation === SEARCH_LOCATION_HOME, () => onSelectPreset(SEARCH_LOCATION_HOME, null), "search-location-home")}
         {selectedLocation === SEARCH_LOCATION_CUSTOM && selectedCustomCity
           ? renderFilterChip(selectedCustomCity.shortLabel || selectedCustomCity.label, true, () => onSelectCustomCity(selectedCustomCity), "search-location-custom-active")
@@ -2866,17 +2796,30 @@ export default function SearchScreen({ route }) {
         selectedCustomCity: customSearchCity,
         compact: true,
         onSelectPreset: (key) => {
+          const pickingAny = isSearchLocationAny(key);
+          const nextDistance = distanceForSearchLocation(key, distance);
           setSearchLocation(key);
           setCustomSearchCity(null);
+          setDistance(nextDistance);
           clearCitySearchUi();
           setActiveFilterMenu(null);
-          performSearch(searchQuery, { searchLocationValue: key, customSearchCityValue: null });
+          performSearch(searchQuery, {
+            searchLocationValue: key,
+            customSearchCityValue: null,
+            distanceMiles: nextDistance,
+          });
         },
         onSelectCustomCity: (city) => {
+          const nextDistance = distanceForSearchLocation(SEARCH_LOCATION_CUSTOM, distance);
           setCustomSearchCity(city);
           setSearchLocation(SEARCH_LOCATION_CUSTOM);
+          setDistance(nextDistance);
           setActiveFilterMenu(null);
-          performSearch(searchQuery, { searchLocationValue: SEARCH_LOCATION_CUSTOM, customSearchCityValue: city });
+          performSearch(searchQuery, {
+            searchLocationValue: SEARCH_LOCATION_CUSTOM,
+            customSearchCityValue: city,
+            distanceMiles: nextDistance,
+          });
         },
       });
     } else if (activeFilterMenu === "distance") {
@@ -2887,6 +2830,10 @@ export default function SearchScreen({ route }) {
           () => {
             if (item.miles == null) {
               clearDistanceFilter(true);
+              return;
+            }
+            if (isSearchLocationAny(searchLocation)) {
+              Alert.alert("Location needed", "Pick My home or a city first, then choose a distance radius.");
               return;
             }
             setDistance(item.miles);
@@ -2992,17 +2939,31 @@ export default function SearchScreen({ route }) {
       >
         {renderFilterPanelSection(
           "Search location",
-          filterPanelDraft.searchLocation === SEARCH_LOCATION_HOME
-            ? "Distance and proximity use your home address from Settings. Or type any city below."
-            : `Distance and proximity use ${getSearchLocationFullLabel(filterPanelDraft.searchLocation, filterPanelDraft.customSearchCity)}.`,
+          isSearchLocationAny(filterPanelDraft.searchLocation)
+            ? "No location origin. Pick My home or a city to limit results to that area (defaults to 25 mi)."
+            : filterPanelDraft.searchLocation === SEARCH_LOCATION_HOME
+            ? "Results are limited to a radius around your home address from Settings."
+            : `Results are limited to a radius around ${getSearchLocationFullLabel(filterPanelDraft.searchLocation, filterPanelDraft.customSearchCity)}.`,
           null,
           {
             content: renderCitySearchPicker({
               selectedLocation: filterPanelDraft.searchLocation,
               selectedCustomCity: filterPanelDraft.customSearchCity,
               compact: true,
-              onSelectPreset: (key) => setFilterPanelDraft((prev) => ({ ...prev, searchLocation: key, customSearchCity: null })),
-              onSelectCustomCity: (city) => setFilterPanelDraft((prev) => ({ ...prev, searchLocation: SEARCH_LOCATION_CUSTOM, customSearchCity: city })),
+              onSelectPreset: (key) =>
+                setFilterPanelDraft((prev) => ({
+                  ...prev,
+                  searchLocation: key,
+                  customSearchCity: null,
+                  distance: distanceForSearchLocation(key, prev.distance),
+                })),
+              onSelectCustomCity: (city) =>
+                setFilterPanelDraft((prev) => ({
+                  ...prev,
+                  searchLocation: SEARCH_LOCATION_CUSTOM,
+                  customSearchCity: city,
+                  distance: distanceForSearchLocation(SEARCH_LOCATION_CUSTOM, prev.distance),
+                })),
             }),
           },
         )}
@@ -3010,8 +2971,10 @@ export default function SearchScreen({ route }) {
         {renderFilterPanelSection(
           "Distance",
           filterPanelDraft.distance == null
-            ? "Showing all results regardless of distance."
-            : `Results are limited to ${getSearchLocationFullLabel(filterPanelDraft.searchLocation, filterPanelDraft.customSearchCity)}.`,
+            ? isSearchLocationAny(filterPanelDraft.searchLocation)
+              ? "Pick a search location first, then choose a radius."
+              : "Choose a radius to hide results outside that area."
+            : `Only showing results within ${filterPanelDraft.distance} mi of ${getSearchLocationFullLabel(filterPanelDraft.searchLocation, filterPanelDraft.customSearchCity)}.`,
           distanceModalOptions.map((item) =>
             renderFilterChip(
               item.label,
@@ -3452,7 +3415,6 @@ export default function SearchScreen({ route }) {
     const miniCardBusiness = mapBusinessToMiniCard(item);
     const microCardBusiness = mapBusinessToMicroCard(item);
     const scoreSuffix = showSearchScores ? formatBusinessSearchScoreSuffix(item) : null;
-    const headerAccessory = renderBusinessCardHeaderAccessory(item);
 
     return (
       <TouchableOpacity
@@ -3471,7 +3433,7 @@ export default function SearchScreen({ route }) {
         {isCompactSearchCard ? (
           <>
             {microCardBusiness ? (
-              <MicroCard user={microCardBusiness} showRelationship={false} embedded nameSuffix={scoreSuffix} headerAccessory={headerAccessory} />
+              <MicroCard user={microCardBusiness} showRelationship={false} embedded nameSuffix={scoreSuffix} />
             ) : (
               <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
             )}
@@ -3481,7 +3443,7 @@ export default function SearchScreen({ route }) {
           <>
             <View style={styles.searchMiniCardWrap}>
               {miniCardBusiness ? (
-                <MiniCard business={miniCardBusiness} embedded nameSuffix={scoreSuffix} headerAccessory={headerAccessory} />
+                <MiniCard business={miniCardBusiness} embedded nameSuffix={scoreSuffix} />
               ) : (
                 <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
               )}
@@ -3859,8 +3821,8 @@ export default function SearchScreen({ route }) {
                   style={[
                     styles.filterButtonOption,
                     darkMode && styles.darkFilterButtonOption,
-                    (isNonHomeSearchLocation(searchLocation) || activeFilterMenu === "searchLocation") && styles.activeFilterButton,
-                    darkMode && (isNonHomeSearchLocation(searchLocation) || activeFilterMenu === "searchLocation") && styles.darkActiveFilterButton,
+                    (isActiveSearchLocation(searchLocation) || activeFilterMenu === "searchLocation") && styles.activeFilterButton,
+                    darkMode && (isActiveSearchLocation(searchLocation) || activeFilterMenu === "searchLocation") && styles.darkActiveFilterButton,
                   ]}
                   onPress={() => toggleFilterMenu("searchLocation")}
                 >
@@ -3868,8 +3830,8 @@ export default function SearchScreen({ route }) {
                     style={[
                       styles.filterButtonText,
                       darkMode && styles.darkFilterButtonText,
-                      (isNonHomeSearchLocation(searchLocation) || activeFilterMenu === "searchLocation") && styles.activeFilterButtonText,
-                      darkMode && (isNonHomeSearchLocation(searchLocation) || activeFilterMenu === "searchLocation") && styles.darkActiveFilterButtonText,
+                      (isActiveSearchLocation(searchLocation) || activeFilterMenu === "searchLocation") && styles.activeFilterButtonText,
+                      darkMode && (isActiveSearchLocation(searchLocation) || activeFilterMenu === "searchLocation") && styles.darkActiveFilterButtonText,
                     ]}
                   >
                     {getSearchLocationFilterLabel(searchLocation, customSearchCity)}
@@ -3989,62 +3951,6 @@ export default function SearchScreen({ route }) {
               </View>
             ) : (
               <>
-                {searchCategoryMeta?.length ? (
-                  searchCategoryMeta.map((cat) => {
-                    const catItems = searchCategoryBuckets?.[cat.id] || [];
-                    const visibleCatItems = catItems.filter((item) => itemMatchesSelectedSearchTab(item, selectedSearchTabs));
-                    const expanded = expandedSearchCategories[cat.id] !== false;
-                    return (
-                      <React.Fragment key={cat.id}>
-                        <TouchableOpacity
-                          style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]}
-                          onPress={() => toggleSearchCategory(cat.id)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>
-                            {cat.title} ({visibleCatItems.length})
-                          </Text>
-                          <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
-                        </TouchableOpacity>
-                        {expanded &&
-                          (visibleCatItems.length > 0 ? (
-                            SEARCH_CATEGORY_TYPE_SECTIONS.map((section) => {
-                              if (!isSearchCategoryTypeTabSelected(section, selectedSearchTabs)) return null;
-                              const typeItems = filterItemsForSearchCategoryType(catItems, section.key);
-                              const typeExpanded = expandedSearchCategoryTypes[cat.id]?.[section.key] !== false;
-                              return (
-                                <React.Fragment key={`${cat.id}-${section.key}`}>
-                                  <TouchableOpacity
-                                    style={[styles.globalNestedSectionHeader, darkMode && styles.darkGlobalNestedSectionHeader]}
-                                    onPress={() => toggleSearchCategoryType(cat.id, section.key)}
-                                    activeOpacity={0.8}
-                                  >
-                                    <Text style={[styles.globalNestedSectionHeaderText, darkMode && styles.darkGlobalNestedSectionHeaderText]}>
-                                      {section.label} ({typeItems.length})
-                                    </Text>
-                                    <Ionicons name={typeExpanded ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#fff" : "#333"} />
-                                  </TouchableOpacity>
-                                  {typeExpanded &&
-                                    (typeItems.length > 0 ? (
-                                      typeItems.map((item, idx) => renderResultItem(item, `${cat.id}-${section.key}-${idx}`))
-                                    ) : (
-                                      <Text style={[styles.individualsSearchHint, darkMode && styles.darkIndividualsSearchHint, styles.globalNestedSectionEmpty]}>
-                                        No {section.label.toLowerCase()} in this category.
-                                      </Text>
-                                    ))}
-                                </React.Fragment>
-                              );
-                            })
-                          ) : (
-                            <Text style={[styles.individualsSearchHint, darkMode && styles.darkIndividualsSearchHint]}>
-                              No results in this category for the selected tabs.
-                            </Text>
-                          ))}
-                      </React.Fragment>
-                    );
-                  })
-                ) : (
-                  <>
                 {selectedSearchTabs.individuals && (
                   <>
                     <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalIndividuals((prev) => !prev)} activeOpacity={0.8}>
@@ -4098,8 +4004,6 @@ export default function SearchScreen({ route }) {
                       <Ionicons name={showGlobalSeeking ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
                     </TouchableOpacity>
                     {showGlobalSeeking && seekingSectionResults.map((item, idx) => renderResultItem(item, idx))}
-                  </>
-                )}
                   </>
                 )}
 
@@ -5326,32 +5230,6 @@ const styles = StyleSheet.create({
   },
   darkGlobalSectionHeaderText: {
     color: "#fff",
-  },
-  globalNestedSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(79, 138, 139, 0.28)",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 6,
-    marginLeft: 12,
-  },
-  globalNestedSectionHeaderText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
-  darkGlobalNestedSectionHeader: {
-    backgroundColor: "rgba(61, 107, 108, 0.35)",
-  },
-  darkGlobalNestedSectionHeaderText: {
-    color: "#fff",
-  },
-  globalNestedSectionEmpty: {
-    marginLeft: 12,
-    marginBottom: 8,
   },
   showMoreResultsButton: {
     marginTop: 12,

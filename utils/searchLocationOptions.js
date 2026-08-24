@@ -1,4 +1,7 @@
-/** Default search origin — user's home coordinates from profile settings. */
+/** No search origin — omit user_lat/user_lon so distance filtering is off. */
+export const SEARCH_LOCATION_ANY = "any";
+
+/** User's home coordinates from profile settings. */
 export const SEARCH_LOCATION_HOME = "home";
 
 /** User-picked city via Google Places (coords stored separately). */
@@ -18,8 +21,19 @@ export const MAJOR_US_SEARCH_CITIES = [
   { key: "san_francisco", label: "San Francisco, CA", shortLabel: "SF", lat: 37.7749, lng: -122.4194 },
 ];
 
+export function isSearchLocationAny(locationKey) {
+  return !locationKey || locationKey === SEARCH_LOCATION_ANY;
+}
+
+/** True when a location origin is selected (home, city, or custom). */
+export function isActiveSearchLocation(locationKey) {
+  return !isSearchLocationAny(locationKey);
+}
+
 export function getSearchLocationOption(locationKey) {
-  if (!locationKey || locationKey === SEARCH_LOCATION_HOME || locationKey === SEARCH_LOCATION_CUSTOM) return null;
+  if (!locationKey || locationKey === SEARCH_LOCATION_ANY || locationKey === SEARCH_LOCATION_HOME || locationKey === SEARCH_LOCATION_CUSTOM) {
+    return null;
+  }
   return MAJOR_US_SEARCH_CITIES.find((city) => city.key === locationKey) || null;
 }
 
@@ -37,35 +51,41 @@ export function buildCustomSearchCity({ label, lat, lng, placeId = null }) {
 }
 
 export function resolveSearchLocationCoords(locationKey, homeCoords, customCity = null) {
+  if (isSearchLocationAny(locationKey)) {
+    return { lat: null, lng: null };
+  }
   if (locationKey === SEARCH_LOCATION_CUSTOM && customCity?.lat != null && customCity?.lng != null) {
     return { lat: customCity.lat, lng: customCity.lng };
   }
   const city = getSearchLocationOption(locationKey);
   if (city) return { lat: city.lat, lng: city.lng };
-  if (homeCoords?.lat != null && homeCoords?.lng != null) {
+  if (locationKey === SEARCH_LOCATION_HOME && homeCoords?.lat != null && homeCoords?.lng != null) {
     return { lat: homeCoords.lat, lng: homeCoords.lng };
   }
   return { lat: null, lng: null };
 }
 
 export function getSearchLocationFilterLabel(locationKey, customCity = null) {
-  if (!locationKey || locationKey === SEARCH_LOCATION_HOME) return "Search location";
+  if (isSearchLocationAny(locationKey)) return "Any";
+  if (locationKey === SEARCH_LOCATION_HOME) return "My home";
   if (locationKey === SEARCH_LOCATION_CUSTOM) {
     return customCity?.shortLabel || customCity?.label || "Custom city";
   }
   const city = getSearchLocationOption(locationKey);
-  return city?.shortLabel || city?.label || "Search location";
+  return city?.shortLabel || city?.label || "Any";
 }
 
 export function getSearchLocationFullLabel(locationKey, customCity = null) {
-  if (!locationKey || locationKey === SEARCH_LOCATION_HOME) return "My home";
+  if (isSearchLocationAny(locationKey)) return "Any location";
+  if (locationKey === SEARCH_LOCATION_HOME) return "My home";
   if (locationKey === SEARCH_LOCATION_CUSTOM) {
     return customCity?.label || "Custom city";
   }
   const city = getSearchLocationOption(locationKey);
-  return city?.label || "My home";
+  return city?.label || "Any location";
 }
 
+/** @deprecated Use isActiveSearchLocation — kept so older call sites keep compiling if any remain. */
 export function isNonHomeSearchLocation(locationKey) {
-  return !!locationKey && locationKey !== SEARCH_LOCATION_HOME;
+  return isActiveSearchLocation(locationKey) && locationKey !== SEARCH_LOCATION_HOME;
 }
