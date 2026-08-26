@@ -99,6 +99,7 @@ const ExperienceSection = ({
       description: "",
       startDate: "",
       endDate: "",
+      isCurrent: false,
       isPublic: true,
       profile_experience_image: "",
       profile_experience_image_is_public: 1,
@@ -163,6 +164,19 @@ const ExperienceSection = ({
     }
     handleInputChange(index, field, formatMonthYear(selectedDate));
     setActivePicker(null);
+  };
+
+  const toggleCurrentJob = (index) => {
+    const updated = [...experience];
+    const nowCurrent = !updated[index].isCurrent;
+    updated[index] = {
+      ...updated[index],
+      isCurrent: nowCurrent,
+      endDate: nowCurrent ? "Present" : "",
+    };
+    setExperience(updated);
+    // Close the end-date picker if it was open for this card — there's nothing to pick once it's "Present".
+    setActivePicker((prev) => (nowCurrent && prev?.index === index && prev?.field === "endDate" ? null : prev));
   };
 
   const getExperienceDisplayUri = (item) => {
@@ -371,7 +385,11 @@ const ExperienceSection = ({
               <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.startDate} onChangeText={(text) => handleDateChange(index, "startDate", text)} />
             )}
             <Text> - </Text>
-            {DateTimePicker ? (
+            {item.isCurrent ? (
+              <View style={[styles.dateButton, styles.dateButtonDisabled]}>
+                <Text style={styles.dateButtonText}>Present</Text>
+              </View>
+            ) : DateTimePicker ? (
               <TouchableOpacity style={styles.dateButton} onPress={() => setActivePicker({ index, field: "endDate" })}>
                 <Ionicons name='calendar-outline' size={16} color='#555' style={styles.dateButtonIcon} />
                 <Text style={styles.dateButtonText}>{item.endDate || "MM/YYYY"}</Text>
@@ -388,6 +406,11 @@ const ExperienceSection = ({
               <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.endDate} onChangeText={(text) => handleDateChange(index, "endDate", text)} />
             )}
           </View>
+
+          <TouchableOpacity style={styles.currentRow} onPress={() => toggleCurrentJob(index)} activeOpacity={0.8}>
+            <Ionicons name={item.isCurrent ? "checkbox" : "square-outline"} size={18} color={item.isCurrent ? "#333" : "#666"} />
+            <Text style={styles.currentRowText}>Current Job</Text>
+          </TouchableOpacity>
 
           {DateTimePicker && activePicker && activePicker.index === index && (
             <DateTimePicker
@@ -479,6 +502,7 @@ const styles = StyleSheet.create({
   },
   dateButtonIcon: { marginRight: 4 },
   dateButtonText: { fontSize: 13, color: "#333" },
+  dateButtonDisabled: { backgroundColor: "#eee" },
   webMonthInput: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -488,6 +512,13 @@ const styles = StyleSheet.create({
     width: "35%",
     fontSize: 13,
   },
+  currentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+  },
+  currentRowText: { fontSize: 13, color: "#333" },
 
   deleteIcon: { width: 20, height: 20 },
   expHeaderRow: {
