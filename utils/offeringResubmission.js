@@ -30,8 +30,18 @@ export function mapProfileOfferingToFormItem(exp, profileUid) {
     profile_expertise_condition_type: exp.profile_expertise_condition_type || "na",
     profile_expertise_condition_detail: exp.profile_expertise_condition_detail || "",
     profile_expertise_bounty_type: exp.profile_expertise_bounty_type || "none",
-    profile_expertise_is_returnable: exp.profile_expertise_is_returnable ?? 0,
-    profile_expertise_return_window_days: exp.profile_expertise_return_window_days ?? "",
+    profile_expertise_is_returnable: exp.profile_expertise_is_returnable === 1 || exp.profile_expertise_is_returnable === "1" ? 1 : 0,
+    // Clamp into the valid 5-30 range on load too (mirrors mapOfferingFormToPayload below) — otherwise a
+    // previously-saved "Returnable" item with a missing/out-of-range days value loads as still-invalid
+    // with no obvious way for the user to tell why Submit stays disabled.
+    profile_expertise_return_window_days: (() => {
+      const returnable = exp.profile_expertise_is_returnable === 1 || exp.profile_expertise_is_returnable === "1";
+      if (!returnable) return "";
+      const n = parseInt(String(exp.profile_expertise_return_window_days ?? "").trim(), 10);
+      if (!Number.isFinite(n) || n < 5) return "5";
+      if (n > 30) return "30";
+      return String(n);
+    })(),
     ...shippingFields,
     profile_expertise_shipping_refundable: exp.profile_expertise_shipping_refundable ?? 0,
     profile_expertise_refund_policy: exp.profile_expertise_refund_policy || "",

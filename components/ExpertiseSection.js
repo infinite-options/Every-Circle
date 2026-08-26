@@ -95,6 +95,22 @@ export const isOfferingItemReadyToFinish = (item) => {
   return true;
 };
 
+/** Human-readable list of what's still missing before Done/Submit will accept this Offering entry. */
+export const getOfferingMissingRequirements = (item) => {
+  if (!item) return [];
+  const missing = [];
+  if (!String(item.name || "").trim()) missing.push("Title");
+  if (!String(item.description || "").trim()) missing.push("Description");
+  if (!getOfferingCostUnit(item.cost)) missing.push("Pricing unit");
+  if (offeringDeliveredModeSelected(item) && !validateOfferingDeliveredShipping(item)) missing.push("Delivery charge");
+  if (!validateTaxableRate(item.profile_expertise_is_taxable, item.profile_expertise_tax_rate)) missing.push("Tax rate");
+  if (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") {
+    const n = parseInt(String(item.profile_expertise_return_window_days ?? "").trim(), 10);
+    if (!Number.isFinite(n) || n < RETURN_WINDOW_MIN_DAYS || n > RETURN_WINDOW_MAX_DAYS) missing.push("Return window days");
+  }
+  return missing;
+};
+
 /** Numeric cost amount from an offering cost string (ignores unit suffix). */
 export const getOfferingCostAmount = (cost) => {
   if (!cost || String(cost).trim().toLowerCase() === "free") return 0;
@@ -902,6 +918,8 @@ const ExpertiseSection = ({
       {expertise.map((item, index) => {
         const isEditing = showForm && editingIndex === index;
         const canFinishOffering = isEditing && isOfferingItemReadyToFinish(item);
+        const missingRequirements = getOfferingMissingRequirements(item);
+        const isIncomplete = !isEditing && !isOfferingEmpty(item) && missingRequirements.length > 0;
         return (
         <View
           key={item.profile_expertise_uid || `offering-${index}`}
@@ -911,13 +929,21 @@ const ExpertiseSection = ({
           style={[styles.listItemWrapper, index > 0 && styles.listItemSpacing]}
         >
           {!isEditing ? (
-            <ProfileOfferingListCard
-              item={item}
-              profileUid={profileUid}
-              darkMode={darkMode}
-              onEdit={() => startEditOffering(index)}
-              onDelete={() => deleteExpertise(index)}
-            />
+            <>
+              <ProfileOfferingListCard
+                item={item}
+                profileUid={profileUid}
+                darkMode={darkMode}
+                onEdit={() => startEditOffering(index)}
+                onDelete={() => deleteExpertise(index)}
+              />
+              {isIncomplete ? (
+                <TouchableOpacity style={[styles.incompleteBanner, darkMode && styles.incompleteBannerDark]} onPress={() => startEditOffering(index)}>
+                  <Ionicons name='alert-circle' size={16} color='#c0392b' />
+                  <Text style={styles.incompleteBannerText}>Missing: {missingRequirements.join(", ")} — tap to fill in</Text>
+                </TouchableOpacity>
+              ) : null}
+            </>
           ) : null}
 
           {isEditing ? (
@@ -1620,6 +1646,14 @@ const ExpertiseSection = ({
             </View>
           </View>
 
+          {isEditing && missingRequirements.length > 0 ? (
+            <View style={[styles.missingChecklist, darkMode && styles.missingChecklistDark]}>
+              <Text style={[styles.missingChecklistText, darkMode && styles.missingChecklistTextDark]}>
+                Still needed before Done: {missingRequirements.join(", ")}
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.formFooterButtons}>
             <TouchableOpacity style={[styles.formCancelButton, darkMode && styles.formCancelButtonDark]} onPress={cancelEditOffering} activeOpacity={0.8}>
               <Text style={[styles.formCancelButtonText, darkMode && styles.formCancelButtonTextDark]}>Cancel</Text>
@@ -1687,6 +1721,47 @@ const styles = StyleSheet.create({
   emptyTextDark: { color: "#aaa" },
   listItemWrapper: { marginBottom: 0 },
   listItemSpacing: { marginTop: 10 },
+  incompleteBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#c0392b",
+    backgroundColor: "#fdecea",
+  },
+  incompleteBannerDark: {
+    backgroundColor: "#4a2a28",
+  },
+  incompleteBannerText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#c0392b",
+  },
+  missingChecklist: {
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#c0392b",
+    backgroundColor: "#fdecea",
+  },
+  missingChecklistDark: {
+    backgroundColor: "#4a2a28",
+  },
+  missingChecklistText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#c0392b",
+  },
+  missingChecklistTextDark: {
+    color: "#ff8a80",
+  },
   livePreviewBlock: { marginBottom: 10 },
   previewSection: { marginBottom: 12 },
   previewLabel: {
