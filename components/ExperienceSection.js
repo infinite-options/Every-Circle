@@ -1,9 +1,28 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
+import {
+  parseMonthYear,
+  formatMonthYear,
+  toMonthInputValue,
+  fromMonthInputValue,
+  isMonthYearInFuture,
+  currentMonthInputValue,
+} from "../utils/profileDateTime";
+
+// DateTimePicker only works on native (not web)
+let DateTimePicker = null;
+if (Platform.OS !== "web") {
+  try {
+    DateTimePicker = require("@react-native-community/datetimepicker").default;
+  } catch (e) {
+    console.warn("DateTimePicker not available:", e.message);
+  }
+}
 
 const ExperienceSection = ({
   experience,
@@ -19,6 +38,8 @@ const ExperienceSection = ({
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
   const pendingNewIndexRef = useRef(null);
+  // Tracks which card/field's calendar picker is currently open: { index, field: 'startDate'|'endDate' }
+  const [activePicker, setActivePicker] = useState(null);
   // Helper function to format date input
   const formatDateInput = (text) => {
     // If the user manually entered a slash after 2 digits, preserve it
@@ -123,7 +144,25 @@ const ExperienceSection = ({
 
   const handleDateChange = (index, field, value) => {
     const formattedValue = formatDateInput(value);
+    if (formattedValue.length === 7 && isMonthYearInFuture(formattedValue)) {
+      Alert.alert("Invalid Date", "Date cannot be in the future.");
+      return;
+    }
     handleInputChange(index, field, formattedValue);
+  };
+
+  const handleCalendarDateChange = (index, field, selectedDate) => {
+    if (!selectedDate) {
+      setActivePicker(null);
+      return;
+    }
+    if (isMonthYearInFuture(selectedDate)) {
+      Alert.alert("Invalid Date", "Date cannot be in the future.");
+      setActivePicker(null);
+      return;
+    }
+    handleInputChange(index, field, formatMonthYear(selectedDate));
+    setActivePicker(null);
   };
 
   const getExperienceDisplayUri = (item) => {
@@ -315,10 +354,50 @@ const ExperienceSection = ({
           </View>
 
           <View style={styles.dateContainer}>
-            <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.startDate} onChangeText={(text) => handleDateChange(index, "startDate", text)} />
+            {DateTimePicker ? (
+              <TouchableOpacity style={styles.dateButton} onPress={() => setActivePicker({ index, field: "startDate" })}>
+                <Ionicons name='calendar-outline' size={16} color='#555' style={styles.dateButtonIcon} />
+                <Text style={styles.dateButtonText}>{item.startDate || "MM/YYYY"}</Text>
+              </TouchableOpacity>
+            ) : Platform.OS === "web" ? (
+              <input
+                type='month'
+                style={styles.webMonthInput}
+                max={currentMonthInputValue()}
+                value={toMonthInputValue(item.startDate)}
+                onChange={(e) => handleInputChange(index, "startDate", fromMonthInputValue(e.target.value))}
+              />
+            ) : (
+              <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.startDate} onChangeText={(text) => handleDateChange(index, "startDate", text)} />
+            )}
             <Text> - </Text>
-            <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.endDate} onChangeText={(text) => handleDateChange(index, "endDate", text)} />
+            {DateTimePicker ? (
+              <TouchableOpacity style={styles.dateButton} onPress={() => setActivePicker({ index, field: "endDate" })}>
+                <Ionicons name='calendar-outline' size={16} color='#555' style={styles.dateButtonIcon} />
+                <Text style={styles.dateButtonText}>{item.endDate || "MM/YYYY"}</Text>
+              </TouchableOpacity>
+            ) : Platform.OS === "web" ? (
+              <input
+                type='month'
+                style={styles.webMonthInput}
+                max={currentMonthInputValue()}
+                value={toMonthInputValue(item.endDate)}
+                onChange={(e) => handleInputChange(index, "endDate", fromMonthInputValue(e.target.value))}
+              />
+            ) : (
+              <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.endDate} onChangeText={(text) => handleDateChange(index, "endDate", text)} />
+            )}
           </View>
+
+          {DateTimePicker && activePicker && activePicker.index === index && (
+            <DateTimePicker
+              value={parseMonthYear(item[activePicker.field]) || new Date()}
+              mode='date'
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              maximumDate={new Date()}
+              onChange={(_, selectedDate) => handleCalendarDateChange(activePicker.index, activePicker.field, selectedDate)}
+            />
+          )}
         </View>
       ))}
     </View>
@@ -386,6 +465,29 @@ const styles = StyleSheet.create({
     width: "35%",
   },
   dateSeparator: { fontSize: 16, fontWeight: "bold" },
+  dateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    width: "35%",
+  },
+  dateButtonIcon: { marginRight: 4 },
+  dateButtonText: { fontSize: 13, color: "#333" },
+  webMonthInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 10,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    width: "35%",
+    fontSize: 13,
+  },
 
   deleteIcon: { width: 20, height: 20 },
   expHeaderRow: {

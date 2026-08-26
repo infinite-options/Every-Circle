@@ -74,6 +74,56 @@ export const parseDateTime = (value) => {
   return { date: null, time: null };
 };
 
+/** Month/year only fields ("MM/YYYY" storage), used by the Experience / Education date pickers. */
+export const parseMonthYear = (value) => {
+  if (!value || typeof value !== "string") return null;
+  const match = value.trim().match(/^(\d{1,2})\/(\d{4})$/);
+  if (!match) return null;
+  const month = parseInt(match[1], 10);
+  const year = parseInt(match[2], 10);
+  if (month < 1 || month > 12) return null;
+  return new Date(year, month - 1, 1);
+};
+
+export const formatMonthYear = (date) => {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `${m}/${date.getFullYear()}`;
+};
+
+/** "MM/YYYY" -> "YYYY-MM" for the web <input type="month"> value. */
+export const toMonthInputValue = (value) => {
+  const d = parseMonthYear(value);
+  if (!d) return "";
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
+
+/** "YYYY-MM" (from <input type="month">) -> "MM/YYYY" for storage. */
+export const fromMonthInputValue = (value) => {
+  if (!value || typeof value !== "string") return "";
+  const match = value.trim().match(/^(\d{4})-(\d{2})$/);
+  if (!match) return "";
+  return `${match[2]}/${match[1]}`;
+};
+
+/** True when the given "MM/YYYY" string (or Date) falls after the current month — used to block future Experience/Education dates. */
+export const isMonthYearInFuture = (value) => {
+  const date = value instanceof Date ? value : parseMonthYear(value);
+  if (!date) return false;
+  const now = new Date();
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const candidateMonthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+  return candidateMonthStart.getTime() > currentMonthStart.getTime();
+};
+
+/** Current month as "YYYY-MM", for capping the web <input type="month"> at today. */
+export const currentMonthInputValue = () => {
+  const now = new Date();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  return `${now.getFullYear()}-${m}`;
+};
+
 export const combineDateTime = (date, time) => {
   if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
   const y = date.getFullYear();
