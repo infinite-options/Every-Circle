@@ -1,4 +1,4 @@
-/** Hide Google POIs so only Every Circle markers stand out. */
+/** Hide Google POIs so only everyCircle markers stand out. */
 export const EVERY_CIRCLE_ONLY_MAP_STYLES = [
   { featureType: "poi.business", stylers: [{ visibility: "off" }] },
   { featureType: "poi", stylers: [{ visibility: "off" }] },

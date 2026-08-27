@@ -3,13 +3,7 @@ import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import MapView, { Callout, Marker } from "react-native-maps";
 import { DEFAULT_MAP_REGION_DELTA } from "../utils/mapDefaults";
 import { getMapStylesForEveryCircleOnly } from "../utils/mapStyles";
-import {
-  getNativeMapMarkerImage,
-  MAP_MARKER_BORDER_COLOR,
-  MAP_MARKER_BORDER_WIDTH,
-  MAP_MARKER_DISPLAY_SIZE,
-  MAP_MARKER_INNER_SIZE,
-} from "../utils/mapMarkerAssets";
+import { getNativeMapMarkerImage, MAP_MARKER_BORDER_COLOR, MAP_MARKER_BORDER_WIDTH, MAP_MARKER_DISPLAY_SIZE, MAP_MARKER_INNER_SIZE } from "../utils/mapMarkerAssets";
 import { resolveMapBusinessImageUrl, shouldShowMapBusinessImage } from "../utils/mapBusinessImage";
 
 let DEFAULT_PROFILE_IMAGE;
@@ -28,11 +22,7 @@ function getCalloutImageSource(business) {
 }
 
 function buildAddressLine(business) {
-  const parts = [
-    business.business_address_line_1,
-    business.business_city,
-    business.business_state,
-  ].filter(Boolean);
+  const parts = [business.business_address_line_1, business.business_city, business.business_state].filter(Boolean);
   return parts.join(", ");
 }
 
@@ -57,23 +47,12 @@ function regionFromCenter(mapCenter) {
 function BusinessMapMarker() {
   return (
     <View style={styles.markerWrap}>
-      <Image
-        source={getNativeMapMarkerImage()}
-        style={styles.markerImage}
-        resizeMode="contain"
-      />
+      <Image source={getNativeMapMarkerImage()} style={styles.markerImage} resizeMode='contain' />
     </View>
   );
 }
 
-export default function EveryCircleMapView({
-  businesses = [],
-  mapCenter,
-  everyCircleOnly = true,
-  fitToBusinesses = false,
-  radiusMiles,
-  onBusinessPress,
-}) {
+export default function EveryCircleMapView({ businesses = [], mapCenter, everyCircleOnly = true, fitToBusinesses = false, radiusMiles, onBusinessPress }) {
   const mapRef = useRef(null);
   const region = useMemo(() => regionFromCenter(mapCenter), [mapCenter]);
 
@@ -104,8 +83,11 @@ export default function EveryCircleMapView({
 
       // null radius = ∞: fit to world corners so the entire map is visible
       mapRef.current.fitToCoordinates(
-        [{ latitude: 75, longitude: -175 }, { latitude: -75, longitude: 175 }],
-        { edgePadding: { top: 16, right: 16, bottom: 16, left: 16 }, animated: true }
+        [
+          { latitude: 75, longitude: -175 },
+          { latitude: -75, longitude: 175 },
+        ],
+        { edgePadding: { top: 16, right: 16, bottom: 16, left: 16 }, animated: true },
       );
       return;
     }
@@ -114,19 +96,8 @@ export default function EveryCircleMapView({
   }, [businesses, fitToBusinesses, mapCenter, region, radiusMiles]);
 
   return (
-    <MapView
-      ref={mapRef}
-      style={styles.map}
-      initialRegion={region}
-      customMapStyle={getMapStylesForEveryCircleOnly(everyCircleOnly)}
-    >
-      {mapCenter && (
-        <Marker
-          coordinate={{ latitude: mapCenter.lat, longitude: mapCenter.lng }}
-          title="Your location"
-          pinColor="#2434C2"
-        />
-      )}
+    <MapView ref={mapRef} style={styles.map} initialRegion={region} customMapStyle={getMapStylesForEveryCircleOnly(everyCircleOnly)}>
+      {mapCenter && <Marker coordinate={{ latitude: mapCenter.lat, longitude: mapCenter.lng }} title='Your location' pinColor='#2434C2' />}
       {businesses.map((business, idx) => (
         <Marker
           key={`${business.business_uid || business.profile_business_uid || "biz"}-${idx}`}
@@ -141,25 +112,13 @@ export default function EveryCircleMapView({
           <Callout onPress={() => onBusinessPress?.(business)}>
             <TouchableOpacity onPress={() => onBusinessPress?.(business)} activeOpacity={0.8}>
               <View style={styles.calloutRow}>
-                <Image
-                  source={getCalloutImageSource(business)}
-                  style={styles.calloutImage}
-                  defaultSource={DEFAULT_PROFILE_IMAGE || undefined}
-                />
+                <Image source={getCalloutImageSource(business)} style={styles.calloutImage} defaultSource={DEFAULT_PROFILE_IMAGE || undefined} />
                 <View style={styles.calloutTextCol}>
                   <Text style={styles.calloutTitle}>{business.business_name}</Text>
-                  {business.item_title ? (
-                    <Text style={styles.calloutItemTitle}>{business.item_title}</Text>
-                  ) : null}
-                  {buildAddressLine(business) ? (
-                    <Text style={styles.calloutAddress}>{buildAddressLine(business)}</Text>
-                  ) : null}
+                  {business.item_title ? <Text style={styles.calloutItemTitle}>{business.item_title}</Text> : null}
+                  {buildAddressLine(business) ? <Text style={styles.calloutAddress}>{buildAddressLine(business)}</Text> : null}
                   <Text style={styles.calloutSubtitle}>
-                    {business.itemType === "expertise"
-                      ? "Offering on Every Circle"
-                      : business.itemType === "seeking"
-                        ? "Seeking on Every Circle"
-                        : "Registered on Every Circle"}
+                    {business.itemType === "expertise" ? "Offering on everyCircle" : business.itemType === "seeking" ? "Seeking on everyCircle" : "Registered on everyCircle"}
                   </Text>
                   <Text style={styles.calloutAction}>View profile</Text>
                 </View>

@@ -31,11 +31,7 @@ function buildBusinessImageHtml(business) {
 }
 
 function buildAddressLine(business) {
-  const parts = [
-    business.business_address_line_1,
-    business.business_city,
-    business.business_state,
-  ].filter(Boolean);
+  const parts = [business.business_address_line_1, business.business_city, business.business_state].filter(Boolean);
   return parts.join(", ");
 }
 
@@ -70,17 +66,7 @@ function fitMapToBusinesses(mapsApi, map, businesses, mapCenter, radiusMiles) {
   map.setZoom(3);
 }
 
-function addBusinessMarkers(
-  mapsApi,
-  map,
-  businesses,
-  infoWindowRef,
-  onBusinessPress,
-  markersRef,
-  fitToBusinesses,
-  mapCenter,
-  radiusMiles
-) {
+function addBusinessMarkers(mapsApi, map, businesses, infoWindowRef, onBusinessPress, markersRef, fitToBusinesses, mapCenter, radiusMiles) {
   return getWebMapMarkerIcon(mapsApi).then((markerIcon) => {
     markersRef.current.forEach((marker) => marker.setMap(null));
     markersRef.current = [];
@@ -94,23 +80,15 @@ function addBusinessMarkers(
       const marker = new mapsApi.Marker({
         position,
         map,
-        title: business.business_name || "Every Circle business",
+        title: business.business_name || "everyCircle business",
         icon: markerIcon,
       });
 
       marker.addListener("click", () => {
         const address = buildAddressLine(business);
         const uid = business.business_uid || "";
-        const registeredLabel =
-          business.itemType === "expertise"
-            ? "Offering on Every Circle"
-            : business.itemType === "seeking"
-              ? "Seeking on Every Circle"
-              : "Registered on Every Circle";
-        const itemTitleHtml =
-          business.item_title
-            ? `<div style="margin-top: 4px; font-size: 12px; color: #666;">${escapeHtml(business.item_title)}</div>`
-            : "";
+        const registeredLabel = business.itemType === "expertise" ? "Offering on everyCircle" : business.itemType === "seeking" ? "Seeking on everyCircle" : "Registered on everyCircle";
+        const itemTitleHtml = business.item_title ? `<div style="margin-top: 4px; font-size: 12px; color: #666;">${escapeHtml(business.item_title)}</div>` : "";
         const imageHtml = buildBusinessImageHtml(business);
         const content = `
         <div style="font-family: system-ui, sans-serif; max-width: 280px;">
@@ -128,7 +106,7 @@ function addBusinessMarkers(
             type="button"
             style="margin-top: 10px; background: #AF52DE; color: #fff; border: none; border-radius: 6px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer; width: 100%;"
           >
-            View on Every Circle
+            View on everyCircle
           </button>
         </div>
       `;
@@ -151,14 +129,7 @@ function addBusinessMarkers(
   });
 }
 
-export default function EveryCircleMapView({
-  businesses = [],
-  mapCenter,
-  everyCircleOnly = true,
-  fitToBusinesses = false,
-  radiusMiles,
-  onBusinessPress,
-}) {
+export default function EveryCircleMapView({ businesses = [], mapCenter, everyCircleOnly = true, fitToBusinesses = false, radiusMiles, onBusinessPress }) {
   const hostRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
@@ -233,7 +204,7 @@ export default function EveryCircleMapView({
         markersRef,
         fitToBusinessesRef.current,
         mapCenterRef.current,
-        radiusMilesRef.current
+        radiusMilesRef.current,
       );
     }
 
@@ -289,7 +260,7 @@ export default function EveryCircleMapView({
           markersRef,
           fitToBusinessesRef.current,
           mapCenterRef.current,
-          radiusMiles
+          radiusMiles,
         );
       })
       .catch((err) => {

@@ -621,7 +621,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           <Modal visible={showReferralModal} transparent animationType='fade'>
             <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" }}>
               <View style={{ backgroundColor: "#fff", padding: 24, borderRadius: 12, width: "90%", maxWidth: 500, maxHeight: "80%" }}>
-                <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>Who referred you to Every Circle?</Text>
+                <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>Who referred you to everyCircle?</Text>
 
                 {/* Email Input Section */}
                 {/* <TextInput
