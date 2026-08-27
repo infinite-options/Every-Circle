@@ -14,7 +14,7 @@ export default function PrivacyPolicyScreen() {
       {/* Header */}
       <AppHeader title='PRIVACY POLICY' backgroundColor='#AF52DE' onBackPress={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.title, darkMode && styles.darkTitle]}>Every Circle Privacy Policy</Text>
+        <Text style={[styles.title, darkMode && styles.darkTitle]}>everyCircle Privacy Policy</Text>
         <Text style={[styles.body, darkMode && styles.darkBody]}>
           Last updated: August 1, 2024 {"\n\n"}
           Privacy Policy{"\n"}

@@ -190,8 +190,7 @@ function getCartLineChargeBreakdown(item, processingFeeOverride, ccFeePayerByBus
   const buyerPaysCardFee = cartItemBuyerPaysCardFee(item, ccFeePayerByBusinessUid);
   const feeBase = getCreditCardFeeBase({ merchandise: pretax, tax, shipping: shippingAmount });
   const fullProcessingFee = computeCreditCardProcessingFee(feeBase, buyerPaysCardFee);
-  const chargedProcessingFee =
-    buyerPaysCardFee && processingFeeOverride != null ? roundMoney(processingFeeOverride) : fullProcessingFee;
+  const chargedProcessingFee = buyerPaysCardFee && processingFeeOverride != null ? roundMoney(processingFeeOverride) : fullProcessingFee;
   const totalCharge = roundMoney(feeBase + (buyerPaysCardFee ? chargedProcessingFee : 0));
   return {
     qty,
@@ -304,9 +303,7 @@ function CartFulfillmentChoice({ item, onSelect }) {
       </View>
       {method === FULFILLMENT_VIRTUAL ? <Text style={styles.fulfillmentPickupHint}>No shipping required · verify immediately</Text> : null}
       {method === FULFILLMENT_PICKUP && pickupHint ? <Text style={styles.fulfillmentPickupHint}>Pickup location: {pickupHint}</Text> : null}
-      {method === FULFILLMENT_SHIP ? (
-        <Text style={styles.fulfillmentPickupHint}>Delivery address required at checkout</Text>
-      ) : null}
+      {method === FULFILLMENT_SHIP ? <Text style={styles.fulfillmentPickupHint}>Delivery address required at checkout</Text> : null}
     </View>
   );
 }
@@ -417,9 +414,7 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName, ccFeePayerByB
 
 /** Sum of merchandise + tax + shipping across seller groups (wallet can cover this base). */
 function getCheckoutGroupsWalletBase(groups) {
-  return roundMoney(
-    (groups || []).reduce((sum, group) => sum + roundMoney(Number(group?.subtotalWithShipping) || 0), 0),
-  );
+  return roundMoney((groups || []).reduce((sum, group) => sum + roundMoney(Number(group?.subtotalWithShipping) || 0), 0));
 }
 
 /**
@@ -737,13 +732,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         setLoading(false);
         return;
       }
-      await recordSingleBusinessTransaction(
-        buyerUid,
-        null,
-        group,
-        escrowBySeller[group.sellerId] !== false,
-        group.walletApplied || 0,
-      );
+      await recordSingleBusinessTransaction(buyerUid, null, group, escrowBySeller[group.sellerId] !== false, group.walletApplied || 0);
       const nextIndex = session.index + 1;
       if (nextIndex >= session.groups.length) {
         await finishWebCheckoutSuccess();
@@ -773,13 +762,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const group = sess.groups[sess.index];
       console.log(`Recording web payment step ${sess.index + 1}/${sess.groups.length} for`, group.sellerId);
 
-      await recordSingleBusinessTransaction(
-        buyerUid,
-        paymentIntent,
-        group,
-        escrowBySeller[group.sellerId] !== false,
-        group.walletApplied || 0,
-      );
+      await recordSingleBusinessTransaction(buyerUid, paymentIntent, group, escrowBySeller[group.sellerId] !== false, group.walletApplied || 0);
 
       const nextIndex = sess.index + 1;
       if (nextIndex < sess.groups.length) {
@@ -900,12 +883,19 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       setWalletAmountToApply(amountToApply);
       setWalletAmountDraft(formatWalletAmountInput(amountToApply));
       const payableGroups = applyWalletToCheckoutGroups(groups, amountToApply);
-      console.log("Wallet useable balance:", useableBalance, "chosen wallet:", amountToApply, "payable groups:", payableGroups.map((g) => ({
-        sellerId: g.sellerId,
-        walletApplied: g.walletApplied,
-        cardCharge: g.cardCharge,
-        total: g.total,
-      })));
+      console.log(
+        "Wallet useable balance:",
+        useableBalance,
+        "chosen wallet:",
+        amountToApply,
+        "payable groups:",
+        payableGroups.map((g) => ({
+          sellerId: g.sellerId,
+          walletApplied: g.walletApplied,
+          cardCharge: g.cardCharge,
+          total: g.total,
+        })),
+      );
 
       for (let i = 0; i < payableGroups.length; i++) {
         const group = payableGroups[i];
@@ -936,13 +926,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           }
         }
 
-        await recordSingleBusinessTransaction(
-          buyerUid,
-          paymentIntentId,
-          group,
-          escrowBySeller[group.sellerId] !== false,
-          group.walletApplied || 0,
-        );
+        await recordSingleBusinessTransaction(buyerUid, paymentIntentId, group, escrowBySeller[group.sellerId] !== false, group.walletApplied || 0);
         completedGroups.push(group);
       }
 
@@ -1200,7 +1184,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       setCurrentClientSecret(clientSecret);
 
       const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: merchantDisplayName || businessName || "Every Circle",
+        merchantDisplayName: merchantDisplayName || businessName || "everyCircle",
         paymentIntentClientSecret: clientSecret,
         defaultBillingDetails: {
           name: "Customer Name",
@@ -1261,11 +1245,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         const { pretax, tax } = cartLineMerchandiseAndTax(normalizedItem);
         const isExpertise = normalizedItem.itemType === "expertise";
         const expertiseUid = isExpertise ? String(normalizedItem.expertise_uid || "").trim() : "";
-        const unitPrice = isExpertise
-          ? qty > 0
-            ? roundMoney(pretax / qty)
-            : roundMoney(pretax)
-          : normalizedItem.unitPrice || parsePrice(normalizedItem.bs_cost);
+        const unitPrice = isExpertise ? (qty > 0 ? roundMoney(pretax / qty) : roundMoney(pretax)) : normalizedItem.unitPrice || parsePrice(normalizedItem.bs_cost);
         return {
           business_id: sellerBusinessId,
           bs_uid: isExpertise ? expertiseUid : normalizedItem.bs_uid,
@@ -1359,7 +1339,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       if (!response.ok) {
         throw new Error(`Failed to record transaction: ${result.message || "Unknown error"}`);
       }
-
     } catch (error) {
       console.error("Error recording transactions:", error);
       throw error;
@@ -1461,9 +1440,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     },
     [maxWalletApplicable],
   );
-  const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
-    ? (webCheckoutSession.groups[webCheckoutSession.index].cardCharge ?? webCheckoutSession.groups[webCheckoutSession.index].total)
-    : 0;
+  const webStripeAmount =
+    webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
+      ? (webCheckoutSession.groups[webCheckoutSession.index].cardCharge ?? webCheckoutSession.groups[webCheckoutSession.index].total)
+      : 0;
   const webCheckoutPayeeDisplayName =
     (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
@@ -1529,11 +1509,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                               <Ionicons name='remove' size={18} color='#9C45F7' />
                             </TouchableOpacity>
                             <Text style={styles.cartItemQtyValue}>{breakdown.qty}</Text>
-                            <TouchableOpacity
-                              style={styles.cartItemQtyButton}
-                              onPress={() => handleQuantityChange(index, 1)}
-                              disabled={remainingAddQty != null && remainingAddQty <= 0}
-                            >
+                            <TouchableOpacity style={styles.cartItemQtyButton} onPress={() => handleQuantityChange(index, 1)} disabled={remainingAddQty != null && remainingAddQty <= 0}>
                               <Ionicons name='add' size={18} color='#9C45F7' />
                             </TouchableOpacity>
                           </View>
@@ -1543,27 +1519,15 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <View style={styles.cartItemDivider} />
 
                       <View style={styles.cartBreakdownSection}>
-                        <CartBreakdownRow
-                          label={`Item (${breakdown.qty} × ${formatCartMoney(item, breakdown.unitPrice)})`}
-                          value={formatCartMoney(item, breakdown.itemSubtotal)}
-                        />
-                        {breakdown.shippingApplicable ? (
-                          <CartBreakdownRow label={cartLineDeliveryChargeLabel(item)} value={formatCartMoney(item, breakdown.shippingAmount)} />
-                        ) : null}
+                        <CartBreakdownRow label={`Item (${breakdown.qty} × ${formatCartMoney(item, breakdown.unitPrice)})`} value={formatCartMoney(item, breakdown.itemSubtotal)} />
+                        {breakdown.shippingApplicable ? <CartBreakdownRow label={cartLineDeliveryChargeLabel(item)} value={formatCartMoney(item, breakdown.shippingAmount)} /> : null}
                         {breakdown.taxable && breakdown.tax > 0 ? (
-                          <CartBreakdownRow
-                            label={breakdown.taxRateLabel ? `Tax (${breakdown.taxRateLabel})` : "Tax"}
-                            value={formatCartMoney(item, breakdown.tax)}
-                          />
+                          <CartBreakdownRow label={breakdown.taxRateLabel ? `Tax (${breakdown.taxRateLabel})` : "Tax"} value={formatCartMoney(item, breakdown.tax)} />
                         ) : null}
-                        {breakdown.buyerPaysCardFee ? (
-                          <CartBreakdownRow label='Card processing fee' value={formatCartMoney(item, breakdown.processingFee)} />
-                        ) : null}
+                        {breakdown.buyerPaysCardFee ? <CartBreakdownRow label='Card processing fee' value={formatCartMoney(item, breakdown.processingFee)} /> : null}
                         {breakdown.shippingIsActual ? (
                           <Text style={styles.cartShippingActualNote}>
-                            {item.itemType === "expertise"
-                              ? "Seller will contact the buyer directly for actual delivery charge."
-                              : "Seller will contact the buyer directly for actual shipping cost."}
+                            {item.itemType === "expertise" ? "Seller will contact the buyer directly for actual delivery charge." : "Seller will contact the buyer directly for actual shipping cost."}
                           </Text>
                         ) : null}
                       </View>
@@ -1594,52 +1558,50 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
               {cartHasShipFulfillmentLines ? (
                 <View style={styles.shippingCard}>
                   <Text style={styles.shippingSectionTitle}>Delivery address</Text>
-                  {cartRequiresBuyerPaysShipping ? (
-                    <Text style={styles.shippingRequiredNote}>Required for items being shipped to you.</Text>
-                  ) : null}
+                  {cartRequiresBuyerPaysShipping ? <Text style={styles.shippingRequiredNote}>Required for items being shipped to you.</Text> : null}
                   <View style={styles.shippingFields}>
-                      <Text style={styles.shippingFieldLabel}>First Name *</Text>
-                      <TextInput style={styles.shippingInput} value={shippingFirstName} onChangeText={setShippingFirstName} placeholder='First Name' autoCapitalize='words' autoCorrect={false} />
-                      <Text style={styles.shippingFieldLabel}>Last Name *</Text>
-                      <TextInput style={styles.shippingInput} value={shippingLastName} onChangeText={setShippingLastName} placeholder='Last Name' autoCapitalize='words' autoCorrect={false} />
-                      <Text style={styles.shippingFieldLabel}>Street Address *</Text>
-                      <TextInput
-                        style={styles.shippingInput}
-                        value={shippingStreetLine1}
-                        onChangeText={setShippingStreetLine1}
-                        placeholder='Street Address Line 1'
-                        autoCapitalize='words'
-                        autoCorrect={false}
-                      />
-                      <TextInput
-                        style={styles.shippingInput}
-                        value={shippingStreetLine2}
-                        onChangeText={setShippingStreetLine2}
-                        placeholder='Street Address Line 2 (optional)'
-                        autoCapitalize='words'
-                        autoCorrect={false}
-                      />
-                      <View style={styles.shippingCityStateZipRow}>
-                        <View style={styles.shippingCityField}>
-                          <Text style={styles.shippingFieldLabel}>City *</Text>
-                          <TextInput style={styles.shippingInput} value={shippingCity} onChangeText={setShippingCity} placeholder='City' autoCapitalize='words' autoCorrect={false} />
-                        </View>
-                        <View style={styles.shippingStateField}>
-                          <Text style={styles.shippingFieldLabel}>State *</Text>
-                          <TextInput style={styles.shippingInput} value={shippingState} onChangeText={setShippingState} placeholder='State' autoCapitalize='words' autoCorrect={false} />
-                        </View>
-                        <View style={styles.shippingZipField}>
-                          <Text style={styles.shippingFieldLabel}>Zip *</Text>
-                          <TextInput
-                            style={[styles.shippingInput, styles.shippingInputLast]}
-                            value={shippingZip}
-                            onChangeText={setShippingZip}
-                            placeholder='Zip'
-                            keyboardType='number-pad'
-                            autoCorrect={false}
-                          />
-                        </View>
+                    <Text style={styles.shippingFieldLabel}>First Name *</Text>
+                    <TextInput style={styles.shippingInput} value={shippingFirstName} onChangeText={setShippingFirstName} placeholder='First Name' autoCapitalize='words' autoCorrect={false} />
+                    <Text style={styles.shippingFieldLabel}>Last Name *</Text>
+                    <TextInput style={styles.shippingInput} value={shippingLastName} onChangeText={setShippingLastName} placeholder='Last Name' autoCapitalize='words' autoCorrect={false} />
+                    <Text style={styles.shippingFieldLabel}>Street Address *</Text>
+                    <TextInput
+                      style={styles.shippingInput}
+                      value={shippingStreetLine1}
+                      onChangeText={setShippingStreetLine1}
+                      placeholder='Street Address Line 1'
+                      autoCapitalize='words'
+                      autoCorrect={false}
+                    />
+                    <TextInput
+                      style={styles.shippingInput}
+                      value={shippingStreetLine2}
+                      onChangeText={setShippingStreetLine2}
+                      placeholder='Street Address Line 2 (optional)'
+                      autoCapitalize='words'
+                      autoCorrect={false}
+                    />
+                    <View style={styles.shippingCityStateZipRow}>
+                      <View style={styles.shippingCityField}>
+                        <Text style={styles.shippingFieldLabel}>City *</Text>
+                        <TextInput style={styles.shippingInput} value={shippingCity} onChangeText={setShippingCity} placeholder='City' autoCapitalize='words' autoCorrect={false} />
                       </View>
+                      <View style={styles.shippingStateField}>
+                        <Text style={styles.shippingFieldLabel}>State *</Text>
+                        <TextInput style={styles.shippingInput} value={shippingState} onChangeText={setShippingState} placeholder='State' autoCapitalize='words' autoCorrect={false} />
+                      </View>
+                      <View style={styles.shippingZipField}>
+                        <Text style={styles.shippingFieldLabel}>Zip *</Text>
+                        <TextInput
+                          style={[styles.shippingInput, styles.shippingInputLast]}
+                          value={shippingZip}
+                          onChangeText={setShippingZip}
+                          placeholder='Zip'
+                          keyboardType='number-pad'
+                          autoCorrect={false}
+                        />
+                      </View>
+                    </View>
                   </View>
                 </View>
               ) : null}
@@ -1648,8 +1610,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   <View style={styles.walletPaymentSection}>
                     <Text style={styles.walletPaymentTitle}>Pay with wallet</Text>
                     <Text style={styles.walletPaymentHint}>
-                      Available to spend: ${useableWalletBalance.toFixed(2)}. Ready to use on purchases. Apply any amount from $0.00 up to $
-                      {maxWalletApplicable.toFixed(2)}; the rest is charged to your card (card fee applies only to the card portion).
+                      Available to spend: ${useableWalletBalance.toFixed(2)}. Ready to use on purchases. Apply any amount from $0.00 up to ${maxWalletApplicable.toFixed(2)}; the rest is charged to
+                      your card (card fee applies only to the card portion).
                     </Text>
                     <View style={styles.walletAmountRow}>
                       <Text style={styles.walletAmountPrefix}>$</Text>
@@ -1676,11 +1638,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <TouchableOpacity style={styles.walletQuickBtn} onPress={() => setWalletAmountQuick(0)} activeOpacity={0.7}>
                         <Text style={styles.walletQuickBtnText}>Use $0</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.walletQuickBtn}
-                        onPress={() => setWalletAmountQuick(maxWalletApplicable)}
-                        activeOpacity={0.7}
-                      >
+                      <TouchableOpacity style={styles.walletQuickBtn} onPress={() => setWalletAmountQuick(maxWalletApplicable)} activeOpacity={0.7}>
                         <Text style={styles.walletQuickBtnText}>Use max (${maxWalletApplicable.toFixed(2)})</Text>
                       </TouchableOpacity>
                     </View>
@@ -1695,10 +1653,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   </View>
                 ) : null}
                 <Text style={styles.multiSellerHint}>
-                  {showWalletPaymentControls
-                    ? `You chose $${clampedWalletAmount.toFixed(2)} from your wallet; any remainder is charged to your card. `
+                  {showWalletPaymentControls ? `You chose $${clampedWalletAmount.toFixed(2)} from your wallet; any remainder is charged to your card. ` : null}
+                  {hasExpertiseInCart
+                    ? "Offering and expertise purchases include a credit card processing fee (3%, $0.30 minimum) in each seller total below (same as when you added them to the cart). "
                     : null}
-                  {hasExpertiseInCart ? "Offering and expertise purchases include a credit card processing fee (3%, $0.30 minimum) in each seller total below (same as when you added them to the cart). " : null}
                   {multiSellerCheckout
                     ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%, $0.30 minimum) applies when that business has “buyer pays” card fees.`
                     : hasExpertiseInCart
@@ -1718,9 +1676,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                     </View>
                     {g.hasFixedShipping || g.hasWaivedDeliveryCharge ? (
                       <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>
-                          {g.hasWaivedDeliveryCharge && !g.hasFixedShipping ? "Delivery charge" : "Delivery charge (buyer fixed)"}
-                        </Text>
+                        <Text style={styles.totalLabel}>{g.hasWaivedDeliveryCharge && !g.hasFixedShipping ? "Delivery charge" : "Delivery charge (buyer fixed)"}</Text>
                         <Text style={styles.totalValue}>${g.shippingSubtotal.toFixed(2)}</Text>
                       </View>
                     ) : null}
