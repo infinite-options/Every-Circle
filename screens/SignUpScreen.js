@@ -17,6 +17,7 @@ import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import { saveSessionProfilePayload, clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { fetchCircleAuthLogin, fetchCircleAuthSocial, googleCircleAuthPayload, issueCircleTokensFromPassword } from "../utils/authSession";
+import { refreshAllowCookies, subscribeCookieBannerHeight } from "../utils/cookieConsent";
 
 function authContinuationParams(route) {
   const p = route?.params || {};
@@ -48,6 +49,10 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [userExistsError, setUserExistsError] = useState("");
   const [isAttemptingLogin, setIsAttemptingLogin] = useState(false);
+  /** No BottomNavBar on this screen — pad the scroll content so the persistent cookie
+   *  banner (shown after account creation clears storage) never covers the Log In footer. */
+  const [cookieBannerHeight, setCookieBannerHeight] = useState(0);
+  useEffect(() => subscribeCookieBannerHeight(setCookieBannerHeight), []);
   /** Account exists but referrer not chosen — hide signup form until referral step completes. */
   const [blockingOAuthReferral, setBlockingOAuthReferral] = useState(false);
   /** User must pick a referrer (or "I was not referred") before UserInfo; no default is persisted. */
@@ -55,6 +60,13 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const oauthReferralHandledRef = useRef(false);
   const requireReferralHandledRef = useRef(false);
   const referralRequired = blockingOAuthReferral || pendingReferralCompletion;
+  /** No post-signup consent gate anymore — cookie consent is handled by the persistent
+   *  bottom banner (components/CookieConsentBanner.js), and tracking consent has been
+   *  removed entirely (Share Live Location now warns inline in Settings instead).
+   *  Kept as a passthrough so existing call sites don't need to change. */
+  const proceedAfterAccountCreation = useCallback(async (next) => {
+    await next();
+  }, []);
 
   const openReferralModal = async () => {
     await AsyncStorage.multiRemove(["referral_uid", "referral_email"]);
@@ -111,8 +123,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
     const { googleUserInfo: gInfo, appleUserInfo: aInfo, referralProfileUid: refUid } = route.params || {};
 
-    if (refUid) {
-      (async () => {
+    proceedAfterAccountCreation(async () => {
+      if (refUid) {
         await AsyncStorage.setItem("referral_uid", refUid);
         navigation.navigate("UserInfo", {
           ...(gInfo ? { googleUserInfo: gInfo } : {}),
@@ -120,39 +132,41 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           referralId: refUid,
           ...authContinuationParams(route),
         });
-      })();
-      return;
-    }
+        return;
+      }
 
-    setBlockingOAuthReferral(true);
-    if (gInfo?.email) {
-      setEmail(gInfo.email);
-      setIsGoogleSignUp(true);
-    }
-    if (gInfo) setPendingGoogleUserInfo(gInfo);
-    if (aInfo) setPendingAppleUserInfo(aInfo);
-    openReferralModal();
-  }, [navigation, route.params]);
+      setBlockingOAuthReferral(true);
+      if (gInfo?.email) {
+        setEmail(gInfo.email);
+        setIsGoogleSignUp(true);
+      }
+      if (gInfo) setPendingGoogleUserInfo(gInfo);
+      if (aInfo) setPendingAppleUserInfo(aInfo);
+      openReferralModal();
+    });
+  }, [navigation, route.params, proceedAfterAccountCreation]);
 
   // Listen for Apple sign up completion (if passed via route)
   useEffect(() => {
     if (route.params?.pendingReferralAfterOAuth) return;
     if (route.params?.appleUserInfo) {
       setPendingAppleUserInfo(route.params.appleUserInfo);
-      // Skip referral modal if referralProfileUid is provided
-      if (route.params?.referralProfileUid) {
-        // Use the referral profile UID directly and skip modal
-        AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
-        navigation.navigate("UserInfo", {
-          appleUserInfo: route.params.appleUserInfo,
-          referralId: route.params.referralProfileUid,
-          ...authContinuationParams(route),
-        });
-      } else {
-        openReferralModal();
-      }
+      proceedAfterAccountCreation(async () => {
+        // Skip referral modal if referralProfileUid is provided
+        if (route.params?.referralProfileUid) {
+          // Use the referral profile UID directly and skip modal
+          await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+          navigation.navigate("UserInfo", {
+            appleUserInfo: route.params.appleUserInfo,
+            referralId: route.params.referralProfileUid,
+            ...authContinuationParams(route),
+          });
+        } else {
+          openReferralModal();
+        }
+      });
     }
-  }, [route.params?.appleUserInfo, route.params?.referralProfileUid]);
+  }, [route.params?.appleUserInfo, route.params?.referralProfileUid, proceedAfterAccountCreation]);
 
   // Returning user logged in elsewhere (e.g. Login → Profile) but never chose a referrer.
   useEffect(() => {
@@ -294,25 +308,29 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         if (result.user_uid) {
           // Clear AsyncStorage before storing new user data
           await AsyncStorage.clear();
+          // AsyncStorage.clear() wipes allowCookies too — tell the persistent banner it's unanswered again.
+          refreshAllowCookies();
           await AsyncStorage.setItem("user_uid", result.user_uid);
           await AsyncStorage.setItem("user_email_id", googleUserInfo.email);
           await fetchCircleAuthSocial(googleCircleAuthPayload(googleUserInfo.accessToken), fetch);
           setPendingGoogleUserInfo(googleUserInfo);
 
-          // Skip referral modal if referralProfileUid is provided
-          if (route.params?.referralProfileUid) {
-            // Use the referral profile UID directly and skip modal
-            await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
-            navigation.navigate("UserInfo", {
-              googleUserInfo: googleUserInfo,
-              referralId: route.params.referralProfileUid,
-              ...authContinuationParams(route),
-            });
-            setPendingGoogleUserInfo(null);
-          } else {
-            await openReferralModal();
-            console.log("Setting referral modal to true, should show now");
-          }
+          await proceedAfterAccountCreation(async () => {
+            // Skip referral modal if referralProfileUid is provided
+            if (route.params?.referralProfileUid) {
+              // Use the referral profile UID directly and skip modal
+              await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+              navigation.navigate("UserInfo", {
+                googleUserInfo: googleUserInfo,
+                referralId: route.params.referralProfileUid,
+                ...authContinuationParams(route),
+              });
+              setPendingGoogleUserInfo(null);
+            } else {
+              await openReferralModal();
+              console.log("Setting referral modal to true, should show now");
+            }
+          });
         } else {
           throw new Error("Failed to create account");
         }
@@ -464,23 +482,27 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         } else if (createAccountData.code === 281 && createAccountData.user_uid) {
           // Clear AsyncStorage before storing new user data
           await AsyncStorage.clear();
+          // AsyncStorage.clear() wipes allowCookies too — tell the persistent banner it's unanswered again.
+          refreshAllowCookies();
           await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
           await AsyncStorage.setItem("user_email_id", email);
           await issueCircleTokensFromPassword(email, password, fetch);
           setPendingRegularSignup(true);
 
-          // Skip referral modal if referralProfileUid is provided
-          if (route.params?.referralProfileUid) {
-            // Use the referral profile UID directly and skip modal
-            await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
-            navigation.navigate("UserInfo", {
-              referralId: route.params.referralProfileUid,
-              ...authContinuationParams(route),
-            });
-            setPendingRegularSignup(false);
-          } else {
-            await openReferralModal();
-          }
+          await proceedAfterAccountCreation(async () => {
+            // Skip referral modal if referralProfileUid is provided
+            if (route.params?.referralProfileUid) {
+              // Use the referral profile UID directly and skip modal
+              await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+              navigation.navigate("UserInfo", {
+                referralId: route.params.referralProfileUid,
+                ...authContinuationParams(route),
+              });
+              setPendingRegularSignup(false);
+            } else {
+              await openReferralModal();
+            }
+          });
         } else {
           throw new Error("Failed to create account");
         }
@@ -495,7 +517,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     <View style={styles.pageContainer}>
       <AppHeader title='SIGN UP' {...getHeaderColors("signUp")} onBackPress={() => navigation.goBack()} />
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.contentContainer}>
+        <ScrollView contentContainerStyle={[styles.contentContainer, cookieBannerHeight > 0 && { paddingBottom: 20 + cookieBannerHeight }]}>
           <View style={styles.header}>
             <Text style={styles.title}>Welcome to everyCircle!</Text>
             <Text style={styles.subtitle}>
