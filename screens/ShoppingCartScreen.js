@@ -23,7 +23,7 @@ if (!isWeb) {
 
 import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
-import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
+import { defaultStripeBusinessCode, fetchStripePublishableKey } from "../utils/stripePublishableKey";
 import StripeNativeProvider from "../components/StripeNativeProvider";
 
 // Web Stripe imports (only load on web)
@@ -686,7 +686,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         return;
       }
 
-      await loadStripePublicKey("ECTEST");
+      await loadStripePublicKey(defaultStripeBusinessCode());
 
       setShowStripePayment(true);
       setLoading(false);
@@ -727,7 +727,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       if ((group.cardCharge || 0) >= 0.01) {
         webCheckoutSessionRef.current = session;
         setWebCheckoutSession(session);
-        await loadStripePublicKey("ECTEST");
+        await loadStripePublicKey(defaultStripeBusinessCode());
         setShowStripePayment(true);
         setLoading(false);
         return;
@@ -1004,7 +1004,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     });
   }, [cartItems]);
 
-  const loadStripePublicKey = async (businessCode = "ECTEST") => {
+  const loadStripePublicKey = async (businessCode = defaultStripeBusinessCode()) => {
     try {
       const publicKey = await fetchStripePublishableKey(businessCode);
       if (loadStripe) {
@@ -1137,7 +1137,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
 
       const requestBody = {
         customer_uid: profile_uid,
-        business_code: "ECTEST",
+        business_code: defaultStripeBusinessCode(),
         payment_summary: {
           tax: parseFloat(Number(salesTaxTotal).toFixed(2)),
           total: Number(total).toFixed(2),
@@ -1825,7 +1825,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           {stripePromise && customerUid && (
             <StripePayment
               key={`stripe-pay-${webCheckoutSession?.index ?? 0}-${webStripeAmount}`}
-              message='ECTEST'
+              message={defaultStripeBusinessCode()}
               amount={webStripeAmount || 0}
               paidBy={customerUid}
               payeeBusinessName={webCheckoutPayeeDisplayName}
@@ -1853,7 +1853,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
 
 export default function ShoppingCartScreen(props) {
   return (
-    <StripeNativeProvider businessCode='ECTEST'>
+    <StripeNativeProvider businessCode={defaultStripeBusinessCode()}>
       <ShoppingCartScreenContent {...props} />
     </StripeNativeProvider>
   );

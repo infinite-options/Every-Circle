@@ -26,7 +26,7 @@ if (!isWeb) {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PROFILE_WISH_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
-import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
+import { defaultStripeBusinessCode, fetchStripePublishableKey } from "../utils/stripePublishableKey";
 import StripeNativeProvider from "../components/StripeNativeProvider";
 
 // Web Stripe imports (only load on web)
@@ -114,7 +114,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     getCustomerUid();
   }, []);
 
-  const loadStripePublicKey = async (businessCode = "ECTEST") => {
+  const loadStripePublicKey = async (businessCode = defaultStripeBusinessCode()) => {
     try {
       const publicKey = await fetchStripePublishableKey(businessCode);
       if (loadStripe) {
@@ -228,7 +228,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
 
       const requestBody = {
         customer_uid: buyer_profile_uid,
-        business_code: "ECTEST",
+        business_code: defaultStripeBusinessCode(),
         payment_summary: {
           tax: 0,
           total: amount.toString(),
@@ -481,7 +481,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
 
     try {
       if (isWeb) {
-        await loadStripePublicKey("ECTEST");
+        await loadStripePublicKey(defaultStripeBusinessCode());
         setShowStripePayment(true);
         setLoading(false);
         return;
@@ -820,7 +820,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         <>
           {stripePromise && customerUid && pendingAccept && (
             <StripePayment
-              message='ECTEST'
+              message={defaultStripeBusinessCode()}
               amount={pendingAccept.totalWithFee ?? pendingAccept.subtotal * 1.03}
               paidBy={customerUid}
               payeeBusinessName={wishWebPayeeName}
@@ -1050,7 +1050,7 @@ const styles = StyleSheet.create({
 
 export default function WishResponsesScreen(props) {
   return (
-    <StripeNativeProvider businessCode="ECTEST">
+    <StripeNativeProvider businessCode={defaultStripeBusinessCode()}>
       <WishResponsesScreenContent {...props} />
     </StripeNativeProvider>
   );
