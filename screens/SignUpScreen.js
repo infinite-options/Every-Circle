@@ -17,6 +17,7 @@ import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import { saveSessionProfilePayload, clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { fetchCircleAuthLogin, fetchCircleAuthSocial, googleCircleAuthPayload, issueCircleTokensFromPassword } from "../utils/authSession";
+import { refreshAllowCookies, subscribeCookieBannerHeight } from "../utils/cookieConsent";
 
 function authContinuationParams(route) {
   const p = route?.params || {};
@@ -48,6 +49,10 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [userExistsError, setUserExistsError] = useState("");
   const [isAttemptingLogin, setIsAttemptingLogin] = useState(false);
+  /** No BottomNavBar on this screen — pad the scroll content so the persistent cookie
+   *  banner (shown after account creation clears storage) never covers the Log In footer. */
+  const [cookieBannerHeight, setCookieBannerHeight] = useState(0);
+  useEffect(() => subscribeCookieBannerHeight(setCookieBannerHeight), []);
   /** Account exists but referrer not chosen — hide signup form until referral step completes. */
   const [blockingOAuthReferral, setBlockingOAuthReferral] = useState(false);
   /** User must pick a referrer (or "I was not referred") before UserInfo; no default is persisted. */
@@ -55,62 +60,34 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const oauthReferralHandledRef = useRef(false);
   const requireReferralHandledRef = useRef(false);
   const referralRequired = blockingOAuthReferral || pendingReferralCompletion;
-  /** Consent popups shown right after a new account is created; answers mirror Settings > Allow Cookies / Allow Tracking. */
-  const [cookieConsentVisible, setCookieConsentVisible] = useState(false);
+  /** Consent popup shown right after a new account is created; answer mirrors Settings > Allow Tracking.
+   *  Cookie consent is no longer asked here — it's handled by the persistent bottom
+   *  banner (components/CookieConsentBanner.js), mounted app-wide in App.js. */
   const [trackingConsentVisible, setTrackingConsentVisible] = useState(false);
   const pendingAfterConsentRef = useRef(null);
 
-  /** Runs `next` immediately once cookie + tracking consent are both answered; otherwise asks whichever is still unanswered, in order. */
+  /** Runs `next` immediately once tracking consent is answered; otherwise shows the tracking prompt first. */
   const proceedAfterAccountCreation = useCallback(async (next) => {
-    let needsCookieConsent = false;
     let needsTrackingConsent = false;
-    try {
-      needsCookieConsent = (await AsyncStorage.getItem("allowCookies")) === null;
-    } catch (error) {
-      console.log("SignUpScreen - Error checking cookie consent:", error);
-    }
     try {
       needsTrackingConsent = (await AsyncStorage.getItem("allowTracking")) === null;
     } catch (error) {
       console.log("SignUpScreen - Error checking tracking consent:", error);
     }
 
-    if (!needsCookieConsent && !needsTrackingConsent) {
+    if (!needsTrackingConsent) {
       await next();
       return;
     }
 
     pendingAfterConsentRef.current = next;
-    if (needsCookieConsent) {
-      setCookieConsentVisible(true);
-    } else {
-      setTrackingConsentVisible(true);
-    }
+    setTrackingConsentVisible(true);
   }, []);
 
   const finishConsentFlow = async () => {
     const next = pendingAfterConsentRef.current;
     pendingAfterConsentRef.current = null;
     if (next) await next();
-  };
-
-  const handleCookieConsentAnswer = async (allow) => {
-    try {
-      await AsyncStorage.setItem("allowCookies", JSON.stringify(allow));
-    } catch (error) {
-      console.log("SignUpScreen - Error saving cookie consent:", error);
-    }
-    setCookieConsentVisible(false);
-
-    try {
-      if ((await AsyncStorage.getItem("allowTracking")) === null) {
-        setTrackingConsentVisible(true);
-        return;
-      }
-    } catch (error) {
-      console.log("SignUpScreen - Error checking tracking consent:", error);
-    }
-    await finishConsentFlow();
   };
 
   const handleTrackingConsentAnswer = async (allow) => {
@@ -363,6 +340,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         if (result.user_uid) {
           // Clear AsyncStorage before storing new user data
           await AsyncStorage.clear();
+          // AsyncStorage.clear() wipes allowCookies too — tell the persistent banner it's unanswered again.
+          refreshAllowCookies();
           await AsyncStorage.setItem("user_uid", result.user_uid);
           await AsyncStorage.setItem("user_email_id", googleUserInfo.email);
           await fetchCircleAuthSocial(googleCircleAuthPayload(googleUserInfo.accessToken), fetch);
@@ -535,6 +514,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         } else if (createAccountData.code === 281 && createAccountData.user_uid) {
           // Clear AsyncStorage before storing new user data
           await AsyncStorage.clear();
+          // AsyncStorage.clear() wipes allowCookies too — tell the persistent banner it's unanswered again.
+          refreshAllowCookies();
           await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
           await AsyncStorage.setItem("user_email_id", email);
           await issueCircleTokensFromPassword(email, password, fetch);
@@ -568,7 +549,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     <View style={styles.pageContainer}>
       <AppHeader title='SIGN UP' {...getHeaderColors("signUp")} onBackPress={() => navigation.goBack()} />
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.contentContainer}>
+        <ScrollView contentContainerStyle={[styles.contentContainer, cookieBannerHeight > 0 && { paddingBottom: 20 + cookieBannerHeight }]}>
           <View style={styles.header}>
             <Text style={styles.title}>Welcome to everyCircle!</Text>
             <Text style={styles.subtitle}>
@@ -748,29 +729,6 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   searchPlaceholder='Email, location, or name'
                   noResultsSubtext='Try another spelling, city, or email.'
                 />
-              </View>
-            </View>
-          </Modal>
-
-          {/* Cookie Consent Modal */}
-          <Modal visible={cookieConsentVisible} transparent animationType='fade'>
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Cookie Consent</Text>
-                <Text style={styles.modalSubtitle}>We use cookies to keep you signed in and improve your experience. You can change this anytime in Settings under Allow Cookies.</Text>
-                <View style={styles.modalButtonContainer}>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalButtonCancel]}
-                    onPress={() => handleCookieConsentAnswer(false)}
-                    accessibilityRole='button'
-                    accessibilitylabel="Don't allow cookies"
-                  >
-                    <Text style={styles.modalButtonCancelText}>Don't Allow</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.modalButton, styles.modalButtonSubmit]} onPress={() => handleCookieConsentAnswer(true)} accessibilityRole='button' accessibilitylabel='Allow cookies'>
-                    <Text style={styles.modalButtonSubmitText}>Allow</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
             </View>
           </Modal>

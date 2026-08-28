@@ -40,6 +40,7 @@ import { DarkModeProvider } from "./contexts/DarkModeContext";
 import { UnreadProvider } from "./contexts/UnreadContext";
 import { NearbyAlertProvider, useNearbyAlert } from "./contexts/NearbyAlertContext";
 import MessageNotificationBanner from "./components/MessageNotificationBanner";
+import CookieConsentBanner from "./components/CookieConsentBanner";
 import NearbyAlertBanner from "./components/NearbyAlertBanner";
 import { SessionProfileProvider } from "./contexts/SessionProfileContext";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
@@ -1139,6 +1140,7 @@ export default function App() {
                   }}
                 />
                 <RootNearbyAlertBanner navigationRef={navigationRef} />
+                <CookieConsentBanner navigationRef={navigationRef} />
               </View>
             </NearbyAlertProvider>
           </UnreadProvider>
