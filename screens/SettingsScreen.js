@@ -181,7 +181,6 @@ export default function SettingsScreen() {
   const settingsMenuIconColor = darkMode ? "#ffffff" : COLORS.lightIconColor;
   const { reinitialize } = useUnread();
   const [allowCookies, setAllowCookies] = useState(true);
-  const [allowTracking, setAllowTracking] = useState(true);
   const [termsAccepted, setTermsAccepted] = useState(true);
   const [displayEmail, setDisplayEmail] = useState(true);
   const [displayPhoneNumber, setDisplayPhoneNumber] = useState(false);
@@ -189,6 +188,7 @@ export default function SettingsScreen() {
   const [personalProfileData, setPersonalProfileData] = useState(null);
   const [termsWarningVisible, setTermsWarningVisible] = useState(false);
   const [cookiesWarningVisible, setCookiesWarningVisible] = useState(false);
+  const [shareLocationWarningVisible, setShareLocationWarningVisible] = useState(false);
   const [showInformation, setShowInformation] = useState(true);
   const [showSettings, setShowSettings] = useState(true);
   const [networkDebugMode, setNetworkDebugMode] = useState(false);
@@ -314,14 +314,12 @@ export default function SettingsScreen() {
       const p = await AsyncStorage.getItem("displayPhone");
       const t = await AsyncStorage.getItem("termsAccepted");
       const c = await AsyncStorage.getItem("allowCookies");
-      const tk = await AsyncStorage.getItem("allowTracking");
       const isThirdPartyAuth = await AsyncStorage.getItem("isThirdPartyAuth");
 
       if (e !== null) setDisplayEmail(JSON.parse(e));
       if (p !== null) setDisplayPhoneNumber(JSON.parse(p));
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
-      if (tk !== null) setAllowTracking(JSON.parse(tk));
       if (isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
 
       try {
@@ -396,11 +394,6 @@ export default function SettingsScreen() {
   const cancelCookiesRejection = () => {
     setCookiesWarningVisible(false);
     // Keep the switch in the "Yes" position
-  };
-
-  const handleTrackingToggle = async (value) => {
-    setAllowTracking(value);
-    await AsyncStorage.setItem("allowTracking", JSON.stringify(value));
   };
 
   const handleNetworkDebugMode = async (value) => {
@@ -674,6 +667,25 @@ export default function SettingsScreen() {
   // Toggle ON handler — requests permission, sets expiry, patches immediately, starts watcher
   const startLiveLocationSharing = async () => {
     await startLiveLocationSharingSession();
+  };
+
+  // Turning ON shows a warning first (mirrors the Allow Cookies decline warning); turning off is immediate.
+  const handleShareLocationToggle = (value) => {
+    if (value) {
+      setShareLocationWarningVisible(true);
+    } else {
+      stopLiveLocationSharing();
+    }
+  };
+
+  const confirmShareLocation = async () => {
+    setShareLocationWarningVisible(false);
+    await startLiveLocationSharing();
+  };
+
+  const cancelShareLocation = () => {
+    setShareLocationWarningVisible(false);
+    // Keep the switch in the "Off" position
   };
 
   // Connect → Who's Nearby menu can deep-link into location modals (share live toggles on Connect).
@@ -1160,17 +1172,6 @@ export default function SettingsScreen() {
                 <SettingsBoolPills value={allowCookies} onValueChange={handleCookiesToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
               </View>
 
-              {/* Allow Tracking */}
-              <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
-                  <MaterialIcons name='my-location' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Tracking</Text>
-                  </Text>
-                </View>
-                <SettingsBoolPills value={allowTracking} onValueChange={handleTrackingToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
-              </View>
-
               {/* Terms and Conditions */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
                 <TouchableOpacity style={[styles.itemLabel, styles.itemLabelWithToggle]} onPress={() => navigation.navigate("TermsAndConditions")} activeOpacity={0.7}>
@@ -1242,13 +1243,7 @@ export default function SettingsScreen() {
                     </Text>
                   </View>
                 </View>
-                <SettingsBoolPills
-                  value={shareLocationActive}
-                  onValueChange={(v) => (v ? startLiveLocationSharing() : stopLiveLocationSharing())}
-                  leftLabel='Off'
-                  rightLabel='On'
-                  darkMode={darkMode}
-                />
+                <SettingsBoolPills value={shareLocationActive} onValueChange={handleShareLocationToggle} leftLabel='Off' rightLabel='On' darkMode={darkMode} />
               </View>
 
               {/* Location Privacy — opens modal */}
@@ -2284,6 +2279,27 @@ export default function SettingsScreen() {
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={confirmCookiesRejection} style={[styles.warningButton, styles.confirmButton]}>
+                <Text style={styles.confirmButtonText}>I Understand</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Share Live Location Warning Modal */}
+      <Modal visible={shareLocationWarningVisible} transparent={true} animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
+            <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
+            <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Share Live Location</Text>
+            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>
+              Turning this on will share your live location with your circles for the next {SHARE_LOCATION_DURATION_HOURS} hours. You can turn it off anytime here in Settings.
+            </Text>
+            <View style={styles.warningButtonContainer}>
+              <TouchableOpacity onPress={cancelShareLocation} style={[styles.warningButton, styles.cancelButton]}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmShareLocation} style={[styles.warningButton, styles.confirmButton]}>
                 <Text style={styles.confirmButtonText}>I Understand</Text>
               </TouchableOpacity>
             </View>

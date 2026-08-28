@@ -60,45 +60,13 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const oauthReferralHandledRef = useRef(false);
   const requireReferralHandledRef = useRef(false);
   const referralRequired = blockingOAuthReferral || pendingReferralCompletion;
-  /** Consent popup shown right after a new account is created; answer mirrors Settings > Allow Tracking.
-   *  Cookie consent is no longer asked here — it's handled by the persistent bottom
-   *  banner (components/CookieConsentBanner.js), mounted app-wide in App.js. */
-  const [trackingConsentVisible, setTrackingConsentVisible] = useState(false);
-  const pendingAfterConsentRef = useRef(null);
-
-  /** Runs `next` immediately once tracking consent is answered; otherwise shows the tracking prompt first. */
+  /** No post-signup consent gate anymore — cookie consent is handled by the persistent
+   *  bottom banner (components/CookieConsentBanner.js), and tracking consent has been
+   *  removed entirely (Share Live Location now warns inline in Settings instead).
+   *  Kept as a passthrough so existing call sites don't need to change. */
   const proceedAfterAccountCreation = useCallback(async (next) => {
-    let needsTrackingConsent = false;
-    try {
-      needsTrackingConsent = (await AsyncStorage.getItem("allowTracking")) === null;
-    } catch (error) {
-      console.log("SignUpScreen - Error checking tracking consent:", error);
-    }
-
-    if (!needsTrackingConsent) {
-      await next();
-      return;
-    }
-
-    pendingAfterConsentRef.current = next;
-    setTrackingConsentVisible(true);
+    await next();
   }, []);
-
-  const finishConsentFlow = async () => {
-    const next = pendingAfterConsentRef.current;
-    pendingAfterConsentRef.current = null;
-    if (next) await next();
-  };
-
-  const handleTrackingConsentAnswer = async (allow) => {
-    try {
-      await AsyncStorage.setItem("allowTracking", JSON.stringify(allow));
-    } catch (error) {
-      console.log("SignUpScreen - Error saving tracking consent:", error);
-    }
-    setTrackingConsentVisible(false);
-    await finishConsentFlow();
-  };
 
   const openReferralModal = async () => {
     await AsyncStorage.multiRemove(["referral_uid", "referral_email"]);
@@ -729,34 +697,6 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   searchPlaceholder='Email, location, or name'
                   noResultsSubtext='Try another spelling, city, or email.'
                 />
-              </View>
-            </View>
-          </Modal>
-
-          {/* Tracking Consent Modal */}
-          <Modal visible={trackingConsentVisible} transparent animationType='fade'>
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Allow Tracking?</Text>
-                <Text style={styles.modalSubtitle}>Do you want the app to track you? This helps us personalize your experience. You can change this anytime in Settings under Allow Tracking.</Text>
-                <View style={styles.modalButtonContainer}>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalButtonCancel]}
-                    onPress={() => handleTrackingConsentAnswer(false)}
-                    accessibilityRole='button'
-                    accessibilitylabel="Don't allow tracking"
-                  >
-                    <Text style={styles.modalButtonCancelText}>Don't Allow</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalButtonSubmit]}
-                    onPress={() => handleTrackingConsentAnswer(true)}
-                    accessibilityRole='button'
-                    accessibilitylabel='Allow tracking'
-                  >
-                    <Text style={styles.modalButtonSubmitText}>Allow</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
             </View>
           </Modal>
