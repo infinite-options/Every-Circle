@@ -61,6 +61,7 @@ import BusinessSetupController from "./screens/BusinessSetupController";
 import BusinessProfileScreen from "./screens/BusinessProfileScreen";
 import SearchTab from "./screens/SearchTab";
 import ChangePasswordScreen from "./screens/ChangePasswordScreen";
+import DeleteAccountScreen from "./screens/DeleteAccountScreen";
 import FilterScreen from "./screens/FilterScreen-DNU";
 import TermsAndConditionsScreen from "./screens/TermsAndConditionsScreen";
 import PrivacyPolicyScreen from "./screens/PrivacyPolicyScreen";
@@ -1103,6 +1104,7 @@ export default function App() {
                     <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
                     <Stack.Screen name='BusinessModeration' component={BusinessModerationScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
+                    <Stack.Screen name='DeleteAccount' component={DeleteAccountScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='Filters' component={FilterScreen} />
                     <Stack.Screen name='SearchTab' component={SearchTab} />
 

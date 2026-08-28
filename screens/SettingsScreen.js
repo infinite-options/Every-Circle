@@ -1359,6 +1359,15 @@ export default function SettingsScreen() {
                   <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
                 </TouchableOpacity>
               )}
+
+              {/* Delete Account */}
+              <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("DeleteAccount")}>
+                <View style={styles.itemLabel}>
+                  <MaterialIcons name='delete-forever' size={20} style={styles.icon} color='#B71C1C' />
+                  <Text style={[styles.itemText, { color: "#B71C1C" }, darkMode && { color: "#ef9a9a" }]}>Delete Account</Text>
+                </View>
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
+              </TouchableOpacity>
             </View>
           )}
 

@@ -6,6 +6,7 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { getSessionProfile } from "../utils/sessionProfile";
 import { parseCombinedPath, truncateConnectionPath, buildCombinedPathFromPersonalPaths } from "../utils/connectionPathChain";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
 
 const DEFAULT_AVATAR = require("../assets/profile.png");
 const MAX_CHAIN_USERS = 5;
@@ -36,6 +37,7 @@ export default function ConnectionPathChain({
   const { darkMode } = useDarkMode();
   const [pathUids, setPathUids] = useState([]);
   const [profilesByUid, setProfilesByUid] = useState({});
+  const [deletedByUid, setDeletedByUid] = useState({});
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const abortRef = useRef(0);
@@ -90,11 +92,21 @@ export default function ConnectionPathChain({
       setProfilesByUid(seeded);
 
       let uids = [];
+      const pathDeletedMap = {};
       try {
         const res = await fetch(`${API_BASE_URL}/api/connections_path/${encodeURIComponent(viewer)}/${encodeURIComponent(visited)}`);
         if (res.ok) {
           const data = await res.json();
-          uids = parseCombinedPath(data?.combined_path);
+          const pathNodes = Array.isArray(data?.path_nodes) ? data.path_nodes : [];
+          if (pathNodes.length >= 2) {
+            uids = pathNodes.map((n) => String(n?.profile_personal_uid || "").trim()).filter(Boolean);
+            pathNodes.forEach((n) => {
+              const uid = String(n?.profile_personal_uid || "").trim();
+              if (uid && isProfileDeleted(n)) pathDeletedMap[uid] = true;
+            });
+          } else {
+            uids = parseCombinedPath(data?.combined_path);
+          }
         }
       } catch (e) {
         console.warn("[ConnectionPathChain] connections_path failed:", e?.message || e);
@@ -111,6 +123,7 @@ export default function ConnectionPathChain({
       }
 
       if (cancelled || ticket !== abortRef.current) return;
+      setDeletedByUid(pathDeletedMap);
 
       if (uids.length < 2) {
         setPathUids([]);
@@ -142,13 +155,14 @@ export default function ConnectionPathChain({
             for (const a of avatars) {
               const uid = a?.profile_uid;
               if (!uid) continue;
-              const imagePublic = !!a.image_is_public;
+              const imagePublic = !!a.image_is_public && !isProfileDeleted(a);
               fetched[uid] = {
                 uid,
-                firstName: a.first_name || "",
-                lastName: a.last_name || "",
+                firstName: isProfileDeleted(a) ? "" : a.first_name || "",
+                lastName: isProfileDeleted(a) ? "" : a.last_name || "",
                 profileImage: imagePublic ? String(a.image_url || "") : "",
                 imageIsPublic: imagePublic,
+                isDeleted: isProfileDeleted(a) || !!pathDeletedMap[uid],
               };
             }
           }
@@ -207,35 +221,49 @@ export default function ConnectionPathChain({
             }
 
             const profile = profilesByUid[node.uid] || {};
+            const isDeleted = profile.isDeleted || deletedByUid[node.uid];
             const isSelf = node.uid === viewerUid || profile.isSelf;
             const isVisited = node.uid === visitedUid;
-            const uri = profile.profileImage && String(profile.profileImage).trim() !== "" ? String(profile.profileImage) : null;
-            const label = isSelf
-              ? "You"
-              : [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim() || (isVisited ? "Profile" : "Member");
+            const uri = !isDeleted && profile.profileImage && String(profile.profileImage).trim() !== "" ? String(profile.profileImage) : null;
+            const label = isDeleted
+              ? DELETED_USER_LABEL
+              : isSelf
+                ? "You"
+                : [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim() || (isVisited ? "Profile" : "Member");
 
             return (
               <View key={node.uid} style={styles.nodeBlock}>
                 {index > 0 ? <View style={[styles.connector, darkMode && styles.darkConnector]} /> : null}
                 <TouchableOpacity
                   onPress={() => onPressUid(node.uid)}
-                  activeOpacity={isVisited ? 1 : 0.75}
+                  activeOpacity={isVisited || isDeleted ? 1 : 0.75}
                   disabled={isVisited}
                   accessibilityRole='button'
                   accessibilityLabel={label}
                   style={styles.avatarPress}
                 >
-                  <View style={[styles.avatarRing, darkMode && styles.darkAvatarRing, isSelf && styles.selfRing, isVisited && styles.visitedRing]}>
+                  <View
+                    style={[
+                      styles.avatarRing,
+                      darkMode && styles.darkAvatarRing,
+                      isSelf && styles.selfRing,
+                      isVisited && styles.visitedRing,
+                      isDeleted && styles.deletedRing,
+                      darkMode && isDeleted && styles.darkDeletedRing,
+                    ]}
+                  >
                     {uri ? (
                       <Image source={{ uri }} style={styles.avatar} defaultSource={DEFAULT_AVATAR} />
                     ) : (
-                      <View style={[styles.avatarFallback, darkMode && styles.darkAvatarFallback]}>
-                        <Text style={[styles.initials, darkMode && styles.darkInitials]}>{initialsFromName(profile.firstName, profile.lastName)}</Text>
+                      <View style={[styles.avatarFallback, darkMode && styles.darkAvatarFallback, isDeleted && styles.deletedAvatarFallback]}>
+                        <Text style={[styles.initials, darkMode && styles.darkInitials, isDeleted && styles.deletedInitials]}>
+                          {isDeleted ? "—" : initialsFromName(profile.firstName, profile.lastName)}
+                        </Text>
                       </View>
                     )}
                   </View>
-                  <Text style={[styles.name, darkMode && styles.darkName]} numberOfLines={1}>
-                    {isSelf ? "You" : profile.firstName || (isVisited ? "Them" : "···")}
+                  <Text style={[styles.name, darkMode && styles.darkName, isDeleted && styles.deletedName]} numberOfLines={1}>
+                    {isSelf ? "You" : isDeleted ? DELETED_USER_LABEL : profile.firstName || (isVisited ? "Them" : "···")}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -372,5 +400,23 @@ const styles = StyleSheet.create({
   },
   darkEllipsisText: {
     color: "#bbb",
+  },
+  deletedRing: {
+    borderColor: "#bbb",
+    opacity: 0.75,
+  },
+  darkDeletedRing: {
+    borderColor: "#666",
+  },
+  deletedAvatarFallback: {
+    backgroundColor: "#d8d8d8",
+  },
+  deletedInitials: {
+    color: "#888",
+    fontSize: 16,
+  },
+  deletedName: {
+    color: "#888",
+    fontStyle: "italic",
   },
 });

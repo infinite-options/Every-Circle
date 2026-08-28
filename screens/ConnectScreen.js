@@ -16,6 +16,7 @@ import MiniCard from "../components/MiniCard";
 import MicroCard from "../components/MicroCard";
 import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
 
 import FeedbackPopup from "../components/FeedbackPopup";
 import ReferralSearch from "../components/ReferralSearch";
@@ -1675,35 +1676,40 @@ const ConnectScreen = ({ navigation }) => {
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
       const data = await response.json();
-      return data.map((node) => ({
-        ...node,
-        __mc: {
-          firstName: sanitizeText(node.profile_personal_first_name || ""),
-          lastName: sanitizeText(node.profile_personal_last_name || ""),
-          tagLine: sanitizeText(node.profile_personal_tag_line || ""),
-          city: sanitizeText(node.profile_personal_city || ""),
-          state: sanitizeText(node.profile_personal_state || ""),
-          phoneNumber: sanitizeText(node.profile_personal_phone_number || ""),
-          profileImage: sanitizeText(node.profile_personal_image || ""),
-          relationship: node.circle_relationship || null,
-          emailIsPublic: node.profile_personal_email_is_public === 1,
-          phoneIsPublic: node.profile_personal_phone_number_is_public === 1,
-          tagLineIsPublic: node.profile_personal_tag_line_is_public === 1,
-          locationIsPublic: node.profile_personal_location_is_public === 1,
-          imageIsPublic: node.profile_personal_image_is_public === 1,
-          personal_info: {
-            profile_personal_first_name: sanitizeText(node.profile_personal_first_name || ""),
-            profile_personal_last_name: sanitizeText(node.profile_personal_last_name || ""),
-            profile_personal_tag_line: sanitizeText(node.profile_personal_tag_line || ""),
-            profile_personal_phone_number: sanitizeText(node.profile_personal_phone_number || ""),
-            profile_personal_image: sanitizeText(node.profile_personal_image || ""),
-            profile_personal_email_is_public: node.profile_personal_email_is_public || 0,
-            profile_personal_phone_number_is_public: node.profile_personal_phone_number_is_public || 0,
-            profile_personal_tag_line_is_public: node.profile_personal_tag_line_is_public || 0,
-            profile_personal_image_is_public: node.profile_personal_image_is_public || 0,
+      return data.map((node) => {
+        const deleted = isProfileDeleted(node);
+        return {
+          ...node,
+          __mc: {
+            isDeleted: deleted,
+            firstName: deleted ? "" : sanitizeText(node.profile_personal_first_name || ""),
+            lastName: deleted ? "" : sanitizeText(node.profile_personal_last_name || ""),
+            tagLine: deleted ? "" : sanitizeText(node.profile_personal_tag_line || ""),
+            city: deleted ? "" : sanitizeText(node.profile_personal_city || ""),
+            state: deleted ? "" : sanitizeText(node.profile_personal_state || ""),
+            phoneNumber: deleted ? "" : sanitizeText(node.profile_personal_phone_number || ""),
+            profileImage: deleted ? "" : sanitizeText(node.profile_personal_image || ""),
+            relationship: node.circle_relationship || null,
+            emailIsPublic: !deleted && node.profile_personal_email_is_public === 1,
+            phoneIsPublic: !deleted && node.profile_personal_phone_number_is_public === 1,
+            tagLineIsPublic: !deleted && node.profile_personal_tag_line_is_public === 1,
+            locationIsPublic: !deleted && node.profile_personal_location_is_public === 1,
+            imageIsPublic: !deleted && node.profile_personal_image_is_public === 1,
+            personal_info: {
+              profile_personal_first_name: deleted ? "" : sanitizeText(node.profile_personal_first_name || ""),
+              profile_personal_last_name: deleted ? "" : sanitizeText(node.profile_personal_last_name || ""),
+              profile_personal_tag_line: deleted ? "" : sanitizeText(node.profile_personal_tag_line || ""),
+              profile_personal_phone_number: deleted ? "" : sanitizeText(node.profile_personal_phone_number || ""),
+              profile_personal_image: deleted ? "" : sanitizeText(node.profile_personal_image || ""),
+              profile_personal_email_is_public: deleted ? 0 : node.profile_personal_email_is_public || 0,
+              profile_personal_phone_number_is_public: deleted ? 0 : node.profile_personal_phone_number_is_public || 0,
+              profile_personal_tag_line_is_public: deleted ? 0 : node.profile_personal_tag_line_is_public || 0,
+              profile_personal_image_is_public: deleted ? 0 : node.profile_personal_image_is_public || 0,
+            },
+            is_deleted: deleted,
           },
-        },
-      }));
+        };
+      });
     },
     [profileUid, degree],
   );
@@ -1723,41 +1729,44 @@ const ConnectScreen = ({ navigation }) => {
       if (result && result.data && Array.isArray(result.data)) {
         return result.data.map((circle) => {
           const p = circle;
-          const tagLineRaw = p.profile_personal_tag_line || p.profile_personal_tagline || "";
-          const emailRaw = p.user_email_id ?? p.user_email ?? "";
+          const deleted = isProfileDeleted(p) || isProfileDeleted(circle);
+          const tagLineRaw = deleted ? "" : p.profile_personal_tag_line || p.profile_personal_tagline || "";
+          const emailRaw = deleted ? "" : p.user_email_id ?? p.user_email ?? "";
           return {
             ...circle,
             degree: 1,
             __mc: {
-              firstName: sanitizeText(p.profile_personal_first_name || ""),
-              lastName: sanitizeText(p.profile_personal_last_name || ""),
+              isDeleted: deleted,
+              firstName: deleted ? "" : sanitizeText(p.profile_personal_first_name || ""),
+              lastName: deleted ? "" : sanitizeText(p.profile_personal_last_name || ""),
               tagLine: sanitizeText(tagLineRaw || ""),
-              city: sanitizeText(p.profile_personal_city || ""),
-              state: sanitizeText(p.profile_personal_state || ""),
+              city: deleted ? "" : sanitizeText(p.profile_personal_city || ""),
+              state: deleted ? "" : sanitizeText(p.profile_personal_state || ""),
               email: sanitizeText(emailRaw || ""),
-              phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
-              profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+              phoneNumber: deleted ? "" : sanitizeText(p.profile_personal_phone_number || ""),
+              profileImage: deleted ? "" : sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
               relationship: circle.circle_relationship || null,
-              emailIsPublic: p.profile_personal_email_is_public === 1,
-              phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-              tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-              locationIsPublic: p.profile_personal_location_is_public === 1,
-              imageIsPublic: p.profile_personal_image_is_public === 1,
+              emailIsPublic: !deleted && p.profile_personal_email_is_public === 1,
+              phoneIsPublic: !deleted && p.profile_personal_phone_number_is_public === 1,
+              tagLineIsPublic: !deleted && (p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1),
+              locationIsPublic: !deleted && p.profile_personal_location_is_public === 1,
+              imageIsPublic: !deleted && p.profile_personal_image_is_public === 1,
               personal_info: {
-                profile_personal_first_name: sanitizeText(p.profile_personal_first_name || ""),
-                profile_personal_last_name: sanitizeText(p.profile_personal_last_name || ""),
+                profile_personal_first_name: deleted ? "" : sanitizeText(p.profile_personal_first_name || ""),
+                profile_personal_last_name: deleted ? "" : sanitizeText(p.profile_personal_last_name || ""),
                 profile_personal_tag_line: sanitizeText(tagLineRaw || ""),
                 profile_personal_tagline: sanitizeText(tagLineRaw || ""),
-                profile_personal_phone_number: sanitizeText(p.profile_personal_phone_number || ""),
-                profile_personal_image: sanitizeText(p.profile_personal_image || ""),
-                profile_personal_city: sanitizeText(p.profile_personal_city || ""),
-                profile_personal_state: sanitizeText(p.profile_personal_state || ""),
-                profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
-                profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
-                profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
-                profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
-                profile_personal_location_is_public: p.profile_personal_location_is_public || 0,
+                profile_personal_phone_number: deleted ? "" : sanitizeText(p.profile_personal_phone_number || ""),
+                profile_personal_image: deleted ? "" : sanitizeText(p.profile_personal_image || ""),
+                profile_personal_city: deleted ? "" : sanitizeText(p.profile_personal_city || ""),
+                profile_personal_state: deleted ? "" : sanitizeText(p.profile_personal_state || ""),
+                profile_personal_email_is_public: deleted ? 0 : p.profile_personal_email_is_public || 0,
+                profile_personal_phone_number_is_public: deleted ? 0 : p.profile_personal_phone_number_is_public || 0,
+                profile_personal_tag_line_is_public: deleted ? 0 : p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
+                profile_personal_image_is_public: deleted ? 0 : p.profile_personal_image_is_public || 0,
+                profile_personal_location_is_public: deleted ? 0 : p.profile_personal_location_is_public || 0,
               },
+              is_deleted: deleted,
             },
             network_profile_personal_uid: circle.circle_related_person_id || circle.profile_personal_uid,
           };
@@ -2006,11 +2015,12 @@ const ConnectScreen = ({ navigation }) => {
     data.forEach((n) => allUids.add(n.network_profile_personal_uid));
 
     data.forEach((n) => {
-      const name = n.__mc?.personal_info?.profile_personal_first_name || n.__mc?.firstName || "";
-      const last = n.__mc?.personal_info?.profile_personal_last_name || n.__mc?.lastName || "";
-      const label = [name, last].filter(Boolean).join(" ") || (n.network_profile_personal_uid ? n.network_profile_personal_uid.slice(-3) : "???");
+      const isDeleted = isProfileDeleted(n) || n.__mc?.isDeleted;
+      const name = isDeleted ? DELETED_USER_LABEL : n.__mc?.personal_info?.profile_personal_first_name || n.__mc?.firstName || "";
+      const last = isDeleted ? "" : n.__mc?.personal_info?.profile_personal_last_name || n.__mc?.lastName || "";
+      const label = isDeleted ? DELETED_USER_LABEL : [name, last].filter(Boolean).join(" ") || (n.network_profile_personal_uid ? n.network_profile_personal_uid.slice(-3) : "???");
 
-      const img = n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
+      const img = isDeleted ? "" : n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
 
       const hasImg = img && String(img).trim() !== "";
       const isZeroNode = n.network_profile_personal_uid === EVERY_CIRCLE_ZERO_NODE_UID;
@@ -2018,16 +2028,18 @@ const ConnectScreen = ({ navigation }) => {
       nodes.push({
         id: n.network_profile_personal_uid,
         label,
-        shape: hasImg && !isZeroNode ? "circularImage" : "dot",
-        image: hasImg && !isZeroNode ? img : undefined,
-        size: isZeroNode ? userNodeSize : hasImg ? 18 : 10,
+        shape: hasImg && !isZeroNode && !isDeleted ? "circularImage" : "dot",
+        image: hasImg && !isZeroNode && !isDeleted ? img : undefined,
+        size: isZeroNode ? userNodeSize : isDeleted ? 10 : hasImg ? 18 : 10,
         borderWidth: isZeroNode ? userNodeBorderWidth : undefined,
         color: isZeroNode
           ? { border: NETWORK_GRAPH_PURPLE, background: NETWORK_GRAPH_PURPLE_FILL_50 }
-          : hasImg
-            ? undefined
-            : { border: "#FFFFFF", background: "#e9d4ff" },
-        font: { size: 11, color: "#444" },
+          : isDeleted
+            ? { border: "#bbb", background: "#ccc" }
+            : hasImg
+              ? undefined
+              : { border: "#FFFFFF", background: "#e9d4ff" },
+        font: { size: 11, color: isDeleted ? "#888" : "#444" },
         level: Number(n.degree) || 1,
       });
     });

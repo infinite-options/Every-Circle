@@ -2,8 +2,8 @@
 // Uncomment the appropriate line for your environment
 
 // Production/Development Environment
-export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
-// export const API_BASE_URL = "http://localhost:4090";
+// export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
+export const API_BASE_URL = "http://localhost:4090";
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";
@@ -58,6 +58,8 @@ export const AUTH_REFRESH_ENDPOINT = `${API_BASE_URL}/api/v1/auth/refresh`;
 export const AUTH_SOCIAL_ENDPOINT = `${API_BASE_URL}/api/v1/auth/social`;
 export const AUTH_LOGOUT_ENDPOINT = `${API_BASE_URL}/api/v1/auth/logout`;
 export const AUTH_ME_ENDPOINT = `${API_BASE_URL}/api/v1/auth/me`;
+/** DELETE JSON `{ confirm_deletion: true }` — permanently delete authenticated account (App Store / Play compliant). */
+export const DELETE_ACCOUNT_ENDPOINT = `${API_BASE_URL}/api/v1/account`;
 
 // User Profile Endpoints
 export const USER_INFO_ENDPOINT = `${API_BASE_URL}/userinfo`;
