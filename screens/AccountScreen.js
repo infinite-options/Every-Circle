@@ -1730,7 +1730,7 @@ function resolveRefundBusinessCode(sellerNote) {
     .toUpperCase();
   if (n === "ECTEST" || n === "PMTEST") return n;
   if (n === "EC" || n === "PM") return n;
-  // Default live (createPaymentIntent uses ECTEST in dev; live purchases use EC)
+  // Default live checkout uses EC; dev builds use ECTEST (see defaultStripeBusinessCode).
   return "EC";
 }
 
@@ -12910,7 +12910,7 @@ export default function AccountScreen({ navigation, route }) {
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
             <Text style={[styles.receiveItemModalHeader, { color: "#18884A" }, darkMode && styles.darkTitle]}>Confirm Receipt</Text>
             <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
-              Add a note for this return (optional). Enter ECTEST or PMTEST to refund on the test Stripe account; otherwise EC / PM (live) is used.
+              Add a note for this return (optional). Enter ECTEST or PMTEST to refund on a test Stripe account; otherwise EC (live) is used.
             </Text>
             <TextInput
               style={{

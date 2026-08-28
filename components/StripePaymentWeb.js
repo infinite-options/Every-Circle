@@ -5,6 +5,7 @@ import { useElements, useStripe, CardElement, Elements } from "@stripe/react-str
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { CREATE_PAYMENT_INTENT_ENDPOINT } from "../apiConfig";
+import { stripeEnvironmentForBusinessCode } from "../utils/stripePublishableKey";
 
 const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, show, setShow, submit, onError }) => {
   const { darkMode } = useDarkMode();
@@ -34,17 +35,9 @@ const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, s
         hasConfirmCardPayment: typeof stripe.confirmCardPayment === "function",
       });
 
-      // Step 1: Create payment intent on backend
-      // Map business code: ECTEST → PMTEST, EC → PM (matching ShoppingCartScreen logic)
-      let businessCode = "PMTEST"; // default
-      if (message === "ECTEST") {
-        businessCode = "PMTEST";
-      } else if (message === "EC") {
-        businessCode = "PM";
-      } else if (message === "PMTEST" || message === "PM") {
-        businessCode = message;
-      }
-      
+      // Step 1: Create payment intent on backend (business_code selects EC vs ECTEST Stripe account)
+      const businessCode = stripeEnvironmentForBusinessCode(message);
+
       const paymentData = {
         customer_uid: paidBy,
         business_code: businessCode,
