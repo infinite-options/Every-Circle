@@ -180,6 +180,7 @@ export default function SettingsScreen() {
   const settingsMenuIconColor = darkMode ? "#ffffff" : COLORS.lightIconColor;
   const { reinitialize } = useUnread();
   const [allowCookies, setAllowCookies] = useState(true);
+  const [allowTracking, setAllowTracking] = useState(true);
   const [termsAccepted, setTermsAccepted] = useState(true);
   const [displayEmail, setDisplayEmail] = useState(true);
   const [displayPhoneNumber, setDisplayPhoneNumber] = useState(false);
@@ -312,12 +313,14 @@ export default function SettingsScreen() {
       const p = await AsyncStorage.getItem("displayPhone");
       const t = await AsyncStorage.getItem("termsAccepted");
       const c = await AsyncStorage.getItem("allowCookies");
+      const tk = await AsyncStorage.getItem("allowTracking");
       const isThirdPartyAuth = await AsyncStorage.getItem("isThirdPartyAuth");
 
       if (e !== null) setDisplayEmail(JSON.parse(e));
       if (p !== null) setDisplayPhoneNumber(JSON.parse(p));
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
+      if (tk !== null) setAllowTracking(JSON.parse(tk));
       if (isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
 
       try {
@@ -384,6 +387,11 @@ export default function SettingsScreen() {
   const cancelCookiesRejection = () => {
     setCookiesWarningVisible(false);
     // Keep the switch in the "Yes" position
+  };
+
+  const handleTrackingToggle = async (value) => {
+    setAllowTracking(value);
+    await AsyncStorage.setItem("allowTracking", JSON.stringify(value));
   };
 
   const handleNetworkDebugMode = async (value) => {
@@ -1141,6 +1149,17 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
                 <SettingsBoolPills value={allowCookies} onValueChange={handleCookiesToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
+              </View>
+
+              {/* Allow Tracking */}
+              <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                  <MaterialIcons name='my-location' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Tracking</Text>
+                  </Text>
+                </View>
+                <SettingsBoolPills value={allowTracking} onValueChange={handleTrackingToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
               </View>
 
               {/* Terms and Conditions */}

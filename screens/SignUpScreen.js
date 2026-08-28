@@ -55,6 +55,73 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const oauthReferralHandledRef = useRef(false);
   const requireReferralHandledRef = useRef(false);
   const referralRequired = blockingOAuthReferral || pendingReferralCompletion;
+  /** Consent popups shown right after a new account is created; answers mirror Settings > Allow Cookies / Allow Tracking. */
+  const [cookieConsentVisible, setCookieConsentVisible] = useState(false);
+  const [trackingConsentVisible, setTrackingConsentVisible] = useState(false);
+  const pendingAfterConsentRef = useRef(null);
+
+  /** Runs `next` immediately once cookie + tracking consent are both answered; otherwise asks whichever is still unanswered, in order. */
+  const proceedAfterAccountCreation = useCallback(async (next) => {
+    let needsCookieConsent = false;
+    let needsTrackingConsent = false;
+    try {
+      needsCookieConsent = (await AsyncStorage.getItem("allowCookies")) === null;
+    } catch (error) {
+      console.log("SignUpScreen - Error checking cookie consent:", error);
+    }
+    try {
+      needsTrackingConsent = (await AsyncStorage.getItem("allowTracking")) === null;
+    } catch (error) {
+      console.log("SignUpScreen - Error checking tracking consent:", error);
+    }
+
+    if (!needsCookieConsent && !needsTrackingConsent) {
+      await next();
+      return;
+    }
+
+    pendingAfterConsentRef.current = next;
+    if (needsCookieConsent) {
+      setCookieConsentVisible(true);
+    } else {
+      setTrackingConsentVisible(true);
+    }
+  }, []);
+
+  const finishConsentFlow = async () => {
+    const next = pendingAfterConsentRef.current;
+    pendingAfterConsentRef.current = null;
+    if (next) await next();
+  };
+
+  const handleCookieConsentAnswer = async (allow) => {
+    try {
+      await AsyncStorage.setItem("allowCookies", JSON.stringify(allow));
+    } catch (error) {
+      console.log("SignUpScreen - Error saving cookie consent:", error);
+    }
+    setCookieConsentVisible(false);
+
+    try {
+      if ((await AsyncStorage.getItem("allowTracking")) === null) {
+        setTrackingConsentVisible(true);
+        return;
+      }
+    } catch (error) {
+      console.log("SignUpScreen - Error checking tracking consent:", error);
+    }
+    await finishConsentFlow();
+  };
+
+  const handleTrackingConsentAnswer = async (allow) => {
+    try {
+      await AsyncStorage.setItem("allowTracking", JSON.stringify(allow));
+    } catch (error) {
+      console.log("SignUpScreen - Error saving tracking consent:", error);
+    }
+    setTrackingConsentVisible(false);
+    await finishConsentFlow();
+  };
 
   const openReferralModal = async () => {
     await AsyncStorage.multiRemove(["referral_uid", "referral_email"]);
@@ -111,8 +178,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
     const { googleUserInfo: gInfo, appleUserInfo: aInfo, referralProfileUid: refUid } = route.params || {};
 
-    if (refUid) {
-      (async () => {
+    proceedAfterAccountCreation(async () => {
+      if (refUid) {
         await AsyncStorage.setItem("referral_uid", refUid);
         navigation.navigate("UserInfo", {
           ...(gInfo ? { googleUserInfo: gInfo } : {}),
@@ -120,39 +187,41 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           referralId: refUid,
           ...authContinuationParams(route),
         });
-      })();
-      return;
-    }
+        return;
+      }
 
-    setBlockingOAuthReferral(true);
-    if (gInfo?.email) {
-      setEmail(gInfo.email);
-      setIsGoogleSignUp(true);
-    }
-    if (gInfo) setPendingGoogleUserInfo(gInfo);
-    if (aInfo) setPendingAppleUserInfo(aInfo);
-    openReferralModal();
-  }, [navigation, route.params]);
+      setBlockingOAuthReferral(true);
+      if (gInfo?.email) {
+        setEmail(gInfo.email);
+        setIsGoogleSignUp(true);
+      }
+      if (gInfo) setPendingGoogleUserInfo(gInfo);
+      if (aInfo) setPendingAppleUserInfo(aInfo);
+      openReferralModal();
+    });
+  }, [navigation, route.params, proceedAfterAccountCreation]);
 
   // Listen for Apple sign up completion (if passed via route)
   useEffect(() => {
     if (route.params?.pendingReferralAfterOAuth) return;
     if (route.params?.appleUserInfo) {
       setPendingAppleUserInfo(route.params.appleUserInfo);
-      // Skip referral modal if referralProfileUid is provided
-      if (route.params?.referralProfileUid) {
-        // Use the referral profile UID directly and skip modal
-        AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
-        navigation.navigate("UserInfo", {
-          appleUserInfo: route.params.appleUserInfo,
-          referralId: route.params.referralProfileUid,
-          ...authContinuationParams(route),
-        });
-      } else {
-        openReferralModal();
-      }
+      proceedAfterAccountCreation(async () => {
+        // Skip referral modal if referralProfileUid is provided
+        if (route.params?.referralProfileUid) {
+          // Use the referral profile UID directly and skip modal
+          await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+          navigation.navigate("UserInfo", {
+            appleUserInfo: route.params.appleUserInfo,
+            referralId: route.params.referralProfileUid,
+            ...authContinuationParams(route),
+          });
+        } else {
+          openReferralModal();
+        }
+      });
     }
-  }, [route.params?.appleUserInfo, route.params?.referralProfileUid]);
+  }, [route.params?.appleUserInfo, route.params?.referralProfileUid, proceedAfterAccountCreation]);
 
   // Returning user logged in elsewhere (e.g. Login → Profile) but never chose a referrer.
   useEffect(() => {
@@ -299,20 +368,22 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           await fetchCircleAuthSocial(googleCircleAuthPayload(googleUserInfo.accessToken), fetch);
           setPendingGoogleUserInfo(googleUserInfo);
 
-          // Skip referral modal if referralProfileUid is provided
-          if (route.params?.referralProfileUid) {
-            // Use the referral profile UID directly and skip modal
-            await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
-            navigation.navigate("UserInfo", {
-              googleUserInfo: googleUserInfo,
-              referralId: route.params.referralProfileUid,
-              ...authContinuationParams(route),
-            });
-            setPendingGoogleUserInfo(null);
-          } else {
-            await openReferralModal();
-            console.log("Setting referral modal to true, should show now");
-          }
+          await proceedAfterAccountCreation(async () => {
+            // Skip referral modal if referralProfileUid is provided
+            if (route.params?.referralProfileUid) {
+              // Use the referral profile UID directly and skip modal
+              await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+              navigation.navigate("UserInfo", {
+                googleUserInfo: googleUserInfo,
+                referralId: route.params.referralProfileUid,
+                ...authContinuationParams(route),
+              });
+              setPendingGoogleUserInfo(null);
+            } else {
+              await openReferralModal();
+              console.log("Setting referral modal to true, should show now");
+            }
+          });
         } else {
           throw new Error("Failed to create account");
         }
@@ -469,18 +540,20 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           await issueCircleTokensFromPassword(email, password, fetch);
           setPendingRegularSignup(true);
 
-          // Skip referral modal if referralProfileUid is provided
-          if (route.params?.referralProfileUid) {
-            // Use the referral profile UID directly and skip modal
-            await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
-            navigation.navigate("UserInfo", {
-              referralId: route.params.referralProfileUid,
-              ...authContinuationParams(route),
-            });
-            setPendingRegularSignup(false);
-          } else {
-            await openReferralModal();
-          }
+          await proceedAfterAccountCreation(async () => {
+            // Skip referral modal if referralProfileUid is provided
+            if (route.params?.referralProfileUid) {
+              // Use the referral profile UID directly and skip modal
+              await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+              navigation.navigate("UserInfo", {
+                referralId: route.params.referralProfileUid,
+                ...authContinuationParams(route),
+              });
+              setPendingRegularSignup(false);
+            } else {
+              await openReferralModal();
+            }
+          });
         } else {
           throw new Error("Failed to create account");
         }
@@ -675,6 +748,57 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   searchPlaceholder='Email, location, or name'
                   noResultsSubtext='Try another spelling, city, or email.'
                 />
+              </View>
+            </View>
+          </Modal>
+
+          {/* Cookie Consent Modal */}
+          <Modal visible={cookieConsentVisible} transparent animationType='fade'>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Cookie Consent</Text>
+                <Text style={styles.modalSubtitle}>We use cookies to keep you signed in and improve your experience. You can change this anytime in Settings under Allow Cookies.</Text>
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalButtonCancel]}
+                    onPress={() => handleCookieConsentAnswer(false)}
+                    accessibilityRole='button'
+                    accessibilitylabel="Don't allow cookies"
+                  >
+                    <Text style={styles.modalButtonCancelText}>Don't Allow</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.modalButton, styles.modalButtonSubmit]} onPress={() => handleCookieConsentAnswer(true)} accessibilityRole='button' accessibilitylabel='Allow cookies'>
+                    <Text style={styles.modalButtonSubmitText}>Allow</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Tracking Consent Modal */}
+          <Modal visible={trackingConsentVisible} transparent animationType='fade'>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Allow Tracking?</Text>
+                <Text style={styles.modalSubtitle}>Do you want the app to track you? This helps us personalize your experience. You can change this anytime in Settings under Allow Tracking.</Text>
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalButtonCancel]}
+                    onPress={() => handleTrackingConsentAnswer(false)}
+                    accessibilityRole='button'
+                    accessibilitylabel="Don't allow tracking"
+                  >
+                    <Text style={styles.modalButtonCancelText}>Don't Allow</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalButtonSubmit]}
+                    onPress={() => handleTrackingConsentAnswer(true)}
+                    accessibilityRole='button'
+                    accessibilitylabel='Allow tracking'
+                  >
+                    <Text style={styles.modalButtonSubmitText}>Allow</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </Modal>
