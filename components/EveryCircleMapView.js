@@ -54,6 +54,28 @@ function regionFromCenter(mapCenter) {
   };
 }
 
+function regionFromBusinesses(businesses) {
+  if (!businesses.length) {
+    return regionFromCenter(null);
+  }
+
+  const lats = businesses.map((b) => b.business_latitude);
+  const lngs = businesses.map((b) => b.business_longitude);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const latDelta = Math.max((maxLat - minLat) * 1.4, DEFAULT_MAP_REGION_DELTA);
+  const lngDelta = Math.max((maxLng - minLng) * 1.4, DEFAULT_MAP_REGION_DELTA);
+
+  return {
+    latitude: (minLat + maxLat) / 2,
+    longitude: (minLng + maxLng) / 2,
+    latitudeDelta: latDelta,
+    longitudeDelta: lngDelta,
+  };
+}
+
 function BusinessMapMarker() {
   return (
     <View style={styles.markerWrap}>
@@ -72,16 +94,21 @@ export default function EveryCircleMapView({
   everyCircleOnly = true,
   fitToBusinesses = false,
   radiusMiles,
+  originMarkerTitle = "Your location",
   onBusinessPress,
 }) {
   const mapRef = useRef(null);
-  const region = useMemo(() => regionFromCenter(mapCenter), [mapCenter]);
+  const region = useMemo(() => {
+    if (mapCenter) return regionFromCenter(mapCenter);
+    if (fitToBusinesses && businesses.length) return regionFromBusinesses(businesses);
+    return regionFromCenter(null);
+  }, [mapCenter, businesses, fitToBusinesses]);
 
   useEffect(() => {
-    if (!mapRef.current || !mapCenter) return;
+    if (!mapRef.current) return;
 
     if (fitToBusinesses) {
-      if (radiusMiles != null) {
+      if (radiusMiles != null && mapCenter) {
         if (radiusMiles === 0) {
           mapRef.current.animateToRegion(region, 400);
           return;
@@ -102,15 +129,24 @@ export default function EveryCircleMapView({
         return;
       }
 
-      // null radius = ∞: fit to world corners so the entire map is visible
+      if (businesses.length) {
+        mapRef.current.fitToCoordinates(
+          businesses.map((b) => ({ latitude: b.business_latitude, longitude: b.business_longitude })),
+          { edgePadding: { top: 24, right: 24, bottom: 24, left: 24 }, animated: true },
+        );
+        return;
+      }
+
       mapRef.current.fitToCoordinates(
         [{ latitude: 75, longitude: -175 }, { latitude: -75, longitude: 175 }],
-        { edgePadding: { top: 16, right: 16, bottom: 16, left: 16 }, animated: true }
+        { edgePadding: { top: 16, right: 16, bottom: 16, left: 16 }, animated: true },
       );
       return;
     }
 
-    mapRef.current.animateToRegion(region, 400);
+    if (mapCenter) {
+      mapRef.current.animateToRegion(region, 400);
+    }
   }, [businesses, fitToBusinesses, mapCenter, region, radiusMiles]);
 
   return (
@@ -123,7 +159,7 @@ export default function EveryCircleMapView({
       {mapCenter && (
         <Marker
           coordinate={{ latitude: mapCenter.lat, longitude: mapCenter.lng }}
-          title="Your location"
+          title={originMarkerTitle}
           pinColor="#2434C2"
         />
       )}

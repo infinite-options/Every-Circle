@@ -897,6 +897,10 @@ export default function App() {
               </View>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity style={styles.privacyLink} onPress={() => navigation.navigate("PrivacyPolicy")} activeOpacity={0.7}>
+            <Text style={styles.privacyLinkText}>Privacy Policy</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -1015,7 +1019,7 @@ export default function App() {
     const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap"];
 
     // Allowed screens when terms are not accepted
-    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
+    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions", "PrivacyPolicy", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
 
     // If cookies not allowed and trying to access any screen except Settings
     if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
@@ -1222,6 +1226,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     textAlign: "center",
+  },
+  privacyLink: {
+    marginTop: 12,
+    paddingVertical: 8,
+    alignSelf: "center",
+  },
+  privacyLinkText: {
+    color: "#2434C2",
+    fontSize: 13,
+    textAlign: "center",
+    textDecorationLine: "underline",
   },
   welcomeText: {
     fontSize: 36,

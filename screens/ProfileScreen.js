@@ -68,6 +68,7 @@ import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 import FlagOfferingModal from "../components/FlagOfferingModal";
 import FlagSeekingModal from "../components/FlagSeekingModal";
 import FlagProfileModal from "../components/FlagProfileModal";
+import FindSeekersModal from "../components/FindSeekersModal";
 import OfferingModerationBanner from "../components/OfferingModerationBanner";
 import SeekingModerationBanner from "../components/SeekingModerationBanner";
 import BusinessModerationBanner from "../components/BusinessModerationBanner";
@@ -274,6 +275,7 @@ const ProfileScreen = ({ route, navigation }) => {
   const [offeringCartModalItem, setOfferingCartModalItem] = useState(null);
   const [flagModalOffering, setFlagModalOffering] = useState(null);
   const [flagModalSeeking, setFlagModalSeeking] = useState(null);
+  const [findSeekersOffering, setFindSeekersOffering] = useState(null);
   const [showFlagProfileModal, setShowFlagProfileModal] = useState(false);
   const [isAdminViewer, setIsAdminViewer] = useState(false);
   const [showRelationshipDropdown, setShowRelationshipDropdown] = useState(false);
@@ -2073,6 +2075,23 @@ const ProfileScreen = ({ route, navigation }) => {
                           <OfferingCardDetails offering={exp} darkMode={darkMode} metaTextStyle={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]} />
                         </>
                       );
+                      const findSeekersBtn =
+                        isCurrentUserProfile && !offeringModeratedBlocked ? (
+                          <TouchableOpacity
+                            style={[styles.findSeekersButton, darkMode && styles.darkFindSeekersButton]}
+                            activeOpacity={0.75}
+                            onPress={() =>
+                              setFindSeekersOffering({
+                                title: sanitizeText(exp.name) || sanitizeText(exp.profile_expertise_title) || "",
+                              })
+                            }
+                            accessibilityRole='button'
+                            accessibilityLabel='Find people seeking this offering'
+                          >
+                            <Ionicons name='people-outline' size={14} color={darkMode ? "#e8d4ff" : "#5B2C8A"} style={{ marginRight: 5 }} />
+                            <Text style={[styles.findSeekersButtonText, darkMode && styles.darkFindSeekersButtonText]}>Find seekers</Text>
+                          </TouchableOpacity>
+                        ) : null;
                       const messageAboutOfferingBtn =
                         routeProfileUID && !isCurrentUserProfile && !offeringModeratedBlocked ? (
                           <View style={styles.offeringActionRow}>
@@ -2173,6 +2192,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       return (
                         <View key={offeringUid || index} ref={assignOfferingCardRef} collapsable={false} style={cardShellStyle}>
                           {offeringBody}
+                          {findSeekersBtn}
                           {messageAboutOfferingBtn}
                         </View>
                       );
@@ -2916,6 +2936,13 @@ const ProfileScreen = ({ route, navigation }) => {
       />
       <FlagOfferingModal visible={flagModalOffering != null} onClose={() => setFlagModalOffering(null)} targetUid={flagModalOffering?.uid} offeringTitle={flagModalOffering?.title} />
       <FlagSeekingModal visible={flagModalSeeking != null} onClose={() => setFlagModalSeeking(null)} targetUid={flagModalSeeking?.uid} seekingTitle={flagModalSeeking?.title} />
+      <FindSeekersModal
+        visible={findSeekersOffering != null}
+        onClose={() => setFindSeekersOffering(null)}
+        offeringTitle={findSeekersOffering?.title}
+        excludeProfileUid={profileUID}
+        navigation={navigation}
+      />
       <FlagProfileModal
         visible={showFlagProfileModal}
         onClose={() => setShowFlagProfileModal(false)}
@@ -3276,6 +3303,30 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 12,
+  },
+  findSeekersButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    marginTop: 10,
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#C9A9E8",
+    backgroundColor: "rgba(156, 69, 247, 0.08)",
+  },
+  darkFindSeekersButton: {
+    borderColor: "#6B4A8A",
+    backgroundColor: "rgba(156, 69, 247, 0.18)",
+  },
+  findSeekersButtonText: {
+    color: "#5B2C8A",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  darkFindSeekersButtonText: {
+    color: "#e8d4ff",
   },
   offeringActionRow: {
     flexDirection: "row",

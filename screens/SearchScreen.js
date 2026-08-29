@@ -13,6 +13,7 @@ import {
   Dimensions,
   Image,
   Platform,
+  Modal,
   useWindowDimensions,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -20,6 +21,7 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useTabRefresh } from "../hooks/useTabRefresh";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
+import WebTextInput from "../components/WebTextInput";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { sanitizeEmptyStrings } from "../utils/endpointDataChecker";
 import {
@@ -64,7 +66,21 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import { mapBusinessToMiniCard, mapBusinessToMicroCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
-import { searchReferralProfiles, loadReferralNetworkByUid, mapReferralProfileToSearchItem, enrichSearchItemsWithReferralRelationships } from "../utils/searchReferralProfiles";
+import {
+  searchReferralProfiles,
+  loadReferralNetworkByUid,
+  mapReferralProfileToSearchItem,
+  enrichSearchItemsWithReferralRelationships,
+  applyIndividualSearchFilters,
+  normalizeIndividualCircleFilter,
+  getIndividualCircleFilterLabel,
+  getIndividualDateFilterLabel,
+  hasActiveIndividualDateFilter,
+  parseIndividualFilterDate,
+  formatIndividualFilterDateLabel,
+  toIndividualFilterYmd,
+  INDIVIDUAL_CIRCLE_FILTER_OPTIONS,
+} from "../utils/searchReferralProfiles";
 import { consumeSearchResultsStaleFlag } from "../utils/clearAppAsyncStorage";
 import {
   SEARCH_LOCATION_ANY,
@@ -81,6 +97,15 @@ import {
 import { getCitySuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
+
+let DateTimePicker = null;
+if (Platform.OS !== "web") {
+  try {
+    DateTimePicker = require("@react-native-community/datetimepicker").default;
+  } catch (e) {
+    console.warn("DateTimePicker not available:", e.message);
+  }
+}
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -951,6 +976,12 @@ export default function SearchScreen({ route }) {
   const [bounty, setBounty] = useState(null);
   const [sortAlphabetical, setSortAlphabetical] = useState(null);
   const [rating, setRating] = useState(null);
+  /** Individuals tab only: multi-select circle relationships (empty = any/all). */
+  const [individualCircleFilter, setIndividualCircleFilter] = useState([]);
+  /** Individuals tab only: filter by circle/connection date (YYYY-MM-DD). */
+  const [individualDateFrom, setIndividualDateFrom] = useState("");
+  const [individualDateTo, setIndividualDateTo] = useState("");
+  const [activeIndividualDatePicker, setActiveIndividualDatePicker] = useState(null);
   const [mapLoading, setMapLoading] = useState(false);
 
   // Multi-select search tabs (businesses / offering / seeking). Global tab hidden for now.
@@ -1277,6 +1308,11 @@ export default function SearchScreen({ route }) {
           if (state.bounty !== undefined) setBounty(state.bounty);
           if (state.sortAlphabetical !== undefined) setSortAlphabetical(state.sortAlphabetical);
           if (state.rating !== undefined) setRating(state.rating);
+          if (state.individualCircleFilter !== undefined) {
+            setIndividualCircleFilter(normalizeIndividualCircleFilter(state.individualCircleFilter));
+          }
+          if (state.individualDateFrom !== undefined) setIndividualDateFrom(state.individualDateFrom || "");
+          if (state.individualDateTo !== undefined) setIndividualDateTo(state.individualDateTo || "");
           if (state.browseAllActive) setBrowseAllActive(true);
           console.log(" Search screen state restored");
           return;
@@ -1570,7 +1606,7 @@ export default function SearchScreen({ route }) {
   const [showGlobalSeeking, setShowGlobalSeeking] = useState(true);
   const [showGlobalIndividuals, setShowGlobalIndividuals] = useState(true);
 
-  const individualsSearchPlaceholder = "Email, location, or name";
+  const individualsSearchPlaceholder = "Name, email, notes, events, location…";
   const defaultSearchPlaceholder = "What are you looking for?";
   const searchInputPlaceholder = selectedSearchTabs.individuals ? individualsSearchPlaceholder : defaultSearchPlaceholder;
 
@@ -1580,6 +1616,12 @@ export default function SearchScreen({ route }) {
       setResults([]);
       setSearchSuggestions([]);
       setShowSearchSuggestions(false);
+    } else {
+      setIndividualCircleFilter([]);
+      setIndividualDateFrom("");
+      setIndividualDateTo("");
+      setActiveIndividualDatePicker(null);
+      setActiveFilterMenu((prev) => (prev === "individualCircle" || prev === "individualDate" ? null : prev));
     }
   }, [selectedSearchTabs.individuals]);
   const distanceOptions = [5, 10, 15, 25, 50, 100];
@@ -1595,6 +1637,9 @@ export default function SearchScreen({ route }) {
   };
 
   const activeFilterCount = useMemo(() => {
+    if (selectedSearchTabs.individuals) {
+      return individualCircleFilter.length + (individualDateFrom ? 1 : 0) + (individualDateTo ? 1 : 0);
+    }
     let count = 0;
     if (isActiveSearchLocation(searchLocation)) count += 1;
     if (distance !== null) count += 1;
@@ -1603,7 +1648,7 @@ export default function SearchScreen({ route }) {
     if (sortAlphabetical !== null) count += 1;
     if (rating !== null) count += 1;
     return count;
-  }, [searchLocation, distance, network, bounty, sortAlphabetical, rating]);
+  }, [selectedSearchTabs.individuals, individualCircleFilter, individualDateFrom, individualDateTo, searchLocation, distance, network, bounty, sortAlphabetical, rating]);
 
   const syncFilterPanelDraft = () => {
     setFilterPanelDraft({
@@ -1677,6 +1722,12 @@ export default function SearchScreen({ route }) {
   }, []);
 
   const handleFilterIconPress = () => {
+    if (selectedSearchTabs.individuals) {
+      setShowFilters((prev) => !prev);
+      setShowFilterPanel(false);
+      setActiveFilterMenu(null);
+      return;
+    }
     if (!showFilters) {
       syncFilterPanelDraft();
       setShowFilters(true);
@@ -1845,7 +1896,16 @@ export default function SearchScreen({ route }) {
   const businessSectionResultsAll = results.filter((item) => (item?.itemType || "businesses") === "businesses");
   const offeringSectionResultsAll = results.filter((item) => item?.itemType === "expertise");
   const seekingSectionResultsAll = results.filter((item) => item?.itemType === "seeking");
-  const individualsSectionResults = results.filter((item) => item?.itemType === "individuals");
+  const individualsSectionResults = applyIndividualSearchFilters(
+    results.filter((item) => item?.itemType === "individuals"),
+    {
+      circleFilter: individualCircleFilter,
+      dateFrom: individualDateFrom,
+      dateTo: individualDateTo,
+    },
+  );
+  const individualFiltersActive =
+    individualCircleFilter.length > 0 || hasActiveIndividualDateFilter(individualDateFrom, individualDateTo);
 
   // Keep all strong matches, but guarantee at least four visible results across
   // the selected tabs by backfilling with the highest-ranked weaker matches.
@@ -1965,14 +2025,31 @@ export default function SearchScreen({ route }) {
       return;
     }
 
+    let originHomeCoords = userHomeCoords;
+    if (searchLocation === SEARCH_LOCATION_HOME) {
+      const freshCoords = await loadUserHomeCoords();
+      if (freshCoords?.lat != null && freshCoords?.lng != null) {
+        originHomeCoords = freshCoords;
+      }
+    }
+
+    const searchOriginCoords = isSearchLocationAny(searchLocation)
+      ? null
+      : resolveSearchLocationCoords(searchLocation, originHomeCoords, customSearchCity);
+
     navigation.navigate("EveryCircleMap", {
       fromSearch: true,
       searchQuery: searchQuery.trim(),
       searchMapBusinesses: mapMarkers,
       searchResultCount: visibleResults.length,
       selectedSearchTabs,
+      searchOriginCoords:
+        searchOriginCoords?.lat != null && searchOriginCoords?.lng != null ? searchOriginCoords : null,
+      searchOriginLabel: isSearchLocationAny(searchLocation)
+        ? null
+        : getSearchLocationFullLabel(searchLocation, customSearchCity),
     });
-  }, [businessSectionResults, navigation, offeringSectionResults, results, searchQuery, seekingSectionResults, selectedSearchTabs]);
+  }, [businessSectionResults, customSearchCity, loadUserHomeCoords, navigation, offeringSectionResults, searchLocation, searchQuery, seekingSectionResults, selectedSearchTabs, userHomeCoords]);
   /** Append origin coords and max_distance when a radius filter is active. */
   const appendLocationSearchParams = (baseUrl, { distanceMiles, coords }) => {
     let apiUrl = baseUrl;
@@ -2785,6 +2862,80 @@ export default function SearchScreen({ route }) {
     </View>
   );
 
+  const renderIndividualDateFilterBody = () => (
+    <View style={styles.individualDateFilterBody}>
+      <Text style={[styles.filterPanelHint, darkMode && styles.darkFilterPanelHint]}>
+        Filters by circle date when you are connected, otherwise profile join date.
+      </Text>
+      <View style={styles.individualDateFilterBlock}>
+        <Text style={[styles.individualDateFilterLabel, darkMode && styles.darkIndividualDateFilterLabel]}>After</Text>
+        <View
+          style={[
+            styles.individualDateFilterField,
+            darkMode && styles.darkIndividualDateFilterField,
+            individualDateFrom ? styles.individualDateFilterFieldActive : null,
+          ]}
+        >
+          {Platform.OS === "web" ? (
+            <WebTextInput
+              style={[styles.individualDateFilterInput, darkMode && styles.darkIndividualDateFilterInput]}
+              type='date'
+              value={individualDateFrom}
+              onChangeText={setIndividualDateFrom}
+              borderless
+              accessibilitylabel='After date'
+              aria-label='After date'
+            />
+          ) : (
+            <TouchableOpacity style={styles.individualDateFilterNativeHit} onPress={() => setActiveIndividualDatePicker("from")} activeOpacity={0.7}>
+              <Text style={[styles.individualDateFilterInput, darkMode && styles.darkIndividualDateFilterInput, !individualDateFrom && styles.individualDateFilterPlaceholder]}>
+                {formatIndividualFilterDateLabel(individualDateFrom)}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {individualDateFrom ? (
+            <TouchableOpacity onPress={() => setIndividualDateFrom("")} style={styles.individualDateFilterClear} accessibilityLabel='Clear after date'>
+              <Ionicons name='close-circle' size={18} color={darkMode ? "#aaa" : "#666"} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+      <View style={styles.individualDateFilterBlock}>
+        <Text style={[styles.individualDateFilterLabel, darkMode && styles.darkIndividualDateFilterLabel]}>Before</Text>
+        <View
+          style={[
+            styles.individualDateFilterField,
+            darkMode && styles.darkIndividualDateFilterField,
+            individualDateTo ? styles.individualDateFilterFieldActive : null,
+          ]}
+        >
+          {Platform.OS === "web" ? (
+            <WebTextInput
+              style={[styles.individualDateFilterInput, darkMode && styles.darkIndividualDateFilterInput]}
+              type='date'
+              value={individualDateTo}
+              onChangeText={setIndividualDateTo}
+              borderless
+              accessibilitylabel='Before date'
+              aria-label='Before date'
+            />
+          ) : (
+            <TouchableOpacity style={styles.individualDateFilterNativeHit} onPress={() => setActiveIndividualDatePicker("to")} activeOpacity={0.7}>
+              <Text style={[styles.individualDateFilterInput, darkMode && styles.darkIndividualDateFilterInput, !individualDateTo && styles.individualDateFilterPlaceholder]}>
+                {formatIndividualFilterDateLabel(individualDateTo)}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {individualDateTo ? (
+            <TouchableOpacity onPress={() => setIndividualDateTo("")} style={styles.individualDateFilterClear} accessibilityLabel='Clear before date'>
+              <Ionicons name='close-circle' size={18} color={darkMode ? "#aaa" : "#666"} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+
   const renderActiveFilterMenu = () => {
     if (!activeFilterMenu) return null;
 
@@ -2886,6 +3037,22 @@ export default function SearchScreen({ route }) {
           ),
         ),
       ];
+    } else if (activeFilterMenu === "individualCircle") {
+      const toggleCircle = (key) => {
+        setIndividualCircleFilter((prev) => {
+          const current = normalizeIndividualCircleFilter(prev);
+          if (current.includes(key)) return current.filter((k) => k !== key);
+          return [...current, key];
+        });
+      };
+      chips = [
+        renderFilterChip("Any", individualCircleFilter.length === 0, () => setIndividualCircleFilter([]), "circle-any"),
+        ...INDIVIDUAL_CIRCLE_FILTER_OPTIONS.map((opt) =>
+          renderFilterChip(opt.label, individualCircleFilter.includes(opt.key), () => toggleCircle(opt.key), `circle-${opt.key}`),
+        ),
+      ];
+    } else if (activeFilterMenu === "individualDate") {
+      customBody = renderIndividualDateFilterBody();
     }
 
     const menuTitles = {
@@ -2895,6 +3062,8 @@ export default function SearchScreen({ route }) {
       bounty: "Bounty sort",
       sort: "Alphabetical",
       rating: "Minimum rating",
+      individualCircle: "Circles",
+      individualDate: "Date",
     };
 
     return (
@@ -2906,6 +3075,12 @@ export default function SearchScreen({ route }) {
         ]}
       >
         <Text style={[styles.filterInlineMenuTitle, darkMode && styles.darkFilterInlineMenuTitle]}>{menuTitles[activeFilterMenu]}</Text>
+        {activeFilterMenu === "individualCircle" ? (
+          <Text style={[styles.filterPanelHint, darkMode && styles.darkFilterPanelHint]}>Select one or more</Text>
+        ) : null}
+        {activeFilterMenu === "individualDate" ? (
+          <Text style={[styles.filterPanelHint, darkMode && styles.darkFilterPanelHint]}>Pick an after and/or before date</Text>
+        ) : null}
         {customBody ? (
           <ScrollView
             style={styles.filterInlineMenuScroll}
@@ -3076,6 +3251,9 @@ export default function SearchScreen({ route }) {
     bounty,
     sortAlphabetical,
     rating,
+    individualCircleFilter,
+    individualDateFrom,
+    individualDateTo,
     browseAllActive: browseAllActiveRef.current,
   });
 
@@ -3813,6 +3991,58 @@ export default function SearchScreen({ route }) {
             )}
           </View>
 
+          {showFilters && selectedSearchTabs.individuals && (
+            <>
+              <View style={styles.filterButtonsContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterButtonOption,
+                    darkMode && styles.darkFilterButtonOption,
+                    (individualCircleFilter.length > 0 || activeFilterMenu === "individualCircle") && styles.activeFilterButton,
+                    darkMode && (individualCircleFilter.length > 0 || activeFilterMenu === "individualCircle") && styles.darkActiveFilterButton,
+                  ]}
+                  onPress={() => toggleFilterMenu("individualCircle")}
+                >
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      darkMode && styles.darkFilterButtonText,
+                      (individualCircleFilter.length > 0 || activeFilterMenu === "individualCircle") && styles.activeFilterButtonText,
+                      darkMode && (individualCircleFilter.length > 0 || activeFilterMenu === "individualCircle") && styles.darkActiveFilterButtonText,
+                    ]}
+                  >
+                    {getIndividualCircleFilterLabel(individualCircleFilter)}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.filterButtonOption,
+                    darkMode && styles.darkFilterButtonOption,
+                    (hasActiveIndividualDateFilter(individualDateFrom, individualDateTo) || activeFilterMenu === "individualDate") && styles.activeFilterButton,
+                    darkMode &&
+                      (hasActiveIndividualDateFilter(individualDateFrom, individualDateTo) || activeFilterMenu === "individualDate") &&
+                      styles.darkActiveFilterButton,
+                  ]}
+                  onPress={() => toggleFilterMenu("individualDate")}
+                >
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      darkMode && styles.darkFilterButtonText,
+                      (hasActiveIndividualDateFilter(individualDateFrom, individualDateTo) || activeFilterMenu === "individualDate") && styles.activeFilterButtonText,
+                      darkMode &&
+                        (hasActiveIndividualDateFilter(individualDateFrom, individualDateTo) || activeFilterMenu === "individualDate") &&
+                        styles.darkActiveFilterButtonText,
+                    ]}
+                  >
+                    {getIndividualDateFilterLabel(individualDateFrom, individualDateTo)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {renderActiveFilterMenu()}
+            </>
+          )}
+
           {/* Distance, Network, Bounty, Rating filters */}
           {showFilters && !selectedSearchTabs.individuals && (
             <>
@@ -3961,7 +4191,11 @@ export default function SearchScreen({ route }) {
                       individualsSectionResults.map((item, idx) => renderResultItem(item, idx))
                     ) : showGlobalIndividuals ? (
                       <Text style={[styles.individualsSearchHint, darkMode && styles.darkIndividualsSearchHint]}>
-                        {searchQuery.trim().length < 2 ? "Search by email, city, state, or name (at least 2 characters)." : "No individuals found. Try another spelling, city, or email."}
+                        {searchQuery.trim().length < 2
+                          ? "Search by name, email, city, notes, events, introduced by, and more (at least 2 characters)."
+                          : individualFiltersActive && results.some((item) => item?.itemType === "individuals")
+                            ? "No matches for your filters. Clear filters or try another search."
+                            : "No individuals found. Try another spelling, city, or email."}
                       </Text>
                     ) : null}
                   </>
@@ -4027,6 +4261,62 @@ export default function SearchScreen({ route }) {
 
         {/* Bottom Navigation Bar */}
         <BottomNavBar navigation={navigation} />
+        {activeIndividualDatePicker != null && (
+          <Modal visible transparent animationType='fade' onRequestClose={() => setActiveIndividualDatePicker(null)}>
+            <TouchableOpacity style={styles.individualDatePickerOverlay} activeOpacity={1} onPress={() => setActiveIndividualDatePicker(null)}>
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={(e) => e.stopPropagation()}
+                style={[styles.individualDatePickerSheet, darkMode && styles.darkIndividualDatePickerSheet]}
+              >
+                <Text style={[styles.individualDatePickerTitle, darkMode && styles.darkIndividualDatePickerTitle]}>
+                  {activeIndividualDatePicker === "from" ? "After date" : "Before date"}
+                </Text>
+                {Platform.OS === "web" ? (
+                  <WebTextInput
+                    style={[styles.individualDateFilterInput, darkMode && styles.darkIndividualDateFilterInput]}
+                    type='date'
+                    value={activeIndividualDatePicker === "from" ? individualDateFrom : individualDateTo}
+                    onChangeText={(v) => {
+                      if (activeIndividualDatePicker === "from") setIndividualDateFrom(v);
+                      else setIndividualDateTo(v);
+                    }}
+                    borderless
+                    accessibilitylabel={activeIndividualDatePicker === "from" ? "After date" : "Before date"}
+                  />
+                ) : DateTimePicker ? (
+                  <DateTimePicker
+                    value={parseIndividualFilterDate(activeIndividualDatePicker === "from" ? individualDateFrom : individualDateTo) || new Date()}
+                    mode='date'
+                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    onChange={(_, selectedDate) => {
+                      if (Platform.OS === "android") setActiveIndividualDatePicker(null);
+                      if (!selectedDate) return;
+                      const ymd = toIndividualFilterYmd(selectedDate);
+                      if (activeIndividualDatePicker === "from") setIndividualDateFrom(ymd);
+                      else setIndividualDateTo(ymd);
+                    }}
+                  />
+                ) : (
+                  <WebTextInput
+                    style={[styles.individualDateFilterInput, darkMode && styles.darkIndividualDateFilterInput]}
+                    value={activeIndividualDatePicker === "from" ? individualDateFrom : individualDateTo}
+                    onChangeText={(v) => {
+                      if (activeIndividualDatePicker === "from") setIndividualDateFrom(v);
+                      else setIndividualDateTo(v);
+                    }}
+                    placeholder='YYYY-MM-DD'
+                    placeholderTextColor={darkMode ? "#666" : "#999"}
+                    borderless
+                  />
+                )}
+                <TouchableOpacity style={styles.individualDatePickerDone} onPress={() => setActiveIndividualDatePicker(null)}>
+                  <Text style={styles.individualDatePickerDoneText}>Done</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </Modal>
+        )}
         <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Search' instructions={searchFeedbackInstructions} questions={searchFeedbackQuestions} />
       </SafeAreaView>
     </View>
@@ -4600,6 +4890,107 @@ const styles = StyleSheet.create({
   },
   darkFilterPanelHint: {
     color: "#999",
+  },
+  individualDateFilterBody: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  individualDateFilterBlock: {
+    width: "100%",
+  },
+  individualDateFilterLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#444",
+    marginBottom: 6,
+  },
+  darkIndividualDateFilterLabel: {
+    color: "#ddd",
+  },
+  individualDateFilterField: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#fff",
+  },
+  darkIndividualDateFilterField: {
+    backgroundColor: "#333",
+    borderColor: "#555",
+  },
+  individualDateFilterFieldActive: {
+    borderColor: "#4F8A8B",
+  },
+  individualDateFilterInput: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 14,
+    color: "#333",
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+  },
+  darkIndividualDateFilterInput: {
+    color: "#fff",
+  },
+  individualDateFilterPlaceholder: {
+    color: "#999",
+  },
+  individualDateFilterNativeHit: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: "center",
+  },
+  individualDateFilterClear: {
+    marginLeft: 8,
+    padding: 2,
+  },
+  individualDatePickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  individualDatePickerSheet: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e0e4f7",
+    backgroundColor: "#fff",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  darkIndividualDatePickerSheet: {
+    backgroundColor: "#1e1e2e",
+    borderColor: "#3a3a5c",
+  },
+  individualDatePickerTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 10,
+    alignSelf: "stretch",
+    textAlign: "center",
+    color: "#1a1a2e",
+  },
+  darkIndividualDatePickerTitle: {
+    color: "#e8eaf6",
+  },
+  individualDatePickerDone: {
+    alignSelf: "center",
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+  },
+  individualDatePickerDoneText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#4F8A8B",
   },
   filterPanelActions: {
     flexDirection: "row",

@@ -137,6 +137,8 @@ export default function EveryCircleMapScreen() {
   const searchQuery = route.params?.searchQuery || "";
   const searchResultCount = route.params?.searchResultCount ?? null;
   const searchMapBusinesses = route.params?.searchMapBusinesses;
+  const searchOriginCoords = route.params?.searchOriginCoords;
+  const searchOriginLabel = route.params?.searchOriginLabel || null;
   const searchType = route.params?.searchType || "businesses";
 
   const [businesses, setBusinesses] = useState([]);
@@ -164,16 +166,18 @@ export default function EveryCircleMapScreen() {
       setLoading(true);
       setError(null);
       try {
-        const homeCoords = await resolveMapHomeCoords();
-
         if (fromSearch && Array.isArray(searchMapBusinesses)) {
+          const origin =
+            searchOriginCoords?.lat != null && searchOriginCoords?.lng != null ? searchOriginCoords : null;
           if (!cancelled) {
             setBusinesses(searchMapBusinesses);
-            setMapCenter({ lat: homeCoords.lat, lng: homeCoords.lng });
-            setHomeLocationSource(homeCoords.source);
+            setMapCenter(origin ? { lat: origin.lat, lng: origin.lng } : null);
+            setHomeLocationSource(origin ? "search" : null);
           }
           return;
         }
+
+        const homeCoords = await resolveMapHomeCoords();
 
         const businessResponse = await fetch(BUSINESS_MAP_ENDPOINT);
         const json = await businessResponse.json();
@@ -206,7 +210,7 @@ export default function EveryCircleMapScreen() {
     return () => {
       cancelled = true;
     };
-  }, [fromSearch, searchMapBusinesses]);
+  }, [fromSearch, searchMapBusinesses, searchOriginCoords]);
 
   const handleBack = useCallback(() => {
     if (fromSearch) {
@@ -235,14 +239,12 @@ export default function EveryCircleMapScreen() {
     setError(null);
 
     if (fromSearch && Array.isArray(searchMapBusinesses)) {
-      resolveMapHomeCoords()
-        .then((homeCoords) => {
-          setBusinesses(searchMapBusinesses);
-          setMapCenter({ lat: homeCoords.lat, lng: homeCoords.lng });
-          setHomeLocationSource(homeCoords.source);
-        })
-        .catch((err) => setError(err.message || "Could not load map data."))
-        .finally(() => setLoading(false));
+      const origin =
+        searchOriginCoords?.lat != null && searchOriginCoords?.lng != null ? searchOriginCoords : null;
+      setBusinesses(searchMapBusinesses);
+      setMapCenter(origin ? { lat: origin.lat, lng: origin.lng } : null);
+      setHomeLocationSource(origin ? "search" : null);
+      setLoading(false);
       return;
     }
 
@@ -258,12 +260,16 @@ export default function EveryCircleMapScreen() {
       })
       .catch((err) => setError(err.message || "Could not load businesses for the map."))
       .finally(() => setLoading(false));
-  }, [fromSearch, searchMapBusinesses]);
+  }, [fromSearch, searchMapBusinesses, searchOriginCoords]);
 
   const homeLocationLabel =
-    homeLocationSource === "profile"
-      ? "Centered on your home location"
-      : `Centered on ${MAP_PLACEHOLDER_HOME.label}`;
+    homeLocationSource === "search" && searchOriginLabel
+      ? `Starting point: ${searchOriginLabel}`
+      : homeLocationSource === "profile"
+        ? "Centered on your home location"
+        : `Centered on ${MAP_PLACEHOLDER_HOME.label}`;
+
+  const showOriginMarker = mapCenter != null;
 
   const itemLabel = searchType === "expertise" ? "offering" : searchType === "seeking" ? "seeking result" : "business";
   const itemLabelPlural = searchType === "expertise" ? "offerings" : searchType === "seeking" ? "seeking results" : "businesses";
@@ -308,18 +314,24 @@ export default function EveryCircleMapScreen() {
         <Text style={[styles.summaryText, darkMode && styles.summaryTextDark]}>
           {summaryLabel}
         </Text>
-        {!loading && mapCenter && (
+        {!loading && (mapCenter || fromSearch) && (
           <Text style={[styles.subtleText, darkMode && styles.summaryTextDark]}>
             {fromSearch
-              ? "Showing your current search results. " + homeLocationLabel.toLowerCase()
+              ? showOriginMarker
+                ? `Showing your current search results. ${homeLocationLabel}.`
+                : "Showing your current search results."
               : homeLocationLabel}
           </Text>
         )}
         <View style={styles.legendRow}>
-          <View style={styles.legendDotHome} />
-          <Text style={[styles.legendText, darkMode && styles.summaryTextDark]}>
-            Your location
-          </Text>
+          {showOriginMarker && (
+            <>
+              <View style={styles.legendDotHome} />
+              <Text style={[styles.legendText, darkMode && styles.summaryTextDark]}>
+                {fromSearch ? "Search location" : "Your location"}
+              </Text>
+            </>
+          )}
           <View style={styles.legendMarkerWrap}>
             <Image
               source={MAP_MARKER_IMAGE}
@@ -392,13 +404,14 @@ export default function EveryCircleMapScreen() {
         </View>
       ) : (
         <View style={styles.mapWrap}>
-          {mapCenter && (
+          {(mapCenter || businesses.length > 0) && (
             <EveryCircleMapView
               businesses={filteredBusinesses}
               mapCenter={mapCenter}
               everyCircleOnly={everyCircleOnly}
               fitToBusinesses={fromSearch}
               radiusMiles={fromSearch ? mapRadiusMiles : undefined}
+              originMarkerTitle={fromSearch && showOriginMarker ? "Search location" : "Your location"}
               onBusinessPress={handleBusinessPress}
             />
           )}

@@ -58,16 +58,30 @@ function fitMapToBusinesses(mapsApi, map, businesses, mapCenter, radiusMiles) {
     bounds.extend({ lat: clampLat(mapCenter.lat - dLat), lng: clampLng(mapCenter.lng + dLng) });
     businesses.forEach((b) => bounds.extend({ lat: b.business_latitude, lng: b.business_longitude }));
     map.fitBounds(bounds, 8);
-    // Zoom 2 world = 1024px; any wider viewport duplicates tiles — floor at 3
     if ((map.getZoom() ?? 3) < 3) map.setZoom(3);
     return;
   }
 
-  // null radius = ∞: zoom to world view so all results are visible in global context
+  if (businesses.length) {
+    const bounds = new mapsApi.LatLngBounds();
+    businesses.forEach((b) => bounds.extend({ lat: b.business_latitude, lng: b.business_longitude }));
+    map.fitBounds(bounds, 24);
+    return;
+  }
+
   if (mapCenter) {
     map.setCenter({ lat: mapCenter.lat, lng: mapCenter.lng });
   }
   map.setZoom(3);
+}
+
+function centerFromBusinesses(businesses, fallbackCenter) {
+  if (!businesses.length) {
+    return fallbackCenter || { lat: 37.7893, lng: -122.3966 };
+  }
+  const lat = businesses.reduce((sum, b) => sum + b.business_latitude, 0) / businesses.length;
+  const lng = businesses.reduce((sum, b) => sum + b.business_longitude, 0) / businesses.length;
+  return { lat, lng };
 }
 
 function addBusinessMarkers(
@@ -157,6 +171,7 @@ export default function EveryCircleMapView({
   everyCircleOnly = true,
   fitToBusinesses = false,
   radiusMiles,
+  originMarkerTitle = "Your location",
   onBusinessPress,
 }) {
   const hostRef = useRef(null);
@@ -168,6 +183,11 @@ export default function EveryCircleMapView({
   const fitToBusinessesRef = useRef(fitToBusinesses);
   const mapCenterRef = useRef(mapCenter);
   const radiusMilesRef = useRef(radiusMiles);
+  const originMarkerTitleRef = useRef(originMarkerTitle);
+
+  useEffect(() => {
+    originMarkerTitleRef.current = originMarkerTitle;
+  }, [originMarkerTitle]);
 
   useEffect(() => {
     onBusinessPressRef.current = onBusinessPress;
@@ -186,8 +206,6 @@ export default function EveryCircleMapView({
   }, [radiusMiles]);
 
   useEffect(() => {
-    if (!mapCenter) return;
-
     let cancelled = false;
 
     async function initMap() {
@@ -196,7 +214,9 @@ export default function EveryCircleMapView({
       const mapsApi = await loadGoogleMapsJs();
       if (cancelled || !hostRef.current) return;
 
-      const center = { lat: mapCenter.lat, lng: mapCenter.lng };
+      const center = mapCenter
+        ? { lat: mapCenter.lat, lng: mapCenter.lng }
+        : centerFromBusinesses(businesses);
       const map = new mapsApi.Map(hostRef.current, {
         center,
         zoom: DEFAULT_MAP_ZOOM,
@@ -209,20 +229,22 @@ export default function EveryCircleMapView({
       mapRef.current = map;
       infoWindowRef.current = new mapsApi.InfoWindow();
 
-      homeMarkerRef.current = new mapsApi.Marker({
-        position: center,
-        map,
-        title: "Your location",
-        zIndex: 1000,
-        icon: {
-          path: mapsApi.SymbolPath.CIRCLE,
-          scale: 11,
-          fillColor: HOME_MARKER_COLOR,
-          fillOpacity: 1,
-          strokeColor: "#ffffff",
-          strokeWeight: 3,
-        },
-      });
+      if (mapCenter) {
+        homeMarkerRef.current = new mapsApi.Marker({
+          position: center,
+          map,
+          title: originMarkerTitleRef.current,
+          zIndex: 1000,
+          icon: {
+            path: mapsApi.SymbolPath.CIRCLE,
+            scale: 11,
+            fillColor: HOME_MARKER_COLOR,
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 3,
+          },
+        });
+      }
 
       await addBusinessMarkers(
         mapsApi,
@@ -255,17 +277,47 @@ export default function EveryCircleMapView({
   }, []);
 
   useEffect(() => {
-    if (!mapRef.current || !mapCenter) return;
+    if (!mapRef.current) return;
 
-    const center = { lat: mapCenter.lat, lng: mapCenter.lng };
-    if (homeMarkerRef.current) {
-      homeMarkerRef.current.setPosition(center);
-    }
-    if (!fitToBusinessesRef.current) {
-      mapRef.current.setCenter(center);
-      mapRef.current.setZoom(DEFAULT_MAP_ZOOM);
-    }
-  }, [mapCenter]);
+    loadGoogleMapsJs()
+      .then((mapsApi) => {
+        if (!mapRef.current) return;
+
+        if (mapCenter) {
+          const center = { lat: mapCenter.lat, lng: mapCenter.lng };
+          if (homeMarkerRef.current) {
+            homeMarkerRef.current.setPosition(center);
+            homeMarkerRef.current.setMap(mapRef.current);
+            homeMarkerRef.current.setTitle(originMarkerTitle);
+          } else {
+            homeMarkerRef.current = new mapsApi.Marker({
+              position: center,
+              map: mapRef.current,
+              title: originMarkerTitle,
+              zIndex: 1000,
+              icon: {
+                path: mapsApi.SymbolPath.CIRCLE,
+                scale: 11,
+                fillColor: HOME_MARKER_COLOR,
+                fillOpacity: 1,
+                strokeColor: "#ffffff",
+                strokeWeight: 3,
+              },
+            });
+          }
+          if (!fitToBusinessesRef.current) {
+            mapRef.current.setCenter(center);
+            mapRef.current.setZoom(DEFAULT_MAP_ZOOM);
+          }
+        } else if (homeMarkerRef.current) {
+          homeMarkerRef.current.setMap(null);
+          homeMarkerRef.current = null;
+        }
+      })
+      .catch((err) => {
+        console.error("EveryCircleMapView web origin marker update failed:", err);
+      });
+  }, [mapCenter, originMarkerTitle]);
 
   useEffect(() => {
     if (!mapRef.current) return;
