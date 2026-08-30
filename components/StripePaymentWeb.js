@@ -5,9 +5,9 @@ import { useElements, useStripe, CardElement, Elements } from "@stripe/react-str
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { CREATE_PAYMENT_INTENT_ENDPOINT } from "../apiConfig";
-import { stripeEnvironmentForBusinessCode } from "../utils/stripePublishableKey";
+import { stripeEnvironmentForBusinessCode, normalizeTransactionBuyerNote } from "../utils/stripePublishableKey";
 
-const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, show, setShow, submit, onError }) => {
+const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, transactionBuyerNote, show, setShow, submit, onError }) => {
   const { darkMode } = useDarkMode();
   const [showSpinner, setShowSpinner] = useState(false);
   const elements = useElements();
@@ -41,6 +41,7 @@ const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, s
       const paymentData = {
         customer_uid: paidBy,
         business_code: businessCode,
+        transaction_buyer_note: normalizeTransactionBuyerNote(transactionBuyerNote),
         payment_summary: {
           total: parseFloat(amount),
         },
@@ -236,7 +237,7 @@ const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, s
 };
 
 // Wrapper component that provides Elements context
-const StripePaymentWeb = ({ message, amount, paidBy, payeeBusinessName, show, setShow, submit, onError, stripePromise }) => {
+const StripePaymentWeb = ({ message, amount, paidBy, payeeBusinessName, transactionBuyerNote, show, setShow, submit, onError, stripePromise }) => {
   if (!stripePromise) {
     return null;
   }
@@ -248,6 +249,7 @@ const StripePaymentWeb = ({ message, amount, paidBy, payeeBusinessName, show, se
         amount={amount}
         paidBy={paidBy}
         payeeBusinessName={payeeBusinessName}
+        transactionBuyerNote={transactionBuyerNote}
         show={show}
         setShow={setShow}
         submit={submit}

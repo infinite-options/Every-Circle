@@ -6,6 +6,26 @@ export function defaultStripeBusinessCode() {
   return __DEV__ ? "ECTEST" : "EC";
 }
 
+/** Max length for transaction_buyer_note (matches BE column). */
+export const TRANSACTION_BUYER_NOTE_MAX_LENGTH = 500;
+
+/**
+ * Buyer checkout note selects which Stripe account to charge (IO-Payments business_code).
+ * Only the exact note "ECTEST" (all caps) selects the test account; anything else → EC (live).
+ */
+export function resolveCheckoutBusinessCode(buyerNote) {
+  const n = String(buyerNote ?? "").trim();
+  if (n === "ECTEST") return "ECTEST";
+  return "EC";
+}
+
+/** Trim and cap buyer note before sending to APIs. */
+export function normalizeTransactionBuyerNote(buyerNote) {
+  return String(buyerNote ?? "")
+    .trim()
+    .slice(0, TRANSACTION_BUYER_NOTE_MAX_LENGTH);
+}
+
 /**
  * Normalize business_code for stripe_key URL path and createPaymentIntent / createRefund.
  * EC and ECTEST use Every-Circle Stripe keys; PM / PMTEST remain for legacy refunds if needed.

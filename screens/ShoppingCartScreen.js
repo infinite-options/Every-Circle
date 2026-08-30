@@ -23,7 +23,12 @@ if (!isWeb) {
 
 import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
-import { defaultStripeBusinessCode, fetchStripePublishableKey } from "../utils/stripePublishableKey";
+import {
+  resolveCheckoutBusinessCode,
+  fetchStripePublishableKey,
+  normalizeTransactionBuyerNote,
+  TRANSACTION_BUYER_NOTE_MAX_LENGTH,
+} from "../utils/stripePublishableKey";
 import StripeNativeProvider from "../components/StripeNativeProvider";
 
 // Web Stripe imports (only load on web)
@@ -475,7 +480,13 @@ async function fetchUseableWalletBalance(profileUid) {
   }
 }
 
-const ShoppingCartScreenContent = ({ route, navigation }) => {
+const ShoppingCartScreenContent = ({
+  route,
+  navigation,
+  transactionBuyerNote = "",
+  setTransactionBuyerNote = () => {},
+  checkoutBusinessCode = "EC",
+}) => {
   const { cartItems: initialCartItems, businessName, business_uid, recommender_profile_id, returnTo, searchState } = route.params || {};
   const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
   const [useableWalletBalance, setUseableWalletBalance] = useState(0);
@@ -686,7 +697,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         return;
       }
 
-      await loadStripePublicKey(defaultStripeBusinessCode());
+      await loadStripePublicKey(checkoutBusinessCode);
 
       setShowStripePayment(true);
       setLoading(false);
@@ -727,7 +738,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       if ((group.cardCharge || 0) >= 0.01) {
         webCheckoutSessionRef.current = session;
         setWebCheckoutSession(session);
-        await loadStripePublicKey(defaultStripeBusinessCode());
+        await loadStripePublicKey(checkoutBusinessCode);
         setShowStripePayment(true);
         setLoading(false);
         return;
@@ -1004,7 +1015,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     });
   }, [cartItems]);
 
-  const loadStripePublicKey = async (businessCode = defaultStripeBusinessCode()) => {
+  const loadStripePublicKey = async (businessCode = checkoutBusinessCode) => {
     try {
       const publicKey = await fetchStripePublishableKey(businessCode);
       if (loadStripe) {
@@ -1135,9 +1146,11 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       }
       console.log("Creating payment intent for amount:", total);
 
+      const buyerNote = normalizeTransactionBuyerNote(transactionBuyerNote);
       const requestBody = {
         customer_uid: profile_uid,
-        business_code: defaultStripeBusinessCode(),
+        business_code: checkoutBusinessCode,
+        transaction_buyer_note: buyerNote,
         payment_summary: {
           tax: parseFloat(Number(salesTaxTotal).toFixed(2)),
           total: Number(total).toFixed(2),
@@ -1304,6 +1317,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         transactionData.shipping_actual_pending = 1;
         transactionData.shipping_note = "Seller will contact the buyer directly for actual shipping cost.";
       }
+      transactionData.transaction_buyer_note = normalizeTransactionBuyerNote(transactionBuyerNote);
 
       console.log("[ShoppingCart] Transaction POST — each field before endpoint:");
       console.log({
@@ -1766,6 +1780,23 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   {refundError && <Text style={{ color: "#FF3B30", fontSize: 13, marginTop: 6, marginLeft: 34 }}>You must acknowledge the return policy before checking out.</Text>}
                 </View>
               ) : null}
+
+              <View style={styles.buyerNoteCard}>
+                <Text style={styles.buyerNoteTitle}>Transaction notes (optional)</Text>
+                <Text style={styles.buyerNoteHint}>
+                  Add a note for this purchase (up to {TRANSACTION_BUYER_NOTE_MAX_LENGTH} characters). Enter exactly ECTEST as the entire note to use the test Stripe account; any other text uses EC (live).
+                </Text>
+                <TextInput
+                  style={styles.buyerNoteInput}
+                  placeholder='e.g. Gift for Jane'
+                  placeholderTextColor='#aaa'
+                  multiline
+                  maxLength={TRANSACTION_BUYER_NOTE_MAX_LENGTH}
+                  value={transactionBuyerNote}
+                  onChangeText={setTransactionBuyerNote}
+                  textAlignVertical='top'
+                />
+              </View>
             </>
           )}
         </ScrollView>
@@ -1824,11 +1855,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           />
           {stripePromise && customerUid && (
             <StripePayment
-              key={`stripe-pay-${webCheckoutSession?.index ?? 0}-${webStripeAmount}`}
-              message={defaultStripeBusinessCode()}
+              key={`stripe-pay-${webCheckoutSession?.index ?? 0}-${webStripeAmount}-${checkoutBusinessCode}`}
+              message={checkoutBusinessCode}
               amount={webStripeAmount || 0}
               paidBy={customerUid}
               payeeBusinessName={webCheckoutPayeeDisplayName}
+              transactionBuyerNote={transactionBuyerNote}
               show={showStripePayment}
               setShow={setShowStripePayment}
               submit={handleWebPaymentSubmit}
@@ -1852,9 +1884,17 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
 };
 
 export default function ShoppingCartScreen(props) {
+  const [transactionBuyerNote, setTransactionBuyerNote] = useState("");
+  const checkoutBusinessCode = resolveCheckoutBusinessCode(transactionBuyerNote);
+
   return (
-    <StripeNativeProvider businessCode={defaultStripeBusinessCode()}>
-      <ShoppingCartScreenContent {...props} />
+    <StripeNativeProvider businessCode={checkoutBusinessCode}>
+      <ShoppingCartScreenContent
+        {...props}
+        transactionBuyerNote={transactionBuyerNote}
+        setTransactionBuyerNote={setTransactionBuyerNote}
+        checkoutBusinessCode={checkoutBusinessCode}
+      />
     </StripeNativeProvider>
   );
 }
@@ -2099,6 +2139,34 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 10,
     marginTop: 10,
+  },
+  buyerNoteCard: {
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  buyerNoteTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 4,
+  },
+  buyerNoteHint: {
+    fontSize: 13,
+    color: "#666",
+    marginBottom: 10,
+    lineHeight: 18,
+  },
+  buyerNoteInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    minHeight: 80,
+    backgroundColor: "#f9f9f9",
+    color: "#333",
   },
   shippingSectionTitle: {
     fontSize: 16,

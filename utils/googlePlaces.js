@@ -17,7 +17,7 @@ let _sdkPromise = null;
 function loadGoogleMapsApi() {
   if (typeof window === "undefined") return Promise.resolve(); // native guard
   if (!PLACES_KEY) {
-    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY, EXPO_PUBLIC_GOOGLE_PLACES_API_KEY, or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in .env");
+    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env");
     return Promise.resolve();
   }
   if (_sdkPromise) return _sdkPromise;                        // already loading or loaded
@@ -71,7 +71,7 @@ async function _getPlacePredictions(input, types) {
   }
 
   if (!PLACES_KEY) {
-    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY, EXPO_PUBLIC_GOOGLE_PLACES_API_KEY, or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in .env");
+    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env");
     return [];
   }
 
@@ -252,7 +252,7 @@ export async function getPlaceDetails(placeId) {
     }
   } else {
     if (!PLACES_KEY) {
-      console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY, EXPO_PUBLIC_GOOGLE_PLACES_API_KEY, or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in .env");
+      console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env");
       return {};
     }
     try {

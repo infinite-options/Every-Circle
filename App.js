@@ -92,7 +92,7 @@ import { resetSharedAblyClient } from "./utils/ablyClient";
 
 const Stack = createNativeStackNavigator();
 
-export const googleApiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+export const googleApiKey = config.googleApiKey;
 
 /** Home screen: show version / last-build line (PM version, app version, last change). */
 const SHOW_HOME_BUILD_INFO = true;

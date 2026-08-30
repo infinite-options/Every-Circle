@@ -1,8 +1,31 @@
 // API Configuration - Centralized location for all API endpoints
-// Uncomment the appropriate line for your environment
+//
+// Every-Circle API stage (endpoints built from API_BASE_URL):
+//   Set in .env → EXPO_PUBLIC_API_STAGE=dev          (default)
+//                 EXPO_PUBLIC_API_STAGE=production
+// Restart Metro after changing .env (expo start -c).
 
-// Production/Development Environment
-export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
+import { EXPO_PUBLIC_API_STAGE } from "@env";
+
+const API_STAGE_URLS = {
+  dev: "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev",
+  production: "https://ml7xmrvue6.execute-api.us-west-1.amazonaws.com/production",
+};
+
+function resolveApiStage() {
+  const raw = String(EXPO_PUBLIC_API_STAGE ?? process.env.EXPO_PUBLIC_API_STAGE ?? "dev")
+    .trim()
+    .toLowerCase();
+  if (raw === "production" || raw === "prod") return "production";
+  return "dev";
+}
+
+/** Active Every-Circle API stage from EXPO_PUBLIC_API_STAGE (`dev` | `production`). */
+export const API_STAGE = resolveApiStage();
+
+/** Every-Circle Flask/API Gateway base — all `${API_BASE_URL}/…` endpoints follow this. */
+export const API_BASE_URL = API_STAGE_URLS[API_STAGE];
+
 // export const API_BASE_URL = "http://localhost:4090";
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
@@ -45,6 +68,7 @@ export const GET_STRIPE_PUBLIC_KEY_ENDPOINT = "https://huo8rhh76i.execute-api.us
  * {
  *   customer_uid,          // buyer profile_uid
  *   business_code,         // EC | ECTEST | PM | PMTEST (from seller confirm note)
+ *   transaction_buyer_note,// optional — buyer checkout note, max 500 chars (createPaymentIntent only)
  *   payment_intent,        // transaction_stripe_pi (pi_…)
  *   payment_summary: { tax, total }  // total = refund dollars (string/number)
  * }
@@ -179,8 +203,7 @@ export const ABLY_TOKEN_ENDPOINT = `${API_BASE_URL}/api/v1/ably/token`;
 /** GET /:blocker_uid — list of blocked users; POST/DELETE body: { blocked_uid } (blocker from JWT) */
 export const BLOCKED_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/blocked-users`;
 
-console.log("API Configuration loaded");
-// console.log("Base URL:", API_BASE_URL);
+console.log("API Configuration loaded", { stage: API_STAGE, baseUrl: API_BASE_URL });
 // console.log("Legacy Base URL:", API_BASE_URL);
 // console.log("Legacy Base URL:", API_BASE_URL);
 // console.log("Google social auth:", GOOGLE_SOCIAL_AUTH_ENDPOINT);
