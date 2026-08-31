@@ -41,6 +41,7 @@ import { UnreadProvider } from "./contexts/UnreadContext";
 import { NearbyAlertProvider, useNearbyAlert } from "./contexts/NearbyAlertContext";
 import MessageNotificationBanner from "./components/MessageNotificationBanner";
 import CookieConsentBanner from "./components/CookieConsentBanner";
+import { syncAllowCookiesForUser } from "./utils/cookieConsent";
 import NearbyAlertBanner from "./components/NearbyAlertBanner";
 import { SessionProfileProvider } from "./contexts/SessionProfileContext";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
@@ -373,6 +374,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [termsAccepted, setTermsAccepted] = useState(true);
   const navigationRef = useRef(null);
+  /** user_uid last reconciled against users_cookies_date — avoids re-hitting the server on every nav change. */
+  const syncedCookiesUserRef = useRef(null);
 
   useEffect(() => {
     setOnAuthSessionExpired(async () => {
@@ -1004,6 +1007,17 @@ export default function App() {
 
     const currentRouteName = getCurrentRoute(state);
     console.log("App.js - Current route:", currentRouteName);
+
+    // Cookie consent is tied to the profile (users.users_cookies_date), not the device —
+    // reconcile once per logged-in user_uid so a different profile logging in on this same
+    // device doesn't inherit a stale answer left behind by whoever used it before.
+    const loggedInUserUid = ((await AsyncStorage.getItem("user_uid")) || "").trim();
+    if (loggedInUserUid && syncedCookiesUserRef.current !== loggedInUserUid) {
+      syncedCookiesUserRef.current = loggedInUserUid;
+      syncAllowCookiesForUser(loggedInUserUid).catch((e) => console.log("App.js - cookie consent sync failed:", e));
+    } else if (!loggedInUserUid) {
+      syncedCookiesUserRef.current = null;
+    }
 
     // Check terms acceptance and cookies status from AsyncStorage (in case they changed)
     const termsStatus = await AsyncStorage.getItem("termsAccepted");

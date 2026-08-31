@@ -2,7 +2,14 @@ import React, { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Modal, Platform } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
-import { getAllowCookies, setAllowCookies, subscribeAllowCookies, reportCookieBannerHeight, subscribeBottomNavBarHeight } from "../utils/cookieConsent";
+import {
+  getAllowCookies,
+  setAllowCookies,
+  subscribeAllowCookies,
+  reportCookieBannerHeight,
+  subscribeBottomNavBarHeight,
+  persistServerCookieConsentForCurrentUser,
+} from "../utils/cookieConsent";
 
 /**
  * CookieConsentBanner
@@ -53,11 +60,13 @@ export default function CookieConsentBanner({ navigationRef }) {
 
   const handleAllow = async () => {
     await setAllowCookies(true);
+    await persistServerCookieConsentForCurrentUser(true);
   };
 
   const confirmOptOut = async () => {
     setWarningVisible(false);
     await setAllowCookies(false);
+    await persistServerCookieConsentForCurrentUser(false);
     // Opting out only leaves Settings reachable (see App.js's cookiesAllowedScreens
     // enforcement) — send the user there right away instead of stranding them.
     navigationRef?.current?.navigate("Settings");
