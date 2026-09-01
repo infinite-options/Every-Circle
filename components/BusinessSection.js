@@ -3,27 +3,9 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Modal, Scro
 import { BUSINESSES_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import MiniCard from "./MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
-import { sanitizeText } from "../utils/textSanitizer";
+import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { getBusinessMembershipRole } from "../utils/businessOwnership";
-import { Dropdown } from "react-native-element-dropdown";
-
-// App-wide business role options (matches BusinessStep0/1 and EditBusinessProfileScreen).
-const BUSINESS_ROLES = [
-  { label: "Owner", value: "owner" },
-  { label: "Employee", value: "employee" },
-  { label: "Partner", value: "partner" },
-  { label: "Admin", value: "admin" },
-  { label: "Other", value: "other" },
-];
-
-/** Role options for one entry, keeping any legacy free-text role selectable. */
-function roleOptionsFor(role) {
-  const current = String(role || "").trim();
-  if (!current) return BUSINESS_ROLES;
-  const known = BUSINESS_ROLES.some((r) => r.value.toLowerCase() === current.toLowerCase());
-  return known ? BUSINESS_ROLES : [{ label: current, value: current }, ...BUSINESS_ROLES];
-}
 
 /** Ensure businesses list is always a real array (API / route params may send a JSON string or object). */
 function asBusinessArray(value) {
@@ -110,7 +92,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
   /** True when the logged-in user's role for this business entry is "owner". */
   const canDeleteBusiness = (entry) => getBusinessMembershipRole(entry) === "owner";
 
-  /** Owner-only: permanently delete the business (DB + search + every profile). */
+  /** Owner-only: soft-remove the business (off this profile, its page, and search; row kept). */
   const handleOwnedBusinessDelete = async (businessCard) => {
     const businessUid = String(businessCard?.business_uid || businessCard?.profile_business_uid || "").trim();
     if (!businessUid || !onDeleteOwnedBusiness || !canDeleteBusiness(businessCard)) return;
@@ -132,7 +114,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
       }
     };
 
-    const message = `Permanently delete "${name}"?\n\nThis removes it from search results, every profile that lists it, and the database. This cannot be undone.`;
+    const message = `Remove "${name}"?\n\nIt will no longer appear on your profile, its business page, or in search. Its records are kept in our system.`;
 
     if (Platform.OS === "web" && typeof window !== "undefined") {
       if (window.confirm(message)) await runDelete();
@@ -149,13 +131,6 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
     const updated = [...businessesList];
     updated[index][field] = value;
     setBusinesses(updated);
-  };
-
-  /** Update the user's role for an existing business entry. */
-  const handleRoleChange = (index, value) => {
-    setBusinesses(businessesList.map((b, i) => (i === index ? { ...b, role: value } : b)));
-    // Keep the loaded detail card's role text in sync right away.
-    setBusinessesData((prev) => asBusinessArray(prev).map((b) => (b.index === index ? { ...b, role: value } : b)));
   };
 
   const toggleEntryVisibility = (index) => {
@@ -361,7 +336,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                       <TouchableOpacity
                         onPress={() => handleOwnedBusinessDelete({ ...business, ...originalBusiness })}
                         disabled={!isOwner || !onDeleteOwnedBusiness}
-                        accessibilityLabel='Delete business'
+                        accessibilityLabel='Remove business'
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
                         <Image
@@ -394,25 +369,12 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                 <MiniCard business={business} />
               </TouchableOpacity>
 
-              {/* Editable role for this membership */}
-              <View style={styles.roleContainer}>
-                <Text style={[styles.roleLabel, darkMode && styles.darkRoleText]}>Your Role</Text>
-                <Dropdown
-                  style={[styles.input, darkMode && styles.darkInput, { marginBottom: 0 }]}
-                  data={roleOptionsFor((originalBusiness || business).role)}
-                  labelField='label'
-                  valueField='value'
-                  placeholder='Select your role'
-                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                  value={(originalBusiness || business).role || ""}
-                  onChange={(item) => handleRoleChange(originalIndex, item.value)}
-                  containerStyle={[{ borderRadius: 8 }, darkMode && { backgroundColor: "#1a1a1a", borderColor: "#404040" }]}
-                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
-                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
-                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                  itemContainerStyle={darkMode ? { backgroundColor: "#1a1a1a" } : {}}
-                />
-              </View>
+              {/* Role text — use isSafeForConditional so "." is never rendered as a View child on web */}
+              {isSafeForConditional(business.role) && (
+                <View style={styles.roleContainer}>
+                  <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role)}</Text>
+                </View>
+              )}
             </View>
           );
         })
@@ -606,12 +568,6 @@ const styles = StyleSheet.create({
   roleContainer: {
     marginTop: 8,
     paddingLeft: 10,
-  },
-  roleLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#666",
-    marginBottom: 4,
   },
   roleText: {
     fontSize: 14,

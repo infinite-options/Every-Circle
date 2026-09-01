@@ -66,7 +66,7 @@ import { businessDeliveredModeSelected, countListingModes, validateListingFulfil
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getAddressSuggestions, getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
 import { buildBusinessModerationItem, isBusinessOwnerRestricted } from "../utils/businessModeration";
-import { businessUserHasRealOwnership } from "../utils/businessOwnership";
+import { businessUserHasRealOwnership, getBusinessMembershipRole } from "../utils/businessOwnership";
 import {
   resolveBusinessProfileImage,
   resolveBusinessProfileImgUrl,
@@ -960,6 +960,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [existingBusinessUsers, setExistingBusinessUsers] = useState(Array.isArray(business_users) ? business_users : []);
   const [deletedBusinessUsers, setDeletedBusinessUsers] = useState([]);
   const [isOwner, setIsOwner] = useState(false);
+  // The viewer's own role on this business (lowercased): "owner" | "partner" | "employee" | ...
+  const [viewerBusinessRole, setViewerBusinessRole] = useState("");
   const [isChanged, setIsChanged] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [coordinatesError, setCoordinatesError] = useState("");
@@ -1492,6 +1494,28 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const updated = [...additionalBusinessUsers];
     updated[index] = { ...updated[index], [field]: value };
     setAdditionalBusinessUsers(updated);
+    setIsChanged(true);
+  };
+
+  // Role dropdown options for an existing member, keeping any legacy/non-standard
+  // role selectable so it is not silently lost.
+  const roleDropdownData = (currentRole) => {
+    const cur = String(currentRole || "").trim();
+    if (!cur || businessRoles.some((r) => r.value.toLowerCase() === cur.toLowerCase())) return businessRoles;
+    return [{ label: cur, value: cur }, ...businessRoles];
+  };
+
+  // Owner/partner permission rules for any role edit on this screen.
+  const SENIOR_BUSINESS_ROLES = ["owner", "partner"];
+  const roleIsSenior = (r) => SENIOR_BUSINESS_ROLES.includes(String(r || "").trim().toLowerCase());
+  // Only an owner or partner may change roles / add or remove members.
+  const viewerCanChangeRoles = () => roleIsSenior(viewerBusinessRole);
+  // ...and never the role of a member who is currently an owner or partner.
+  const viewerCanChangeMemberRole = (memberCurrentRole) => viewerCanChangeRoles() && !roleIsSenior(memberCurrentRole);
+
+  // Change an existing business user's role; saved via the additional_business_* payload.
+  const updateExistingBusinessUserRole = (businessUserId, value) => {
+    setExistingBusinessUsers((prev) => prev.map((u) => (u.business_user_id === businessUserId ? { ...u, business_role: value } : u)));
     setIsChanged(true);
   };
 
@@ -2097,11 +2121,23 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
       // Surface editors the backend could not add (email has no Every Circle account).
       const saveResult = await response.json().catch(() => ({}));
-      const notAddedEditors = saveResult?.business_users?.not_found;
-      if (Array.isArray(notAddedEditors) && notAddedEditors.length > 0) {
+      const buResult = saveResult?.business_users || {};
+      const notAddedEditors = Array.isArray(buResult.not_found) ? buResult.not_found : [];
+      if (notAddedEditors.length > 0) {
         Alert.alert(
           "Some editors were not added",
           `No Every Circle account was found for: ${notAddedEditors.join(", ")}. Ask them to sign up first, then add them again.`,
+        );
+      }
+      // Role edits the backend rejected under the owner/partner rules.
+      const blockedEditors = [
+        ...(Array.isArray(buResult.protected) ? buResult.protected : []),
+        ...(Array.isArray(buResult.forbidden) ? buResult.forbidden : []),
+      ];
+      if (blockedEditors.length > 0) {
+        Alert.alert(
+          "Some role changes were not applied",
+          `Only an owner or partner can change roles, and an owner/partner's role cannot be changed here. Not applied for: ${blockedEditors.join(", ")}.`,
         );
       }
 
@@ -2574,11 +2610,20 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const renderBusinessEditorsSection = () => (
     <View style={[styles.fieldContainer, darkMode && styles.darkFieldContainer, styles.fieldContainerCompact]}>
       <View style={styles.labelRow}>
-        <Text style={[styles.sublabel, darkMode && styles.darkSublabel, styles.fieldContainerCompactLabel]}>Add editors or co-owners by email</Text>
-        <TouchableOpacity onPress={addBusinessEditor}>
-          <Text style={[styles.addText, darkMode && styles.darkAddText]}>+</Text>
-        </TouchableOpacity>
+        <Text style={[styles.sublabel, darkMode && styles.darkSublabel, styles.fieldContainerCompactLabel]}>
+          {viewerCanChangeRoles() ? "Add editors or co-owners by email" : "Editors & owners"}
+        </Text>
+        {viewerCanChangeRoles() && (
+          <TouchableOpacity onPress={addBusinessEditor}>
+            <Text style={[styles.addText, darkMode && styles.darkAddText]}>+</Text>
+          </TouchableOpacity>
+        )}
       </View>
+      {!viewerCanChangeRoles() && (
+        <Text style={[styles.sublabel, darkMode && styles.darkSublabel, { fontStyle: "italic", marginBottom: 6 }]}>
+          Only an owner or partner can change roles or add members.
+        </Text>
+      )}
       {existingBusinessUsers.map((businessUser, index) => {
         const profileImageUrl =
           businessUser.profile_photo && String(businessUser.profile_photo).trim() !== ""
@@ -2631,7 +2676,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             <View style={styles.existingBusinessUserHeader}>
               <View style={styles.existingBusinessUserInfo}>
                 <MiniCard user={userForMiniCard} />
-                <Text style={[styles.existingBusinessUserRole, darkMode && styles.darkExistingBusinessUserRole]}>Role: {businessUser.business_role || "N/A"}</Text>
               </View>
               <View style={styles.toggleContainer}>
                 <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.togglePill, isIndividualPublic && styles.togglePillActiveGreen]}>
@@ -2642,10 +2686,33 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 </TouchableOpacity>
               </View>
             </View>
+            <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Role</Text>
+            {viewerCanChangeMemberRole(businessUser.business_role) ? (
+              <Dropdown
+                style={[styles.input, darkMode && styles.darkInput]}
+                data={roleDropdownData(businessUser.business_role)}
+                labelField='label'
+                valueField='value'
+                placeholder='Select role'
+                placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+                value={businessUser.business_role || ""}
+                onChange={(item) => updateExistingBusinessUserRole(businessUser.business_user_id, item.value)}
+                containerStyle={[{ borderRadius: 10, marginTop: 5 }, darkMode && { backgroundColor: "#1a1a1a", borderColor: "#404040" }]}
+                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
+                selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
+                activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                itemContainerStyle={darkMode ? { backgroundColor: "#1a1a1a" } : {}}
+                flatListProps={{ nestedScrollEnabled: true }}
+              />
+            ) : (
+              <Text style={[styles.input, styles.readOnlyRoleText, darkMode && styles.darkInput, darkMode && { color: "#ffffff" }]}>
+                {businessUser.business_role || "N/A"}
+              </Text>
+            )}
           </View>
         );
       })}
-      {additionalBusinessUsers.map((user, index) => (
+      {viewerCanChangeRoles() && additionalBusinessUsers.map((user, index) => (
         <View key={index} style={[styles.businessEditorCard, darkMode && styles.darkBusinessEditorCard]}>
           <View style={styles.businessEditorHeader}>
             <Text style={[styles.businessEditorLabel, darkMode && styles.darkBusinessEditorLabel]}>Editor #{index + 1}</Text>
@@ -2910,36 +2977,19 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   );
 
   // BUSINESS-SPECIFIC: renderBusinessRoleField function (not in EditProfileScreen)
-  const renderBusinessRoleField = () => (
-    <View style={styles.fieldContainer}>
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Role</Text>
-      <Dropdown
-        style={[styles.input, darkMode && styles.darkInput]}
-        data={businessRoles}
-        labelField='label'
-        valueField='value'
-        placeholder='Select your role'
-        placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-        value={formData.businessRole}
-        onChange={(item) => {
-          setFormData({ ...formData, businessRole: item.value });
-          setIsChanged(true);
-        }}
-        containerStyle={[{ borderRadius: 10 }, darkMode && { backgroundColor: "#1a1a1a", borderColor: "#404040" }]}
-        itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
-        selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
-        activeColor={darkMode ? "#404040" : "#f0f0f0"}
-        itemContainerStyle={darkMode ? { backgroundColor: "#1a1a1a" } : {}}
-        renderItem={(item, selected) => (
-          <View style={[styles.dropdownItem, darkMode && styles.darkDropdownItem, selected && (darkMode ? styles.darkDropdownItemSelected : styles.dropdownItemSelected)]}>
-            <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, selected && (darkMode ? styles.darkDropdownItemTextSelected : styles.dropdownItemTextSelected)]}>
-              {item.label}
-            </Text>
-          </View>
-        )}
-      />
-    </View>
-  );
+  // Your own role is not self-editable — an owner/partner changes it for you in
+  // the Team & Access list (and owner/partner roles are protected from edits).
+  const renderBusinessRoleField = () => {
+    const known = businessRoles.find((r) => r.value.toLowerCase() === String(formData.businessRole || "").trim().toLowerCase());
+    return (
+      <View style={styles.fieldContainer}>
+        <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Role</Text>
+        <Text style={[styles.input, styles.readOnlyRoleText, darkMode && styles.darkInput, darkMode && { color: "#ffffff" }]}>
+          {known ? known.label : formData.businessRole || "N/A"}
+        </Text>
+      </View>
+    );
+  };
 
   // BUSINESS-SPECIFIC: previewBusiness object (EditProfileScreen has previewUser with more fields)
   const previewBusiness = buildBusinessMiniCardBusiness(
@@ -3549,11 +3599,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         const userUid = await AsyncStorage.getItem("user_uid");
         if (!userUid) {
           setIsOwner(false);
+          setViewerBusinessRole("");
           return;
         }
 
         // Check if current user is a real owner/editor (ignore unclaimed seed links)
         if (Array.isArray(business_users) && business_users.length > 0) {
+          const mine = business_users.find((u) => u.business_user_id === userUid);
+          setViewerBusinessRole(getBusinessMembershipRole(mine));
           const isInBusinessUsers = business_users.some(
             (u) => businessUserHasRealOwnership(u) && u.business_user_id === userUid,
           );
@@ -3562,10 +3615,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         }
 
         // Fallback: if business_users is empty but we're on edit screen, assume owner
+        setViewerBusinessRole("owner");
         setIsOwner(true);
       } catch (error) {
         console.error("EditBusinessProfileScreen - Error checking business ownership:", error);
         setIsOwner(true); // Default to true since they navigated to edit screen
+        setViewerBusinessRole("owner");
       }
     };
 
@@ -4720,6 +4775,11 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     backgroundColor: "#f0f0f0",
     color: "#000",
+  },
+  readOnlyRoleText: {
+    marginTop: 5,
+    textTransform: "capitalize",
+    opacity: 0.8,
   },
   websiteInputsRow: {
     flexDirection: "row",

@@ -717,10 +717,11 @@ const EditProfileScreen = ({ route, navigation }) => {
   };
 
   /**
-   * Permanently delete a business the user owns. Removes it from the database
-   * (and therefore from search results and every profile that lists it).
-   * Only invoked by BusinessSection when the user's role for that business is
-   * "owner". Returns true on success so the child can drop the card.
+   * Remove a business the user owns. This is a soft delete: the backend keeps the
+   * row and all its data, and only deactivates it so it drops off this profile,
+   * its business page, edit-business, and search. Only invoked by BusinessSection
+   * when the user's role for that business is "owner". Returns true on success so
+   * the child can drop the card.
    */
   const handleDeleteOwnedBusiness = async (businessUid) => {
     const uid = String(businessUid || "").trim();
@@ -746,7 +747,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         } catch (_) {
           /* ignore */
         }
-        Alert.alert("Could Not Delete Business", msg);
+        Alert.alert("Could Not Remove Business", msg);
         return false;
       }
 
@@ -762,7 +763,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         console.warn("EditProfileScreen - refreshSessionProfileFromNetwork after business delete failed:", e);
       }
 
-      Alert.alert("Business Deleted", "The business has been removed from your profile, search results, and the database.");
+      Alert.alert("Business Removed", "It no longer appears on your profile, its business page, or in search. Its records are kept in our system.");
       return true;
     } catch (error) {
       console.error("EditProfileScreen - handleDeleteOwnedBusiness error:", error);
