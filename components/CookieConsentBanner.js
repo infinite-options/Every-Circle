@@ -6,6 +6,7 @@ import {
   getAllowCookies,
   setAllowCookies,
   subscribeAllowCookies,
+  subscribeLoggedIn,
   reportCookieBannerHeight,
   subscribeBottomNavBarHeight,
   persistServerCookieConsentForCurrentUser,
@@ -14,11 +15,12 @@ import {
 /**
  * CookieConsentBanner
  *
- * Persistent footer-style bar shown app-wide (mounted once in App.js). It only
- * hides once the profile has explicitly accepted — i.e. the server's
- * users_cookies_date is set AND user_cookies is "true" (mirrored locally in
- * `allowCookies`). Unanswered (null) *or* opted-out (false) both keep it
- * showing, so opting out doesn't permanently dismiss it.
+ * Persistent footer-style bar shown app-wide (mounted once in App.js), but only once someone
+ * is logged in — never on Home/Login/SignUp before there's a profile to tie consent to. Once
+ * logged in, it only hides after the profile has explicitly accepted — i.e. the server's
+ * users_cookies_date is set AND user_cookies is "true" (mirrored locally in `allowCookies`).
+ * Unanswered (null) *or* opted-out (false) both keep it showing, so opting out doesn't
+ * permanently dismiss it.
  * - "Accept Necessary Cookies" saves allowCookies = true and hides the banner.
  * - "Opt-out" surfaces the same "Cookies Required" warning Settings shows when
  *   turning cookies off; confirming there saves allowCookies = false — the
@@ -28,20 +30,22 @@ import {
  */
 export default function CookieConsentBanner({ navigationRef }) {
   const { darkMode } = useDarkMode();
-  const [visible, setVisible] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [allowCookiesValue, setAllowCookiesValue] = useState(undefined); // undefined = not loaded yet
   const [warningVisible, setWarningVisible] = useState(false);
   // Sits directly above the BottomNavBar (0 on screens that don't render one).
   const [navBarHeight, setNavBarHeight] = useState(0);
   useEffect(() => subscribeBottomNavBarHeight(setNavBarHeight), []);
+  useEffect(() => subscribeLoggedIn(setLoggedIn), []);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       const value = await getAllowCookies();
-      if (mounted) setVisible(value !== true);
+      if (mounted) setAllowCookiesValue(value);
     })();
     const unsubscribe = subscribeAllowCookies((value) => {
-      setVisible(value !== true);
+      setAllowCookiesValue(value);
       setWarningVisible(false);
     });
     return () => {
@@ -49,6 +53,8 @@ export default function CookieConsentBanner({ navigationRef }) {
       unsubscribe();
     };
   }, []);
+
+  const visible = loggedIn && allowCookiesValue !== true;
 
   // Let fixed footers (BottomNavBar) know how tall the banner is so they can shift
   // above it instead of being covered; 0 once it's hidden/unmounted.

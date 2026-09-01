@@ -66,6 +66,14 @@ function parseBoolString(value, fallback = null) {
   return String(value).trim().toLowerCase() === "true";
 }
 
+/** users_cookies_date is stored MM-DD-YYYY (matching users.user_created_date's convention). */
+function formatTodayMonthDayYear() {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${mm}-${dd}-${now.getFullYear()}`;
+}
+
 /** Reads { date, allow } for a user_uid from the server; both null if unset/unreachable. */
 export async function fetchServerCookieConsent(userUid) {
   const uid = String(userUid || "").trim();
@@ -85,19 +93,21 @@ export async function fetchServerCookieConsent(userUid) {
   }
 }
 
-/** Records this profile's cookie-consent choice and today's date on the server. */
+/**
+ * Records this profile's cookie-consent choice on the server. users_cookies_date is only
+ * logged when accepting (allow === true) — opting out updates user_cookies but leaves the
+ * date alone, since it's meant to record *when they accepted*, not merely "last answered".
+ */
 export async function persistServerCookieConsent(userUid, allow) {
   const uid = String(userUid || "").trim();
   if (!uid) return;
+  const payload = { user_uid: uid, user_cookies: allow ? "true" : "false" };
+  if (allow) payload.users_cookies_date = formatTodayMonthDayYear();
   try {
     await fetchWithAuth(USER_INFO_ENDPOINT, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        user_uid: uid,
-        user_cookies: allow ? "true" : "false",
-        users_cookies_date: new Date().toISOString().slice(0, 10),
-      }),
+      body: JSON.stringify(payload),
     });
   } catch (error) {
     console.log("cookieConsent - Error saving server cookie consent:", error);
@@ -137,6 +147,24 @@ export async function syncAllowCookiesForUser(userUid) {
     return;
   }
   await setAllowCookies(allow === null ? true : allow);
+}
+
+// --- Logged-in broadcast ---------------------------------------------------
+// The persistent cookie banner should only ever appear once someone is logged
+// in — never on Home/Login/SignUp before an account exists to tie it to.
+let currentlyLoggedIn = false;
+const loggedInListeners = new Set();
+
+export function reportLoggedIn(isLoggedIn) {
+  currentlyLoggedIn = !!isLoggedIn;
+  loggedInListeners.forEach((listener) => listener(currentlyLoggedIn));
+}
+
+/** Immediately invoked with the current state, then again on every change. */
+export function subscribeLoggedIn(listener) {
+  listener(currentlyLoggedIn);
+  loggedInListeners.add(listener);
+  return () => loggedInListeners.delete(listener);
 }
 
 // --- Banner height broadcast ---------------------------------------------

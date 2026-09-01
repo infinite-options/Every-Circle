@@ -41,7 +41,7 @@ import { UnreadProvider } from "./contexts/UnreadContext";
 import { NearbyAlertProvider, useNearbyAlert } from "./contexts/NearbyAlertContext";
 import MessageNotificationBanner from "./components/MessageNotificationBanner";
 import CookieConsentBanner from "./components/CookieConsentBanner";
-import { syncAllowCookiesForUser } from "./utils/cookieConsent";
+import { syncAllowCookiesForUser, reportLoggedIn } from "./utils/cookieConsent";
 import NearbyAlertBanner from "./components/NearbyAlertBanner";
 import { SessionProfileProvider } from "./contexts/SessionProfileContext";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
@@ -416,6 +416,7 @@ export default function App() {
         console.log("App.js - Checking if user in AsyncStorage...");
         const uid = await AsyncStorage.getItem("user_uid");
         console.log("App.js - User UID:", uid);
+        reportLoggedIn(!!uid);
 
         // Check terms acceptance status
         const termsStatus = await AsyncStorage.getItem("termsAccepted");
@@ -1012,6 +1013,7 @@ export default function App() {
     // reconcile once per logged-in user_uid so a different profile logging in on this same
     // device doesn't inherit a stale answer left behind by whoever used it before.
     const loggedInUserUid = ((await AsyncStorage.getItem("user_uid")) || "").trim();
+    reportLoggedIn(!!loggedInUserUid);
     if (loggedInUserUid && syncedCookiesUserRef.current !== loggedInUserUid) {
       syncedCookiesUserRef.current = loggedInUserUid;
       syncAllowCookiesForUser(loggedInUserUid).catch((e) => console.log("App.js - cookie consent sync failed:", e));
