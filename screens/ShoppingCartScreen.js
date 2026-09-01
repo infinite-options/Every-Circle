@@ -1784,7 +1784,7 @@ const ShoppingCartScreenContent = ({
               <View style={styles.buyerNoteCard}>
                 <Text style={styles.buyerNoteTitle}>Transaction notes (optional)</Text>
                 <Text style={styles.buyerNoteHint}>
-                  Add a note for this purchase (up to {TRANSACTION_BUYER_NOTE_MAX_LENGTH} characters). Enter exactly ECTEST as the entire note to use the test Stripe account; any other text uses EC (live).
+                  Add a note for this purchase (up to {TRANSACTION_BUYER_NOTE_MAX_LENGTH} characters).
                 </Text>
                 <TextInput
                   style={styles.buyerNoteInput}
