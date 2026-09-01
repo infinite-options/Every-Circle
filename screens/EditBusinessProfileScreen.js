@@ -1591,6 +1591,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     }
     setCoordinatesError("");
 
+    // BUSINESS-SPECIFIC: every added editor row needs both an email and a role,
+    // otherwise it is dropped silently on submit.
+    const incompleteEditor = additionalBusinessUsers.find(
+      (u) => (String(u.email || "").trim() ? 1 : 0) + (String(u.role || "").trim() ? 1 : 0) === 1,
+    );
+    if (incompleteEditor) {
+      Alert.alert("Incomplete editor", "Each added user needs both an email address and a role. Remove the empty row or fill it in.");
+      return;
+    }
+
     const customTagsForSave = customTagInput.trim() ? mergeCustomTags(formData.customTags || [], customTagInput) : formData.customTags || [];
     const editingOpenProduct = showServiceForm && editingServiceIndex !== null;
     const resolvedServiceForm = editingOpenProduct
@@ -2007,17 +2017,20 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
       // BUSINESS-SPECIFIC: Business users handling (EditProfileScreen doesn't have this)
       const remainingExistingUsers = existingBusinessUsers.filter((user) => !deletedBusinessUsers.includes(user.business_user_id));
-      const existingEmails = remainingExistingUsers.map((user) => user.user_email || "").filter((email) => email);
-      const existingRoles = remainingExistingUsers.map((user) => user.business_role || "").filter((role) => role);
-      const validNewUsers = additionalBusinessUsers.filter((user) => user.email.trim() && user.role);
-      const newEmails = validNewUsers.map((user) => user.email.trim());
-      const newRoles = validNewUsers.map((user) => user.role);
-      const allEmails = [...existingEmails, ...newEmails];
-      const allRoles = [...existingRoles, ...newRoles];
+      // Build [email, role] pairs together so the two arrays sent to the backend
+      // always line up — filtering them independently could make the lengths
+      // differ, and the backend then silently drops the whole update.
+      const existingPairs = remainingExistingUsers
+        .map((user) => [String(user.user_email || "").trim(), String(user.business_role || "").trim()])
+        .filter(([email, role]) => email && role);
+      const newPairs = additionalBusinessUsers
+        .map((user) => [String(user.email || "").trim(), String(user.role || "").trim()])
+        .filter(([email, role]) => email && role);
+      const allPairs = [...existingPairs, ...newPairs];
 
-      if (allEmails.length > 0 && allRoles.length > 0) {
-        payload.append("additional_business_user", JSON.stringify(allEmails));
-        payload.append("additional_business_role", JSON.stringify(allRoles));
+      if (allPairs.length > 0) {
+        payload.append("additional_business_user", JSON.stringify(allPairs.map(([email]) => email)));
+        payload.append("additional_business_role", JSON.stringify(allPairs.map(([, role]) => role)));
       }
 
       // bu_individual_business_is_public per business user (0 = hide, 1 = display) for business_user table
@@ -2080,6 +2093,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           /* ignore */
         }
         throw new Error(errBody || `Update failed (${response.status})`);
+      }
+
+      // Surface editors the backend could not add (email has no Every Circle account).
+      const saveResult = await response.json().catch(() => ({}));
+      const notAddedEditors = saveResult?.business_users?.not_found;
+      if (Array.isArray(notAddedEditors) && notAddedEditors.length > 0) {
+        Alert.alert(
+          "Some editors were not added",
+          `No Every Circle account was found for: ${notAddedEditors.join(", ")}. Ask them to sign up first, then add them again.`,
+        );
       }
 
       if (response.status === 200) {

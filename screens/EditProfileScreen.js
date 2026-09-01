@@ -17,8 +17,9 @@ import ExpertiseSection, { validateExpertise, validateExpertiseTax, validateExpe
 import { TAX_RATE_VALIDATION_MESSAGE } from "../utils/taxValidation";
 import SeekingSection, { validateSeeking, validateSeekingShipping, validateSeekingReturnWindow } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
-import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getSessionProfile, parseOwnedProfileBusinessInfo, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED } from "../utils/offeringModeration";
@@ -55,7 +56,7 @@ function mapBusinessEntryForEdit(biz) {
     profile_business_uid: biz.profile_business_uid || "",
     business_uid: biz.business_uid || biz.profile_business_business_id || "",
     name: biz.name || biz.profile_business_name || "",
-    role: biz.role || biz.profile_business_role || "",
+    role: biz.role || biz.profile_business_role || biz.bu_role || "",
     isPublic: visible,
     individualIsPublic: visible,
     isApproved: biz.isApproved !== undefined ? biz.isApproved : biz.profile_business_approved === "1",
@@ -713,6 +714,61 @@ const EditProfileScreen = ({ route, navigation }) => {
     const updated = formData.businesses.filter((_, i) => i !== index);
     setFormData((prev) => ({ ...prev, businesses: updated }));
     setIsChanged(true);
+  };
+
+  /**
+   * Permanently delete a business the user owns. Removes it from the database
+   * (and therefore from search results and every profile that lists it).
+   * Only invoked by BusinessSection when the user's role for that business is
+   * "owner". Returns true on success so the child can drop the card.
+   */
+  const handleDeleteOwnedBusiness = async (businessUid) => {
+    const uid = String(businessUid || "").trim();
+    if (!uid) return false;
+    try {
+      let userUid = "";
+      try {
+        userUid = (await AsyncStorage.getItem("user_uid")) || "";
+      } catch (_) {
+        userUid = "";
+      }
+      const url = `${BUSINESS_INFO_ENDPOINT}/${encodeURIComponent(uid)}${userUid ? `?user_uid=${encodeURIComponent(userUid)}` : ""}`;
+      const response = await fetch(url, {
+        method: "DELETE",
+        headers: { Accept: "application/json" },
+      });
+
+      if (!response.ok) {
+        let msg = `Delete failed (${response.status})`;
+        try {
+          const errJson = await response.json();
+          msg = errJson?.message || msg;
+        } catch (_) {
+          /* ignore */
+        }
+        Alert.alert("Could Not Delete Business", msg);
+        return false;
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        businesses: (prev.businesses || []).filter((b) => (b.business_uid || b.profile_business_uid) !== uid),
+      }));
+
+      try {
+        const trimmedProfileUID = profileUID.trim();
+        if (trimmedProfileUID) await refreshSessionProfileFromNetwork(trimmedProfileUID);
+      } catch (e) {
+        console.warn("EditProfileScreen - refreshSessionProfileFromNetwork after business delete failed:", e);
+      }
+
+      Alert.alert("Business Deleted", "The business has been removed from your profile, search results, and the database.");
+      return true;
+    } catch (error) {
+      console.error("EditProfileScreen - handleDeleteOwnedBusiness error:", error);
+      Alert.alert("Error", "Could not delete the business. Please try again.");
+      return false;
+    }
   };
 
   // Add image error handler
@@ -1956,6 +2012,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             toggleVisibility={() => handleToggleVisibility("businessIsPublic")}
             isPublic={formData.businessIsPublic}
             handleDelete={handleDeleteBusiness}
+            onDeleteOwnedBusiness={handleDeleteOwnedBusiness}
             navigation={navigation}
             preFetchedBusinessesData={preFetchedBusinessesData}
             onInputFocus={(inputRef) => {

@@ -116,11 +116,14 @@ export async function persistServerCookieConsentForCurrentUser(allow) {
 
 /**
  * Reconciles this device's local `allowCookies` with the logged-in profile's server record.
- * Call once per login/signup (and it's harmless to call again on app resume).
- *  - Profile has never answered (no server date) → clear the local value so the banner shows,
+ * Call once per login/signup (and it's harmless to call again on app resume). The banner
+ * (CookieConsentBanner) only hides when the resulting local value is exactly `true`, so:
+ *  - Profile has never answered (no server date) → local becomes null → banner shows,
  *    even if a different profile answered on this same device before.
- *  - Profile has already answered → adopt the server's actual choice locally, overriding
- *    whatever this device had (it may be stale, or left behind by a different profile).
+ *  - Profile explicitly opted out (users_cookies_date set, user_cookies "false") → local
+ *    becomes false → banner keeps showing (opting out isn't a permanent dismissal).
+ *  - Profile accepted (users_cookies_date set, user_cookies "true") → local becomes true →
+ *    banner hides.
  */
 export async function syncAllowCookiesForUser(userUid) {
   const { date, allow } = await fetchServerCookieConsent(userUid);

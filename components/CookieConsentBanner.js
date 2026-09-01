@@ -14,12 +14,15 @@ import {
 /**
  * CookieConsentBanner
  *
- * Persistent footer-style bar shown app-wide (mounted once in App.js) until the
- * user makes a choice — it does not auto-dismiss and has no close button.
+ * Persistent footer-style bar shown app-wide (mounted once in App.js). It only
+ * hides once the profile has explicitly accepted — i.e. the server's
+ * users_cookies_date is set AND user_cookies is "true" (mirrored locally in
+ * `allowCookies`). Unanswered (null) *or* opted-out (false) both keep it
+ * showing, so opting out doesn't permanently dismiss it.
  * - "Accept Necessary Cookies" saves allowCookies = true and hides the banner.
  * - "Opt-out" surfaces the same "Cookies Required" warning Settings shows when
- *   turning cookies off; confirming there saves allowCookies = false and hides
- *   the banner, canceling leaves the banner up (still unanswered).
+ *   turning cookies off; confirming there saves allowCookies = false — the
+ *   banner stays up (or comes back on the next sync) until they accept.
  *
  * @param {{ navigationRef?: React.RefObject }} props - used to open Privacy Policy from the inline link.
  */
@@ -35,11 +38,11 @@ export default function CookieConsentBanner({ navigationRef }) {
     let mounted = true;
     (async () => {
       const value = await getAllowCookies();
-      if (mounted) setVisible(value === null);
+      if (mounted) setVisible(value !== true);
     })();
     const unsubscribe = subscribeAllowCookies((value) => {
-      setVisible(value === null);
-      if (value !== null) setWarningVisible(false);
+      setVisible(value !== true);
+      setWarningVisible(false);
     });
     return () => {
       mounted = false;

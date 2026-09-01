@@ -1,10 +1,29 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Modal, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Modal, ScrollView, ActivityIndicator, Alert, Platform } from "react-native";
 import { BUSINESSES_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import MiniCard from "./MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
-import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+import { sanitizeText } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
+import { getBusinessMembershipRole } from "../utils/businessOwnership";
+import { Dropdown } from "react-native-element-dropdown";
+
+// App-wide business role options (matches BusinessStep0/1 and EditBusinessProfileScreen).
+const BUSINESS_ROLES = [
+  { label: "Owner", value: "owner" },
+  { label: "Employee", value: "employee" },
+  { label: "Partner", value: "partner" },
+  { label: "Admin", value: "admin" },
+  { label: "Other", value: "other" },
+];
+
+/** Role options for one entry, keeping any legacy free-text role selectable. */
+function roleOptionsFor(role) {
+  const current = String(role || "").trim();
+  if (!current) return BUSINESS_ROLES;
+  const known = BUSINESS_ROLES.some((r) => r.value.toLowerCase() === current.toLowerCase());
+  return known ? BUSINESS_ROLES : [{ label: current, value: current }, ...BUSINESS_ROLES];
+}
 
 /** Ensure businesses list is always a real array (API / route params may send a JSON string or object). */
 function asBusinessArray(value) {
@@ -22,8 +41,9 @@ function asBusinessArray(value) {
   return [];
 }
 
-const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, preFetchedBusinessesData, onInputFocus }) => {
+const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, onDeleteOwnedBusiness, preFetchedBusinessesData, onInputFocus }) => {
   const { darkMode } = useDarkMode();
+  const [deletingBusinessUid, setDeletingBusinessUid] = useState(null);
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
@@ -87,10 +107,55 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
     }
   };
 
+  /** True when the logged-in user's role for this business entry is "owner". */
+  const canDeleteBusiness = (entry) => getBusinessMembershipRole(entry) === "owner";
+
+  /** Owner-only: permanently delete the business (DB + search + every profile). */
+  const handleOwnedBusinessDelete = async (businessCard) => {
+    const businessUid = String(businessCard?.business_uid || businessCard?.profile_business_uid || "").trim();
+    if (!businessUid || !onDeleteOwnedBusiness || !canDeleteBusiness(businessCard)) return;
+
+    const name = sanitizeText(businessCard?.business_name || businessCard?.name, "this business");
+
+    const runDelete = async () => {
+      setDeletingBusinessUid(businessUid);
+      try {
+        const ok = await onDeleteOwnedBusiness(businessUid);
+        if (!ok) return;
+        // Parent owns `businesses`; drop this component's detail card for the
+        // deleted business. The [businesses] sync effect re-aligns the rest.
+        setBusinessesData((prev) =>
+          asBusinessArray(prev).filter((b) => (b.business_uid || b.profile_business_uid) !== businessUid),
+        );
+      } finally {
+        setDeletingBusinessUid(null);
+      }
+    };
+
+    const message = `Permanently delete "${name}"?\n\nThis removes it from search results, every profile that lists it, and the database. This cannot be undone.`;
+
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      if (window.confirm(message)) await runDelete();
+      return;
+    }
+
+    Alert.alert("Delete Business", message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: runDelete },
+    ]);
+  };
+
   const handleInputChange = (index, field, value) => {
     const updated = [...businessesList];
     updated[index][field] = value;
     setBusinesses(updated);
+  };
+
+  /** Update the user's role for an existing business entry. */
+  const handleRoleChange = (index, value) => {
+    setBusinesses(businessesList.map((b, i) => (i === index ? { ...b, role: value } : b)));
+    // Keep the loaded detail card's role text in sync right away.
+    setBusinessesData((prev) => asBusinessArray(prev).map((b) => (b.index === index ? { ...b, role: value } : b)));
   };
 
   const toggleEntryVisibility = (index) => {
@@ -124,23 +189,32 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
   // Sync businessesData with businesses prop changes (especially individualIsPublic)
   useEffect(() => {
     if (businessesDataList.length > 0 && businessesList.length > 0) {
-      // Update businessesData to reflect changes in businesses prop (like individualIsPublic toggles)
-      const updatedBusinessesData = businessesDataList.map((businessDataItem) => {
-        const originalIndex = businessDataItem.index;
-        const matchingBusiness = businessesList[originalIndex];
+      const uidOf = (b) => b?.business_uid || b?.profile_business_uid || "";
+      // Match by uid (not position) so a removed business drops its card and an
+      // index shift never re-labels the wrong one.
+      const updatedBusinessesData = businessesDataList
+        .filter((businessDataItem) => {
+          const uid = uidOf(businessDataItem);
+          return businessesList.some((b) => uidOf(b) === uid);
+        })
+        .map((businessDataItem) => {
+          const uid = uidOf(businessDataItem);
+          const matchingIndex = businessesList.findIndex((b) => uidOf(b) === uid);
+          const matchingBusiness = matchingIndex >= 0 ? businessesList[matchingIndex] : null;
 
-        if (matchingBusiness) {
-          // Sync individualIsPublic and other fields that might change
-          return {
-            ...businessDataItem,
-            individualIsPublic: matchingBusiness.individualIsPublic !== undefined ? matchingBusiness.individualIsPublic : businessDataItem.individualIsPublic,
-            isPublic: matchingBusiness.isPublic !== undefined ? matchingBusiness.isPublic : businessDataItem.isPublic,
-            role: sanitizeText(matchingBusiness.role || businessDataItem.role, ""),
-            isApproved: matchingBusiness.isApproved !== undefined ? matchingBusiness.isApproved : businessDataItem.isApproved,
-          };
-        }
-        return businessDataItem;
-      });
+          if (matchingBusiness) {
+            // Sync individualIsPublic and other fields that might change
+            return {
+              ...businessDataItem,
+              index: matchingIndex,
+              individualIsPublic: matchingBusiness.individualIsPublic !== undefined ? matchingBusiness.individualIsPublic : businessDataItem.individualIsPublic,
+              isPublic: matchingBusiness.isPublic !== undefined ? matchingBusiness.isPublic : businessDataItem.isPublic,
+              role: sanitizeText(matchingBusiness.role || businessDataItem.role, ""),
+              isApproved: matchingBusiness.isApproved !== undefined ? matchingBusiness.isApproved : businessDataItem.isApproved,
+            };
+          }
+          return businessDataItem;
+        });
       setBusinessesData(updatedBusinessesData);
     }
   }, [businesses]); // Run whenever businesses prop changes
@@ -275,7 +349,29 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
             <View key={business.business_uid || business.profile_business_uid || idx} style={[styles.card, darkMode && styles.darkCard, idx > 0 && { marginTop: 10 }]}>
               {/* Header with toggle */}
               <View style={styles.rowHeader}>
-                <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{idx + 1}</Text>
+                <View style={styles.labelRow}>
+                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{idx + 1}</Text>
+                  {(() => {
+                    const isOwner = canDeleteBusiness(originalBusiness || business);
+                    const rowBusinessUid = business.business_uid || business.profile_business_uid;
+                    const isDeleting = deletingBusinessUid === rowBusinessUid;
+                    return isDeleting ? (
+                      <ActivityIndicator size='small' color='#c0392b' style={styles.deleteIcon} />
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => handleOwnedBusinessDelete({ ...business, ...originalBusiness })}
+                        disabled={!isOwner || !onDeleteOwnedBusiness}
+                        accessibilityLabel='Delete business'
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Image
+                          source={require("../assets/delete.png")}
+                          style={[styles.deleteIcon, (!isOwner || !onDeleteOwnedBusiness) && styles.deleteIconDisabled]}
+                        />
+                      </TouchableOpacity>
+                    );
+                  })()}
+                </View>
                 <View style={styles.toggleContainer}>
                   <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, entryVisible && styles.togglePillActiveGreen]}>
                     <Text style={[styles.togglePillText, entryVisible && styles.togglePillTextActive]}>{entryVisible ? "Visible" : "Show"}</Text>
@@ -298,12 +394,25 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                 <MiniCard business={business} />
               </TouchableOpacity>
 
-              {/* Role text — use isSafeForConditional so "." is never rendered as a View child on web */}
-              {isSafeForConditional(business.role) && (
-                <View style={styles.roleContainer}>
-                  <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role)}</Text>
-                </View>
-              )}
+              {/* Editable role for this membership */}
+              <View style={styles.roleContainer}>
+                <Text style={[styles.roleLabel, darkMode && styles.darkRoleText]}>Your Role</Text>
+                <Dropdown
+                  style={[styles.input, darkMode && styles.darkInput, { marginBottom: 0 }]}
+                  data={roleOptionsFor((originalBusiness || business).role)}
+                  labelField='label'
+                  valueField='value'
+                  placeholder='Select your role'
+                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                  value={(originalBusiness || business).role || ""}
+                  onChange={(item) => handleRoleChange(originalIndex, item.value)}
+                  containerStyle={[{ borderRadius: 8 }, darkMode && { backgroundColor: "#1a1a1a", borderColor: "#404040" }]}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
+                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  itemContainerStyle={darkMode ? { backgroundColor: "#1a1a1a" } : {}}
+                />
+              </View>
             </View>
           );
         })
@@ -482,6 +591,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   deleteIcon: { width: 20, height: 20 },
+  deleteIconDisabled: { opacity: 0.25 },
   darkDeleteIcon: {
     /* tintColor moved to Image prop */
   },
@@ -496,6 +606,12 @@ const styles = StyleSheet.create({
   roleContainer: {
     marginTop: 8,
     paddingLeft: 10,
+  },
+  roleLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 4,
   },
   roleText: {
     fontSize: 14,
