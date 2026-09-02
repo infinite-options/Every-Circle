@@ -1,9 +1,11 @@
 // ShoppingCartScreen.js
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, InteractionManager, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
+import BountyInfoTooltip from "../components/BountyInfoTooltip";
+import CartLineDetails from "../components/CartLineDetails";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -59,7 +61,6 @@ import {
   hasOfferingBounty,
   formatOfferingUnitPriceLabel,
   parseOfferingBountyAmount,
-  isCartItemReturnable,
 } from "../utils/offeringCartUtils";
 import {
   buildCartLineProcessingFeeMap,
@@ -72,19 +73,14 @@ import {
 import {
   buildCheckoutApiLineFields,
   cartItemRequiresShippingAddress,
-  formatCartPickupLocationHint,
-  FULFILLMENT_PICKUP,
-  FULFILLMENT_SHIP,
-  FULFILLMENT_VIRTUAL,
-  getCartItemAvailableFulfillmentMethods,
   getCartItemBuyerShippingCharge,
   getCartItemDeliveryChargeDisplay,
   isCartItemBuyerPaysShipping,
   normalizeCartItemFulfillment,
   normalizeCartItemsFulfillment,
-  resolveDefaultFulfillmentMethod,
   sumBuyerShippingCharges,
 } from "../utils/cartFulfillmentMethod";
+import { getCartLineBountyAvailabilityNote } from "../utils/cartLineDisplay";
 import { cartLineDeliveryChargeLabel, sellerGroupDeliveryChargeLabel } from "../utils/profileOfferingShipping";
 import { businessCcFeePayerFromSource, cartItemBuyerPaysCardFee, groupBuyerPaysCardFee } from "../utils/businessCcFeePayer";
 
@@ -259,56 +255,6 @@ function CartItemCustomizationText({ item }) {
         </Text>
       ) : null}
     </Text>
-  );
-}
-
-function CartFulfillmentChoice({ item, onSelect }) {
-  const method = resolveDefaultFulfillmentMethod(item);
-  const available = getCartItemAvailableFulfillmentMethods(item);
-  const pickupHint = formatCartPickupLocationHint(item);
-
-  const options = [
-    { key: FULFILLMENT_VIRTUAL, label: "Virtual", icon: "videocam-outline" },
-    { key: FULFILLMENT_SHIP, label: "Delivery", icon: "car-outline" },
-    { key: FULFILLMENT_PICKUP, label: "In person", icon: "people-outline" },
-  ].filter((option) => available.includes(option.key));
-
-  if (options.length === 0) return null;
-
-  if (options.length === 1) {
-    const only = options[0];
-    if (only.key === FULFILLMENT_VIRTUAL) {
-      return <Text style={styles.fulfillmentPickupHint}>Virtual · No shipping required · verify immediately</Text>;
-    }
-    if (only.key === FULFILLMENT_PICKUP) {
-      return <Text style={styles.fulfillmentPickupHint}>Pickup in person{pickupHint ? ` · ${pickupHint}` : ""}</Text>;
-    }
-    return null;
-  }
-
-  return (
-    <View style={styles.fulfillmentSection}>
-      <Text style={styles.fulfillmentChoiceLabel}>Fulfillment</Text>
-      <View style={[styles.fulfillmentChoiceRow, styles.fulfillmentChoiceRowWrap]}>
-        {options.map((option) => {
-          const active = method === option.key;
-          return (
-            <TouchableOpacity
-              key={option.key}
-              style={[styles.fulfillmentChoiceBtn, styles.fulfillmentChoiceBtnMulti, active && styles.fulfillmentChoiceBtnActive]}
-              onPress={() => onSelect(option.key)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name={option.icon} size={16} color={active ? "#fff" : "#9C45F7"} />
-              <Text style={[styles.fulfillmentChoiceBtnText, active && styles.fulfillmentChoiceBtnTextActive]}>{option.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-      {method === FULFILLMENT_VIRTUAL ? <Text style={styles.fulfillmentPickupHint}>No shipping required · verify immediately</Text> : null}
-      {method === FULFILLMENT_PICKUP && pickupHint ? <Text style={styles.fulfillmentPickupHint}>Pickup location: {pickupHint}</Text> : null}
-      {method === FULFILLMENT_SHIP ? <Text style={styles.fulfillmentPickupHint}>Delivery address required at checkout</Text> : null}
-    </View>
   );
 }
 
@@ -610,8 +556,6 @@ const ShoppingCartScreenContent = ({
   const [showPaymentFailure, setShowPaymentFailure] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
-  const [refundAcknowledged, setRefundAcknowledged] = useState(false); //refund acknowledgement state
-  const [refundError, setRefundError] = useState(false);
   const [shippingFirstName, setShippingFirstName] = useState("");
   const [shippingLastName, setShippingLastName] = useState("");
   const [shippingStreetLine1, setShippingStreetLine1] = useState("");
@@ -620,8 +564,8 @@ const ShoppingCartScreenContent = ({
   const [shippingState, setShippingState] = useState("");
   const [shippingZip, setShippingZip] = useState("");
   const scrollViewRef = useRef(null);
-  /** Y offset of refund policy block within ScrollView content (from onLayout). */
-  const refundSectionScrollYRef = useRef(0);
+  /** Y offset of delivery address block within ScrollView content (from onLayout). */
+  const shippingSectionScrollYRef = useRef(0);
 
   /** Web: one Stripe payment per seller; kept in ref + state so submit handler sees latest step. */
   const webCheckoutSessionRef = useRef(null);
@@ -631,7 +575,7 @@ const ShoppingCartScreenContent = ({
     webCheckoutSessionRef.current = webCheckoutSession;
   }, [webCheckoutSession]);
 
-  /** Start at top of the list whenever this screen is opened so users review items first; refund scroll runs only from Proceed without acknowledgement. */
+  /** Start at top of the list whenever this screen is opened so users review items first. */
   useFocusEffect(
     useCallback(() => {
       requestAnimationFrame(() => {
@@ -747,6 +691,8 @@ const ShoppingCartScreenContent = ({
         return;
       }
       session = { groups: session.groups, index: nextIndex };
+      webCheckoutSessionRef.current = session;
+      setWebCheckoutSession(session);
     }
   };
 
@@ -774,8 +720,10 @@ const ShoppingCartScreenContent = ({
 
       const nextIndex = sess.index + 1;
       if (nextIndex < sess.groups.length) {
-        setShowStripePayment(false);
-        await advanceWebCheckoutWithoutCard(buyerUid, { groups: sess.groups, index: nextIndex });
+        const nextSession = { groups: sess.groups, index: nextIndex };
+        webCheckoutSessionRef.current = nextSession;
+        setWebCheckoutSession(nextSession);
+        await advanceWebCheckoutWithoutCard(buyerUid, nextSession);
         return;
       }
 
@@ -801,23 +749,6 @@ const ShoppingCartScreenContent = ({
     }
   };
 
-  const focusRefundPolicySection = () => {
-    InteractionManager.runAfterInteractions(() => {
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          const scroll = scrollViewRef.current;
-          if (!scroll) return;
-          const y = refundSectionScrollYRef.current;
-          if (y > 0) {
-            scroll.scrollTo({ y: Math.max(0, y - 16), animated: true });
-          } else {
-            scroll.scrollToEnd({ animated: true });
-          }
-        }, 80);
-      });
-    });
-  };
-
   const handleCheckout = async () => {
     console.log("Checkout button pressed");
     console.log("Platform:", Platform.OS);
@@ -826,13 +757,6 @@ const ShoppingCartScreenContent = ({
       Alert.alert("Error", "Payment system is not ready. Please try again.");
       return;
     }
-
-    if (cartItems.some((it) => isCartItemReturnable(it)) && !refundAcknowledged) {
-      setRefundError(true);
-      focusRefundPolicySection();
-      return;
-    }
-    setRefundError(false);
 
     const needsShippingAddress = cartItems.some((it) => cartItemRequiresShippingAddress(it));
     if (
@@ -847,6 +771,14 @@ const ShoppingCartScreenContent = ({
         zip: shippingZip,
       })
     ) {
+      requestAnimationFrame(() => {
+        const y = shippingSectionScrollYRef.current;
+        if (y > 0) {
+          scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true });
+        } else {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }
+      });
       Alert.alert("Delivery address required", "Please complete First Name, Last Name, Street Address, City, State, and Zip for items being delivered.");
       return;
     }
@@ -1399,7 +1331,6 @@ const ShoppingCartScreenContent = ({
   const cartLineProcessingFeeMap = buildCartLineProcessingFeeMap(sellerGroupsPreview, getCartItemCreditCardFeeBase);
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
-  const cartRequiresReturnAcknowledgement = cartItems.some((it) => isCartItemReturnable(it));
   const cartHasShipFulfillmentLines = cartItems.some((it) => cartItemRequiresShippingAddress(it));
   const cartRequiresBuyerPaysShipping = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
   const feeDialogFirstGroup = sellerGroupsPreview[0];
@@ -1440,17 +1371,15 @@ const ShoppingCartScreenContent = ({
     (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
     null;
-  const shippingAddressComplete = isShippingAddressComplete({
-    enabled: cartHasShipFulfillmentLines,
-    firstName: shippingFirstName,
-    lastName: shippingLastName,
-    streetLine1: shippingStreetLine1,
-    city: shippingCity,
-    state: shippingState,
-    zip: shippingZip,
-  });
-  const checkoutBlockedByShipping = cartHasShipFulfillmentLines && !shippingAddressComplete;
-  const checkoutDisabled = loading || checkoutBlockedByShipping;
+  const checkoutDisabled = loading;
+  const groupCartBySeller = checkoutSellerGroups.length > 1 || business_uid === "all";
+  const cartDisplayGroups = groupCartBySeller
+    ? checkoutSellerGroups.map((group) => ({
+        key: group.sellerId,
+        displayName: group.displayName,
+        entries: group.items.map((item) => ({ item, index: cartItems.indexOf(item) })),
+      }))
+    : [{ key: "single", displayName: null, entries: cartItems.map((item, index) => ({ item, index })) }];
 
   const content = (
     <View style={styles.container}>
@@ -1468,12 +1397,18 @@ const ShoppingCartScreenContent = ({
                   <Text style={styles.cartVendorLabel}>Business</Text>
                   <Text style={styles.businessName}>{businessName}</Text>
                 </View>
-              ) : (
-                <Text style={styles.cartOverviewTitle}>Your cart</Text>
-              )}
-              {cartItems.map((item, index) => {
+              ) : null}
+              {cartDisplayGroups.map((group) => (
+                <View key={group.key} style={groupCartBySeller ? styles.cartSellerGroup : undefined}>
+                  {groupCartBySeller && group.displayName ? (
+                    <View style={styles.cartSellerGroupHeader}>
+                      <Text style={styles.cartSellerGroupLabel}>Seller</Text>
+                      <Text style={styles.cartSellerGroupName}>{group.displayName}</Text>
+                    </View>
+                  ) : null}
+                  {group.entries.map(({ item, index }) => {
                 const lineBusiness = resolveItemBusinessName(item);
-                const showLineBusiness = Boolean(lineBusiness) && (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
+                const showLineBusiness = !groupCartBySeller && Boolean(lineBusiness) && (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
                 const productName = String(item.bs_service_name || "").trim();
                 const itemTitle = item.itemType === "expertise" ? String(item.title || "Offering").trim() : productName || "Item";
                 const lineFeeKey = cartLineProcessingFeeKey(item);
@@ -1482,7 +1417,7 @@ const ShoppingCartScreenContent = ({
                 const bountyTotal = getCartLineBountyTotal(item);
                 const remainingAddQty = getCartLineRemainingAddQuantity(item);
                 return (
-                  <View key={index} style={styles.cartItemContainer}>
+                  <View key={`${group.key}-${index}`} style={styles.cartItemContainer}>
                     <View style={styles.cartItemCard}>
                       <View style={styles.cartItemTopRow}>
                         <View style={styles.cartItemDetails}>
@@ -1490,7 +1425,7 @@ const ShoppingCartScreenContent = ({
                           <Text style={styles.cartItemTitle}>{itemTitle}</Text>
                           <CartItemCustomizationText item={item} />
                           <CartStockBadge item={item} />
-                          <CartFulfillmentChoice item={item} onSelect={(method) => handleFulfillmentMethodChange(index, method)} />
+                          <CartLineDetails item={item} onFulfillmentSelect={(method) => handleFulfillmentMethodChange(index, method)} />
                         </View>
                         <View style={styles.cartItemActions}>
                           <TouchableOpacity style={styles.cartItemRemoveButton} onPress={() => handleRemoveItem(index)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
@@ -1540,15 +1475,23 @@ const ShoppingCartScreenContent = ({
                             </View>
                             <Text style={styles.bountyNoteValue}>{formatCartMoney(item, bountyTotal)}</Text>
                           </View>
-                          <Text style={styles.cartBountyAvailabilityNote}>Available after the buyer confirms receipt</Text>
+                          <Text style={styles.cartBountyAvailabilityNote}>{getCartLineBountyAvailabilityNote(item)}</Text>
                         </View>
                       ) : null}
                     </View>
                   </View>
                 );
-              })}
+                  })}
+                </View>
+              ))}
               {cartHasShipFulfillmentLines ? (
-                <View style={styles.shippingCard}>
+                <View
+                  collapsable={false}
+                  style={styles.shippingCard}
+                  onLayout={(e) => {
+                    shippingSectionScrollYRef.current = e.nativeEvent.layout.y;
+                  }}
+                >
                   <Text style={styles.shippingSectionTitle}>Delivery address</Text>
                   {cartRequiresBuyerPaysShipping ? <Text style={styles.shippingRequiredNote}>Required for items being shipped to you.</Text> : null}
                   <View style={styles.shippingFields}>
@@ -1712,33 +1655,6 @@ const ShoppingCartScreenContent = ({
                 ) : null}
               </View>
 
-              {cartRequiresReturnAcknowledgement ? (
-                <View
-                  collapsable={false}
-                  style={styles.refundPolicySection}
-                  onLayout={(e) => {
-                    refundSectionScrollYRef.current = e.nativeEvent.layout.y;
-                  }}
-                >
-                  <TouchableOpacity
-                    style={styles.refundPolicyRow}
-                    onPress={() => {
-                      setRefundAcknowledged(!refundAcknowledged);
-                      setRefundError(false);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.checkbox, refundAcknowledged && styles.checkboxChecked, refundError && { borderColor: "#FF3B30" }]}>
-                      {refundAcknowledged && <Text style={styles.checkmark}>✓</Text>}
-                    </View>
-                    <Text style={[styles.refundPolicyLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
-                      Return must be made in 5 days for a full refund, any returns past 5 days will result in a partial refund. Check the box to acknowledge.
-                    </Text>
-                  </TouchableOpacity>
-                  {refundError && <Text style={{ color: "#FF3B30", fontSize: 13, marginTop: 6, marginLeft: 34 }}>You must acknowledge the return policy before checking out.</Text>}
-                </View>
-              ) : null}
-
               <View style={styles.buyerNoteCard}>
                 <Text style={styles.buyerNoteTitle}>Transaction notes (optional)</Text>
                 <Text style={styles.buyerNoteHint}>
@@ -1819,6 +1735,11 @@ const ShoppingCartScreenContent = ({
               paidBy={customerUid}
               payeeBusinessName={webCheckoutPayeeDisplayName}
               transactionBuyerNote={transactionBuyerNote}
+              checkoutStepLabel={
+                webCheckoutSession && webCheckoutSession.groups.length > 1
+                  ? `Payment ${webCheckoutSession.index + 1} of ${webCheckoutSession.groups.length}`
+                  : null
+              }
               show={showStripePayment}
               setShow={setShowStripePayment}
               submit={handleWebPaymentSubmit}
@@ -1889,10 +1810,24 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textTransform: "uppercase",
   },
-  cartOverviewTitle: {
+  cartSellerGroup: {
+    marginBottom: 8,
+  },
+  cartSellerGroupHeader: {
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  cartSellerGroupLabel: {
+    fontSize: 12,
+    color: "#888",
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  cartSellerGroupName: {
     fontSize: 18,
     fontWeight: "700",
-    marginBottom: 16,
     color: "#333",
   },
   businessName: {
@@ -2132,58 +2067,6 @@ const styles = StyleSheet.create({
     color: "#333",
     marginBottom: 4,
   },
-  fulfillmentSection: {
-    marginTop: 10,
-  },
-  fulfillmentChoiceLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#666",
-    marginBottom: 8,
-  },
-  fulfillmentChoiceRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  fulfillmentChoiceRowWrap: {
-    flexWrap: "wrap",
-  },
-  fulfillmentChoiceBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#9C45F7",
-    backgroundColor: "#fff",
-  },
-  fulfillmentChoiceBtnMulti: {
-    flexGrow: 1,
-    flexBasis: "30%",
-    minWidth: 96,
-  },
-  fulfillmentChoiceBtnActive: {
-    backgroundColor: "#9C45F7",
-    borderColor: "#9C45F7",
-  },
-  fulfillmentChoiceBtnText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#9C45F7",
-  },
-  fulfillmentChoiceBtnTextActive: {
-    color: "#fff",
-  },
-  fulfillmentPickupHint: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 8,
-    fontStyle: "italic",
-  },
   shippingRequiredNote: {
     fontSize: 12,
     color: "#666",
@@ -2359,40 +2242,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: "#9C45F7",
-  },
-  refundPolicySection: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 10,
-    marginTop: 10,
-  },
-  refundPolicyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: "#9C45F7",
-    borderRadius: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-  checkboxChecked: {
-    backgroundColor: "#9C45F7",
-  },
-  checkmark: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  refundPolicyLabel: {
-    fontSize: 16,
-    color: "#333",
-    flex: 1,
   },
   disabledButton: {
     opacity: 0.7,
