@@ -17,6 +17,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import { getHeaderColors } from "../config/headerColors";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { deleteAccountApi, clearLocalSessionAfterAccountDeletion } from "../utils/deleteAccount";
+import { formatPurgeDate, DEFAULT_DELETION_GRACE_DAYS } from "../utils/reactivateAccount";
 
 const CONFIRM_PHRASE = "DELETE";
 
@@ -66,7 +67,10 @@ export default function DeleteAccountScreen() {
       </View>
       <Text style={[styles.title, darkMode && styles.darkTitle]}>Delete your account?</Text>
       <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
-        Your account and personal data will be permanently deleted.
+        Your account will be scheduled for deletion. It will be permanently removed after 30 days.
+      </Text>
+      <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
+        During those 30 days, you can reactivate by logging in again. Your profile and network will stay hidden until you reactivate.
       </Text>
       <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
         Transaction history and financial records are retained as required by law.
@@ -74,7 +78,9 @@ export default function DeleteAccountScreen() {
       <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
         Any wallet balance will be frozen and cannot be withdrawn after deletion.
       </Text>
-      <Text style={[styles.bodyText, styles.emphasis, darkMode && styles.darkEmphasis]}>This cannot be undone.</Text>
+      <Text style={[styles.bodyText, styles.emphasis, darkMode && styles.darkEmphasis]}>
+        After 30 days, deletion cannot be undone.
+      </Text>
 
       <View style={styles.buttonRow}>
         <TouchableOpacity style={[styles.secondaryButton, darkMode && styles.darkSecondaryButton]} onPress={() => navigation.goBack()} activeOpacity={0.8}>
@@ -91,7 +97,7 @@ export default function DeleteAccountScreen() {
     <View style={styles.contentBlock}>
       <Text style={[styles.title, darkMode && styles.darkTitle]}>Final confirmation</Text>
       <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
-        Type <Text style={styles.mono}>{CONFIRM_PHRASE}</Text> below to permanently delete your account.
+        Type <Text style={styles.mono}>{CONFIRM_PHRASE}</Text> below to schedule deletion of your account.
       </Text>
       <TextInput
         value={confirmText}
@@ -132,33 +138,43 @@ export default function DeleteAccountScreen() {
     </View>
   );
 
-  const renderSuccess = () => (
-    <View style={styles.contentBlock}>
-      <View style={[styles.iconCircle, styles.successIconCircle]}>
-        <Ionicons name='checkmark-circle' size={40} color='#2E7D32' />
-      </View>
-      <Text style={[styles.title, darkMode && styles.darkTitle]}>Account deleted</Text>
-      <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
-        Your account has been deleted. Personal data has been removed from our records.
-      </Text>
-      {confirmation?.deleted_at ? (
-        <Text style={[styles.metaText, darkMode && styles.darkMetaText]}>Deleted at: {confirmation.deleted_at}</Text>
-      ) : null}
-      {confirmation?.profile_personal_uid ? (
-        <Text style={[styles.metaText, darkMode && styles.darkMetaText]}>Profile ID: {confirmation.profile_personal_uid}</Text>
-      ) : null}
-      {confirmation?.wallet_frozen ? (
-        <Text style={[styles.metaText, darkMode && styles.darkMetaText]}>Wallet balance frozen per policy.</Text>
-      ) : null}
-      {confirmation?.financial_records_retained ? (
-        <Text style={[styles.metaText, darkMode && styles.darkMetaText]}>Financial records retained as required by law.</Text>
-      ) : null}
+  const renderSuccess = () => {
+    const graceDays = confirmation?.grace_days ?? DEFAULT_DELETION_GRACE_DAYS;
+    const purgeAt = confirmation?.purge_scheduled_at;
+    const purgeLabel = formatPurgeDate(purgeAt) || purgeAt;
+    const reactivationAvailable = confirmation?.reactivation_available !== false;
 
-      <TouchableOpacity style={styles.primaryButton} onPress={finishAndGoHome} activeOpacity={0.8}>
-        <Text style={styles.primaryButtonText}>Return to welcome</Text>
-      </TouchableOpacity>
-    </View>
-  );
+    return (
+      <View style={styles.contentBlock}>
+        <View style={[styles.iconCircle, styles.successIconCircle]}>
+          <Ionicons name='time-outline' size={40} color='#2E7D32' />
+        </View>
+        <Text style={[styles.title, darkMode && styles.darkTitle]}>Deletion scheduled</Text>
+        <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
+          Your account will be permanently removed in {graceDays} days.
+          {reactivationAvailable
+            ? " You can reactivate anytime before then by logging in with this account."
+            : ""}
+        </Text>
+        {purgeLabel ? (
+          <Text style={[styles.metaText, darkMode && styles.darkMetaText]}>Permanent removal scheduled for: {purgeLabel}</Text>
+        ) : null}
+        {confirmation?.profile_personal_uid ? (
+          <Text style={[styles.metaText, darkMode && styles.darkMetaText]}>Profile ID: {confirmation.profile_personal_uid}</Text>
+        ) : null}
+        {confirmation?.wallet_frozen ? (
+          <Text style={[styles.metaText, darkMode && styles.darkMetaText]}>Wallet balance frozen per policy.</Text>
+        ) : null}
+        {confirmation?.financial_records_retained ? (
+          <Text style={[styles.metaText, darkMode && styles.darkMetaText]}>Financial records retained as required by law.</Text>
+        ) : null}
+
+        <TouchableOpacity style={styles.primaryButton} onPress={finishAndGoHome} activeOpacity={0.8}>
+          <Text style={styles.primaryButtonText}>Return to welcome</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={[styles.container, darkMode && styles.darkContainer]}>

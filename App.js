@@ -63,6 +63,7 @@ import BusinessProfileScreen from "./screens/BusinessProfileScreen";
 import SearchTab from "./screens/SearchTab";
 import ChangePasswordScreen from "./screens/ChangePasswordScreen";
 import DeleteAccountScreen from "./screens/DeleteAccountScreen";
+import ReactivateScreen from "./screens/ReactivateScreen";
 import FilterScreen from "./screens/FilterScreen-DNU";
 import TermsAndConditionsScreen from "./screens/TermsAndConditionsScreen";
 import PrivacyPolicyScreen from "./screens/PrivacyPolicyScreen";
@@ -88,6 +89,7 @@ import EveryCircleMapScreen from "./screens/EveryCircleMapScreen";
 import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv, clearSessionAsyncStorage, clearSessionAsyncStorageOnLogin } from "./utils/clearAppAsyncStorage";
 import { fetchMiddleware as fetchCircle } from "./utils/httpMiddleware";
 import { appleCircleAuthPayload, fetchCircleAuthSocial, googleCircleAuthPayload, setOnAuthSessionExpired } from "./utils/authSession";
+import { isPendingDeletionAuthResponse, reactivateNavParamsFromAuthPayload } from "./utils/deletedProfile";
 import { resetSharedAblyClient } from "./utils/ablyClient";
 
 const Stack = createNativeStackNavigator();
@@ -186,6 +188,17 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
     });
     const result = await response.json();
     console.log("App.js - AppleAuth response:", response.status, result);
+    if (isPendingDeletionAuthResponse(result, response.status)) {
+      await clearSessionAsyncStorage();
+      navigation.navigate(
+        "Reactivate",
+        reactivateNavParamsFromAuthPayload(result, {
+          email: appleAuthBody.email || user?.email || "",
+          password: "",
+        }),
+      );
+      return;
+    }
     if (!response.ok) {
       throw new Error(result.message || `Apple auth failed (${response.status})`);
     }
@@ -222,7 +235,18 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
       preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
     });
     if (idToken) {
-      await fetchCircleAuthSocial(appleCircleAuthPayload(idToken), fetchCircle);
+      const circleAuth = await fetchCircleAuthSocial(appleCircleAuthPayload(idToken), fetchCircle);
+      if (circleAuth?.pendingDeletion) {
+        await clearSessionAsyncStorage();
+        navigation.navigate(
+          "Reactivate",
+          reactivateNavParamsFromAuthPayload(circleAuth.data || {}, {
+            email: userEmail || "",
+            password: "",
+          }),
+        );
+        return;
+      }
     }
 
     const appleUserInfoPayload = {
@@ -291,6 +315,18 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
   const result = await response.json();
   console.log("App.js - Google social auth response:", result);
 
+  if (isPendingDeletionAuthResponse(result, response.status)) {
+    await clearSessionAsyncStorage();
+    navigation.navigate(
+      "Reactivate",
+      reactivateNavParamsFromAuthPayload(result, {
+        email: userInfo.user.email,
+        password: "GOOGLE_LOGIN",
+      }),
+    );
+    return;
+  }
+
   let userUid;
   if (result.user_uid && result.code >= 200 && result.code < 300) {
     userUid = result.user_uid;
@@ -316,7 +352,18 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     previousUserUid,
     preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
   });
-  await fetchCircleAuthSocial(googleCircleAuthPayload(googleAuthToken, userInfo), fetchCircle);
+  const circleAuth = await fetchCircleAuthSocial(googleCircleAuthPayload(googleAuthToken, userInfo), fetchCircle);
+  if (circleAuth?.pendingDeletion) {
+    await clearSessionAsyncStorage();
+    navigation.navigate(
+      "Reactivate",
+      reactivateNavParamsFromAuthPayload(circleAuth.data || {}, {
+        email: userInfo.user.email,
+        password: "GOOGLE_LOGIN",
+      }),
+    );
+    return;
+  }
 
   const googleUserInfo = {
     email: userInfo.user.email,
@@ -935,6 +982,7 @@ export default function App() {
     },
     Login: "login",
     SignUp: "signup",
+    Reactivate: "reactivate",
     Profile: {
       path: "profile",
       parse: {
@@ -1017,7 +1065,7 @@ export default function App() {
     const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap"];
 
     // Allowed screens when terms are not accepted
-    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
+    const termsAllowedScreens = ["Home", "Login", "SignUp", "Reactivate", "Settings", "TermsAndConditions", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
 
     // If cookies not allowed and trying to access any screen except Settings
     if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
@@ -1106,6 +1154,7 @@ export default function App() {
                     <Stack.Screen name='BusinessModeration' component={BusinessModerationScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
                     <Stack.Screen name='DeleteAccount' component={DeleteAccountScreen} options={{ headerShown: false }} />
+                    <Stack.Screen name='Reactivate' component={ReactivateScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='Filters' component={FilterScreen} />
                     <Stack.Screen name='SearchTab' component={SearchTab} />
 

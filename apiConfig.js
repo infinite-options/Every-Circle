@@ -58,8 +58,10 @@ export const AUTH_REFRESH_ENDPOINT = `${API_BASE_URL}/api/v1/auth/refresh`;
 export const AUTH_SOCIAL_ENDPOINT = `${API_BASE_URL}/api/v1/auth/social`;
 export const AUTH_LOGOUT_ENDPOINT = `${API_BASE_URL}/api/v1/auth/logout`;
 export const AUTH_ME_ENDPOINT = `${API_BASE_URL}/api/v1/auth/me`;
-/** DELETE JSON `{ confirm_deletion: true }` — permanently delete authenticated account (App Store / Play compliant). */
+/** DELETE JSON `{ confirm_deletion: true }` — schedules soft-delete (30-day grace); permanent purge after grace. */
 export const DELETE_ACCOUNT_ENDPOINT = `${API_BASE_URL}/api/v1/account`;
+/** POST JSON `{ email, password, confirm_reactivation: true }` — restore soft-deleted account during grace (no JWT). */
+export const REACTIVATE_ACCOUNT_ENDPOINT = `${API_BASE_URL}/api/v1/account/reactivate`;
 
 // User Profile Endpoints
 export const USER_INFO_ENDPOINT = `${API_BASE_URL}/userinfo`;

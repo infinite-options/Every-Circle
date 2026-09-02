@@ -18,6 +18,8 @@ import { saveSessionProfilePayload, clearUserProfileCacheStorage } from "../util
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { fetchCircleAuthLogin, fetchCircleAuthSocial, googleCircleAuthPayload, issueCircleTokensFromPassword } from "../utils/authSession";
 import { refreshAllowCookies, subscribeCookieBannerHeight } from "../utils/cookieConsent";
+import { isPendingDeletionAuthResponse, isSoftDeletedRegisterConflict, reactivateNavParamsFromAuthPayload } from "../utils/deletedProfile";
+import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 
 function authContinuationParams(route) {
   const p = route?.params || {};
@@ -305,6 +307,16 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
         console.log("SignUpScreen - Google Signup Response:", response);
         const result = await response.json();
+        if (isPendingDeletionAuthResponse(result, response.status) || isSoftDeletedRegisterConflict(result, response.status)) {
+          navigation.navigate(
+            "Reactivate",
+            reactivateNavParamsFromAuthPayload(result, {
+              email: googleUserInfo.email,
+              password: "GOOGLE_LOGIN",
+            }),
+          );
+          return;
+        }
         if (result.user_uid) {
           // Clear AsyncStorage before storing new user data
           await AsyncStorage.clear();
@@ -312,7 +324,19 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           refreshAllowCookies();
           await AsyncStorage.setItem("user_uid", result.user_uid);
           await AsyncStorage.setItem("user_email_id", googleUserInfo.email);
-          await fetchCircleAuthSocial(googleCircleAuthPayload(googleUserInfo.accessToken), fetch);
+          const circleAuth = await fetchCircleAuthSocial(googleCircleAuthPayload(googleUserInfo.accessToken), fetch);
+          if (circleAuth?.pendingDeletion) {
+            await clearSessionAsyncStorage();
+            await clearUserProfileCacheStorage();
+            navigation.navigate(
+              "Reactivate",
+              reactivateNavParamsFromAuthPayload(circleAuth.data || {}, {
+                email: googleUserInfo.email,
+                password: "GOOGLE_LOGIN",
+              }),
+            );
+            return;
+          }
           setPendingGoogleUserInfo(googleUserInfo);
 
           await proceedAfterAccountCreation(async () => {
@@ -345,6 +369,12 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
         const createAccountData = await createAccountResponse.json();
         console.log("SignUpScreen - Regular Signup Response:", createAccountData);
+
+        if (isSoftDeletedRegisterConflict(createAccountData, createAccountResponse.status)) {
+          navigation.navigate("Reactivate", reactivateNavParamsFromAuthPayload(createAccountData, { email, password }));
+          return;
+        }
+
         if (createAccountData.message === "User already exists") {
           // If user_uid is not provided, just show error
           if (!createAccountData.user_uid) {
@@ -364,6 +394,12 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               body: JSON.stringify({ email }),
             });
             const saltObject = await saltResponse.json();
+
+            if (isPendingDeletionAuthResponse(saltObject, saltResponse.status)) {
+              setIsAttemptingLogin(false);
+              navigation.navigate("Reactivate", reactivateNavParamsFromAuthPayload(saltObject, { email, password }));
+              return;
+            }
 
             if (saltObject.code !== 200) {
               setIsAttemptingLogin(false);
@@ -386,6 +422,12 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             });
             const loginObject = await loginResponse.json();
 
+            if (isPendingDeletionAuthResponse(loginObject, loginResponse.status)) {
+              setIsAttemptingLogin(false);
+              navigation.navigate("Reactivate", reactivateNavParamsFromAuthPayload(loginObject, { email, password }));
+              return;
+            }
+
             // 4. Check if login succeeded
             if (loginObject.code === 200 && loginObject.result && loginObject.result.user_uid) {
               const user_uid = loginObject.result.user_uid;
@@ -394,8 +436,14 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               // Store user credentials
               await AsyncStorage.setItem("user_uid", user_uid);
               await AsyncStorage.setItem("user_email_id", user_email);
-              await fetchCircleAuthLogin(email, hashedPassword, fetch);
-
+              const circleAuth = await fetchCircleAuthLogin(email, hashedPassword, fetch);
+              if (circleAuth?.pendingDeletion) {
+                await clearSessionAsyncStorage();
+                await clearUserProfileCacheStorage();
+                setIsAttemptingLogin(false);
+                navigation.navigate("Reactivate", reactivateNavParamsFromAuthPayload(circleAuth.data || {}, { email, password }));
+                return;
+              }
               // Fetch user profile
               const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${user_uid}`, {
                 method: "GET",
