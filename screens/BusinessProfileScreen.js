@@ -40,6 +40,9 @@ import {
   resolveBusinessProfileImgUrl,
   isEphemeralGooglePhotoUrl,
   resolveGooglePhotosForDisplay,
+  resolveBusinessGooglePhotosForDisplay,
+  googlePhotosNeedDetailsRefresh,
+  resolveGooglePhotoDisplayUrl,
   resolveGooglePhotoUrl,
   googlePhotoUrlsMatch,
 } from "../utils/resolveBusinessProfileImage";
@@ -449,15 +452,20 @@ export default function BusinessProfileScreen({ route, navigation }) {
           }
         }
 
-        let googlePhotos = parseBusinessGooglePhotos(rawBusiness.business_google_photos);
-        const needsPhotoRefresh = googlePhotos.some(isEphemeralGooglePhotoUrl) || isEphemeralGooglePhotoUrl(rawBusiness.business_favorite_image);
+        const rawGooglePhotos = parseBusinessGooglePhotos(rawBusiness.business_google_photos);
+        const needsPhotoRefresh =
+          googlePhotosNeedDetailsRefresh(rawGooglePhotos) || isEphemeralGooglePhotoUrl(rawBusiness.business_favorite_image);
+        let googlePhotos;
         if (needsPhotoRefresh && rawBusiness.business_google_id) {
           try {
             const pd = await getPlaceDetails(rawBusiness.business_google_id);
-            googlePhotos = resolveGooglePhotosForDisplay(googlePhotos, pd.photo_urls);
+            googlePhotos = resolveGooglePhotosForDisplay(rawGooglePhotos, pd.photo_urls).map(resolveGooglePhotoDisplayUrl);
           } catch (e) {
             console.warn("BusinessProfileScreen - could not refresh Google photo URLs:", e);
+            googlePhotos = resolveBusinessGooglePhotosForDisplay(rawGooglePhotos);
           }
+        } else {
+          googlePhotos = resolveBusinessGooglePhotosForDisplay(rawGooglePhotos);
         }
         let businessImages = [...googlePhotos];
 

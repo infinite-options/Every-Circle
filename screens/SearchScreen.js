@@ -94,7 +94,7 @@ import {
   isSearchLocationAny,
   isActiveSearchLocation,
 } from "../utils/searchLocationOptions";
-import { getCitySuggestions, getPlaceDetails } from "../utils/googlePlaces";
+import { getCitySuggestions, getPlaceAddressDetails } from "../utils/googlePlaces";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 
@@ -1694,7 +1694,7 @@ export default function SearchScreen({ route }) {
   const resolveCityFromPlace = useCallback(async (place) => {
     setCitySuggestionsLoading(true);
     try {
-      const pd = await getPlaceDetails(place.place_id);
+      const pd = await getPlaceAddressDetails(place.place_id);
       if (pd.lat == null || pd.lng == null) {
         Alert.alert("Error", "Could not determine coordinates for this city.");
         return null;

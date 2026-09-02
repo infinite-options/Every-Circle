@@ -53,7 +53,7 @@ import { profileBusinessHasRealOwnership } from "../utils/businessOwnership";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { sanitizeText } from "../utils/textSanitizer";
 import { upsertReferralNetworkRelationship } from "../utils/searchReferralProfiles";
-import { getBusinessSuggestions as fetchGooglePlaces, getPlaceDetails } from "../utils/googlePlaces";
+import { getBusinessSuggestions as fetchGooglePlaces, getPlaceAddressDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
@@ -69,6 +69,7 @@ import FlagOfferingModal from "../components/FlagOfferingModal";
 import FlagSeekingModal from "../components/FlagSeekingModal";
 import FlagProfileModal from "../components/FlagProfileModal";
 import FindSeekersModal from "../components/FindSeekersModal";
+import FindOfferersModal from "../components/FindOfferersModal";
 import OfferingModerationBanner from "../components/OfferingModerationBanner";
 import SeekingModerationBanner from "../components/SeekingModerationBanner";
 import BusinessModerationBanner from "../components/BusinessModerationBanner";
@@ -277,6 +278,7 @@ const ProfileScreen = ({ route, navigation }) => {
   const [flagModalOffering, setFlagModalOffering] = useState(null);
   const [flagModalSeeking, setFlagModalSeeking] = useState(null);
   const [findSeekersOffering, setFindSeekersOffering] = useState(null);
+  const [findOfferersSeeking, setFindOfferersSeeking] = useState(null);
   const [showFlagProfileModal, setShowFlagProfileModal] = useState(false);
   const [isAdminViewer, setIsAdminViewer] = useState(false);
   const [showRelationshipDropdown, setShowRelationshipDropdown] = useState(false);
@@ -346,7 +348,7 @@ const ProfileScreen = ({ route, navigation }) => {
     setReviewSearchVisible(false);
     setSavingGooglePlace(true);
     try {
-      const pd = await getPlaceDetails(place.place_id);
+      const pd = await getPlaceAddressDetails(place.place_id);
       const uid = (await AsyncStorage.getItem("user_uid")) || (await AsyncStorage.getItem("profile_uid")) || "";
 
       const formData = new FormData();
@@ -2128,7 +2130,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       const findSeekersBtn =
                         isCurrentUserProfile && !offeringModeratedBlocked ? (
                           <TouchableOpacity
-                            style={[styles.findSeekersButton, darkMode && styles.darkFindSeekersButton]}
+                            style={[styles.profileMatchButton, darkMode && styles.darkProfileMatchButton]}
                             activeOpacity={0.75}
                             onPress={() =>
                               setFindSeekersOffering({
@@ -2139,7 +2141,7 @@ const ProfileScreen = ({ route, navigation }) => {
                             accessibilityLabel='Find people seeking this offering'
                           >
                             <Ionicons name='people-outline' size={14} color={darkMode ? "#e8d4ff" : "#5B2C8A"} style={{ marginRight: 5 }} />
-                            <Text style={[styles.findSeekersButtonText, darkMode && styles.darkFindSeekersButtonText]}>Find seekers</Text>
+                            <Text style={[styles.profileMatchButtonText, darkMode && styles.darkProfileMatchButtonText]}>Find seekers</Text>
                           </TouchableOpacity>
                         ) : null;
                       const messageAboutOfferingBtn =
@@ -2351,6 +2353,24 @@ const ProfileScreen = ({ route, navigation }) => {
                         </>
                       );
 
+                      const findOfferersBtn =
+                        isCurrentUserProfile && !seekingModeratedBlocked ? (
+                          <TouchableOpacity
+                            style={[styles.profileMatchButton, darkMode && styles.darkProfileMatchButton]}
+                            activeOpacity={0.75}
+                            onPress={() =>
+                              setFindOfferersSeeking({
+                                title: sanitizeText(wish.helpNeeds) || sanitizeText(wish.profile_wish_title) || "",
+                              })
+                            }
+                            accessibilityRole='button'
+                            accessibilityLabel='Find people offering what you are seeking'
+                          >
+                            <Ionicons name='storefront-outline' size={14} color={darkMode ? "#e8d4ff" : "#5B2C8A"} style={{ marginRight: 5 }} />
+                            <Text style={[styles.profileMatchButtonText, darkMode && styles.darkProfileMatchButtonText]}>Find offerers</Text>
+                          </TouchableOpacity>
+                        ) : null;
+
                       const openWishDetail = () => {
                         const wishData = {
                           wish_uid: wish.profile_wish_uid,
@@ -2478,6 +2498,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       return (
                         <View key={wishKey} style={shellStyle}>
                           {wishCardContent}
+                          {findOfferersBtn}
                         </View>
                       );
                     })
@@ -2993,6 +3014,13 @@ const ProfileScreen = ({ route, navigation }) => {
         excludeProfileUid={profileUID}
         navigation={navigation}
       />
+      <FindOfferersModal
+        visible={findOfferersSeeking != null}
+        onClose={() => setFindOfferersSeeking(null)}
+        seekingTitle={findOfferersSeeking?.title}
+        excludeProfileUid={profileUID}
+        navigation={navigation}
+      />
       <FlagProfileModal
         visible={showFlagProfileModal}
         onClose={() => setShowFlagProfileModal(false)}
@@ -3354,7 +3382,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 12,
   },
-  findSeekersButton: {
+  profileMatchButton: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
@@ -3366,16 +3394,16 @@ const styles = StyleSheet.create({
     borderColor: "#C9A9E8",
     backgroundColor: "rgba(156, 69, 247, 0.08)",
   },
-  darkFindSeekersButton: {
+  darkProfileMatchButton: {
     borderColor: "#6B4A8A",
     backgroundColor: "rgba(156, 69, 247, 0.18)",
   },
-  findSeekersButtonText: {
+  profileMatchButtonText: {
     color: "#5B2C8A",
     fontWeight: "600",
     fontSize: 12,
   },
-  darkFindSeekersButtonText: {
+  darkProfileMatchButtonText: {
     color: "#e8d4ff",
   },
   offeringActionRow: {

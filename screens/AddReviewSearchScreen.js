@@ -19,7 +19,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
-import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
+import { getBusinessSuggestions, getPlaceAddressDetails } from "../utils/googlePlaces";
 import { BUSINESS_INFO_ENDPOINT, BUSINESS_RESULTS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
@@ -55,7 +55,7 @@ export default function AddReviewSearchScreen() {
     console.log("[AddReviewSearch] Step 1 — place selected:", place.place_id, bizName);
     try {
       // (a) Get lat/lng + address
-      const pd = await getPlaceDetails(place.place_id);
+      const pd = await getPlaceAddressDetails(place.place_id);
       console.log("[AddReviewSearch] Step 2 — place details:", JSON.stringify(pd));
 
       // (b) Get user_uid

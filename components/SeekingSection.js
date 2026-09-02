@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getAddressSuggestions, getPlaceDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
+import { getAddressSuggestions, getPlaceAddressDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
 import { Dropdown } from "react-native-element-dropdown";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
@@ -381,7 +381,7 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
     try {
       const suggs = await getAddressSuggestions(item.profile_wish_location.trim());
       if (!suggs.length) return;
-      const pd = await getPlaceDetails(suggs[0].place_id);
+      const pd = await getPlaceAddressDetails(suggs[0].place_id);
       if (pd.lat == null || pd.lng == null) return;
       setWishes(
         wishes.map((w, i) => {
@@ -408,7 +408,7 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
     setAddressLoadingIndex(index);
     try {
       console.log("[Seeking] address select called, place_id:", place.place_id);
-      const pd = await getPlaceDetails(place.place_id);
+      const pd = await getPlaceAddressDetails(place.place_id);
       console.log("[Seeking] getPlaceDetails result:", JSON.stringify(pd));
       if (pd.lat == null || pd.lng == null) {
         console.warn("[Seeking] lat/lng missing from place details:", pd);
