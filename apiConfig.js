@@ -110,7 +110,7 @@ export const BUSINESS_SERVICE_RESTOCK_ENDPOINT = `${API_BASE_URL}/business/servi
 /** POST JSON `{ profile_expertise_uid, quantity, seller_id, trr_uid?, order_uid? }` — seller_id required (JWT profile or owned business) */
 export const PROFILE_EXPERTISE_RESTOCK_ENDPOINT = `${API_BASE_URL}/api/v1/profile-expertise/restock`;
 export const BUSINESS_CLAIM_ENDPOINT = `${API_BASE_URL}/api/v1/business_claim`;
-/** PUT JSON `{ business_uid, target_user_id, role, user_uid? }` — actor must be owner/partner; owner/partner targets are protected */
+/** PUT JSON `{ business_uid, target_user_id, role, user_uid? }` — FE gates: owner/partner (incl. self) and admin (non-senior targets); BE may still protect owner/partner targets */
 export const BUSINESS_MEMBER_ROLE_ENDPOINT = `${API_BASE_URL}/api/v1/business_member_role`;
 export const BUSINESS_MAP_ENDPOINT = `${API_BASE_URL}/api/v1/business_map`;
 
