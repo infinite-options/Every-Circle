@@ -45,8 +45,18 @@ export function mapProfileWishToFormItem(wish, profileUid) {
     profile_wish_mode: wish.profile_wish_mode || "",
     profile_wish_is_taxable: wish.profile_wish_is_taxable ?? 0,
     profile_wish_tax_rate: wish.profile_wish_tax_rate ?? "",
-    profile_wish_is_returnable: wish.profile_wish_is_returnable ?? 0,
-    profile_wish_return_window_days: wish.profile_wish_return_window_days ?? "",
+    profile_wish_is_returnable: wish.profile_wish_is_returnable === 1 || wish.profile_wish_is_returnable === "1" ? 1 : 0,
+    // Clamp into the valid 5-30 range on load too (mirrors mapWishFormToPayload below) — otherwise a
+    // previously-saved "Returnable" item with a missing/out-of-range days value loads as still-invalid
+    // with no obvious way for the user to tell why Submit stays disabled.
+    profile_wish_return_window_days: (() => {
+      const returnable = wish.profile_wish_is_returnable === 1 || wish.profile_wish_is_returnable === "1";
+      if (!returnable) return "";
+      const n = parseInt(String(wish.profile_wish_return_window_days ?? "").trim(), 10);
+      if (!Number.isFinite(n) || n < 5) return "5";
+      if (n > 30) return "30";
+      return String(n);
+    })(),
     ...shippingFields,
     profile_wish_shipping_refundable: wish.profile_wish_shipping_refundable ?? 0,
     profile_wish_refund_policy: wish.profile_wish_refund_policy || "",

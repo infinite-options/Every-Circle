@@ -26,7 +26,7 @@ if (!isWeb) {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PROFILE_WISH_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
-import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
+import { defaultStripeBusinessCode, fetchStripePublishableKey } from "../utils/stripePublishableKey";
 import StripeNativeProvider from "../components/StripeNativeProvider";
 
 // Web Stripe imports (only load on web)
@@ -114,7 +114,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     getCustomerUid();
   }, []);
 
-  const loadStripePublicKey = async (businessCode = "ECTEST") => {
+  const loadStripePublicKey = async (businessCode = defaultStripeBusinessCode()) => {
     try {
       const publicKey = await fetchStripePublishableKey(businessCode);
       if (loadStripe) {
@@ -140,7 +140,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       if (!buyerUid) throw new Error("User ID not found");
       if (!pendingAccept) throw new Error("No pending acceptance found");
 
-      const { recommendedProfileUid, recommenderProfileUid, wishResponseUid, subtotal, escrow, bountyAmount, quantity, costAmount, costValue } = pendingAccept;
+      const { recommendedProfileUid, recommenderProfileUid, wishResponseUid, subtotal, bountyAmount, quantity, costAmount, costValue } = pendingAccept;
 
       const processingFee = computeCreditCardProcessingFee(subtotal, true);
       const totalAmount = computeCreditCardChargeTotal(subtotal, true);
@@ -153,7 +153,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         wishResponseUid,
         processingFee,
         totalAmount,
-        escrow,
         bountyAmount,
         quantity,
         costAmount,
@@ -228,7 +227,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
 
       const requestBody = {
         customer_uid: buyer_profile_uid,
-        business_code: "ECTEST",
+        business_code: defaultStripeBusinessCode(),
         payment_summary: {
           tax: 0,
           total: amount.toString(),
@@ -267,7 +266,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     wishResponseUid,
     processingFee = 0,
     totalAmountPaid = null,
-    transactionInEscrow = false,
     bountyAmount = null,
     quantity = 1,
     costAmount = 0,
@@ -329,8 +327,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         total_taxes: orderMoney.total_taxes,
         total_shipping: orderMoney.total_shipping,
         total_fees: orderMoney.total_fees,
-        // Ensure tinyint: 1 or 0 only (backend expects tinyint)
-        transaction_in_escrow: transactionInEscrow === true || transactionInEscrow === 1 ? 1 : 0,
         items: [
           {
             // Keep both for backward compatibility + explicit ti_bs_id for API mapping
@@ -472,7 +468,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       wishResponseUid,
       subtotal,
       totalWithFee,
-      escrow: details.escrow,
       bountyAmount: details.bountyAmount,
       quantity: details.quantity,
       costAmount: details.costAmount,
@@ -481,7 +476,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
 
     try {
       if (isWeb) {
-        await loadStripePublicKey("ECTEST");
+        await loadStripePublicKey(defaultStripeBusinessCode());
         setShowStripePayment(true);
         setLoading(false);
         return;
@@ -564,7 +559,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         wishResponseUid,
         processingFee,
         totalWithFee,
-        details.escrow,
         details.bountyAmount,
         details.quantity,
         details.costAmount,
@@ -805,7 +799,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         </ScrollView>
       )}
 
-      {/* Accept Details Modal (Escrow, Quantity, Total) */}
+      {/* Accept Details Modal (Quantity, Total) */}
       <AcceptDetailsModal
         show={showAcceptDetailsModal}
         setShow={setShowAcceptDetailsModal}
@@ -820,7 +814,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         <>
           {stripePromise && customerUid && pendingAccept && (
             <StripePayment
-              message='ECTEST'
+              message={defaultStripeBusinessCode()}
               amount={pendingAccept.totalWithFee ?? pendingAccept.subtotal * 1.03}
               paidBy={customerUid}
               payeeBusinessName={wishWebPayeeName}
@@ -1050,7 +1044,7 @@ const styles = StyleSheet.create({
 
 export default function WishResponsesScreen(props) {
   return (
-    <StripeNativeProvider businessCode="ECTEST">
+    <StripeNativeProvider businessCode={defaultStripeBusinessCode()}>
       <WishResponsesScreenContent {...props} />
     </StripeNativeProvider>
   );

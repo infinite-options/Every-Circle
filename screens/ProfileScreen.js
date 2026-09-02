@@ -94,6 +94,7 @@ import {
   normalizeBusinessModeration,
   MODERATED_ACKNOWLEDGED as BUSINESS_MODERATED_ACKNOWLEDGED,
 } from "../utils/businessModeration";
+import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 console.log(`ProfileScreen - Full endpoint: ${ProfileScreenAPI}`);
@@ -698,6 +699,31 @@ const ProfileScreen = ({ route, navigation }) => {
    */
   async function processProfileApiUser(apiUser, profileUID, response) {
     apiUser = normalizeUserProfileInfoResponse(apiUser);
+
+    const personalInfo = apiUser?.personal_info || apiUser?.profile_info;
+    if (personalInfo && isProfileDeleted(personalInfo)) {
+      const requestedUid = String(personalInfo.profile_personal_uid || profileUID || "").trim();
+      setIsCurrentUserProfile(false);
+      setUser({
+        profile_uid: requestedUid,
+        isDeleted: true,
+        firstName: "",
+        lastName: "",
+        email: "",
+        phoneNumber: "",
+        tagLine: "",
+        city: "",
+        state: "",
+        shortBio: "",
+        profileImage: "",
+        expertise: [],
+        wishes: [],
+        experience: [],
+        education: [],
+      });
+      setLoading(false);
+      return;
+    }
 
     // Handle case where profile is not found (404 error)
     if (
@@ -1417,7 +1443,7 @@ const ProfileScreen = ({ route, navigation }) => {
     }
     try {
       const { expertiseData, profileData, profile_uid } = row;
-      const { quantity: qty, escrow, taxRatePct } = modalData;
+      const { quantity: qty, taxRatePct } = modalData;
       const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
       const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
       const cartItemDraft = {
@@ -1431,7 +1457,6 @@ const ProfileScreen = ({ route, navigation }) => {
         business_name: sellerDisplayName || "",
         itemType: "expertise",
         quantity: qty,
-        escrow,
         ...expertiseCartPersistedFields(expertiseData, { taxRatePct }),
         cart_key: cartKey,
         addedAt: new Date().toISOString(),
@@ -1487,6 +1512,31 @@ const ProfileScreen = ({ route, navigation }) => {
 
   const profileModerationItem = user.profileModerationItem;
   const profileVisibilityBlocked = profileModerationItem && isProfileVisibilityBlocked(profileModerationItem);
+  const viewingDeletedProfile = routeProfileUID && !isCurrentUserProfile && user?.isDeleted;
+
+  if (viewingDeletedProfile) {
+    return (
+      <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
+        <AppHeader
+          title='PROFILE'
+          {...getHeaderColors("profileView")}
+          onBackPress={() => {
+            if (navigation.canGoBack()) navigation.goBack();
+            else navigation.navigate("Connect");
+          }}
+        />
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
+          <Ionicons name='person-outline' size={48} color={darkMode ? "#888" : "#aaa"} style={{ marginBottom: 16, opacity: 0.6 }} />
+          <Text style={[styles.errorText, darkMode && styles.darkErrorText, { textAlign: "center", marginBottom: 8 }]}>{DELETED_USER_LABEL}</Text>
+          <Text style={{ color: darkMode ? "#bbb" : "#666", textAlign: "center", fontSize: 14, lineHeight: 20 }}>
+            This person deleted their account. Their place in the network is kept as a placeholder, but profile details are no longer available.
+          </Text>
+        </View>
+        <BottomNavBar navigation={navigation} />
+      </View>
+    );
+  }
+
   // Backend hides offerings/seekings for other viewers when moderated is 1, 2, or 3.
   // Owners use ProfileModerationScreen for 1/2; admins may still view full content.
   const viewingUnavailableProfile =

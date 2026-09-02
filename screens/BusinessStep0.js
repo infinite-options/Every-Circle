@@ -256,12 +256,14 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
       const pd = await getPlaceDetails(place.place_id);
       const googleTypes = Array.isArray(pd.types) ? pd.types : [];
       const googleTypeTags = googleTypes
-        .map((t) => String(t || "").replace(/_/g, " ").trim())
+        .map((t) =>
+          String(t || "")
+            .replace(/_/g, " ")
+            .trim(),
+        )
         .filter((t) => t && t !== "." && !/^[\s.,;:!?\-_=+]*$/.test(t))
         .map((t) => t.toLowerCase());
-      const mergedCustomTags = Array.from(
-        new Set([...(formData.customTags || []), ...googleTypeTags]),
-      );
+      const mergedCustomTags = Array.from(new Set([...(formData.customTags || []), ...googleTypeTags]));
       console.log("[BusinessStep0] Google place types:", Array.isArray(pd.types) ? pd.types : []);
       const photoUrls = dedupeGooglePhotoUrls(pd.photo_urls || []);
       const streetAddress = pd.address_line_1 || "";
@@ -303,8 +305,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
     }
   };
 
-  const getBusinessUidFromResult = (result) =>
-    result?.business?.business_uid || result?.business_uid || result?.result?.[0]?.business_uid || "";
+  const getBusinessUidFromResult = (result) => result?.business?.business_uid || result?.business_uid || result?.result?.[0]?.business_uid || "";
 
   const goToExistingBusinessProfile = (businessUid) => {
     if (!businessUid || !navigation) return;
@@ -361,7 +362,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
             nestedScrollEnabled={true}
           >
             <View style={[styles.formCard, darkMode && styles.darkFormCard, Platform.OS === "web" && styles.formCardWeb]}>
-              <Text style={[styles.title, darkMode && styles.darkTitle]}>Welcome to Every Circle!</Text>
+              <Text style={[styles.title, darkMode && styles.darkTitle]}>Welcome to everyCircle!</Text>
               <View style={styles.subtitleBlock}>
                 <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Let's Start Building Your Business Page!</Text>
                 <Text style={[styles.stepHint, darkMode && styles.darkSubtitle]}>(Step 1 of 2)</Text>
@@ -464,9 +465,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                   </TouchableOpacity>
                 </View>
               </View>
-              <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>
-                Controls whether location and address appear on your Business Mini Card.
-              </Text>
+              <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>Controls whether location and address appear on your Business Mini Card.</Text>
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Location</Text>
               <TextInput

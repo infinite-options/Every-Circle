@@ -1324,13 +1324,14 @@ function formatProductSaleReceivedStatus(receiptLine, saleRow) {
 }
 
 function formatProductSaleDeliveryStatus(saleRow, receiptLine) {
+  const displayLabel = getRowDisplayLabel(saleRow, "delivered_label");
+  if (displayLabel) return displayLabel;
   if (orderNeedsShipping(saleRow) || (receiptLine && orderNeedsShipping(receiptLine))) {
     const progress = getOrderShippingProgress([saleRow, receiptLine].filter(Boolean));
     if (progress === "none" || progress === "unknown") return "Not Shipped";
     if (progress === "partial") return "Partial";
   }
-  const inEscrow = saleRow?.transaction_in_escrow ?? saleRow?.in_escrow;
-  if (Number(inEscrow) === 1) return "Pending";
+  if (purchaseHasVerifiableRemaining(saleRow)) return "Pending";
   if (receiptLine) {
     const purchasedQty = getReceiptLineQty(receiptLine);
     const receivedQty = getPreviouslyReceivedQty(receiptLine);
@@ -1730,7 +1731,7 @@ function resolveRefundBusinessCode(sellerNote) {
     .toUpperCase();
   if (n === "ECTEST" || n === "PMTEST") return n;
   if (n === "EC" || n === "PM") return n;
-  // Default live (createPaymentIntent uses ECTEST in dev; live purchases use EC)
+  // Default live checkout uses EC; dev builds use ECTEST (see defaultStripeBusinessCode).
   return "EC";
 }
 
@@ -7016,7 +7017,8 @@ function resolveShippingProgressForDisplay(saleRows, shippingProgressOverride) {
 
 function getOrderDeliveredStatus(saleRows, shippingProgressOverride) {
   if (!Array.isArray(saleRows) || !saleRows.length) return "—";
-  const inEscrow = saleRows.some((row) => Number(row.transaction_in_escrow ?? row.in_escrow) === 1);
+  const displayLabel = getRowDisplayLabel(saleRows[0], "delivered_label");
+  if (displayLabel) return displayLabel;
 
   // Pickup / virtual / not_required — shipping column does not apply.
   if (saleRows.every(purchaseRowDeliveredNotApplicable)) {
@@ -7027,20 +7029,20 @@ function getOrderDeliveredStatus(saleRows, shippingProgressOverride) {
   if (progress === "not_required") return "—";
   if (progress === "none") return "Not Shipped";
   if (progress === "partial") return "Partial";
-  // progress === "complete": all shipping work done → escrow-aware Shipped / Delivered
+  // progress === "complete": all shipping work done → Shipped until buyer verifies receipt
   // progress === "unknown" with shipping but no line-level data: wait for order-detail hydration (don't flash Not Shipped)
   if (progress === "unknown" && saleRows.some((row) => orderNeedsShipping(row))) {
     return "—";
   }
   if (progress === "complete") {
-    if (inEscrow) return "Shipped";
-    return "Delivered";
+    if (saleRows.some((row) => isPurchaseFullyReceivedByQty(row))) return "Delivered";
+    return "Shipped";
   }
-  if (inEscrow) return "Pending";
+  if (saleRows.some(purchaseHasVerifiableRemaining)) return "Pending";
   return "Not Shipped";
 }
 
-/** True when purchase qty evidence shows the buyer has confirmed full receipt (ignores escrow). */
+/** True when purchase qty evidence shows the buyer has confirmed full receipt. */
 function isPurchaseFullyReceivedByQty(transaction) {
   if (!transaction || typeof transaction !== "object") return false;
   if (isTruthyShippingFlag(transaction.all_items_received)) return true;
@@ -7076,6 +7078,21 @@ function isPurchaseFullyReceivedByQty(transaction) {
   }
 
   return false;
+}
+
+/** True when the buyer can still verify at least one unit on this purchase row. */
+function purchaseHasVerifiableRemaining(row) {
+  if (!row || typeof row !== "object") return false;
+  if (isTruthyShippingFlag(row.all_items_received)) return false;
+  const units = row?.units;
+  if (units && typeof units === "object") {
+    const remaining = parseNonNegativeInt(units.verifiable_remaining_qty);
+    if (remaining != null) return remaining > 0;
+    const verified = parseNonNegativeInt(units.verified_qty) ?? 0;
+    const active = parseNonNegativeInt(units.active_qty) ?? parseNonNegativeInt(units.purchased_qty) ?? 0;
+    if (active > 0) return verified < active;
+  }
+  return !isPurchaseFullyReceivedByQty(row);
 }
 
 /** Extract v3 purchases.rows[] item from PUT /api/v1/transactions (delivery verification / fulfillment). */
@@ -7134,8 +7151,8 @@ function buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel = null
   const deliveredIndicatesShipped = delivered === "partial" || delivered === "shipped" || delivered === "delivered" || delivered === "returning" || !!parseFractionStatusLabel(delivered);
 
   if (deliveredIndicatesShipped) return true;
-  // Still in escrow with incomplete receipt — allow verify even if delivered label is sparse.
-  if (Number(transaction.transaction_in_escrow ?? transaction.in_escrow) === 1) return true;
+  // Units remain verifiable — allow verify even if delivered label is sparse.
+  if (purchaseHasVerifiableRemaining(transaction)) return true;
   return false;
 }
 
@@ -7197,7 +7214,7 @@ function getOrderReceivedStatusFromSaleRows(saleRows) {
     }
   }
 
-  // No buyer-verified receipt evidence — do not infer received from escrow release.
+  // No buyer-verified receipt evidence.
   return "No";
 }
 
@@ -7434,10 +7451,9 @@ function sellerOrderNeedsShippingAction(row, shippingProgressOverride, sellerLin
   return progress === "partial" || progress === "none";
 }
 
-/** In-escrow sale where the buyer has not fully verified active (non-returned) units. */
+/** Sale where the buyer has not fully verified active (non-returned) units. */
 function sellerOrderNeedsVerificationAction(row, sellerLines, returnStatusesByKey) {
   if (!row || isReturnListRow(row)) return false;
-  if (Number(row.transaction_in_escrow ?? row.in_escrow) !== 1) return false;
 
   const units = row?.units;
   if (units && typeof units === "object") {
@@ -8817,7 +8833,7 @@ export default function AccountScreen({ navigation, route }) {
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [showReceiveItemModal, setShowReceiveItemModal] = useState(false);
   const [pendingTransactionForConfirm, setPendingTransactionForConfirm] = useState(null);
-  const [updatingEscrow, setUpdatingEscrow] = useState(false);
+  const [confirmingDelivery, setConfirmingDelivery] = useState(false);
   const [deliveryVerificationReceiptData, setDeliveryVerificationReceiptData] = useState([]);
   const [deliveryVerificationOrderUnits, setDeliveryVerificationOrderUnits] = useState(null);
   const [deliveryVerificationLoading, setDeliveryVerificationLoading] = useState(false);
@@ -8856,7 +8872,7 @@ export default function AccountScreen({ navigation, route }) {
   const [returnNote, setReturnNote] = useState("");
   const [showReturnNoteModal, setShowReturnNoteModal] = useState(false);
 
-  /** Coalesce overlapping refreshAccountScreenPersonal calls (focus + escrow update, Strict Mode, etc.) */
+  /** Coalesce overlapping refreshAccountScreenPersonal calls (focus + delivery verification, Strict Mode, etc.) */
   const refreshPersonalInFlightRef = useRef(null);
   const accountScreenSchemaVersionRef = useRef(0);
   const [accountScreenSchemaVersion, setAccountScreenSchemaVersion] = useState(0);
@@ -9956,7 +9972,7 @@ export default function AccountScreen({ navigation, route }) {
     }
   };
 
-  const updateTransactionEscrow = async (transactionUid, deliveryVerificationItems, releaseEscrow, verificationContext = null) => {
+  const confirmDeliveryVerification = async (transactionUid, deliveryVerificationItems, allItemsFullyReceived) => {
     const profileId = pendingTransactionForConfirm?.transaction_profile_id || (await getSessionProfile())?.profileUid || (await AsyncStorage.getItem("profile_uid"));
     if (!profileId) {
       Alert.alert("Error", "Cannot confirm delivery: missing profile.");
@@ -9965,12 +9981,11 @@ export default function AccountScreen({ navigation, route }) {
     const requestBody = {
       profile_id: profileId,
       transaction_uid: transactionUid,
-      transaction_in_escrow: releaseEscrow ? 0 : 1,
       delivery_verification_items: deliveryVerificationItems,
     };
     const txnKey = String(transactionUid || "").trim();
     try {
-      setUpdatingEscrow(true);
+      setConfirmingDelivery(true);
       const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -9978,7 +9993,7 @@ export default function AccountScreen({ navigation, route }) {
       });
       if (!response.ok) {
         const detail = await formatFetchErrorAlertMessage(response, ["Failed to confirm delivery.", `Request:\n${JSON.stringify(requestBody, null, 2)}`]);
-        console.error("Error updating transaction escrow:", detail);
+        console.error("Error confirming delivery verification:", detail);
         Alert.alert("Could not confirm delivery", detail);
         return;
       }
@@ -10001,17 +10016,17 @@ export default function AccountScreen({ navigation, route }) {
       // Wallet balances come from BE (account-screen.wallet) — refresh immediately like the ledger,
       // without replacing purchases so a lagging purchases.rows aggregate cannot overwrite the PUT snapshot.
       void refreshPersonalWallet();
-      if (!releaseEscrow) {
+      if (!allItemsFullyReceived) {
         Alert.alert("Partial delivery recorded", "Receipt confirmation saved. Earnings may remain pending until all items are verified and any return window ends.");
       } else {
         Alert.alert("Delivery confirmed", "Receipt confirmed. Bounty and seller proceeds may stay pending until any return window ends before they become available to spend.");
       }
     } catch (error) {
-      console.error("Error updating transaction escrow:", error);
+      console.error("Error confirming delivery verification:", error);
       const detail = ["Failed to confirm delivery.", error?.message ? String(error.message) : "Please try again.", `Request:\n${JSON.stringify(requestBody, null, 2)}`].filter(Boolean).join("\n\n");
       Alert.alert("Could not confirm delivery", detail);
     } finally {
-      setUpdatingEscrow(false);
+      setConfirmingDelivery(false);
     }
   };
 
@@ -12910,7 +12925,7 @@ export default function AccountScreen({ navigation, route }) {
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
             <Text style={[styles.receiveItemModalHeader, { color: "#18884A" }, darkMode && styles.darkTitle]}>Confirm Receipt</Text>
             <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
-              Add a note for this return (optional). Enter ECTEST or PMTEST to refund on the test Stripe account; otherwise EC / PM (live) is used.
+              Add a note for this return (optional). Enter ECTEST or PMTEST to refund on a test Stripe account; otherwise EC (live) is used.
             </Text>
             <TextInput
               style={{
@@ -13303,13 +13318,13 @@ export default function AccountScreen({ navigation, route }) {
                   <TouchableOpacity
                     style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
                     onPress={resetDeliveryVerificationModal}
-                    disabled={updatingEscrow}
+                    disabled={confirmingDelivery}
                   >
                     <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.receiveItemModalButton, styles.receiveItemYesButton, !canConfirmReceived && { opacity: 0.5 }]}
-                    disabled={!canConfirmReceived || updatingEscrow}
+                    disabled={!canConfirmReceived || confirmingDelivery}
                     onPress={() => {
                       const transactionUid = pendingTransactionForConfirm?.transaction_uid;
                       if (!transactionUid) return;
@@ -13340,16 +13355,11 @@ export default function AccountScreen({ navigation, route }) {
                         return;
                       }
 
-                      const releaseEscrow = areAllReceiptLinesFullyReceived(deliveryVerificationReceiptData, selectedReceivedItems, receivedItemQuantities);
-                      updateTransactionEscrow(transactionUid, deliveryVerificationItems, releaseEscrow, {
-                        purchaseRow: pendingTransactionForConfirm,
-                        receiptLines: deliveryVerificationReceiptData,
-                        orderUnits: deliveryVerificationOrderUnits,
-                        returnRows: returnRowsForVerify,
-                      });
+                      const allItemsFullyReceived = areAllReceiptLinesFullyReceived(deliveryVerificationReceiptData, selectedReceivedItems, receivedItemQuantities);
+                      confirmDeliveryVerification(transactionUid, deliveryVerificationItems, allItemsFullyReceived);
                     }}
                   >
-                    {updatingEscrow ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.receiveItemModalButtonText}>Confirm</Text>}
+                    {confirmingDelivery ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.receiveItemModalButtonText}>Confirm</Text>}
                   </TouchableOpacity>
                 </View>
               );

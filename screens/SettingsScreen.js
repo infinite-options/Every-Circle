@@ -28,6 +28,7 @@ import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUS
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { logoutCircleSession } from "../utils/authSession";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
+import { setAllowCookies as persistAllowCookies, subscribeAllowCookies } from "../utils/cookieConsent";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
 import { fetchProfileModerationReviewQueue, fetchProfileModerationDetail, reviewProfileModeration } from "../utils/profileModeration";
@@ -187,6 +188,7 @@ export default function SettingsScreen() {
   const [personalProfileData, setPersonalProfileData] = useState(null);
   const [termsWarningVisible, setTermsWarningVisible] = useState(false);
   const [cookiesWarningVisible, setCookiesWarningVisible] = useState(false);
+  const [shareLocationWarningVisible, setShareLocationWarningVisible] = useState(false);
   const [showInformation, setShowInformation] = useState(true);
   const [showSettings, setShowSettings] = useState(true);
   const [networkDebugMode, setNetworkDebugMode] = useState(false);
@@ -342,6 +344,14 @@ export default function SettingsScreen() {
   }, []);
   const [termsModalVisible, setTermsModalVisible] = useState(false);
 
+  // Keep the "Allow Cookies" pill in sync if the choice is made from the bottom
+  // consent banner (components/CookieConsentBanner.js) instead of this screen.
+  useEffect(() => {
+    return subscribeAllowCookies((value) => {
+      if (value !== null) setAllowCookies(value);
+    });
+  }, []);
+
   const handleTermsToggle = async (value) => {
     if (!value) {
       // User is trying to turn off terms acceptance - show warning
@@ -371,13 +381,13 @@ export default function SettingsScreen() {
     } else {
       // User is accepting cookies
       setAllowCookies(true);
-      await AsyncStorage.setItem("allowCookies", JSON.stringify(true));
+      await persistAllowCookies(true);
     }
   };
 
   const confirmCookiesRejection = async () => {
     setAllowCookies(false);
-    await AsyncStorage.setItem("allowCookies", JSON.stringify(false));
+    await persistAllowCookies(false);
     setCookiesWarningVisible(false);
   };
 
@@ -657,6 +667,25 @@ export default function SettingsScreen() {
   // Toggle ON handler — requests permission, sets expiry, patches immediately, starts watcher
   const startLiveLocationSharing = async () => {
     await startLiveLocationSharingSession();
+  };
+
+  // Turning ON shows a warning first (mirrors the Allow Cookies decline warning); turning off is immediate.
+  const handleShareLocationToggle = (value) => {
+    if (value) {
+      setShareLocationWarningVisible(true);
+    } else {
+      stopLiveLocationSharing();
+    }
+  };
+
+  const confirmShareLocation = async () => {
+    setShareLocationWarningVisible(false);
+    await startLiveLocationSharing();
+  };
+
+  const cancelShareLocation = () => {
+    setShareLocationWarningVisible(false);
+    // Keep the switch in the "Off" position
   };
 
   // Connect → Who's Nearby menu can deep-link into location modals (share live toggles on Connect).
@@ -1214,13 +1243,7 @@ export default function SettingsScreen() {
                     </Text>
                   </View>
                 </View>
-                <SettingsBoolPills
-                  value={shareLocationActive}
-                  onValueChange={(v) => (v ? startLiveLocationSharing() : stopLiveLocationSharing())}
-                  leftLabel='Off'
-                  rightLabel='On'
-                  darkMode={darkMode}
-                />
+                <SettingsBoolPills value={shareLocationActive} onValueChange={handleShareLocationToggle} leftLabel='Off' rightLabel='On' darkMode={darkMode} />
               </View>
 
               {/* Location Privacy — opens modal */}
@@ -1359,6 +1382,15 @@ export default function SettingsScreen() {
                   <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
                 </TouchableOpacity>
               )}
+
+              {/* Delete Account */}
+              <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("DeleteAccount")}>
+                <View style={styles.itemLabel}>
+                  <MaterialIcons name='delete-forever' size={20} style={styles.icon} color='#B71C1C' />
+                  <Text style={[styles.itemText, { color: "#B71C1C" }, darkMode && { color: "#ef9a9a" }]}>Delete Account</Text>
+                </View>
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -2256,6 +2288,27 @@ export default function SettingsScreen() {
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={confirmCookiesRejection} style={[styles.warningButton, styles.confirmButton]}>
+                <Text style={styles.confirmButtonText}>I Understand</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Share Live Location Warning Modal */}
+      <Modal visible={shareLocationWarningVisible} transparent={true} animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
+            <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
+            <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Share Live Location</Text>
+            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>
+              Turning this on will share your live location with your circles for the next {SHARE_LOCATION_DURATION_HOURS} hours. You can turn it off anytime here in Settings.
+            </Text>
+            <View style={styles.warningButtonContainer}>
+              <TouchableOpacity onPress={cancelShareLocation} style={[styles.warningButton, styles.cancelButton]}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmShareLocation} style={[styles.warningButton, styles.confirmButton]}>
                 <Text style={styles.confirmButtonText}>I Understand</Text>
               </TouchableOpacity>
             </View>

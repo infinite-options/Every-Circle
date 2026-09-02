@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Image, Platform, Dimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { triggerTabRefresh } from "../utils/tabRefreshRegistry";
+import { reportBottomNavBarHeight } from "../utils/cookieConsent";
 
 const getFocusedRoute = (nav) => {
   try {
@@ -23,6 +24,11 @@ const { width, height } = Dimensions.get("window");
 const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContinue, onBeforeNavigate }) => {
   const { darkMode } = useDarkMode();
   const { hasUnread } = useUnread();
+  // Report our own height so the cookie consent banner can sit directly above us
+  // instead of covering us; report 0 on unmount (screen without this nav bar).
+  useEffect(() => {
+    return () => reportBottomNavBarHeight(0);
+  }, []);
 
   // Navigate to a tab, or refresh if already on that tab (footer "tap again to refresh").
   const handleNavigate = (destination) => {
@@ -57,7 +63,11 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
   };
 
   return (
-    <SafeAreaView edges={["bottom"]} style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
+    <SafeAreaView
+      edges={["bottom"]}
+      style={[styles.safeArea, darkMode && styles.darkSafeArea]}
+      onLayout={(e) => reportBottomNavBarHeight(e.nativeEvent.layout.height)}
+    >
       <View style={[styles.navContainer, darkMode && styles.darkNavContainer]}>
         {businessStep ? (
           // Business Step Navigation: Back, Profile, Account, Settings, Continue

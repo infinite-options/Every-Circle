@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, Image, StyleSheet, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
 
 let PROFILE_IMAGE_SOURCE;
 try {
@@ -34,8 +35,9 @@ function formatRelationship(user) {
 const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix = null, headerAccessory = null, relationshipFooter = null, relationshipMeta = null }) => {
   const { darkMode } = useDarkMode();
 
-  const firstName = sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
-  const lastName = sanitizeText(user?.lastName || user?.personal_info?.profile_personal_last_name);
+  const deleted = isProfileDeleted(user);
+  const firstName = deleted ? "" : sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
+  const lastName = deleted ? "" : sanitizeText(user?.lastName || user?.personal_info?.profile_personal_last_name);
   const tagLine = sanitizeText(user?.tagLine || user?.personal_info?.profile_personal_tagline || user?.personal_info?.profile_personal_tag_line);
   const profileImageRaw = user?.profileImage ?? user?.personal_info?.profile_personal_image ?? "";
   const profileImage = sanitizeText(typeof profileImageRaw === "string" ? profileImageRaw : String(profileImageRaw || ""));
@@ -43,22 +45,22 @@ const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix
   const tagLineIsPublic = user?.personal_info?.profile_personal_tagline_is_public == 1 || user?.personal_info?.profile_personal_tag_line_is_public == 1 || user?.tagLineIsPublic;
   const imageIsPublic = user?.personal_info?.profile_personal_image_is_public == 1 || user?.imageIsPublic === true || user?.imageIsPublic === 1 || user?.imageIsPublic === "1";
 
-  const nameParts = [firstName, lastName].filter((part) => part && part !== "." && part.trim() !== "" && !part.match(/^[\s.,;:!?\-_=+]*$/));
-  const displayName = nameParts.length ? nameParts.join(" ") : "Unknown";
+  const nameParts = deleted ? [] : [firstName, lastName].filter((part) => part && part !== "." && part.trim() !== "" && !part.match(/^[\s.,;:!?\-_=+]*$/));
+  const displayName = deleted ? DELETED_USER_LABEL : nameParts.length ? nameParts.join(" ") : "Unknown";
 
-  const hasUploadedImage = profileImage && String(profileImage).trim() !== "" && isSafeForConditional(profileImage);
+  const hasUploadedImage = !deleted && profileImage && String(profileImage).trim() !== "" && isSafeForConditional(profileImage);
   const showUploadedImage = hasUploadedImage && imageIsPublic;
   const userImageSource = showUploadedImage ? { uri: String(profileImage) } : getDefaultProfileImageSource();
   const defaultImgSource = getDefaultProfileImageSource();
   const hasValidDefault = defaultImgSource && (typeof defaultImgSource === "number" || (typeof defaultImgSource === "object" && defaultImgSource?.uri !== ""));
 
-  const showTagline = tagLineIsPublic && isSafeForConditional(tagLine) && tagLine !== "." && tagLine.trim() !== "";
+  const showTagline = !deleted && tagLineIsPublic && isSafeForConditional(tagLine) && tagLine !== "." && tagLine.trim() !== "";
   const relationshipText = formatRelationship(user);
   const metaText = relationshipMeta != null && String(relationshipMeta).trim() !== "" ? String(relationshipMeta).trim() : null;
   const showRelationshipColumn = showRelationship || !!relationshipFooter || !!metaText;
 
   return (
-    <View style={[styles.cardContainer, embedded && styles.embeddedCardContainer, darkMode && styles.darkCardContainer, embedded && darkMode && styles.darkEmbeddedCardContainer]}>
+    <View style={[styles.cardContainer, deleted && styles.deletedCardContainer, embedded && styles.embeddedCardContainer, darkMode && styles.darkCardContainer, deleted && darkMode && styles.darkDeletedCardContainer, embedded && darkMode && styles.darkEmbeddedCardContainer]}>
       <Image
         source={userImageSource}
         style={[styles.profileImage, darkMode && styles.darkProfileImage]}
@@ -67,7 +69,7 @@ const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix
 
       <View style={styles.textColumn}>
         <View style={styles.nameRow}>
-          <Text style={[styles.name, darkMode && styles.darkName, nameSuffix ? styles.nameWithSuffix : null]} numberOfLines={nameSuffix ? 2 : 1}>
+          <Text style={[styles.name, deleted && styles.deletedName, darkMode && styles.darkName, nameSuffix ? styles.nameWithSuffix : null]} numberOfLines={nameSuffix ? 2 : 1}>
             {displayName}
             {nameSuffix ? <Text style={[styles.nameSuffix, darkMode && styles.darkNameSuffix]}>{` ${nameSuffix}`}</Text> : null}
           </Text>
@@ -192,6 +194,19 @@ const styles = StyleSheet.create({
   },
   darkRelationshipMeta: {
     color: "#888",
+  },
+  deletedCardContainer: {
+    opacity: 0.72,
+    backgroundColor: "#f0f0f0",
+    borderColor: "#ccc",
+  },
+  darkDeletedCardContainer: {
+    backgroundColor: "#2a2a2a",
+    borderColor: "#555",
+  },
+  deletedName: {
+    color: "#888",
+    fontStyle: "italic",
   },
 });
 

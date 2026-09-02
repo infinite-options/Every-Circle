@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, View, StyleSheet } from "react-native";
-import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
+import { fetchStripePublishableKey, defaultStripeBusinessCode } from "../utils/stripePublishableKey";
 
 let StripeProvider = null;
 const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
@@ -16,7 +16,7 @@ if (!isWeb) {
  * Loads publishable key from backend and wraps children in StripeProvider on native.
  * Web passes children through unchanged (web uses @stripe/stripe-js separately).
  */
-export default function StripeNativeProvider({ children, businessCode = "ECTEST" }) {
+export default function StripeNativeProvider({ children, businessCode = defaultStripeBusinessCode() }) {
   const [publishableKey, setPublishableKey] = useState(null);
   const [failed, setFailed] = useState(false);
 

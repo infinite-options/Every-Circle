@@ -160,6 +160,9 @@ const EditProfileScreen = ({ route, navigation }) => {
   const scrollOffsetYRef = useRef(0);
   // Tracks visible viewport height of ScrollView to center new cards.
   const scrollViewportHeightRef = useRef(0);
+  // Section header nodes, so we can scroll to whichever section still needs required fields filled in.
+  const offeringHeaderRef = useRef(null);
+  const seekingHeaderRef = useRef(null);
 
   // Always initialize profileImageUri with the current profile image from the user object
   const initialProfileImage = user?.profile_personal_image || user?.profileImage || "";
@@ -272,6 +275,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             description: e.description || e.profile_experience_description || "",
             startDate: e.startDate || e.profile_experience_start_date || "",
             endDate: e.endDate || e.profile_experience_end_date || "",
+            isCurrent: String(e.endDate || e.profile_experience_end_date || "").trim().toLowerCase() === "present",
             isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_experience_is_public === 1,
             profile_experience_image: rawImg,
             profile_experience_image_is_public: e.profile_experience_image_is_public === 0 || e.profile_experience_image_is_public === "0" ? 0 : 1,
@@ -288,6 +292,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             description: "",
             startDate: "",
             endDate: "",
+            isCurrent: false,
             isPublic: true,
             profile_experience_image: "",
             profile_experience_image_is_public: 1,
@@ -312,6 +317,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             degree: e.degree || e.profile_education_degree || "",
             startDate: e.startDate || e.profile_education_start_date || "",
             endDate: e.endDate || e.profile_education_end_date || "",
+            isCurrent: String(e.endDate || e.profile_education_end_date || "").trim().toLowerCase() === "present",
             isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_education_is_public === 1,
             profile_education_image: rawImg,
             profile_education_image_is_public: e.profile_education_image_is_public === 0 || e.profile_education_image_is_public === "0" ? 0 : 1,
@@ -327,6 +333,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             degree: "",
             startDate: "",
             endDate: "",
+            isCurrent: false,
             isPublic: true,
             profile_education_image: "",
             profile_education_image_is_public: 1,
@@ -1535,6 +1542,25 @@ const EditProfileScreen = ({ route, navigation }) => {
     };
   }, [missingRouteUser, navigation]);
 
+  // Whether each section still has required fields missing — drives the greyed-out Submit highlighting below.
+  const offeringIsValid =
+    validateExpertise(formData.expertise) &&
+    validateExpertiseShipping(formData.expertise) &&
+    validateExpertiseTax(formData.expertise) &&
+    validateExpertiseReturnWindow(formData.expertise);
+  const seekingIsValid =
+    validateSeeking(formData.wishes) && validateSeekingShipping(formData.wishes) && validateSeekingReturnWindow(formData.wishes);
+  const showOfferingWarning = isChanged && !offeringIsValid;
+  const showSeekingWarning = isChanged && !seekingIsValid;
+
+  // Auto-expand a collapsed section as soon as it becomes the reason Submit is greyed out, so the highlight is visible.
+  useEffect(() => {
+    if (showOfferingWarning) setShowOffering(true);
+  }, [showOfferingWarning]);
+  useEffect(() => {
+    if (showSeekingWarning) setShowSeeking(true);
+  }, [showSeekingWarning]);
+
   if (missingRouteUser) {
     return (
       <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
@@ -1652,10 +1678,24 @@ const EditProfileScreen = ({ route, navigation }) => {
         )}
 
         {/* OFFERING Section */}
-        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowOffering(!showOffering)} activeOpacity={0.7}>
+        <TouchableOpacity
+          ref={(ref) => {
+            if (ref) offeringHeaderRef.current = ref;
+          }}
+          style={[styles.sectionHeader, darkMode && styles.darkSectionHeader, showOfferingWarning && styles.sectionHeaderWarning]}
+          onPress={() => setShowOffering(!showOffering)}
+          activeOpacity={0.7}
+        >
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>OFFERING</Text>
           <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
         </TouchableOpacity>
+        {showOfferingWarning ? (
+          <TouchableOpacity onPress={() => scrollNewCardToMiddleIfNeeded(offeringHeaderRef.current, { block: "start" })}>
+            <Text style={[styles.sectionWarningText, darkMode && styles.sectionWarningTextDark]}>
+              Some required fields are missing below — Submit will stay disabled until they're filled in.
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         {showOffering && (
           <>
             {moderatedOfferingCount > 0 ? (
@@ -1687,10 +1727,24 @@ const EditProfileScreen = ({ route, navigation }) => {
         )}
 
         {/* SEEKING Section */}
-        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowSeeking(!showSeeking)} activeOpacity={0.7}>
+        <TouchableOpacity
+          ref={(ref) => {
+            if (ref) seekingHeaderRef.current = ref;
+          }}
+          style={[styles.sectionHeader, darkMode && styles.darkSectionHeader, showSeekingWarning && styles.sectionHeaderWarning]}
+          onPress={() => setShowSeeking(!showSeeking)}
+          activeOpacity={0.7}
+        >
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>SEEKING</Text>
           <Ionicons name={showSeeking ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
         </TouchableOpacity>
+        {showSeekingWarning ? (
+          <TouchableOpacity onPress={() => scrollNewCardToMiddleIfNeeded(seekingHeaderRef.current, { block: "start" })}>
+            <Text style={[styles.sectionWarningText, darkMode && styles.sectionWarningTextDark]}>
+              Some required fields are missing below — Submit will stay disabled until they're filled in.
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         {showSeeking && (
           <>
             {moderatedSeekingCount > 0 ? (
@@ -2149,6 +2203,21 @@ const styles = StyleSheet.create({
   },
   darkSectionHeaderText: {
     color: "#ffffff",
+  },
+  sectionHeaderWarning: {
+    borderWidth: 2,
+    borderColor: "#c0392b",
+  },
+  sectionWarningText: {
+    color: "#c0392b",
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: -4,
+    marginBottom: 8,
+    textDecorationLine: "underline",
+  },
+  sectionWarningTextDark: {
+    color: "#ff8a80",
   },
   darkDisabledButton: {
     backgroundColor: "#404040",

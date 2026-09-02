@@ -1,18 +1,15 @@
-import { Platform } from "react-native";
 import {
   EXPO_PUBLIC_IOS_CLIENT_ID,
   EXPO_PUBLIC_ANDROID_CLIENT_ID_DEBUG,
   EXPO_PUBLIC_ANDROID_CLIENT_ID_RELEASE,
   EXPO_PUBLIC_WEB_CLIENT_ID,
   EXPO_PUBLIC_GOOGLE_URL_SCHEME,
-  EXPO_PUBLIC_GOOGLE_API_KEY,
-  EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
-  EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
   EXPO_PUBLIC_PROJECT_ID,
   EXPO_PUBLIC_APP_NAME,
   EXPO_PUBLIC_APP_SLUG,
   EXPO_PUBLIC_BUNDLE_IDENTIFIER,
 } from "@env";
+import { resolveGoogleApiKey } from "./utils/resolveGoogleApiKey";
 
 console.log("Loading environment variables...");
 const ENV = {
@@ -23,13 +20,6 @@ const ENV = {
   WEB_CLIENT_ID: EXPO_PUBLIC_WEB_CLIENT_ID,
   // BUNDLE_IDENTIFIER: "com.infiniteoptions.meetmeupapp", // From app.json ios.bundleIdentifier
   GOOGLE_URL_SCHEME: EXPO_PUBLIC_GOOGLE_URL_SCHEME,
-  GOOGLE_API_KEY:
-    EXPO_PUBLIC_GOOGLE_API_KEY ||
-    EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
-    EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
-    process.env.EXPO_PUBLIC_GOOGLE_API_KEY ||
-    process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
-    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
   PROJECT_ID: EXPO_PUBLIC_PROJECT_ID,
   APP_NAME: EXPO_PUBLIC_APP_NAME,
   APP_SLUG: EXPO_PUBLIC_APP_SLUG,
@@ -52,9 +42,11 @@ if (!ENV.WEB_CLIENT_ID) {
 if (!ENV.GOOGLE_URL_SCHEME) {
   console.error("ERROR: EXPO_PUBLIC_GOOGLE_URL_SCHEME is not defined in .env file");
 }
-if (!ENV.GOOGLE_API_KEY) {
+const GOOGLE_API_KEY = resolveGoogleApiKey();
+
+if (!GOOGLE_API_KEY) {
   console.error(
-    "ERROR: Google API key is not defined — set EXPO_PUBLIC_GOOGLE_API_KEY, EXPO_PUBLIC_GOOGLE_PLACES_API_KEY, or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in .env",
+    "ERROR: Google API key is not defined — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env",
   );
 }
 if (!ENV.PROJECT_ID) {
@@ -105,7 +97,7 @@ const config = {
   },
   googleURLScheme: getGoogleURLScheme(),
   bundleIdentifier: ENV.BUNDLE_IDENTIFIER,
-  googleApiKey: ENV.GOOGLE_API_KEY,
+  googleApiKey: GOOGLE_API_KEY,
 };
 
 // console.log("Exporting config:", config);

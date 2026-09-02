@@ -16,6 +16,7 @@ import { clearSessionAsyncStorage, clearSessionAsyncStorageOnLogin } from "../ut
 import { fetchCircleAuthLogin } from "../utils/authSession";
 import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+import { isAccountDeletedAuthMessage } from "../utils/deletedProfile";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 // import SignUpScreen from "./screens/SignUpScreen";
@@ -83,7 +84,11 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
       if (saltObject.code !== 200) {
         setShowSpinner(false);
         setPasswordError("");
-        setEmailError("Email is not valid");
+        if (isAccountDeletedAuthMessage(saltObject)) {
+          setEmailError("This account has been deleted.");
+        } else {
+          setEmailError("Email is not valid");
+        }
         return;
       }
 
@@ -109,10 +114,15 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
       const loginObject = await loginResponse.json();
       console.log("LoginScreen - loginObject returned", loginObject);
 
-      // Check if login failed (wrong password or other error)
+      // Check if login failed (wrong password, deleted account, or other error)
       if (loginObject.code !== 200 || !loginObject.result || !loginObject.result.user_uid) {
         setShowSpinner(false);
-        setPasswordError("Incorrect password. Please try again.");
+        if (isAccountDeletedAuthMessage(loginObject)) {
+          setPasswordError("");
+          setEmailError("This account has been deleted.");
+        } else {
+          setPasswordError("Incorrect password. Please try again.");
+        }
         return;
       }
 

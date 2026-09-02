@@ -105,7 +105,7 @@ export default function BusinessStep1({ formData, setFormData, onPendingTagsChan
           nestedScrollEnabled={true}
         >
           <View style={[styles.formCard, darkMode && styles.darkFormCard]}>
-            <Text style={[styles.title, darkMode && styles.darkTitle]}>Welcome to Every Circle!</Text>
+            <Text style={[styles.title, darkMode && styles.darkTitle]}>Welcome to everyCircle!</Text>
             <View style={styles.subtitleBlock}>
               <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Let's Build Your Business Page!</Text>
               <Text style={[styles.stepHint, darkMode && styles.darkSubtitle]}>(Click Submit to go Live!)</Text>

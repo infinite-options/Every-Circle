@@ -1,10 +1,11 @@
 // ShoppingCartScreen.js
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, InteractionManager, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
-import BountyInfoTooltip, { ESCROW_INFO_COPY } from "../components/BountyInfoTooltip";
+import BountyInfoTooltip from "../components/BountyInfoTooltip";
+import CartLineDetails from "../components/CartLineDetails";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -23,7 +24,12 @@ if (!isWeb) {
 
 import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
-import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
+import {
+  resolveCheckoutBusinessCode,
+  fetchStripePublishableKey,
+  normalizeTransactionBuyerNote,
+  TRANSACTION_BUYER_NOTE_MAX_LENGTH,
+} from "../utils/stripePublishableKey";
 import StripeNativeProvider from "../components/StripeNativeProvider";
 
 // Web Stripe imports (only load on web)
@@ -55,7 +61,6 @@ import {
   hasOfferingBounty,
   formatOfferingUnitPriceLabel,
   parseOfferingBountyAmount,
-  isCartItemReturnable,
 } from "../utils/offeringCartUtils";
 import {
   buildCartLineProcessingFeeMap,
@@ -68,19 +73,14 @@ import {
 import {
   buildCheckoutApiLineFields,
   cartItemRequiresShippingAddress,
-  formatCartPickupLocationHint,
-  FULFILLMENT_PICKUP,
-  FULFILLMENT_SHIP,
-  FULFILLMENT_VIRTUAL,
-  getCartItemAvailableFulfillmentMethods,
   getCartItemBuyerShippingCharge,
   getCartItemDeliveryChargeDisplay,
   isCartItemBuyerPaysShipping,
   normalizeCartItemFulfillment,
   normalizeCartItemsFulfillment,
-  resolveDefaultFulfillmentMethod,
   sumBuyerShippingCharges,
 } from "../utils/cartFulfillmentMethod";
+import { getCartLineBountyAvailabilityNote } from "../utils/cartLineDisplay";
 import { cartLineDeliveryChargeLabel, sellerGroupDeliveryChargeLabel } from "../utils/profileOfferingShipping";
 import { businessCcFeePayerFromSource, cartItemBuyerPaysCardFee, groupBuyerPaysCardFee } from "../utils/businessCcFeePayer";
 
@@ -190,8 +190,7 @@ function getCartLineChargeBreakdown(item, processingFeeOverride, ccFeePayerByBus
   const buyerPaysCardFee = cartItemBuyerPaysCardFee(item, ccFeePayerByBusinessUid);
   const feeBase = getCreditCardFeeBase({ merchandise: pretax, tax, shipping: shippingAmount });
   const fullProcessingFee = computeCreditCardProcessingFee(feeBase, buyerPaysCardFee);
-  const chargedProcessingFee =
-    buyerPaysCardFee && processingFeeOverride != null ? roundMoney(processingFeeOverride) : fullProcessingFee;
+  const chargedProcessingFee = buyerPaysCardFee && processingFeeOverride != null ? roundMoney(processingFeeOverride) : fullProcessingFee;
   const totalCharge = roundMoney(feeBase + (buyerPaysCardFee ? chargedProcessingFee : 0));
   return {
     qty,
@@ -256,58 +255,6 @@ function CartItemCustomizationText({ item }) {
         </Text>
       ) : null}
     </Text>
-  );
-}
-
-function CartFulfillmentChoice({ item, onSelect }) {
-  const method = resolveDefaultFulfillmentMethod(item);
-  const available = getCartItemAvailableFulfillmentMethods(item);
-  const pickupHint = formatCartPickupLocationHint(item);
-
-  const options = [
-    { key: FULFILLMENT_VIRTUAL, label: "Virtual", icon: "videocam-outline" },
-    { key: FULFILLMENT_SHIP, label: "Delivery", icon: "car-outline" },
-    { key: FULFILLMENT_PICKUP, label: "In person", icon: "people-outline" },
-  ].filter((option) => available.includes(option.key));
-
-  if (options.length === 0) return null;
-
-  if (options.length === 1) {
-    const only = options[0];
-    if (only.key === FULFILLMENT_VIRTUAL) {
-      return <Text style={styles.fulfillmentPickupHint}>Virtual · No shipping required · verify immediately</Text>;
-    }
-    if (only.key === FULFILLMENT_PICKUP) {
-      return <Text style={styles.fulfillmentPickupHint}>Pickup in person{pickupHint ? ` · ${pickupHint}` : ""}</Text>;
-    }
-    return null;
-  }
-
-  return (
-    <View style={styles.fulfillmentSection}>
-      <Text style={styles.fulfillmentChoiceLabel}>Fulfillment</Text>
-      <View style={[styles.fulfillmentChoiceRow, styles.fulfillmentChoiceRowWrap]}>
-        {options.map((option) => {
-          const active = method === option.key;
-          return (
-            <TouchableOpacity
-              key={option.key}
-              style={[styles.fulfillmentChoiceBtn, styles.fulfillmentChoiceBtnMulti, active && styles.fulfillmentChoiceBtnActive]}
-              onPress={() => onSelect(option.key)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name={option.icon} size={16} color={active ? "#fff" : "#9C45F7"} />
-              <Text style={[styles.fulfillmentChoiceBtnText, active && styles.fulfillmentChoiceBtnTextActive]}>{option.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-      {method === FULFILLMENT_VIRTUAL ? <Text style={styles.fulfillmentPickupHint}>No shipping required · verify immediately</Text> : null}
-      {method === FULFILLMENT_PICKUP && pickupHint ? <Text style={styles.fulfillmentPickupHint}>Pickup location: {pickupHint}</Text> : null}
-      {method === FULFILLMENT_SHIP ? (
-        <Text style={styles.fulfillmentPickupHint}>Delivery address required at checkout</Text>
-      ) : null}
-    </View>
   );
 }
 
@@ -417,9 +364,7 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName, ccFeePayerByB
 
 /** Sum of merchandise + tax + shipping across seller groups (wallet can cover this base). */
 function getCheckoutGroupsWalletBase(groups) {
-  return roundMoney(
-    (groups || []).reduce((sum, group) => sum + roundMoney(Number(group?.subtotalWithShipping) || 0), 0),
-  );
+  return roundMoney((groups || []).reduce((sum, group) => sum + roundMoney(Number(group?.subtotalWithShipping) || 0), 0));
 }
 
 /**
@@ -480,7 +425,13 @@ async function fetchUseableWalletBalance(profileUid) {
   }
 }
 
-const ShoppingCartScreenContent = ({ route, navigation }) => {
+const ShoppingCartScreenContent = ({
+  route,
+  navigation,
+  transactionBuyerNote = "",
+  setTransactionBuyerNote = () => {},
+  checkoutBusinessCode = "EC",
+}) => {
   const { cartItems: initialCartItems, businessName, business_uid, recommender_profile_id, returnTo, searchState } = route.params || {};
   const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
   const [useableWalletBalance, setUseableWalletBalance] = useState(0);
@@ -605,10 +556,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const [showPaymentFailure, setShowPaymentFailure] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
-  /** Per seller (business / expertise profile): whether this checkout uses escrow. */
-  const [escrowBySeller, setEscrowBySeller] = useState({});
-  const [refundAcknowledged, setRefundAcknowledged] = useState(false); //refund acknowledgement state
-  const [refundError, setRefundError] = useState(false);
   const [shippingFirstName, setShippingFirstName] = useState("");
   const [shippingLastName, setShippingLastName] = useState("");
   const [shippingStreetLine1, setShippingStreetLine1] = useState("");
@@ -617,8 +564,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const [shippingState, setShippingState] = useState("");
   const [shippingZip, setShippingZip] = useState("");
   const scrollViewRef = useRef(null);
-  /** Y offset of refund policy block within ScrollView content (from onLayout). */
-  const refundSectionScrollYRef = useRef(0);
+  /** Y offset of delivery address block within ScrollView content (from onLayout). */
+  const shippingSectionScrollYRef = useRef(0);
 
   /** Web: one Stripe payment per seller; kept in ref + state so submit handler sees latest step. */
   const webCheckoutSessionRef = useRef(null);
@@ -628,7 +575,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     webCheckoutSessionRef.current = webCheckoutSession;
   }, [webCheckoutSession]);
 
-  /** Start at top of the list whenever this screen is opened so users review items first; refund scroll runs only from Proceed without acknowledgement. */
+  /** Start at top of the list whenever this screen is opened so users review items first. */
   useFocusEffect(
     useCallback(() => {
       requestAnimationFrame(() => {
@@ -691,7 +638,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         return;
       }
 
-      await loadStripePublicKey("ECTEST");
+      await loadStripePublicKey(checkoutBusinessCode);
 
       setShowStripePayment(true);
       setLoading(false);
@@ -732,24 +679,20 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       if ((group.cardCharge || 0) >= 0.01) {
         webCheckoutSessionRef.current = session;
         setWebCheckoutSession(session);
-        await loadStripePublicKey("ECTEST");
+        await loadStripePublicKey(checkoutBusinessCode);
         setShowStripePayment(true);
         setLoading(false);
         return;
       }
-      await recordSingleBusinessTransaction(
-        buyerUid,
-        null,
-        group,
-        escrowBySeller[group.sellerId] !== false,
-        group.walletApplied || 0,
-      );
+      await recordSingleBusinessTransaction(buyerUid, null, group, group.walletApplied || 0);
       const nextIndex = session.index + 1;
       if (nextIndex >= session.groups.length) {
         await finishWebCheckoutSuccess();
         return;
       }
       session = { groups: session.groups, index: nextIndex };
+      webCheckoutSessionRef.current = session;
+      setWebCheckoutSession(session);
     }
   };
 
@@ -773,18 +716,14 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const group = sess.groups[sess.index];
       console.log(`Recording web payment step ${sess.index + 1}/${sess.groups.length} for`, group.sellerId);
 
-      await recordSingleBusinessTransaction(
-        buyerUid,
-        paymentIntent,
-        group,
-        escrowBySeller[group.sellerId] !== false,
-        group.walletApplied || 0,
-      );
+      await recordSingleBusinessTransaction(buyerUid, paymentIntent, group, group.walletApplied || 0);
 
       const nextIndex = sess.index + 1;
       if (nextIndex < sess.groups.length) {
-        setShowStripePayment(false);
-        await advanceWebCheckoutWithoutCard(buyerUid, { groups: sess.groups, index: nextIndex });
+        const nextSession = { groups: sess.groups, index: nextIndex };
+        webCheckoutSessionRef.current = nextSession;
+        setWebCheckoutSession(nextSession);
+        await advanceWebCheckoutWithoutCard(buyerUid, nextSession);
         return;
       }
 
@@ -810,23 +749,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const focusRefundPolicySection = () => {
-    InteractionManager.runAfterInteractions(() => {
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          const scroll = scrollViewRef.current;
-          if (!scroll) return;
-          const y = refundSectionScrollYRef.current;
-          if (y > 0) {
-            scroll.scrollTo({ y: Math.max(0, y - 16), animated: true });
-          } else {
-            scroll.scrollToEnd({ animated: true });
-          }
-        }, 80);
-      });
-    });
-  };
-
   const handleCheckout = async () => {
     console.log("Checkout button pressed");
     console.log("Platform:", Platform.OS);
@@ -835,13 +757,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       Alert.alert("Error", "Payment system is not ready. Please try again.");
       return;
     }
-
-    if (cartItems.some((it) => isCartItemReturnable(it)) && !refundAcknowledged) {
-      setRefundError(true);
-      focusRefundPolicySection();
-      return;
-    }
-    setRefundError(false);
 
     const needsShippingAddress = cartItems.some((it) => cartItemRequiresShippingAddress(it));
     if (
@@ -856,6 +771,14 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         zip: shippingZip,
       })
     ) {
+      requestAnimationFrame(() => {
+        const y = shippingSectionScrollYRef.current;
+        if (y > 0) {
+          scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true });
+        } else {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }
+      });
       Alert.alert("Delivery address required", "Please complete First Name, Last Name, Street Address, City, State, and Zip for items being delivered.");
       return;
     }
@@ -900,12 +823,19 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       setWalletAmountToApply(amountToApply);
       setWalletAmountDraft(formatWalletAmountInput(amountToApply));
       const payableGroups = applyWalletToCheckoutGroups(groups, amountToApply);
-      console.log("Wallet useable balance:", useableBalance, "chosen wallet:", amountToApply, "payable groups:", payableGroups.map((g) => ({
-        sellerId: g.sellerId,
-        walletApplied: g.walletApplied,
-        cardCharge: g.cardCharge,
-        total: g.total,
-      })));
+      console.log(
+        "Wallet useable balance:",
+        useableBalance,
+        "chosen wallet:",
+        amountToApply,
+        "payable groups:",
+        payableGroups.map((g) => ({
+          sellerId: g.sellerId,
+          walletApplied: g.walletApplied,
+          cardCharge: g.cardCharge,
+          total: g.total,
+        })),
+      );
 
       for (let i = 0; i < payableGroups.length; i++) {
         const group = payableGroups[i];
@@ -936,13 +866,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           }
         }
 
-        await recordSingleBusinessTransaction(
-          buyerUid,
-          paymentIntentId,
-          group,
-          escrowBySeller[group.sellerId] !== false,
-          group.walletApplied || 0,
-        );
+        await recordSingleBusinessTransaction(buyerUid, paymentIntentId, group, group.walletApplied || 0);
         completedGroups.push(group);
       }
 
@@ -1005,22 +929,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     setCartItems(normalizeCartItemsFulfillment(Array.isArray(initialCartItems) ? initialCartItems : []));
   }, [initialCartItems]);
 
-  useEffect(() => {
-    const ids = new Set(cartItems.map(getCheckoutSellerId).filter(Boolean));
-    if (ids.size === 0) return;
-    setEscrowBySeller((prev) => {
-      const next = { ...prev };
-      ids.forEach((id) => {
-        if (next[id] === undefined) next[id] = true;
-      });
-      Object.keys(next).forEach((k) => {
-        if (!ids.has(k)) delete next[k];
-      });
-      return next;
-    });
-  }, [cartItems]);
-
-  const loadStripePublicKey = async (businessCode = "ECTEST") => {
+  const loadStripePublicKey = async (businessCode = checkoutBusinessCode) => {
     try {
       const publicKey = await fetchStripePublishableKey(businessCode);
       if (loadStripe) {
@@ -1151,9 +1060,11 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       }
       console.log("Creating payment intent for amount:", total);
 
+      const buyerNote = normalizeTransactionBuyerNote(transactionBuyerNote);
       const requestBody = {
         customer_uid: profile_uid,
-        business_code: "ECTEST",
+        business_code: checkoutBusinessCode,
+        transaction_buyer_note: buyerNote,
         payment_summary: {
           tax: parseFloat(Number(salesTaxTotal).toFixed(2)),
           total: Number(total).toFixed(2),
@@ -1200,7 +1111,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       setCurrentClientSecret(clientSecret);
 
       const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: merchantDisplayName || businessName || "Every Circle",
+        merchantDisplayName: merchantDisplayName || businessName || "everyCircle",
         paymentIntentClientSecret: clientSecret,
         defaultBillingDetails: {
           name: "Customer Name",
@@ -1228,7 +1139,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   };
 
   /** POST one transaction row for one Stripe payment (one seller's lines only). */
-  const recordSingleBusinessTransaction = async (buyerUid, paymentIntent, group, escrowValue = true, walletAmount = 0) => {
+  const recordSingleBusinessTransaction = async (buyerUid, paymentIntent, group, walletAmount = 0) => {
     try {
       console.log("Recording transaction for seller", group.sellerId, "items:", group.items, "wallet:", walletAmount);
 
@@ -1248,8 +1159,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
 
       const defaultRecommender = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : buyerProfileId;
 
-      const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
-
       // In recordSingleBusinessTransaction, update the items map:
       const items = group.items.map((item) => {
         const normalizedItem = normalizeCartItemFulfillment(item);
@@ -1261,11 +1170,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         const { pretax, tax } = cartLineMerchandiseAndTax(normalizedItem);
         const isExpertise = normalizedItem.itemType === "expertise";
         const expertiseUid = isExpertise ? String(normalizedItem.expertise_uid || "").trim() : "";
-        const unitPrice = isExpertise
-          ? qty > 0
-            ? roundMoney(pretax / qty)
-            : roundMoney(pretax)
-          : normalizedItem.unitPrice || parsePrice(normalizedItem.bs_cost);
+        const unitPrice = isExpertise ? (qty > 0 ? roundMoney(pretax / qty) : roundMoney(pretax)) : normalizedItem.unitPrice || parsePrice(normalizedItem.bs_cost);
         return {
           business_id: sellerBusinessId,
           bs_uid: isExpertise ? expertiseUid : normalizedItem.bs_uid,
@@ -1314,7 +1219,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         total_taxes: salesTaxRounded,
         total_shipping: shippingRounded,
         total_fees: parseFloat(Number(processingFee).toFixed(2)),
-        transaction_in_escrow: transactionInEscrow,
         items,
       };
       if (shippingAddress) {
@@ -1324,6 +1228,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         transactionData.shipping_actual_pending = 1;
         transactionData.shipping_note = "Seller will contact the buyer directly for actual shipping cost.";
       }
+      transactionData.transaction_buyer_note = normalizeTransactionBuyerNote(transactionBuyerNote);
 
       console.log("[ShoppingCart] Transaction POST — each field before endpoint:");
       console.log({
@@ -1336,7 +1241,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         total_taxes: transactionData.total_taxes,
         total_shipping: transactionData.total_shipping,
         total_fees: transactionData.total_fees,
-        transaction_in_escrow: transactionData.transaction_in_escrow,
         items_count: Array.isArray(transactionData.items) ? transactionData.items.length : 0,
         items: transactionData.items,
       });
@@ -1359,7 +1263,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       if (!response.ok) {
         throw new Error(`Failed to record transaction: ${result.message || "Unknown error"}`);
       }
-
     } catch (error) {
       console.error("Error recording transactions:", error);
       throw error;
@@ -1428,7 +1331,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const cartLineProcessingFeeMap = buildCartLineProcessingFeeMap(sellerGroupsPreview, getCartItemCreditCardFeeBase);
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
-  const cartRequiresReturnAcknowledgement = cartItems.some((it) => isCartItemReturnable(it));
   const cartHasShipFulfillmentLines = cartItems.some((it) => cartItemRequiresShippingAddress(it));
   const cartRequiresBuyerPaysShipping = cartItems.some((it) => isCartItemBuyerPaysShipping(it));
   const feeDialogFirstGroup = sellerGroupsPreview[0];
@@ -1461,24 +1363,23 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     },
     [maxWalletApplicable],
   );
-  const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
-    ? (webCheckoutSession.groups[webCheckoutSession.index].cardCharge ?? webCheckoutSession.groups[webCheckoutSession.index].total)
-    : 0;
+  const webStripeAmount =
+    webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
+      ? (webCheckoutSession.groups[webCheckoutSession.index].cardCharge ?? webCheckoutSession.groups[webCheckoutSession.index].total)
+      : 0;
   const webCheckoutPayeeDisplayName =
     (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
     null;
-  const shippingAddressComplete = isShippingAddressComplete({
-    enabled: cartHasShipFulfillmentLines,
-    firstName: shippingFirstName,
-    lastName: shippingLastName,
-    streetLine1: shippingStreetLine1,
-    city: shippingCity,
-    state: shippingState,
-    zip: shippingZip,
-  });
-  const checkoutBlockedByShipping = cartHasShipFulfillmentLines && !shippingAddressComplete;
-  const checkoutDisabled = loading || checkoutBlockedByShipping;
+  const checkoutDisabled = loading;
+  const groupCartBySeller = checkoutSellerGroups.length > 1 || business_uid === "all";
+  const cartDisplayGroups = groupCartBySeller
+    ? checkoutSellerGroups.map((group) => ({
+        key: group.sellerId,
+        displayName: group.displayName,
+        entries: group.items.map((item) => ({ item, index: cartItems.indexOf(item) })),
+      }))
+    : [{ key: "single", displayName: null, entries: cartItems.map((item, index) => ({ item, index })) }];
 
   const content = (
     <View style={styles.container}>
@@ -1496,12 +1397,18 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   <Text style={styles.cartVendorLabel}>Business</Text>
                   <Text style={styles.businessName}>{businessName}</Text>
                 </View>
-              ) : (
-                <Text style={styles.cartOverviewTitle}>Your cart</Text>
-              )}
-              {cartItems.map((item, index) => {
+              ) : null}
+              {cartDisplayGroups.map((group) => (
+                <View key={group.key} style={groupCartBySeller ? styles.cartSellerGroup : undefined}>
+                  {groupCartBySeller && group.displayName ? (
+                    <View style={styles.cartSellerGroupHeader}>
+                      <Text style={styles.cartSellerGroupLabel}>Seller</Text>
+                      <Text style={styles.cartSellerGroupName}>{group.displayName}</Text>
+                    </View>
+                  ) : null}
+                  {group.entries.map(({ item, index }) => {
                 const lineBusiness = resolveItemBusinessName(item);
-                const showLineBusiness = Boolean(lineBusiness) && (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
+                const showLineBusiness = !groupCartBySeller && Boolean(lineBusiness) && (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
                 const productName = String(item.bs_service_name || "").trim();
                 const itemTitle = item.itemType === "expertise" ? String(item.title || "Offering").trim() : productName || "Item";
                 const lineFeeKey = cartLineProcessingFeeKey(item);
@@ -1510,7 +1417,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                 const bountyTotal = getCartLineBountyTotal(item);
                 const remainingAddQty = getCartLineRemainingAddQuantity(item);
                 return (
-                  <View key={index} style={styles.cartItemContainer}>
+                  <View key={`${group.key}-${index}`} style={styles.cartItemContainer}>
                     <View style={styles.cartItemCard}>
                       <View style={styles.cartItemTopRow}>
                         <View style={styles.cartItemDetails}>
@@ -1518,7 +1425,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           <Text style={styles.cartItemTitle}>{itemTitle}</Text>
                           <CartItemCustomizationText item={item} />
                           <CartStockBadge item={item} />
-                          <CartFulfillmentChoice item={item} onSelect={(method) => handleFulfillmentMethodChange(index, method)} />
+                          <CartLineDetails item={item} onFulfillmentSelect={(method) => handleFulfillmentMethodChange(index, method)} />
                         </View>
                         <View style={styles.cartItemActions}>
                           <TouchableOpacity style={styles.cartItemRemoveButton} onPress={() => handleRemoveItem(index)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
@@ -1529,11 +1436,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                               <Ionicons name='remove' size={18} color='#9C45F7' />
                             </TouchableOpacity>
                             <Text style={styles.cartItemQtyValue}>{breakdown.qty}</Text>
-                            <TouchableOpacity
-                              style={styles.cartItemQtyButton}
-                              onPress={() => handleQuantityChange(index, 1)}
-                              disabled={remainingAddQty != null && remainingAddQty <= 0}
-                            >
+                            <TouchableOpacity style={styles.cartItemQtyButton} onPress={() => handleQuantityChange(index, 1)} disabled={remainingAddQty != null && remainingAddQty <= 0}>
                               <Ionicons name='add' size={18} color='#9C45F7' />
                             </TouchableOpacity>
                           </View>
@@ -1543,27 +1446,15 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <View style={styles.cartItemDivider} />
 
                       <View style={styles.cartBreakdownSection}>
-                        <CartBreakdownRow
-                          label={`Item (${breakdown.qty} × ${formatCartMoney(item, breakdown.unitPrice)})`}
-                          value={formatCartMoney(item, breakdown.itemSubtotal)}
-                        />
-                        {breakdown.shippingApplicable ? (
-                          <CartBreakdownRow label={cartLineDeliveryChargeLabel(item)} value={formatCartMoney(item, breakdown.shippingAmount)} />
-                        ) : null}
+                        <CartBreakdownRow label={`Item (${breakdown.qty} × ${formatCartMoney(item, breakdown.unitPrice)})`} value={formatCartMoney(item, breakdown.itemSubtotal)} />
+                        {breakdown.shippingApplicable ? <CartBreakdownRow label={cartLineDeliveryChargeLabel(item)} value={formatCartMoney(item, breakdown.shippingAmount)} /> : null}
                         {breakdown.taxable && breakdown.tax > 0 ? (
-                          <CartBreakdownRow
-                            label={breakdown.taxRateLabel ? `Tax (${breakdown.taxRateLabel})` : "Tax"}
-                            value={formatCartMoney(item, breakdown.tax)}
-                          />
+                          <CartBreakdownRow label={breakdown.taxRateLabel ? `Tax (${breakdown.taxRateLabel})` : "Tax"} value={formatCartMoney(item, breakdown.tax)} />
                         ) : null}
-                        {breakdown.buyerPaysCardFee ? (
-                          <CartBreakdownRow label='Card processing fee' value={formatCartMoney(item, breakdown.processingFee)} />
-                        ) : null}
+                        {breakdown.buyerPaysCardFee ? <CartBreakdownRow label='Card processing fee' value={formatCartMoney(item, breakdown.processingFee)} /> : null}
                         {breakdown.shippingIsActual ? (
                           <Text style={styles.cartShippingActualNote}>
-                            {item.itemType === "expertise"
-                              ? "Seller will contact the buyer directly for actual delivery charge."
-                              : "Seller will contact the buyer directly for actual shipping cost."}
+                            {item.itemType === "expertise" ? "Seller will contact the buyer directly for actual delivery charge." : "Seller will contact the buyer directly for actual shipping cost."}
                           </Text>
                         ) : null}
                       </View>
@@ -1584,62 +1475,68 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                             </View>
                             <Text style={styles.bountyNoteValue}>{formatCartMoney(item, bountyTotal)}</Text>
                           </View>
-                          <Text style={styles.cartBountyAvailabilityNote}>Available after the buyer confirms receipt</Text>
+                          <Text style={styles.cartBountyAvailabilityNote}>{getCartLineBountyAvailabilityNote(item)}</Text>
                         </View>
                       ) : null}
                     </View>
                   </View>
                 );
-              })}
+                  })}
+                </View>
+              ))}
               {cartHasShipFulfillmentLines ? (
-                <View style={styles.shippingCard}>
+                <View
+                  collapsable={false}
+                  style={styles.shippingCard}
+                  onLayout={(e) => {
+                    shippingSectionScrollYRef.current = e.nativeEvent.layout.y;
+                  }}
+                >
                   <Text style={styles.shippingSectionTitle}>Delivery address</Text>
-                  {cartRequiresBuyerPaysShipping ? (
-                    <Text style={styles.shippingRequiredNote}>Required for items being shipped to you.</Text>
-                  ) : null}
+                  {cartRequiresBuyerPaysShipping ? <Text style={styles.shippingRequiredNote}>Required for items being shipped to you.</Text> : null}
                   <View style={styles.shippingFields}>
-                      <Text style={styles.shippingFieldLabel}>First Name *</Text>
-                      <TextInput style={styles.shippingInput} value={shippingFirstName} onChangeText={setShippingFirstName} placeholder='First Name' autoCapitalize='words' autoCorrect={false} />
-                      <Text style={styles.shippingFieldLabel}>Last Name *</Text>
-                      <TextInput style={styles.shippingInput} value={shippingLastName} onChangeText={setShippingLastName} placeholder='Last Name' autoCapitalize='words' autoCorrect={false} />
-                      <Text style={styles.shippingFieldLabel}>Street Address *</Text>
-                      <TextInput
-                        style={styles.shippingInput}
-                        value={shippingStreetLine1}
-                        onChangeText={setShippingStreetLine1}
-                        placeholder='Street Address Line 1'
-                        autoCapitalize='words'
-                        autoCorrect={false}
-                      />
-                      <TextInput
-                        style={styles.shippingInput}
-                        value={shippingStreetLine2}
-                        onChangeText={setShippingStreetLine2}
-                        placeholder='Street Address Line 2 (optional)'
-                        autoCapitalize='words'
-                        autoCorrect={false}
-                      />
-                      <View style={styles.shippingCityStateZipRow}>
-                        <View style={styles.shippingCityField}>
-                          <Text style={styles.shippingFieldLabel}>City *</Text>
-                          <TextInput style={styles.shippingInput} value={shippingCity} onChangeText={setShippingCity} placeholder='City' autoCapitalize='words' autoCorrect={false} />
-                        </View>
-                        <View style={styles.shippingStateField}>
-                          <Text style={styles.shippingFieldLabel}>State *</Text>
-                          <TextInput style={styles.shippingInput} value={shippingState} onChangeText={setShippingState} placeholder='State' autoCapitalize='words' autoCorrect={false} />
-                        </View>
-                        <View style={styles.shippingZipField}>
-                          <Text style={styles.shippingFieldLabel}>Zip *</Text>
-                          <TextInput
-                            style={[styles.shippingInput, styles.shippingInputLast]}
-                            value={shippingZip}
-                            onChangeText={setShippingZip}
-                            placeholder='Zip'
-                            keyboardType='number-pad'
-                            autoCorrect={false}
-                          />
-                        </View>
+                    <Text style={styles.shippingFieldLabel}>First Name *</Text>
+                    <TextInput style={styles.shippingInput} value={shippingFirstName} onChangeText={setShippingFirstName} placeholder='First Name' autoCapitalize='words' autoCorrect={false} />
+                    <Text style={styles.shippingFieldLabel}>Last Name *</Text>
+                    <TextInput style={styles.shippingInput} value={shippingLastName} onChangeText={setShippingLastName} placeholder='Last Name' autoCapitalize='words' autoCorrect={false} />
+                    <Text style={styles.shippingFieldLabel}>Street Address *</Text>
+                    <TextInput
+                      style={styles.shippingInput}
+                      value={shippingStreetLine1}
+                      onChangeText={setShippingStreetLine1}
+                      placeholder='Street Address Line 1'
+                      autoCapitalize='words'
+                      autoCorrect={false}
+                    />
+                    <TextInput
+                      style={styles.shippingInput}
+                      value={shippingStreetLine2}
+                      onChangeText={setShippingStreetLine2}
+                      placeholder='Street Address Line 2 (optional)'
+                      autoCapitalize='words'
+                      autoCorrect={false}
+                    />
+                    <View style={styles.shippingCityStateZipRow}>
+                      <View style={styles.shippingCityField}>
+                        <Text style={styles.shippingFieldLabel}>City *</Text>
+                        <TextInput style={styles.shippingInput} value={shippingCity} onChangeText={setShippingCity} placeholder='City' autoCapitalize='words' autoCorrect={false} />
                       </View>
+                      <View style={styles.shippingStateField}>
+                        <Text style={styles.shippingFieldLabel}>State *</Text>
+                        <TextInput style={styles.shippingInput} value={shippingState} onChangeText={setShippingState} placeholder='State' autoCapitalize='words' autoCorrect={false} />
+                      </View>
+                      <View style={styles.shippingZipField}>
+                        <Text style={styles.shippingFieldLabel}>Zip *</Text>
+                        <TextInput
+                          style={[styles.shippingInput, styles.shippingInputLast]}
+                          value={shippingZip}
+                          onChangeText={setShippingZip}
+                          placeholder='Zip'
+                          keyboardType='number-pad'
+                          autoCorrect={false}
+                        />
+                      </View>
+                    </View>
                   </View>
                 </View>
               ) : null}
@@ -1648,8 +1545,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   <View style={styles.walletPaymentSection}>
                     <Text style={styles.walletPaymentTitle}>Pay with wallet</Text>
                     <Text style={styles.walletPaymentHint}>
-                      Available to spend: ${useableWalletBalance.toFixed(2)}. Ready to use on purchases. Apply any amount from $0.00 up to $
-                      {maxWalletApplicable.toFixed(2)}; the rest is charged to your card (card fee applies only to the card portion).
+                      Available to spend: ${useableWalletBalance.toFixed(2)}. Ready to use on purchases. Apply any amount from $0.00 up to ${maxWalletApplicable.toFixed(2)}; the rest is charged to
+                      your card (card fee applies only to the card portion).
                     </Text>
                     <View style={styles.walletAmountRow}>
                       <Text style={styles.walletAmountPrefix}>$</Text>
@@ -1676,11 +1573,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <TouchableOpacity style={styles.walletQuickBtn} onPress={() => setWalletAmountQuick(0)} activeOpacity={0.7}>
                         <Text style={styles.walletQuickBtnText}>Use $0</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.walletQuickBtn}
-                        onPress={() => setWalletAmountQuick(maxWalletApplicable)}
-                        activeOpacity={0.7}
-                      >
+                      <TouchableOpacity style={styles.walletQuickBtn} onPress={() => setWalletAmountQuick(maxWalletApplicable)} activeOpacity={0.7}>
                         <Text style={styles.walletQuickBtnText}>Use max (${maxWalletApplicable.toFixed(2)})</Text>
                       </TouchableOpacity>
                     </View>
@@ -1695,10 +1588,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   </View>
                 ) : null}
                 <Text style={styles.multiSellerHint}>
-                  {showWalletPaymentControls
-                    ? `You chose $${clampedWalletAmount.toFixed(2)} from your wallet; any remainder is charged to your card. `
+                  {showWalletPaymentControls ? `You chose $${clampedWalletAmount.toFixed(2)} from your wallet; any remainder is charged to your card. ` : null}
+                  {hasExpertiseInCart
+                    ? "Offering and expertise purchases include a credit card processing fee (3%, $0.30 minimum) in each seller total below (same as when you added them to the cart). "
                     : null}
-                  {hasExpertiseInCart ? "Offering and expertise purchases include a credit card processing fee (3%, $0.30 minimum) in each seller total below (same as when you added them to the cart). " : null}
                   {multiSellerCheckout
                     ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%, $0.30 minimum) applies when that business has “buyer pays” card fees.`
                     : hasExpertiseInCart
@@ -1718,9 +1611,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                     </View>
                     {g.hasFixedShipping || g.hasWaivedDeliveryCharge ? (
                       <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>
-                          {g.hasWaivedDeliveryCharge && !g.hasFixedShipping ? "Delivery charge" : "Delivery charge (buyer fixed)"}
-                        </Text>
+                        <Text style={styles.totalLabel}>{g.hasWaivedDeliveryCharge && !g.hasFixedShipping ? "Delivery charge" : "Delivery charge (buyer fixed)"}</Text>
                         <Text style={styles.totalValue}>${g.shippingSubtotal.toFixed(2)}</Text>
                       </View>
                     ) : null}
@@ -1754,26 +1645,6 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                         <Text style={styles.totalValue}>${(g.cardCharge || 0).toFixed(2)}</Text>
                       </View>
                     ) : null}
-                    <View style={styles.escrowSection}>
-                      <View style={styles.escrowRow}>
-                        <TouchableOpacity
-                          style={styles.escrowTogglePressable}
-                          onPress={() =>
-                            setEscrowBySeller((prev) => {
-                              const cur = prev[g.sellerId] !== false;
-                              return { ...prev, [g.sellerId]: !cur };
-                            })
-                          }
-                          activeOpacity={0.7}
-                        >
-                          <View style={[styles.checkbox, escrowBySeller[g.sellerId] !== false && styles.checkboxChecked]}>
-                            {escrowBySeller[g.sellerId] !== false && <Text style={styles.checkmark}>✓</Text>}
-                          </View>
-                          <Text style={styles.escrowLabel}>Escrow ({g.displayName})</Text>
-                        </TouchableOpacity>
-                        <BountyInfoTooltip message={ESCROW_INFO_COPY} darkMode={false} placement='left' accessibilityLabel='About escrow' />
-                      </View>
-                    </View>
                   </View>
                 ))}
                 {multiSellerCheckout ? (
@@ -1784,32 +1655,22 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                 ) : null}
               </View>
 
-              {cartRequiresReturnAcknowledgement ? (
-                <View
-                  collapsable={false}
-                  style={styles.escrowSection}
-                  onLayout={(e) => {
-                    refundSectionScrollYRef.current = e.nativeEvent.layout.y;
-                  }}
-                >
-                  <TouchableOpacity
-                    style={styles.escrowRow}
-                    onPress={() => {
-                      setRefundAcknowledged(!refundAcknowledged);
-                      setRefundError(false);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.checkbox, refundAcknowledged && styles.checkboxChecked, refundError && { borderColor: "#FF3B30" }]}>
-                      {refundAcknowledged && <Text style={styles.checkmark}>✓</Text>}
-                    </View>
-                    <Text style={[styles.escrowLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
-                      Return must be made in 5 days for a full refund, any returns past 5 days will result in a partial refund. Check the box to acknowledge.
-                    </Text>
-                  </TouchableOpacity>
-                  {refundError && <Text style={{ color: "#FF3B30", fontSize: 13, marginTop: 6, marginLeft: 34 }}>You must acknowledge the return policy before checking out.</Text>}
-                </View>
-              ) : null}
+              <View style={styles.buyerNoteCard}>
+                <Text style={styles.buyerNoteTitle}>Transaction notes (optional)</Text>
+                <Text style={styles.buyerNoteHint}>
+                  Add a note for this purchase (up to {TRANSACTION_BUYER_NOTE_MAX_LENGTH} characters).
+                </Text>
+                <TextInput
+                  style={styles.buyerNoteInput}
+                  placeholder='e.g. Gift for Jane'
+                  placeholderTextColor='#aaa'
+                  multiline
+                  maxLength={TRANSACTION_BUYER_NOTE_MAX_LENGTH}
+                  value={transactionBuyerNote}
+                  onChangeText={setTransactionBuyerNote}
+                  textAlignVertical='top'
+                />
+              </View>
             </>
           )}
         </ScrollView>
@@ -1868,11 +1729,17 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           />
           {stripePromise && customerUid && (
             <StripePayment
-              key={`stripe-pay-${webCheckoutSession?.index ?? 0}-${webStripeAmount}`}
-              message='ECTEST'
+              key={`stripe-pay-${webCheckoutSession?.index ?? 0}-${webStripeAmount}-${checkoutBusinessCode}`}
+              message={checkoutBusinessCode}
               amount={webStripeAmount || 0}
               paidBy={customerUid}
               payeeBusinessName={webCheckoutPayeeDisplayName}
+              transactionBuyerNote={transactionBuyerNote}
+              checkoutStepLabel={
+                webCheckoutSession && webCheckoutSession.groups.length > 1
+                  ? `Payment ${webCheckoutSession.index + 1} of ${webCheckoutSession.groups.length}`
+                  : null
+              }
               show={showStripePayment}
               setShow={setShowStripePayment}
               submit={handleWebPaymentSubmit}
@@ -1896,9 +1763,17 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
 };
 
 export default function ShoppingCartScreen(props) {
+  const [transactionBuyerNote, setTransactionBuyerNote] = useState("");
+  const checkoutBusinessCode = resolveCheckoutBusinessCode(transactionBuyerNote);
+
   return (
-    <StripeNativeProvider businessCode='ECTEST'>
-      <ShoppingCartScreenContent {...props} />
+    <StripeNativeProvider businessCode={checkoutBusinessCode}>
+      <ShoppingCartScreenContent
+        {...props}
+        transactionBuyerNote={transactionBuyerNote}
+        setTransactionBuyerNote={setTransactionBuyerNote}
+        checkoutBusinessCode={checkoutBusinessCode}
+      />
     </StripeNativeProvider>
   );
 }
@@ -1935,10 +1810,24 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textTransform: "uppercase",
   },
-  cartOverviewTitle: {
+  cartSellerGroup: {
+    marginBottom: 8,
+  },
+  cartSellerGroupHeader: {
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  cartSellerGroupLabel: {
+    fontSize: 12,
+    color: "#888",
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  cartSellerGroupName: {
     fontSize: 18,
     fontWeight: "700",
-    marginBottom: 16,
     color: "#333",
   },
   businessName: {
@@ -2144,63 +2033,39 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 10,
   },
-  shippingSectionTitle: {
+  buyerNoteCard: {
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  buyerNoteTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: "#333",
     marginBottom: 4,
   },
-  fulfillmentSection: {
-    marginTop: 10,
-  },
-  fulfillmentChoiceLabel: {
+  buyerNoteHint: {
     fontSize: 13,
-    fontWeight: "600",
     color: "#666",
-    marginBottom: 8,
+    marginBottom: 10,
+    lineHeight: 18,
   },
-  fulfillmentChoiceRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  fulfillmentChoiceRowWrap: {
-    flexWrap: "wrap",
-  },
-  fulfillmentChoiceBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 8,
+  buyerNoteInput: {
     borderWidth: 1,
-    borderColor: "#9C45F7",
-    backgroundColor: "#fff",
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    minHeight: 80,
+    backgroundColor: "#f9f9f9",
+    color: "#333",
   },
-  fulfillmentChoiceBtnMulti: {
-    flexGrow: 1,
-    flexBasis: "30%",
-    minWidth: 96,
-  },
-  fulfillmentChoiceBtnActive: {
-    backgroundColor: "#9C45F7",
-    borderColor: "#9C45F7",
-  },
-  fulfillmentChoiceBtnText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#9C45F7",
-  },
-  fulfillmentChoiceBtnTextActive: {
-    color: "#fff",
-  },
-  fulfillmentPickupHint: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 8,
-    fontStyle: "italic",
+  shippingSectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 4,
   },
   shippingRequiredNote: {
     fontSize: 12,
@@ -2377,45 +2242,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: "#9C45F7",
-  },
-  escrowSection: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 10,
-    marginTop: 10,
-  },
-  escrowRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  escrowTogglePressable: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: "#9C45F7",
-    borderRadius: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-  checkboxChecked: {
-    backgroundColor: "#9C45F7",
-  },
-  checkmark: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  escrowLabel: {
-    fontSize: 16,
-    color: "#333",
-    flex: 1,
   },
   disabledButton: {
     opacity: 0.7,

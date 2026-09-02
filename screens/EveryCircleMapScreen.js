@@ -1,15 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  PanResponder,
-  Platform,
-  StyleSheet,
-  Switch,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Image, PanResponder, Platform, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import AppHeader from "../components/AppHeader";
@@ -21,11 +11,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { getHeaderColor } from "../config/headerColors";
 import { resolveMapHomeCoords } from "../utils/resolveMapHomeCoords";
 import { MAP_PLACEHOLDER_HOME } from "../utils/mapDefaults";
-import {
-  MAP_MARKER_BORDER_COLOR,
-  MAP_MARKER_DISPLAY_SIZE,
-  MAP_MARKER_IMAGE,
-} from "../utils/mapMarkerAssets";
+import { MAP_MARKER_BORDER_COLOR, MAP_MARKER_DISPLAY_SIZE, MAP_MARKER_IMAGE } from "../utils/mapMarkerAssets";
 
 function haversineDistanceMiles(lat1, lng1, lat2, lng2) {
   const toRad = (d) => (d * Math.PI) / 180;
@@ -38,8 +24,8 @@ function haversineDistanceMiles(lat1, lng1, lat2, lng2) {
 
 const THUMB_SIZE = 24;
 
-const LOG_SCALE_MIN = 1;      // 1 mi is the log scale start
-const LOG_SCALE_MAX = 12500;  // ~half Earth circumference; bounds are clamped to prevent tile duplication
+const LOG_SCALE_MIN = 1; // 1 mi is the log scale start
+const LOG_SCALE_MAX = 12500; // ~half Earth circumference; bounds are clamped to prevent tile duplication
 const LOG_MIN = Math.log(LOG_SCALE_MIN);
 const LOG_MAX = Math.log(LOG_SCALE_MAX);
 // Reserve 1.5% of track at each end for the 0 and ∞ snap zones
@@ -63,13 +49,17 @@ function RadiusSlider({ value, onChange, darkMode }) {
   const startXRef = useRef(0);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
-  useEffect(() => { valueRef.current = value; });
-  useEffect(() => { onChangeRef.current = onChange; });
+  useEffect(() => {
+    valueRef.current = value;
+  });
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
 
   const mileToX = (miles) => {
     const usable = Math.max(1, trackRef.current - THUMB_SIZE);
-    if (miles == null) return usable;                  // ∞ → rightmost
-    if (miles <= 0) return 0;                          // 0 → leftmost
+    if (miles == null) return usable; // ∞ → rightmost
+    if (miles <= 0) return 0; // 0 → leftmost
     const logPct = (Math.log(Math.max(LOG_SCALE_MIN, miles)) - LOG_MIN) / (LOG_MAX - LOG_MIN);
     return (SNAP_EDGE + logPct * (1 - 2 * SNAP_EDGE)) * usable;
   };
@@ -77,8 +67,8 @@ function RadiusSlider({ value, onChange, darkMode }) {
   const xToMile = (x) => {
     const usable = Math.max(1, trackRef.current - THUMB_SIZE);
     const pct = x / usable;
-    if (pct < SNAP_EDGE) return 0;                     // leftmost snap → 0 mi
-    if (pct >= 1 - SNAP_EDGE) return null;             // rightmost snap → ∞
+    if (pct < SNAP_EDGE) return 0; // leftmost snap → 0 mi
+    if (pct >= 1 - SNAP_EDGE) return null; // rightmost snap → ∞
     const logPct = (pct - SNAP_EDGE) / (1 - 2 * SNAP_EDGE);
     return snapMiles(Math.exp(LOG_MIN + logPct * (LOG_MAX - LOG_MIN)));
   };
@@ -97,7 +87,7 @@ function RadiusSlider({ value, onChange, darkMode }) {
         const newX = Math.max(0, Math.min(trackRef.current - THUMB_SIZE, startXRef.current + gs.dx));
         onChangeRef.current(xToMile(newX));
       },
-    })
+    }),
   ).current;
 
   const thumbX = mileToX(value);
@@ -105,7 +95,9 @@ function RadiusSlider({ value, onChange, darkMode }) {
   return (
     <View
       style={sliderStyles.track}
-      onLayout={(e) => { trackRef.current = e.nativeEvent.layout.width; }}
+      onLayout={(e) => {
+        trackRef.current = e.nativeEvent.layout.width;
+      }}
       {...panResponder.panHandlers}
     >
       <View style={[sliderStyles.rail, darkMode && sliderStyles.railDark]} />
@@ -121,10 +113,18 @@ const sliderStyles = StyleSheet.create({
   railDark: { backgroundColor: "#555" },
   fill: { height: 4, backgroundColor: "#4F8A8B", borderRadius: 2, position: "absolute", left: 0 },
   thumb: {
-    width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: THUMB_SIZE / 2,
-    backgroundColor: "#4F8A8B", borderWidth: 2, borderColor: "#fff",
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: THUMB_SIZE / 2,
+    backgroundColor: "#4F8A8B",
+    borderWidth: 2,
+    borderColor: "#fff",
     position: "absolute",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
   },
   thumbDark: { borderColor: "#333" },
 });
@@ -152,11 +152,7 @@ export default function EveryCircleMapScreen() {
 
   const filteredBusinesses =
     mapRadiusMiles != null && mapCenter != null
-      ? businesses.filter(
-          (b) =>
-            haversineDistanceMiles(mapCenter.lat, mapCenter.lng, b.business_latitude, b.business_longitude) <=
-            mapRadiusMiles
-        )
+      ? businesses.filter((b) => haversineDistanceMiles(mapCenter.lat, mapCenter.lng, b.business_latitude, b.business_longitude) <= mapRadiusMiles)
       : businesses;
 
   useEffect(() => {
@@ -231,7 +227,7 @@ export default function EveryCircleMapScreen() {
         navigation.navigate("BusinessProfile", { business_uid: business.business_uid });
       }
     },
-    [navigation]
+    [navigation],
   );
 
   const handleRetry = useCallback(() => {
@@ -288,7 +284,7 @@ export default function EveryCircleMapScreen() {
       }
       return `${total} ${total === 1 ? itemLabel : itemLabelPlural} on the map${querySuffix}`;
     }
-    return `${filteredBusinesses.length} ${filteredBusinesses.length === 1 ? itemLabel : itemLabelPlural} on Every Circle`;
+    return `${filteredBusinesses.length} ${filteredBusinesses.length === 1 ? itemLabel : itemLabelPlural} on everyCircle`;
   })();
 
   const emptyMessage = fromSearch
@@ -300,15 +296,8 @@ export default function EveryCircleMapScreen() {
     : `No ${itemLabelPlural} with coordinates yet.`;
 
   return (
-    <SafeAreaView
-      style={[styles.container, darkMode && styles.containerDark]}
-      edges={["top", "left", "right"]}
-    >
-      <AppHeader
-        title="Every Circle Map"
-        backgroundColor="#4F8A8B"
-        onBackPress={handleBack}
-      />
+    <SafeAreaView style={[styles.container, darkMode && styles.containerDark]} edges={["top", "left", "right"]}>
+      <AppHeader title='everyCircle Map' backgroundColor='#4F8A8B' onBackPress={handleBack} />
 
       <View style={styles.summaryBar}>
         <Text style={[styles.summaryText, darkMode && styles.summaryTextDark]}>
@@ -333,27 +322,15 @@ export default function EveryCircleMapScreen() {
             </>
           )}
           <View style={styles.legendMarkerWrap}>
-            <Image
-              source={MAP_MARKER_IMAGE}
-              style={styles.legendMarkerImage}
-              resizeMode="contain"
-            />
+            <Image source={MAP_MARKER_IMAGE} style={styles.legendMarkerImage} resizeMode='contain' />
           </View>
-          <Text style={[styles.legendText, darkMode && styles.summaryTextDark]}>
-            Every Circle businesses
-          </Text>
+          <Text style={[styles.legendText, darkMode && styles.summaryTextDark]}>everyCircle businesses</Text>
         </View>
         {!loading && (
           <View style={[styles.toggleRow, darkMode && styles.toggleRowDark]}>
             <View style={styles.toggleCopy}>
-              <Text style={[styles.toggleLabel, darkMode && styles.summaryTextDark]}>
-                Every Circle only
-              </Text>
-              <Text style={[styles.toggleHint, darkMode && styles.summaryTextDark]}>
-                {everyCircleOnly
-                  ? "Hiding other map businesses and places"
-                  : "Showing all Google map places"}
-              </Text>
+              <Text style={[styles.toggleLabel, darkMode && styles.summaryTextDark]}>everyCircle only</Text>
+              <Text style={[styles.toggleHint, darkMode && styles.summaryTextDark]}>{everyCircleOnly ? "Hiding other map businesses and places" : "Showing all Google map places"}</Text>
             </View>
             <Switch
               value={everyCircleOnly}
@@ -364,7 +341,7 @@ export default function EveryCircleMapScreen() {
               }}
               thumbColor={everyCircleOnly ? mapAccent : "#f4f3f4"}
               ios_backgroundColor={darkMode ? "#555" : "#767577"}
-              accessibilityLabel="Every Circle only map mode"
+              accessibilityLabel='everyCircle only map mode'
             />
           </View>
         )}
@@ -376,11 +353,7 @@ export default function EveryCircleMapScreen() {
           <RadiusSlider value={mapRadiusMiles} onChange={setMapRadiusMiles} darkMode={darkMode} />
           <View style={styles.radiusValueWrap}>
             {mapRadiusMiles !== null ? (
-              <TouchableOpacity
-                onPress={() => setMapRadiusMiles(null)}
-                style={styles.radiusClearBtn}
-                accessibilityLabel="Clear radius filter"
-              >
+              <TouchableOpacity onPress={() => setMapRadiusMiles(null)} style={styles.radiusClearBtn} accessibilityLabel='Clear radius filter'>
                 <Text style={styles.radiusValueActive}>{formatMiles(mapRadiusMiles)}</Text>
                 <Text style={styles.radiusClearIcon}> ✕</Text>
               </TouchableOpacity>
@@ -393,7 +366,7 @@ export default function EveryCircleMapScreen() {
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#AF52DE" />
+          <ActivityIndicator size='large' color='#AF52DE' />
         </View>
       ) : error ? (
         <View style={styles.centered}>
@@ -416,7 +389,7 @@ export default function EveryCircleMapScreen() {
             />
           )}
           {!filteredBusinesses.length && (
-            <View style={styles.emptyOverlay} pointerEvents="none">
+            <View style={styles.emptyOverlay} pointerEvents='none'>
               <Text style={styles.emptyText}>{emptyMessage}</Text>
             </View>
           )}
@@ -425,9 +398,7 @@ export default function EveryCircleMapScreen() {
 
       {Platform.OS === "web" && !loading && !error && businesses.length > 0 && (
         <View style={styles.hintBar}>
-          <Text style={[styles.hintText, darkMode && styles.summaryTextDark]}>
-            Pan and zoom to explore. Tap a marker to open a business profile.
-          </Text>
+          <Text style={[styles.hintText, darkMode && styles.summaryTextDark]}>Pan and zoom to explore. Tap a marker to open a business profile.</Text>
         </View>
       )}
 

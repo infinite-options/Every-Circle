@@ -3,6 +3,7 @@ import React from "react";
 import { View, Text, Image, StyleSheet, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
 
 // Web-compatible asset helper: default profile image for MiniCard (user and business)
 // On native, require() works; on web we try require() so the default shows on both platforms
@@ -177,8 +178,9 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
   // --------------------------
   // HANDLE USER CARD
   // --------------------------
-  const firstName = sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
-  const lastName = sanitizeText(user?.lastName || user?.personal_info?.profile_personal_last_name);
+  const deleted = isProfileDeleted(user);
+  const firstName = deleted ? "" : sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
+  const lastName = deleted ? "" : sanitizeText(user?.lastName || user?.personal_info?.profile_personal_last_name);
   const tagLine = sanitizeText(
     user?.tagLine || user?.personal_info?.profile_personal_tag_line || user?.personal_info?.profile_personal_tagline
   );
@@ -205,16 +207,19 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
     user?.locationIsPublic === "1";
 
   // Profile image rule: show uploaded image only when (image uploaded AND Display is TRUE); otherwise show default (web + mobile)
-  const hasUploadedImage = profileImage && String(profileImage).trim() !== "" && isSafeForConditional(profileImage);
+  const hasUploadedImage = !deleted && profileImage && String(profileImage).trim() !== "" && isSafeForConditional(profileImage);
   const showUploadedImage = hasUploadedImage && imageIsPublic;
   const userImageSource = showUploadedImage ? { uri: String(profileImage) } : getDefaultProfileImageSource();
 
   return (
-    <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
+    <View style={[styles.cardContainer, deleted && styles.deletedCardContainer, darkMode && styles.darkCardContainer, deleted && darkMode && styles.darkDeletedCardContainer]}>
       {/* HEADER: Name and Tagline */}
       <View style={styles.headerContainer}>
         {/* NAME */}
         {(() => {
+          if (deleted) {
+            return <Text style={[styles.name, styles.deletedName, darkMode && styles.darkDeletedName]}>{DELETED_USER_LABEL}</Text>;
+          }
           const nameParts = [firstName, lastName].filter((part) => part && part !== "." && part.trim() !== "" && !part.match(/^[\s.,;:!?\-_=+]*$/));
 
           const name = nameParts.length ? nameParts.join(" ") : "Unknown";
@@ -228,6 +233,7 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
 
         {/* TAGLINE */}
         {(() => {
+          if (deleted) return null;
           if (tagLineIsPublic && isSafeForConditional(tagLine) && tagLine !== "." && tagLine.trim() !== "") {
             return <Text style={[styles.tagline, darkMode && styles.darkText]}>{tagLine}</Text>;
           }
@@ -256,6 +262,7 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
         <View style={styles.textContainer}>
           {/* PHONE */}
           {(() => {
+            if (deleted) return null;
             if (phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "") {
               return <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>;
             }
@@ -264,6 +271,7 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
 
           {/* EMAIL */}
           {(() => {
+            if (deleted) return null;
             if (emailIsPublic && isSafeForConditional(email) && email !== "." && email.trim() !== "") {
               return <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>;
             }
@@ -272,6 +280,7 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
 
           {/* CITY, STATE */}
           {(() => {
+            if (deleted) return null;
             if (locationIsPublic && (isSafeForConditional(city) || isSafeForConditional(state))) {
               const locationParts = [];
               if (city && city !== "." && city.trim() !== "") locationParts.push(city);
@@ -424,6 +433,22 @@ const styles = StyleSheet.create({
   },
   darkNameSuffix: {
     color: "#aaaaaa",
+  },
+  deletedCardContainer: {
+    opacity: 0.72,
+    backgroundColor: "#f0f0f0",
+    borderColor: "#ccc",
+  },
+  darkDeletedCardContainer: {
+    backgroundColor: "#2a2a2a",
+    borderColor: "#555",
+  },
+  deletedName: {
+    color: "#888",
+    fontStyle: "italic",
+  },
+  darkDeletedName: {
+    color: "#aaa",
   },
 });
 

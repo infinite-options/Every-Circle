@@ -98,6 +98,21 @@ export const isSeekingItemReadyToFinish = (item) => {
   return true;
 };
 
+/** Human-readable list of what's still missing before Done/Submit will accept this Seeking entry. */
+export const getSeekingMissingRequirements = (item) => {
+  if (!item) return [];
+  const missing = [];
+  if (!String(item.helpNeeds || "").trim()) missing.push("Title");
+  if (!String(item.details || "").trim()) missing.push("Description");
+  if (!getSeekingCostUnit(item.cost)) missing.push("Pricing unit");
+  if (seekingDeliveredModeSelected(item) && !validateSeekingDeliveredShipping(item)) missing.push("Delivery charge");
+  if (item.profile_wish_is_returnable === 1 || item.profile_wish_is_returnable === "1") {
+    const n = parseInt(String(item.profile_wish_return_window_days ?? "").trim(), 10);
+    if (!Number.isFinite(n) || n < RETURN_WINDOW_MIN_DAYS || n > RETURN_WINDOW_MAX_DAYS) missing.push("Return window days");
+  }
+  return missing;
+};
+
 const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", profileDefaultAddress = null, darkMode = false }) => {
   const wishes = Array.isArray(wishesProp) ? wishesProp : [];
   // Stores each rendered card's ref by index so parent can scroll to the new one.
@@ -880,6 +895,8 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
       {wishes.map((item, index) => {
         const isEditing = showForm && editingIndex === index;
         const canFinishSeeking = isEditing && isSeekingItemReadyToFinish(item);
+        const missingRequirements = getSeekingMissingRequirements(item);
+        const isIncomplete = !isEditing && !isSeekingEmpty(item) && missingRequirements.length > 0;
         return (
         <View
           key={item.profile_wish_uid || `seeking-${index}`}
@@ -889,13 +906,21 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
           style={[styles.listItemWrapper, index > 0 && styles.listItemSpacing]}
         >
           {!isEditing ? (
-            <ProfileSeekingListCard
-              item={item}
-              profileUid={profileUid}
-              darkMode={darkMode}
-              onEdit={() => startEditSeeking(index)}
-              onDelete={() => deleteWish(index)}
-            />
+            <>
+              <ProfileSeekingListCard
+                item={item}
+                profileUid={profileUid}
+                darkMode={darkMode}
+                onEdit={() => startEditSeeking(index)}
+                onDelete={() => deleteWish(index)}
+              />
+              {isIncomplete ? (
+                <TouchableOpacity style={[styles.incompleteBanner, darkMode && styles.incompleteBannerDark]} onPress={() => startEditSeeking(index)}>
+                  <Ionicons name='alert-circle' size={16} color='#c0392b' />
+                  <Text style={styles.incompleteBannerText}>Missing: {missingRequirements.join(", ")} — tap to fill in</Text>
+                </TouchableOpacity>
+              ) : null}
+            </>
           ) : null}
 
           {isEditing ? (
@@ -1479,6 +1504,14 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
             </View>
           </View>
 
+          {isEditing && missingRequirements.length > 0 ? (
+            <View style={[styles.missingChecklist, darkMode && styles.missingChecklistDark]}>
+              <Text style={[styles.missingChecklistText, darkMode && styles.missingChecklistTextDark]}>
+                Still needed before Done: {missingRequirements.join(", ")}
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.formFooterButtons}>
             <TouchableOpacity style={[styles.formCancelButton, darkMode && styles.formCancelButtonDark]} onPress={cancelEditSeeking} activeOpacity={0.8}>
               <Text style={[styles.formCancelButtonText, darkMode && styles.formCancelButtonTextDark]}>Cancel</Text>
@@ -1541,6 +1574,47 @@ const styles = StyleSheet.create({
   emptyTextDark: { color: "#aaa" },
   listItemWrapper: { marginBottom: 0 },
   listItemSpacing: { marginTop: 10 },
+  incompleteBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#c0392b",
+    backgroundColor: "#fdecea",
+  },
+  incompleteBannerDark: {
+    backgroundColor: "#4a2a28",
+  },
+  incompleteBannerText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#c0392b",
+  },
+  missingChecklist: {
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#c0392b",
+    backgroundColor: "#fdecea",
+  },
+  missingChecklistDark: {
+    backgroundColor: "#4a2a28",
+  },
+  missingChecklistText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#c0392b",
+  },
+  missingChecklistTextDark: {
+    color: "#ff8a80",
+  },
   livePreviewBlock: { marginBottom: 10 },
   previewSection: { marginBottom: 12 },
   previewLabel: {

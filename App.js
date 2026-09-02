@@ -40,6 +40,7 @@ import { DarkModeProvider } from "./contexts/DarkModeContext";
 import { UnreadProvider } from "./contexts/UnreadContext";
 import { NearbyAlertProvider, useNearbyAlert } from "./contexts/NearbyAlertContext";
 import MessageNotificationBanner from "./components/MessageNotificationBanner";
+import CookieConsentBanner from "./components/CookieConsentBanner";
 import NearbyAlertBanner from "./components/NearbyAlertBanner";
 import { SessionProfileProvider } from "./contexts/SessionProfileContext";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
@@ -61,6 +62,7 @@ import BusinessSetupController from "./screens/BusinessSetupController";
 import BusinessProfileScreen from "./screens/BusinessProfileScreen";
 import SearchTab from "./screens/SearchTab";
 import ChangePasswordScreen from "./screens/ChangePasswordScreen";
+import DeleteAccountScreen from "./screens/DeleteAccountScreen";
 import FilterScreen from "./screens/FilterScreen-DNU";
 import TermsAndConditionsScreen from "./screens/TermsAndConditionsScreen";
 import PrivacyPolicyScreen from "./screens/PrivacyPolicyScreen";
@@ -90,7 +92,7 @@ import { resetSharedAblyClient } from "./utils/ablyClient";
 
 const Stack = createNativeStackNavigator();
 
-export const googleApiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+export const googleApiKey = config.googleApiKey;
 
 /** Home screen: show version / last-build line (PM version, app version, last change). */
 const SHOW_HOME_BUILD_INFO = true;
@@ -819,7 +821,7 @@ export default function App() {
           <Text style={styles.welcomeText}>Welcome!</Text>
 
           <View style={styles.circleMain}>
-            <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: 200, height: 200, resizeMode: "contain" }} accessibilitylabel='Every Circle Logo' />
+            <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: 200, height: 200, resizeMode: "contain" }} accessibilitylabel='everyCircle Logo' />
             {/* <View style={styles.videoContainer}>
             <Video
               source={{ uri: "https://every-circle.s3.us-west-1.amazonaws.com/EveryB2B.mp4" }}
@@ -1107,6 +1109,7 @@ export default function App() {
                     <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
                     <Stack.Screen name='BusinessModeration' component={BusinessModerationScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
+                    <Stack.Screen name='DeleteAccount' component={DeleteAccountScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='Filters' component={FilterScreen} />
                     <Stack.Screen name='SearchTab' component={SearchTab} />
 
@@ -1143,6 +1146,7 @@ export default function App() {
                   }}
                 />
                 <RootNearbyAlertBanner navigationRef={navigationRef} />
+                <CookieConsentBanner navigationRef={navigationRef} />
               </View>
             </NearbyAlertProvider>
           </UnreadProvider>
