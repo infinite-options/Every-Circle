@@ -49,6 +49,7 @@ import {
 } from "../utils/nearbySettings";
 import { subscribeStoredNearbyCoords, formatStoredNearbyCoordsSummary } from "../utils/nearbyLocationUpdate";
 import { nearbyPeopleToMapMarkers } from "../utils/nearbyPeopleToMapMarkers";
+import { searchReferralProfiles } from "../utils/searchReferralProfiles";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -333,7 +334,7 @@ function applyConnectionFilters(nodes, filters) {
     eventFilter,
     notesFilter,
     introducedByFilter,
-    searchQuery = "",
+    searchMatchUids = null,
   } = filters;
 
   let filtered = nodes || [];
@@ -384,38 +385,8 @@ function applyConnectionFilters(nodes, filters) {
     filtered = filtered.filter((node) => (node.circle_introduced_by || "").trim() === introducedByFilter);
   }
 
-  const tokens = String(searchQuery || "")
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (tokens.length > 0) {
-    filtered = filtered.filter((node) => {
-      const firstName = node.__mc?.firstName || node.profile_personal_first_name || "";
-      const lastName = node.__mc?.lastName || node.profile_personal_last_name || "";
-      const searchableText = [
-        firstName,
-        lastName,
-        `${firstName} ${lastName}`.trim(),
-        node.__mc?.tagLine || "",
-        node.__mc?.city || "",
-        node.__mc?.state || "",
-        node.__mc?.phoneNumber || "",
-        node.__mc?.email || "",
-        node.circle_city || "",
-        node.circle_state || "",
-        node.circle_event || "",
-        node.circle_note || "",
-        node.circle_introduced_by || "",
-        node.circle_relationship || "",
-        node.circle_date || "",
-        node.network_profile_personal_uid || "",
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return tokens.every((token) => searchableText.includes(token));
-    });
+  if (searchMatchUids) {
+    filtered = filtered.filter((node) => searchMatchUids.has(String(node.network_profile_personal_uid || "").trim()));
   }
 
   return filtered;
@@ -644,6 +615,8 @@ const ConnectScreen = ({ navigation }) => {
   const [filterModalKind, setFilterModalKind] = useState(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchMatchUids, setSearchMatchUids] = useState(null);
+  const [networkSearchLoading, setNetworkSearchLoading] = useState(false);
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
   const [activeView, setActiveView] = useState("connections"); // "connections" or "circles" - default to connections
@@ -986,7 +959,6 @@ const ConnectScreen = ({ navigation }) => {
   }, [showAsyncStorage, degree, viewMode, showViewMyNetwork, dateFrom, dateTo, locationFilter, eventFilter, notesFilter, introducedByFilter, settingsLoaded]);
 
   // Debounced GET /api/network: settings ready, panel open, connections view, and on focus (focusTick) or degree change.
-  // useFocusEffect no longer calls fetchNetwork — avoids duplicate with this effect. activeView via ref so Circles→Connections does not schedule twice.
   useEffect(() => {
     if (!settingsLoaded || !showViewMyNetwork || activeViewRef.current !== "connections") return;
     const deg = String(degree || "").trim();
@@ -1011,25 +983,20 @@ const ConnectScreen = ({ navigation }) => {
     });
   }, [profileUid, activeView, networkData, degree, loading, error]);
 
-  // Extract unique events from network data
+  // Extract unique events from network data (unfiltered) for filter dropdowns
   useEffect(() => {
     if (networkData && networkData.length > 0) {
       const events = new Set();
       networkData.forEach((node) => {
         const event = node.circle_event;
-        if (event && event.trim() !== "") {
-          events.add(event.trim());
-        }
+        if (event && event.trim() !== "") events.add(event.trim());
       });
-      const sortedEvents = Array.from(events).sort();
-      setAvailableEvents(sortedEvents);
-      console.log("📋 Available events:", sortedEvents);
+      setAvailableEvents(Array.from(events).sort());
     } else {
       setAvailableEvents([]);
     }
   }, [networkData]);
 
-  // Unique circle_introduced_by values for introduced-by dropdown
   useEffect(() => {
     if (networkData && networkData.length > 0) {
       const intros = new Set();
@@ -1573,24 +1540,13 @@ const ConnectScreen = ({ navigation }) => {
     return String(value).replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;").replace(/\n/g, "\\n");
   };
 
-  // Update graph HTML when network data or view mode or filters change (for web)
+  // Update graph HTML when network data or view mode changes (for web)
   useEffect(() => {
     if (Platform.OS === "web" && viewMode === "graph" && profileUid) {
-      const filtered = applyConnectionFilters(networkData, {
-        relationshipFilter,
-        dateFrom,
-        dateTo,
-        locationFilter,
-        eventFilter,
-        notesFilter,
-        introducedByFilter,
-        searchQuery,
-      });
-
-      const html = generateVisHTML(filtered, profileUid || "YOU");
+      const html = generateVisHTML(networkData, profileUid || "YOU");
       setGraphHtml(html);
     }
-  }, [viewMode, networkData, profileUid, relationshipFilter, dateFrom, dateTo, locationFilter, eventFilter, notesFilter, introducedByFilter, searchQuery, userProfileData]);
+  }, [viewMode, networkData, profileUid, userProfileData]);
 
   // Create/update iframe element for web
   useEffect(() => {
@@ -1782,7 +1738,6 @@ const ConnectScreen = ({ navigation }) => {
       console.log("🔵 ConnectScreen - fetchNetwork", { degree: overrideDegree ?? degree });
     }
     setActiveView("connections");
-    // Keep current viewMode (list or graph) so user stays on View as Graph if they switched Network
     setRelationshipFilter("All");
     setDateFrom("");
     setDateTo("");
@@ -1825,7 +1780,6 @@ const ConnectScreen = ({ navigation }) => {
     try {
       setLoading(true);
       setError(null);
-
       const formatted = await fetchCirclesPayload(null);
       const grouped = { 1: formatted };
       setNetworkData(formatted);
@@ -2293,7 +2247,25 @@ const ConnectScreen = ({ navigation }) => {
     }
   }, [navigation, profileUid]);
 
-  // Apply filters to network data for graph/list views
+  // Update graph HTML when network data or view mode or filters change (for web)
+  useEffect(() => {
+    if (Platform.OS === "web" && viewMode === "graph" && profileUid) {
+      const filtered = applyConnectionFilters(networkData, {
+        relationshipFilter,
+        dateFrom,
+        dateTo,
+        locationFilter,
+        eventFilter,
+        notesFilter,
+        introducedByFilter,
+        searchMatchUids,
+      });
+
+      const html = generateVisHTML(filtered, profileUid || "YOU");
+      setGraphHtml(html);
+    }
+  }, [viewMode, networkData, profileUid, relationshipFilter, dateFrom, dateTo, locationFilter, eventFilter, notesFilter, introducedByFilter, searchMatchUids, userProfileData]);
+
   const filteredNetworkData = applyConnectionFilters(networkData, {
     relationshipFilter,
     dateFrom,
@@ -2302,9 +2274,31 @@ const ConnectScreen = ({ navigation }) => {
     eventFilter,
     notesFilter,
     introducedByFilter,
-    searchQuery,
+    searchMatchUids,
   });
   const filteredGroupedNetwork = groupNetworkByDegree(filteredNetworkData);
+
+  const onNetworkSearch = useCallback(async () => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchMatchUids(null);
+      return;
+    }
+    if (q.length < 2) {
+      setSearchMatchUids(new Set());
+      return;
+    }
+    setNetworkSearchLoading(true);
+    try {
+      const profiles = await searchReferralProfiles(q);
+      setSearchMatchUids(new Set(profiles.map((p) => String(p.profile_personal_uid || "").trim()).filter(Boolean)));
+    } catch (error) {
+      console.error("Connect network search failed:", error);
+      setSearchMatchUids(new Set());
+    } finally {
+      setNetworkSearchLoading(false);
+    }
+  }, [searchQuery]);
 
   // Filters "Who's Nearby" results by name against nearbySearchQuery
   const nearbySearchLower = nearbySearchQuery.trim().toLowerCase();
@@ -2748,22 +2742,31 @@ const ConnectScreen = ({ navigation }) => {
 
                 {showViewMyNetwork && (
                   <>
-                    {/* General search — matches name, location, event, notes, relationship, etc. */}
+                    {/* Search — submit to search like Search → Individuals */}
                     {Object.keys(groupedNetwork).length > 0 && (
                       <View style={{ width: "100%", marginBottom: 12, marginTop: 8 }}>
-                        <View style={[styles.searchInputWrapper, darkMode && styles.darkSearchInputWrapper]}>
+                        <View style={[styles.searchInputWrapper, darkMode && styles.darkSearchInputWrapper, { flexDirection: "row", alignItems: "center", gap: 8 }]}>
                           <WebTextInput
-                            style={[styles.searchInputInner, darkMode && { color: "#fff" }]}
+                            style={[styles.searchInputInner, { flex: 1 }, darkMode && { color: "#fff" }]}
                             value={searchQuery}
                             onChangeText={setSearchQuery}
-                            placeholder='Search name, location, event, notes…'
+                            placeholder='Name, email, notes, events, location…'
                             placeholderTextColor={darkMode ? "#888" : "#999"}
                             borderless
+                            returnKeyType='search'
+                            onSubmitEditing={onNetworkSearch}
                             accessibilitylabel='Search connections'
-                            accessibilityHint='Type anything to search connections by name, location, event, notes, or relationship'
+                            accessibilityHint='Search by name, email, notes, events, or location'
                             accessibilityRole='search'
                             aria-label='Search connections'
                           />
+                          <TouchableOpacity onPress={onNetworkSearch} accessibilityRole='button' accessibilityLabel='Search' style={{ padding: 4 }}>
+                            {networkSearchLoading ? (
+                              <ActivityIndicator size='small' color={darkMode ? "#fff" : "#333"} />
+                            ) : (
+                              <Ionicons name='search' size={20} color={darkMode ? "#fff" : "#333"} />
+                            )}
+                          </TouchableOpacity>
                         </View>
                       </View>
                     )}
