@@ -49,6 +49,27 @@ const resolveInitialRelationship = (initialData) => {
   return null;
 };
 
+const normalizeConnectionField = (value) => String(value ?? "").trim();
+
+const normalizeConnectionDate = (value) => {
+  const trimmed = normalizeConnectionField(value);
+  const match = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : trimmed;
+};
+
+const connectionFormHasChanges = (form, initialData) => {
+  if (!initialData) return true;
+  return (
+    normalizeConnectionField(form.relationship) !== normalizeConnectionField(initialData.relationship) ||
+    normalizeConnectionDate(form.date) !== normalizeConnectionDate(initialData.date) ||
+    normalizeConnectionField(form.event) !== normalizeConnectionField(initialData.event) ||
+    normalizeConnectionField(form.note) !== normalizeConnectionField(initialData.note) ||
+    normalizeConnectionField(form.city) !== normalizeConnectionField(initialData.city) ||
+    normalizeConnectionField(form.state) !== normalizeConnectionField(initialData.state) ||
+    normalizeConnectionField(form.introducedBy) !== normalizeConnectionField(initialData.introducedBy)
+  );
+};
+
 const resetConnectionForm = (setters) => {
   setters.setSelectedRelationship("friend");
   setters.setEvent("");
@@ -123,6 +144,11 @@ const ScannedProfilePopup = ({
   ];
 
   const isRelationshipValid = selectedRelationship && REL_TYPES.includes(selectedRelationship);
+  const hasChanges = connectionFormHasChanges(
+    { relationship: selectedRelationship, date, event, note, city, state, introducedBy },
+    initialData,
+  );
+  const isSaveDisabled = (relationshipRequired && !isRelationshipValid) || !hasChanges;
 
   const handleAdd = () => {
     if (relationshipRequired && !isRelationshipValid) {
@@ -297,9 +323,9 @@ const ScannedProfilePopup = ({
 
             <View style={styles.buttonContainer}>
               <TouchableOpacity
-                style={[styles.addButton, relationshipRequired && !isRelationshipValid && styles.addButtonDisabled]}
+                style={[styles.addButton, isSaveDisabled && styles.addButtonDisabled]}
                 onPress={handleAdd}
-                disabled={relationshipRequired && !isRelationshipValid}
+                disabled={isSaveDisabled}
               >
                 <Text style={styles.addButtonText}>{actionLabel}</Text>
               </TouchableOpacity>
