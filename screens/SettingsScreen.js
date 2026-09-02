@@ -28,7 +28,7 @@ import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUS
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { logoutCircleSession } from "../utils/authSession";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
-import { setAllowCookies as persistAllowCookies, subscribeAllowCookies } from "../utils/cookieConsent";
+import { setAllowCookies as persistAllowCookies, subscribeAllowCookies, persistServerCookieConsentForCurrentUser } from "../utils/cookieConsent";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
 import { fetchProfileModerationReviewQueue, fetchProfileModerationDetail, reviewProfileModeration } from "../utils/profileModeration";
@@ -382,12 +382,14 @@ export default function SettingsScreen() {
       // User is accepting cookies
       setAllowCookies(true);
       await persistAllowCookies(true);
+      await persistServerCookieConsentForCurrentUser(true);
     }
   };
 
   const confirmCookiesRejection = async () => {
     setAllowCookies(false);
     await persistAllowCookies(false);
+    await persistServerCookieConsentForCurrentUser(false);
     setCookiesWarningVisible(false);
   };
 

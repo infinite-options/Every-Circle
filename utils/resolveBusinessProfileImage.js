@@ -2,8 +2,10 @@
  * Resolve the best available business profile / header image URL from API or mapped business data.
  * Priority: business_profile_img → business_favorite_image / favImage → first Google photo → gallery image.
  */
+import { buildRestGooglePhotoUrl, resolveRestGooglePhotoUrl } from "./googlePlaces";
 
 export const S3_BUSINESS_IMAGE_BASE = "https://s3-us-west-1.amazonaws.com/every-circle/business_personal";
+export const GOOGLE_PHOTO_REF_PREFIX = "google_ref:";
 
 export function isEphemeralGooglePhotoUrl(url) {
   if (!url || typeof url !== "string") return false;
@@ -12,8 +14,72 @@ export function isEphemeralGooglePhotoUrl(url) {
 
 export function extractGooglePhotoReference(url) {
   if (!url || typeof url !== "string") return "";
-  const match = url.match(/photo_reference=([^&]+)/);
+  const trimmed = url.trim();
+  if (trimmed.startsWith(GOOGLE_PHOTO_REF_PREFIX)) {
+    return trimmed.slice(GOOGLE_PHOTO_REF_PREFIX.length);
+  }
+  const match = trimmed.match(/photo_reference=([^&]+)/);
   return match ? decodeURIComponent(match[1]) : "";
+}
+
+/** Extract a stable photo_reference from any stored Google photo value. */
+export function extractStoredGooglePhotoRef(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  const fromStored = extractGooglePhotoReference(trimmed);
+  if (fromStored) return fromStored;
+  if (isEphemeralGooglePhotoUrl(trimmed)) {
+    const oneS = trimmed.match(/[?&]1s([^&]+)/);
+    if (oneS?.[1]) return decodeURIComponent(oneS[1]);
+  }
+  return "";
+}
+
+/** Persist Google photos as google_ref:… instead of signed place/photo URLs. */
+export function toStableGooglePhotoStorage(urlOrRef) {
+  const trimmed = String(urlOrRef || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith(GOOGLE_PHOTO_REF_PREFIX)) return trimmed;
+  if (isPersistedGoogleS3Url(trimmed)) return trimmed;
+  if ((trimmed.startsWith("http://") || trimmed.startsWith("https://")) && !isGoogleHostedPhotoUrl(trimmed)) {
+    return trimmed;
+  }
+  const ref = extractStoredGooglePhotoRef(trimmed);
+  if (ref) return `${GOOGLE_PHOTO_REF_PREFIX}${ref}`;
+  return trimmed;
+}
+
+/** Resolve stored google_ref:… or legacy URLs to a displayable image URL. */
+export function resolveGooglePhotoDisplayUrl(stored) {
+  const trimmed = String(stored || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith(GOOGLE_PHOTO_REF_PREFIX)) {
+    return buildRestGooglePhotoUrl(trimmed.slice(GOOGLE_PHOTO_REF_PREFIX.length));
+  }
+  if (isEphemeralGooglePhotoUrl(trimmed)) {
+    return resolveRestGooglePhotoUrl(trimmed) || trimmed;
+  }
+  return trimmed;
+}
+
+/** Normalize photo list for DB persistence — stores refs, keeps S3/user URLs as-is. */
+export function normalizeGooglePhotosForStorage(urls) {
+  return dedupeGooglePhotoUrls((urls || []).map(toStableGooglePhotoStorage).filter(Boolean));
+}
+
+/** Resolve stored business_google_photos values for UI rendering. */
+export function resolveBusinessGooglePhotosForDisplay(storedPhotos) {
+  return parseBusinessGooglePhotos(storedPhotos).map(resolveGooglePhotoDisplayUrl).filter(Boolean);
+}
+
+/** True when stored photos still need a Place Details refresh (legacy ephemeral URLs). */
+export function googlePhotosNeedDetailsRefresh(storedPhotos) {
+  return parseBusinessGooglePhotos(storedPhotos).some((url) => {
+    if (url.startsWith(GOOGLE_PHOTO_REF_PREFIX)) return false;
+    if (isPersistedGoogleS3Url(url)) return false;
+    if (extractStoredGooglePhotoRef(url)) return false;
+    return isEphemeralGooglePhotoUrl(url);
+  });
 }
 
 export function resolveBusinessUploadUri(rawKey, uid) {
@@ -259,7 +325,21 @@ export function buildBusinessGalleryUploads(business, businessUID) {
   parseBusinessImagesUrl(business?.business_images_url).forEach((k) => {
     if (!isPersistedGoogleS3Url(k)) appendGalleryUrl(k);
   });
-  parseBusinessGooglePhotos(business?.business_google_photos).forEach((k) => appendGalleryUrl(k));
+  parseBusinessGooglePhotos(business?.business_google_photos).forEach((rawKey) => {
+    const trimmed = String(rawKey || "").trim();
+    if (!trimmed) return;
+    const s3Key = normalizeBusinessUploadKey(trimmed, uid);
+    if (!s3Key || seenKeys.has(s3Key)) return;
+    seenKeys.add(s3Key);
+    items.push({
+      id: `existing-${items.length}-${s3Key}`,
+      uri: resolveGooglePhotoDisplayUrl(trimmed),
+      s3Key,
+      isNew: false,
+      isGooglePhoto: true,
+      webFile: null,
+    });
+  });
 
   let result = pruneStaleGalleryShadowUploads(items, resolvedProfileUri, uid);
   result = dedupeGalleryUploadsByS3Key(result, uid);
@@ -298,9 +378,13 @@ export function resolveGalleryItemDisplayUri(item, profileUri, uid) {
       businessUploadUrisMatch(item.s3Key, profileUri, uid))
   ) {
     if (profileUri.startsWith("http://") || profileUri.startsWith("https://")) return profileUri;
+    if (String(profileUri).startsWith(GOOGLE_PHOTO_REF_PREFIX)) return resolveGooglePhotoDisplayUrl(profileUri);
     return resolveBusinessUploadUri(profileUri, uid) || profileUri;
   }
-  return resolveBusinessUploadUri(item.uri, uid) || item.uri;
+  if (String(item.s3Key || item.uri || "").startsWith(GOOGLE_PHOTO_REF_PREFIX)) {
+    return resolveGooglePhotoDisplayUrl(item.s3Key || item.uri);
+  }
+  return resolveBusinessUploadUri(item.uri, uid) || resolveGooglePhotoDisplayUrl(item.uri) || item.uri;
 }
 
 export function reconcileGalleryUploadsWithProfile(galleryUploads, profileUri, uid) {
@@ -358,7 +442,9 @@ export function buildGooglePhotosForSave(galleryUploads, googlePanelPhotos, dele
     .map((item) => resolveGalleryItemS3Url(item, uid))
     .filter((url) => url && isPermanentS3Url(url) && notDeleted(url));
 
-  const keptFreshGoogle = filterFreshGooglePhotoUrls(googlePanelPhotos).filter(notDeleted);
+  const keptFreshGoogle = filterFreshGooglePhotoUrls(googlePanelPhotos)
+    .filter(notDeleted)
+    .map(toStableGooglePhotoStorage);
 
   return dedupeGooglePhotoUrls([...keptPersistedGoogle, ...keptFreshGoogle]);
 }
@@ -440,8 +526,8 @@ export function resolveFavoriteImageForSave({ selectedUri, googlePhotosToSend, g
 export function googlePhotoUrlsMatch(a, b) {
   if (!a || !b) return false;
   if (a === b) return true;
-  const refA = extractGooglePhotoReference(a);
-  const refB = extractGooglePhotoReference(b);
+  const refA = extractStoredGooglePhotoRef(a);
+  const refB = extractStoredGooglePhotoRef(b);
   return Boolean(refA && refB && refA === refB);
 }
 
@@ -561,6 +647,7 @@ export function isGoogleHostedPhotoUrl(url) {
   if (!url || typeof url !== "string") return false;
   const u = url.trim();
   if (!u) return false;
+  if (u.startsWith(GOOGLE_PHOTO_REF_PREFIX)) return true;
   return u.includes("maps.googleapis.com/maps/api/place/photo") || isEphemeralGooglePhotoUrl(u) || u.includes("googleusercontent.com");
 }
 
@@ -616,11 +703,14 @@ export function resolveBusinessProfileImage(raw) {
     if (isBusinessUserUploadImage(favoriteImg)) {
       return resolveBusinessUploadUri(favoriteImg, uid) || favoriteImg;
     }
+    if (isGoogleHostedPhotoUrl(favoriteImg)) {
+      return resolveGooglePhotoDisplayUrl(favoriteImg);
+    }
     return favoriteImg;
   }
 
   const googlePhotos = parseBusinessGooglePhotos(raw.business_google_photos);
-  if (googlePhotos.length > 0) return googlePhotos[0];
+  if (googlePhotos.length > 0) return resolveGooglePhotoDisplayUrl(googlePhotos[0]);
 
   if (Array.isArray(raw.businessGooglePhotos) && raw.businessGooglePhotos.length > 0) {
     const first = String(raw.businessGooglePhotos[0]).trim();

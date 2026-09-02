@@ -3,6 +3,24 @@ const { config } = require("dotenv");
 
 config({ path: path.resolve(__dirname, ".env") });
 
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const trimmed = String(value ?? "").trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+/** Native Android Maps SDK key (must match EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID). */
+function androidGoogleMapsApiKey() {
+  return firstNonEmpty(
+    process.env.EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID,
+    process.env.EXPO_PUBLIC_GOOGLE_API_KEY,
+    process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+  );
+}
+
 module.exports = ({ config: expoConfig }) => ({
   expo: {
     owner: "pmarathay",
@@ -60,10 +78,7 @@ module.exports = ({ config: expoConfig }) => ({
 
       config: {
         googleMaps: {
-          apiKey:
-            process.env.EXPO_PUBLIC_GOOGLE_API_KEY ||
-            process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
-            process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+          apiKey: androidGoogleMapsApiKey(),
         },
       },
     },
@@ -100,10 +115,7 @@ module.exports = ({ config: expoConfig }) => ({
           },
 
           gradleProperties: {
-            MAPS_API_KEY:
-              process.env.EXPO_PUBLIC_GOOGLE_API_KEY ||
-              process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
-              process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+            MAPS_API_KEY: androidGoogleMapsApiKey(),
             "android.builder.sdkDownload": "true",
           },
         },
@@ -138,11 +150,6 @@ module.exports = ({ config: expoConfig }) => ({
       iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID,
 
       webClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID,
-
-      googleApiKey:
-        process.env.EXPO_PUBLIC_GOOGLE_API_KEY ||
-        process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
-        process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
 
       appleServicesId: process.env.EXPO_PUBLIC_APPLE_SERVICES_ID,
 

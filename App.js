@@ -41,6 +41,7 @@ import { UnreadProvider } from "./contexts/UnreadContext";
 import { NearbyAlertProvider, useNearbyAlert } from "./contexts/NearbyAlertContext";
 import MessageNotificationBanner from "./components/MessageNotificationBanner";
 import CookieConsentBanner from "./components/CookieConsentBanner";
+import { syncAllowCookiesForUser, reportLoggedIn } from "./utils/cookieConsent";
 import NearbyAlertBanner from "./components/NearbyAlertBanner";
 import { SessionProfileProvider } from "./contexts/SessionProfileContext";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
@@ -94,7 +95,7 @@ import { resetSharedAblyClient } from "./utils/ablyClient";
 
 const Stack = createNativeStackNavigator();
 
-export const googleApiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+export const googleApiKey = config.googleApiKey;
 
 /** Home screen: show version / last-build line (PM version, app version, last change). */
 const SHOW_HOME_BUILD_INFO = true;
@@ -420,6 +421,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [termsAccepted, setTermsAccepted] = useState(true);
   const navigationRef = useRef(null);
+  /** user_uid last reconciled against users_cookies_date — avoids re-hitting the server on every nav change. */
+  const syncedCookiesUserRef = useRef(null);
 
   useEffect(() => {
     setOnAuthSessionExpired(async () => {
@@ -460,6 +463,7 @@ export default function App() {
         console.log("App.js - Checking if user in AsyncStorage...");
         const uid = await AsyncStorage.getItem("user_uid");
         console.log("App.js - User UID:", uid);
+        reportLoggedIn(!!uid);
 
         // Check terms acceptance status
         const termsStatus = await AsyncStorage.getItem("termsAccepted");
@@ -946,6 +950,10 @@ export default function App() {
               </View>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity style={styles.privacyLink} onPress={() => navigation.navigate("PrivacyPolicy")} activeOpacity={0.7}>
+            <Text style={styles.privacyLinkText}>Privacy Policy</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -1053,6 +1061,18 @@ export default function App() {
     const currentRouteName = getCurrentRoute(state);
     console.log("App.js - Current route:", currentRouteName);
 
+    // Cookie consent is tied to the profile (users.users_cookies_date), not the device —
+    // reconcile once per logged-in user_uid so a different profile logging in on this same
+    // device doesn't inherit a stale answer left behind by whoever used it before.
+    const loggedInUserUid = ((await AsyncStorage.getItem("user_uid")) || "").trim();
+    reportLoggedIn(!!loggedInUserUid);
+    if (loggedInUserUid && syncedCookiesUserRef.current !== loggedInUserUid) {
+      syncedCookiesUserRef.current = loggedInUserUid;
+      syncAllowCookiesForUser(loggedInUserUid).catch((e) => console.log("App.js - cookie consent sync failed:", e));
+    } else if (!loggedInUserUid) {
+      syncedCookiesUserRef.current = null;
+    }
+
     // Check terms acceptance and cookies status from AsyncStorage (in case they changed)
     const termsStatus = await AsyncStorage.getItem("termsAccepted");
     const termsAcceptedValue = termsStatus !== null ? JSON.parse(termsStatus) : true;
@@ -1065,7 +1085,7 @@ export default function App() {
     const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap"];
 
     // Allowed screens when terms are not accepted
-    const termsAllowedScreens = ["Home", "Login", "SignUp", "Reactivate", "Settings", "TermsAndConditions", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
+    const termsAllowedScreens = ["Home", "Login", "SignUp", "Reactivate", "Settings", "TermsAndConditions", "PrivacyPolicy", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
 
     // If cookies not allowed and trying to access any screen except Settings
     if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
@@ -1275,6 +1295,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     textAlign: "center",
+  },
+  privacyLink: {
+    marginTop: 12,
+    paddingVertical: 8,
+    alignSelf: "center",
+  },
+  privacyLinkText: {
+    color: "#2434C2",
+    fontSize: 13,
+    textAlign: "center",
+    textDecorationLine: "underline",
   },
   welcomeText: {
     fontSize: 36,

@@ -11,7 +11,7 @@ import AppHeader from "../components/AppHeader";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
-import { googlePhotoUrlsMatch, dedupeGooglePhotoUrls } from "../utils/resolveBusinessProfileImage";
+import { googlePhotoUrlsMatch, dedupeGooglePhotoUrls, normalizeGooglePhotosForStorage, toStableGooglePhotoStorage } from "../utils/resolveBusinessProfileImage";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 
@@ -252,8 +252,13 @@ export default function BusinessSetupController({ navigation, route }) {
         business_tag_line: tagLine,
         business_category_id: formatBusinessCategoryId(currentFormData.businessCategoryId),
         business_google_rating: currentFormData.googleRating,
-        business_google_photos: JSON.stringify(currentFormData.businessGooglePhotos),
-        business_favorite_image: (currentFormData.businessGooglePhotos || []).includes(currentFormData.favImage) ? currentFormData.favImage : "",
+        business_google_photos: JSON.stringify(normalizeGooglePhotosForStorage(currentFormData.businessGooglePhotos || [])),
+        business_favorite_image: (() => {
+          const photos = normalizeGooglePhotosForStorage(currentFormData.businessGooglePhotos || []);
+          const fav = (currentFormData.favImage || "").trim();
+          if (!fav) return "";
+          return photos.find((url) => googlePhotoUrlsMatch(url, fav)) || toStableGooglePhotoStorage(fav);
+        })(),
         business_price_level: currentFormData.priceLevel,
         business_google_id: currentFormData.googleId,
         business_yelp: currentFormData.yelp,
@@ -296,14 +301,14 @@ export default function BusinessSetupController({ navigation, route }) {
       data.append("business_category_id", formatBusinessCategoryId(currentFormData.businessCategoryId));
       data.append("custom_tags", JSON.stringify(customTags));
       data.append("business_google_rating", currentFormData.googleRating);
-      const googlePhotos = dedupeGooglePhotoUrls(currentFormData.businessGooglePhotos || []);
+      const googlePhotos = normalizeGooglePhotosForStorage(dedupeGooglePhotoUrls(currentFormData.businessGooglePhotos || []));
       data.append("business_google_photos", JSON.stringify(googlePhotos));
       const userImages = currentFormData.images || [];
       const selectedLogo = (currentFormData.favImage || "").trim();
       const isGoogleLogo = Boolean(selectedLogo && googlePhotos.some((url) => googlePhotoUrlsMatch(url, selectedLogo)));
       const uploadLogoIndex = selectedLogo ? userImages.indexOf(selectedLogo) : -1;
       const favoriteUrl = isGoogleLogo
-        ? googlePhotos.find((url) => googlePhotoUrlsMatch(url, selectedLogo)) || selectedLogo
+        ? googlePhotos.find((url) => googlePhotoUrlsMatch(url, selectedLogo)) || toStableGooglePhotoStorage(selectedLogo)
         : "";
       data.append("business_favorite_image", favoriteUrl);
       data.append("business_price_level", currentFormData.priceLevel);

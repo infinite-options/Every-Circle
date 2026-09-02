@@ -5,9 +5,9 @@ import { useElements, useStripe, CardElement, Elements } from "@stripe/react-str
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { CREATE_PAYMENT_INTENT_ENDPOINT } from "../apiConfig";
-import { stripeEnvironmentForBusinessCode } from "../utils/stripePublishableKey";
+import { stripeEnvironmentForBusinessCode, normalizeTransactionBuyerNote } from "../utils/stripePublishableKey";
 
-const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, show, setShow, submit, onError }) => {
+const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, transactionBuyerNote, checkoutStepLabel, show, setShow, submit, onError }) => {
   const { darkMode } = useDarkMode();
   const [showSpinner, setShowSpinner] = useState(false);
   const elements = useElements();
@@ -41,6 +41,7 @@ const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, s
       const paymentData = {
         customer_uid: paidBy,
         business_code: businessCode,
+        transaction_buyer_note: normalizeTransactionBuyerNote(transactionBuyerNote),
         payment_summary: {
           total: parseFloat(amount),
         },
@@ -159,10 +160,9 @@ const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, s
       const paymentIntentID = confirmedCardPayment.paymentIntent.id;
       console.log("StripePaymentWeb - Payment confirmed, payment intent ID:", paymentIntentID);
 
-      // Step 4: Call submit callback with payment details
+      // Parent owns modal visibility (multi-seller checkout may open the next payment step).
       await submit(paymentIntentID, paymentMethodID);
       setShowSpinner(false);
-      setShow(false);
     } catch (err) {
       console.error("StripePaymentWeb - Payment error:", err);
       setShowSpinner(false);
@@ -187,6 +187,10 @@ const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, s
               <Ionicons name='close' size={24} color={darkMode ? "#fff" : "#333"} />
             </TouchableOpacity>
           </View>
+
+          {checkoutStepLabel ? (
+            <Text style={[styles.checkoutStepLabel, darkMode && styles.darkCheckoutStepLabel]}>{checkoutStepLabel}</Text>
+          ) : null}
 
           {payeeTrimmed ? (
             <Text style={[styles.payeeBusinessName, darkMode && styles.darkPayeeBusinessName]} numberOfLines={2}>
@@ -236,7 +240,7 @@ const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, s
 };
 
 // Wrapper component that provides Elements context
-const StripePaymentWeb = ({ message, amount, paidBy, payeeBusinessName, show, setShow, submit, onError, stripePromise }) => {
+const StripePaymentWeb = ({ message, amount, paidBy, payeeBusinessName, transactionBuyerNote, checkoutStepLabel, show, setShow, submit, onError, stripePromise }) => {
   if (!stripePromise) {
     return null;
   }
@@ -248,6 +252,8 @@ const StripePaymentWeb = ({ message, amount, paidBy, payeeBusinessName, show, se
         amount={amount}
         paidBy={paidBy}
         payeeBusinessName={payeeBusinessName}
+        transactionBuyerNote={transactionBuyerNote}
+        checkoutStepLabel={checkoutStepLabel}
         show={show}
         setShow={setShow}
         submit={submit}
@@ -302,6 +308,16 @@ const styles = StyleSheet.create({
   },
   darkModalTitle: {
     color: "#fff",
+  },
+  checkoutStepLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  darkCheckoutStepLabel: {
+    color: "#bbb",
   },
   payeeBusinessName: {
     fontSize: 16,

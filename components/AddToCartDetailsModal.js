@@ -104,7 +104,6 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
     setQuantityError("");
     onAddToCart({
       quantity: qtyNum,
-      escrow: true,
       taxRatePct,
     });
     setShow(false);

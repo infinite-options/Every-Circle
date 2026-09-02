@@ -4,6 +4,8 @@
 // bottom banner (components/CookieConsentBanner.js) and the Settings screen
 // toggle stay in sync without a nav-state refresh in between.
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { USER_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetchWithAuth } from "./httpMiddleware";
 
 const listeners = new Set();
 
@@ -43,6 +45,126 @@ export async function refreshAllowCookies() {
   const value = await getAllowCookies();
   listeners.forEach((listener) => listener(value));
   return value;
+}
+
+// --- Server-side consent, tied to the profile (users.user_cookies / users_cookies_date) --
+// AsyncStorage alone is per-device: a profile that already answered on one device (or a
+// different profile that answered on this one) could wrongly hide/show the banner, or apply
+// the wrong allow/opt-out, for someone else. `users_cookies_date` (null = never answered) says
+// *whether* the profile has answered; `user_cookies` ("true"/"false" string, like the existing
+// user_notifications/user_dark_mode columns) says *what* they chose. Together they're the
+// per-profile source of truth; these helpers keep this device's local `allowCookies` reconciled.
+
+function firstUserRow(result) {
+  if (Array.isArray(result?.result)) return result.result[0];
+  return result?.result ?? result?.data ?? result;
+}
+
+function parseBoolString(value, fallback = null) {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  return String(value).trim().toLowerCase() === "true";
+}
+
+/** users_cookies_date is stored MM-DD-YYYY (matching users.user_created_date's convention). */
+function formatTodayMonthDayYear() {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${mm}-${dd}-${now.getFullYear()}`;
+}
+
+/** Reads { date, allow } for a user_uid from the server; both null if unset/unreachable. */
+export async function fetchServerCookieConsent(userUid) {
+  const uid = String(userUid || "").trim();
+  if (!uid) return { date: null, allow: null };
+  try {
+    const response = await fetchWithAuth(`${USER_INFO_ENDPOINT}/${encodeURIComponent(uid)}`);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return { date: null, allow: null };
+    const row = firstUserRow(result);
+    return {
+      date: row?.users_cookies_date || null,
+      allow: parseBoolString(row?.user_cookies, null),
+    };
+  } catch (error) {
+    console.log("cookieConsent - Error fetching server cookie consent:", error);
+    return { date: null, allow: null };
+  }
+}
+
+/**
+ * Records this profile's cookie-consent choice on the server. users_cookies_date is only
+ * logged when accepting (allow === true) — opting out updates user_cookies but leaves the
+ * date alone, since it's meant to record *when they accepted*, not merely "last answered".
+ */
+export async function persistServerCookieConsent(userUid, allow) {
+  const uid = String(userUid || "").trim();
+  if (!uid) return;
+  const payload = { user_uid: uid, user_cookies: allow ? "true" : "false" };
+  if (allow) payload.users_cookies_date = formatTodayMonthDayYear();
+  try {
+    await fetchWithAuth(USER_INFO_ENDPOINT, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    console.log("cookieConsent - Error saving server cookie consent:", error);
+  }
+}
+
+/** Same as persistServerCookieConsent(), but reads the logged-in user_uid itself; no-ops if logged out. */
+export async function persistServerCookieConsentForCurrentUser(allow) {
+  try {
+    const userUid = await AsyncStorage.getItem("user_uid");
+    if (userUid) await persistServerCookieConsent(userUid, allow);
+  } catch (error) {
+    console.log("cookieConsent - Error persisting consent for current user:", error);
+  }
+}
+
+/**
+ * Reconciles this device's local `allowCookies` with the logged-in profile's server record.
+ * Call once per login/signup (and it's harmless to call again on app resume). The banner
+ * (CookieConsentBanner) only hides when the resulting local value is exactly `true`, so:
+ *  - Profile has never answered (no server date) → local becomes null → banner shows,
+ *    even if a different profile answered on this same device before.
+ *  - Profile explicitly opted out (users_cookies_date set, user_cookies "false") → local
+ *    becomes false → banner keeps showing (opting out isn't a permanent dismissal).
+ *  - Profile accepted (users_cookies_date set, user_cookies "true") → local becomes true →
+ *    banner hides.
+ */
+export async function syncAllowCookiesForUser(userUid) {
+  const { date, allow } = await fetchServerCookieConsent(userUid);
+  if (!date) {
+    try {
+      await AsyncStorage.removeItem("allowCookies");
+    } catch (error) {
+      console.log("cookieConsent - Error clearing allowCookies:", error);
+    }
+    listeners.forEach((listener) => listener(null));
+    return;
+  }
+  await setAllowCookies(allow === null ? true : allow);
+}
+
+// --- Logged-in broadcast ---------------------------------------------------
+// The persistent cookie banner should only ever appear once someone is logged
+// in — never on Home/Login/SignUp before an account exists to tie it to.
+let currentlyLoggedIn = false;
+const loggedInListeners = new Set();
+
+export function reportLoggedIn(isLoggedIn) {
+  currentlyLoggedIn = !!isLoggedIn;
+  loggedInListeners.forEach((listener) => listener(currentlyLoggedIn));
+}
+
+/** Immediately invoked with the current state, then again on every change. */
+export function subscribeLoggedIn(listener) {
+  listener(currentlyLoggedIn);
+  loggedInListeners.add(listener);
+  return () => loggedInListeners.delete(listener);
 }
 
 // --- Banner height broadcast ---------------------------------------------

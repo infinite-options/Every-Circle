@@ -13,6 +13,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import {
   API_BASE_URL,
   BUSINESS_CLAIM_ENDPOINT,
+  BUSINESS_MEMBER_ROLE_ENDPOINT,
   BUSINESS_INFO_ENDPOINT,
   USER_PROFILE_INFO_ENDPOINT,
   USER_INFO_ENDPOINT,
@@ -40,6 +41,9 @@ import {
   resolveBusinessProfileImgUrl,
   isEphemeralGooglePhotoUrl,
   resolveGooglePhotosForDisplay,
+  resolveBusinessGooglePhotosForDisplay,
+  googlePhotosNeedDetailsRefresh,
+  resolveGooglePhotoDisplayUrl,
   resolveGooglePhotoUrl,
   googlePhotoUrlsMatch,
 } from "../utils/resolveBusinessProfileImage";
@@ -131,6 +135,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [currentUserProfileId, setCurrentUserProfileId] = useState(null);
   const [viewerProfilePath, setViewerProfilePath] = useState(null);
   const [businessUsers, setBusinessUsers] = useState([]);
+  // The viewer's own role on this business (lowercased): "owner" | "partner" | "employee" | ...
+  const [viewerBusinessRole, setViewerBusinessRole] = useState("");
+  // Member whose role is being edited (null = modal closed), plus the picked role + in-flight flag.
+  const [roleEditTarget, setRoleEditTarget] = useState(null);
+  const [roleEditChoice, setRoleEditChoice] = useState("");
+  const [roleEditSaving, setRoleEditSaving] = useState(false);
   const [reviewerProfiles, setReviewerProfiles] = useState({});
   const [viewportWidth, setViewportWidth] = useState(null);
 
@@ -379,6 +389,91 @@ export default function BusinessProfileScreen({ route, navigation }) {
     return !!isInProfileBusinesses;
   };
 
+  /** The viewer's own role on this business, lowercased ("" if they are not a member). */
+  const resolveViewerBusinessRole = async (businessUsersData) => {
+    const userUid = await AsyncStorage.getItem("user_uid");
+    const profileUid = await AsyncStorage.getItem("profile_uid");
+    if (!userUid && !profileUid) return "";
+    const list = Array.isArray(businessUsersData) ? businessUsersData : [];
+    const mine = list.find((bu) => businessUserMatchesViewer(bu, userUid, profileUid));
+    return String(mine?.business_role || "").trim().toLowerCase();
+  };
+
+  // Roles allowed to change members' roles, and the roles that are protected from edits.
+  const ROLE_EDITOR_ROLES = ["owner", "partner"];
+  const ROLE_CHOICES = [
+    { key: "owner", label: "Owner" },
+    { key: "partner", label: "Partner" },
+    { key: "employee", label: "Employee" },
+    { key: "admin", label: "Admin" },
+    { key: "other", label: "Other" },
+  ];
+
+  /** An owner/partner may change a member's role, but not that of another owner/partner. */
+  const canEditMemberRole = (member) => {
+    if (!ROLE_EDITOR_ROLES.includes(String(viewerBusinessRole || "").trim().toLowerCase())) return false;
+    const theirRole = String(member?.business_role || "").trim().toLowerCase();
+    return !ROLE_EDITOR_ROLES.includes(theirRole);
+  };
+
+  const openRoleEditor = (member) => {
+    setRoleEditTarget(member);
+    setRoleEditChoice(String(member?.business_role || "").trim().toLowerCase());
+  };
+
+  const closeRoleEditor = () => {
+    if (roleEditSaving) return;
+    setRoleEditTarget(null);
+    setRoleEditChoice("");
+  };
+
+  const submitRoleChange = async () => {
+    const member = roleEditTarget;
+    const targetUserId = member?.business_user_id || member?.bu_user_id || member?.user_uid;
+    const nextRole = String(roleEditChoice || "").trim().toLowerCase();
+    if (!member || !targetUserId || !nextRole) return;
+    if (nextRole === String(member?.business_role || "").trim().toLowerCase()) {
+      closeRoleEditor();
+      return;
+    }
+    setRoleEditSaving(true);
+    try {
+      const userUid = (await AsyncStorage.getItem("user_uid")) || "";
+      const res = await fetch(BUSINESS_MEMBER_ROLE_ENDPOINT, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          business_uid,
+          target_user_id: targetUserId,
+          role: nextRole,
+          ...(userUid ? { user_uid: userUid } : {}),
+        }),
+      });
+      if (!res.ok) {
+        let msg = `Could not update role (${res.status})`;
+        try {
+          const body = await res.json();
+          msg = body?.message || msg;
+        } catch (_) {}
+        Alert.alert("Role not changed", msg);
+        return;
+      }
+      setBusinessUsers((prev) =>
+        (Array.isArray(prev) ? prev : []).map((u) =>
+          (u.business_user_id || u.bu_user_id || u.user_uid) === targetUserId ? { ...u, business_role: nextRole } : u,
+        ),
+      );
+      setRoleEditTarget(null);
+      setRoleEditChoice("");
+      Alert.alert("Role updated", "The member's role has been changed.");
+    } catch (e) {
+      console.error("BusinessProfileScreen - submitRoleChange error:", e);
+      Alert.alert("Error", "Could not update the role. Please try again.");
+    } finally {
+      setRoleEditSaving(false);
+    }
+  };
+
   const fetchBusinessInfo = async () => {
     if (!business_uid) return;
 
@@ -449,15 +544,20 @@ export default function BusinessProfileScreen({ route, navigation }) {
           }
         }
 
-        let googlePhotos = parseBusinessGooglePhotos(rawBusiness.business_google_photos);
-        const needsPhotoRefresh = googlePhotos.some(isEphemeralGooglePhotoUrl) || isEphemeralGooglePhotoUrl(rawBusiness.business_favorite_image);
+        const rawGooglePhotos = parseBusinessGooglePhotos(rawBusiness.business_google_photos);
+        const needsPhotoRefresh =
+          googlePhotosNeedDetailsRefresh(rawGooglePhotos) || isEphemeralGooglePhotoUrl(rawBusiness.business_favorite_image);
+        let googlePhotos;
         if (needsPhotoRefresh && rawBusiness.business_google_id) {
           try {
             const pd = await getPlaceDetails(rawBusiness.business_google_id);
-            googlePhotos = resolveGooglePhotosForDisplay(googlePhotos, pd.photo_urls);
+            googlePhotos = resolveGooglePhotosForDisplay(rawGooglePhotos, pd.photo_urls).map(resolveGooglePhotoDisplayUrl);
           } catch (e) {
             console.warn("BusinessProfileScreen - could not refresh Google photo URLs:", e);
+            googlePhotos = resolveBusinessGooglePhotosForDisplay(rawGooglePhotos);
           }
+        } else {
+          googlePhotos = resolveBusinessGooglePhotosForDisplay(rawGooglePhotos);
         }
         let businessImages = [...googlePhotos];
 
@@ -620,6 +720,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
         setIsOwner(owner);
 
+        try {
+          setViewerBusinessRole(await resolveViewerBusinessRole(businessUsersData));
+        } catch (e) {
+          console.warn("BusinessProfileScreen - could not resolve viewer role:", e);
+        }
+
         let canViewViewers = false;
         try {
           canViewViewers = await resolveCanViewBusinessViewers(businessUsersData);
@@ -704,12 +810,14 @@ export default function BusinessProfileScreen({ route, navigation }) {
         if (!business) {
           setIsOwner(false);
           setCanViewBusinessViewers(false);
+          setViewerBusinessRole("");
           return;
         }
         const owner = await resolveIsOwnerForBusiness(businessUsers);
         setIsOwner(!!owner);
         const canViewViewers = await resolveCanViewBusinessViewers(businessUsers);
         setCanViewBusinessViewers(canViewViewers);
+        setViewerBusinessRole(await resolveViewerBusinessRole(businessUsers));
       } catch (error) {
         console.error("Error checking business ownership:", error);
         setIsOwner(false);
@@ -1507,19 +1615,27 @@ export default function BusinessProfileScreen({ route, navigation }) {
                     };
                     const profileUid = businessUser.profile_id || businessUser.profile_uid || businessUser.profile_personal_uid;
                     return (
-                      <TouchableOpacity
-                        key={businessUser.business_user_id || index}
-                        activeOpacity={0.7}
-                        onPress={() => {
-                          if (profileUid) {
-                            navigation.navigate("Profile", { profile_uid: profileUid, returnTo: "BusinessProfile" });
-                          }
-                        }}
-                        style={[styles.businessUserCard, darkMode && styles.darkBusinessUserCard]}
-                      >
-                        <MiniCard user={userForMiniCard} />
-                        <Text style={[styles.businessUserRole, darkMode && styles.darkBusinessUserRole]}>Role: {role && role !== "." && role.trim() !== "" ? role : "N/A"}</Text>
-                      </TouchableOpacity>
+                      <View key={businessUser.business_user_id || index} style={[styles.businessUserCard, darkMode && styles.darkBusinessUserCard]}>
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={() => {
+                            if (profileUid) {
+                              navigation.navigate("Profile", { profile_uid: profileUid, returnTo: "BusinessProfile" });
+                            }
+                          }}
+                        >
+                          <MiniCard user={userForMiniCard} />
+                          <Text style={[styles.businessUserRole, darkMode && styles.darkBusinessUserRole]}>Role: {role && role !== "." && role.trim() !== "" ? role : "N/A"}</Text>
+                        </TouchableOpacity>
+                        {canEditMemberRole(businessUser) && (
+                          <TouchableOpacity
+                            onPress={() => openRoleEditor(businessUser)}
+                            style={[styles.changeRoleButton, darkMode && styles.darkChangeRoleButton]}
+                          >
+                            <Text style={styles.changeRoleButtonText}>Change role</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     );
                   })}
               </View>
@@ -2160,6 +2276,36 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       <FlagBusinessModal visible={showFlagBusinessModal} onClose={() => setShowFlagBusinessModal(false)} targetUid={business_uid} businessName={business?.business_name || ""} />
 
+      <Modal animationType='fade' transparent visible={!!roleEditTarget} onRequestClose={closeRoleEditor}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, darkMode && styles.darkModalContent, { maxWidth: 360 }]}>
+            <Text style={[styles.modalTitle, darkMode && styles.darkModalTitle]}>
+              Change role{roleEditTarget ? ` for ${[roleEditTarget.first_name, roleEditTarget.last_name].filter(Boolean).join(" ") || roleEditTarget.user_email || "this member"}` : ""}
+            </Text>
+            {ROLE_CHOICES.map(({ key, label }) => (
+              <TouchableOpacity
+                key={key}
+                style={styles.roleChoiceRow}
+                onPress={() => setRoleEditChoice(key)}
+                disabled={roleEditSaving}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={roleEditChoice === key ? "radio-button-on" : "radio-button-off"} size={20} color='#4B2E83' />
+                <Text style={[styles.roleChoiceLabel, darkMode && styles.darkModalTitle]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+            <View style={styles.roleEditActions}>
+              <TouchableOpacity onPress={closeRoleEditor} disabled={roleEditSaving} style={styles.roleEditCancel}>
+                <Text style={styles.roleEditCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={submitRoleChange} disabled={roleEditSaving || !roleEditChoice} style={[styles.roleEditSave, (roleEditSaving || !roleEditChoice) && { opacity: 0.5 }]}>
+                {roleEditSaving ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.roleEditSaveText}>Save</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, styles.quantityModalContent]}>
@@ -2579,6 +2725,12 @@ const styles = StyleSheet.create({
     width: "80%",
     alignItems: "center",
   },
+  darkModalContent: {
+    backgroundColor: "#2d2d2d",
+  },
+  darkModalTitle: {
+    color: "#ffffff",
+  },
   quantityModalContent: {
     maxHeight: "85%",
     width: "88%",
@@ -2850,6 +3002,64 @@ const styles = StyleSheet.create({
     color: "#666",
     marginTop: 8,
     fontStyle: "italic",
+  },
+  changeRoleButton: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#4B2E83",
+  },
+  darkChangeRoleButton: {
+    borderColor: "#b9a3e3",
+  },
+  changeRoleButtonText: {
+    color: "#4B2E83",
+    fontWeight: "600",
+    fontSize: 13,
+  },
+  roleChoiceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "stretch",
+    gap: 10,
+    paddingVertical: 10,
+  },
+  roleChoiceLabel: {
+    fontSize: 15,
+    color: "#333",
+  },
+  roleEditActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    alignSelf: "stretch",
+    gap: 12,
+    marginTop: 16,
+  },
+  roleEditCancel: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  roleEditCancelText: {
+    color: "#666",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  roleEditSave: {
+    backgroundColor: "#4B2E83",
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 6,
+    minWidth: 72,
+    alignItems: "center",
+  },
+  roleEditSaveText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 14,
   },
   errorText: {
     fontSize: 18,

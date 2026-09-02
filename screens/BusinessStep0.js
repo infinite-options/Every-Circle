@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
 import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image, Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getBusinessSuggestions, getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
-import { googlePhotoUrlsMatch, dedupeGooglePhotoUrls } from "../utils/resolveBusinessProfileImage";
+import { getBusinessSuggestions, getAddressSuggestions, getPlaceDetails, getPlaceAddressDetails } from "../utils/googlePlaces";
+import { googlePhotoUrlsMatch, dedupeGooglePhotoUrls, normalizeGooglePhotosForStorage, resolveGooglePhotoDisplayUrl } from "../utils/resolveBusinessProfileImage";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -215,7 +215,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
     setAddressSuggestions([]);
     setAddressSearchLoading(true);
     try {
-      const pd = await getPlaceDetails(place.place_id);
+      const pd = await getPlaceAddressDetails(place.place_id);
       if (pd.lat == null || pd.lng == null) {
         Alert.alert("Error", "Could not determine coordinates for this address.");
         return;
@@ -265,7 +265,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         .map((t) => t.toLowerCase());
       const mergedCustomTags = Array.from(new Set([...(formData.customTags || []), ...googleTypeTags]));
       console.log("[BusinessStep0] Google place types:", Array.isArray(pd.types) ? pd.types : []);
-      const photoUrls = dedupeGooglePhotoUrls(pd.photo_urls || []);
+      const photoUrls = normalizeGooglePhotosForStorage(dedupeGooglePhotoUrls(pd.photo_urls || []));
       const streetAddress = pd.address_line_1 || "";
       setAddressSearchText(streetAddress);
       const updated = {
@@ -577,12 +577,13 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 <>
                   <Text style={[styles.sublabel, darkMode && styles.darkSubtitle]}>Google Images</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.googlePhotosRow} contentContainerStyle={styles.googlePhotosContent}>
-                    {googlePhotos.map((uri, index) => {
-                      const isSelected = googlePhotoUrlsMatch(formData.favImage, uri);
+                    {googlePhotos.map((stored, index) => {
+                      const uri = resolveGooglePhotoDisplayUrl(stored);
+                      const isSelected = googlePhotoUrlsMatch(formData.favImage, stored);
                       return (
-                        <View key={`${uri}-${index}`} style={styles.googlePhotoWrapper}>
+                        <View key={`${stored}-${index}`} style={styles.googlePhotoWrapper}>
                           <TouchableOpacity
-                            onPress={() => selectBusinessImage(uri)}
+                            onPress={() => selectBusinessImage(stored)}
                             activeOpacity={0.8}
                             accessibilityLabel={`Google image ${index + 1}${isSelected ? ", selected as business logo" : ""}`}
                             accessibilityRole='button'
@@ -591,7 +592,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.googlePhotoDeleteIcon}
-                            onPress={() => removeBusinessImage(uri, index)}
+                            onPress={() => removeBusinessImage(stored, index)}
                             accessibilityLabel={`Remove Google image ${index + 1}`}
                             accessibilityRole='button'
                           >

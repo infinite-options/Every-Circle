@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Modal, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Modal, ScrollView, ActivityIndicator, Alert, Platform } from "react-native";
 import { BUSINESSES_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import MiniCard from "./MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
+import { getBusinessMembershipRole } from "../utils/businessOwnership";
 
 /** Ensure businesses list is always a real array (API / route params may send a JSON string or object). */
 function asBusinessArray(value) {
@@ -22,8 +23,9 @@ function asBusinessArray(value) {
   return [];
 }
 
-const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, preFetchedBusinessesData, onInputFocus }) => {
+const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, onDeleteOwnedBusiness, preFetchedBusinessesData, onInputFocus }) => {
   const { darkMode } = useDarkMode();
+  const [deletingBusinessUid, setDeletingBusinessUid] = useState(null);
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
@@ -87,6 +89,44 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
     }
   };
 
+  /** True when the logged-in user's role for this business entry is "owner". */
+  const canDeleteBusiness = (entry) => getBusinessMembershipRole(entry) === "owner";
+
+  /** Owner-only: soft-remove the business (off this profile, its page, and search; row kept). */
+  const handleOwnedBusinessDelete = async (businessCard) => {
+    const businessUid = String(businessCard?.business_uid || businessCard?.profile_business_uid || "").trim();
+    if (!businessUid || !onDeleteOwnedBusiness || !canDeleteBusiness(businessCard)) return;
+
+    const name = sanitizeText(businessCard?.business_name || businessCard?.name, "this business");
+
+    const runDelete = async () => {
+      setDeletingBusinessUid(businessUid);
+      try {
+        const ok = await onDeleteOwnedBusiness(businessUid);
+        if (!ok) return;
+        // Parent owns `businesses`; drop this component's detail card for the
+        // deleted business. The [businesses] sync effect re-aligns the rest.
+        setBusinessesData((prev) =>
+          asBusinessArray(prev).filter((b) => (b.business_uid || b.profile_business_uid) !== businessUid),
+        );
+      } finally {
+        setDeletingBusinessUid(null);
+      }
+    };
+
+    const message = `Remove "${name}"?\n\nIt will no longer appear on your profile, its business page, or in search. Its records are kept in our system.`;
+
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      if (window.confirm(message)) await runDelete();
+      return;
+    }
+
+    Alert.alert("Delete Business", message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: runDelete },
+    ]);
+  };
+
   const handleInputChange = (index, field, value) => {
     const updated = [...businessesList];
     updated[index][field] = value;
@@ -124,23 +164,32 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
   // Sync businessesData with businesses prop changes (especially individualIsPublic)
   useEffect(() => {
     if (businessesDataList.length > 0 && businessesList.length > 0) {
-      // Update businessesData to reflect changes in businesses prop (like individualIsPublic toggles)
-      const updatedBusinessesData = businessesDataList.map((businessDataItem) => {
-        const originalIndex = businessDataItem.index;
-        const matchingBusiness = businessesList[originalIndex];
+      const uidOf = (b) => b?.business_uid || b?.profile_business_uid || "";
+      // Match by uid (not position) so a removed business drops its card and an
+      // index shift never re-labels the wrong one.
+      const updatedBusinessesData = businessesDataList
+        .filter((businessDataItem) => {
+          const uid = uidOf(businessDataItem);
+          return businessesList.some((b) => uidOf(b) === uid);
+        })
+        .map((businessDataItem) => {
+          const uid = uidOf(businessDataItem);
+          const matchingIndex = businessesList.findIndex((b) => uidOf(b) === uid);
+          const matchingBusiness = matchingIndex >= 0 ? businessesList[matchingIndex] : null;
 
-        if (matchingBusiness) {
-          // Sync individualIsPublic and other fields that might change
-          return {
-            ...businessDataItem,
-            individualIsPublic: matchingBusiness.individualIsPublic !== undefined ? matchingBusiness.individualIsPublic : businessDataItem.individualIsPublic,
-            isPublic: matchingBusiness.isPublic !== undefined ? matchingBusiness.isPublic : businessDataItem.isPublic,
-            role: sanitizeText(matchingBusiness.role || businessDataItem.role, ""),
-            isApproved: matchingBusiness.isApproved !== undefined ? matchingBusiness.isApproved : businessDataItem.isApproved,
-          };
-        }
-        return businessDataItem;
-      });
+          if (matchingBusiness) {
+            // Sync individualIsPublic and other fields that might change
+            return {
+              ...businessDataItem,
+              index: matchingIndex,
+              individualIsPublic: matchingBusiness.individualIsPublic !== undefined ? matchingBusiness.individualIsPublic : businessDataItem.individualIsPublic,
+              isPublic: matchingBusiness.isPublic !== undefined ? matchingBusiness.isPublic : businessDataItem.isPublic,
+              role: sanitizeText(matchingBusiness.role || businessDataItem.role, ""),
+              isApproved: matchingBusiness.isApproved !== undefined ? matchingBusiness.isApproved : businessDataItem.isApproved,
+            };
+          }
+          return businessDataItem;
+        });
       setBusinessesData(updatedBusinessesData);
     }
   }, [businesses]); // Run whenever businesses prop changes
@@ -275,7 +324,29 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
             <View key={business.business_uid || business.profile_business_uid || idx} style={[styles.card, darkMode && styles.darkCard, idx > 0 && { marginTop: 10 }]}>
               {/* Header with toggle */}
               <View style={styles.rowHeader}>
-                <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{idx + 1}</Text>
+                <View style={styles.labelRow}>
+                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{idx + 1}</Text>
+                  {(() => {
+                    const isOwner = canDeleteBusiness(originalBusiness || business);
+                    const rowBusinessUid = business.business_uid || business.profile_business_uid;
+                    const isDeleting = deletingBusinessUid === rowBusinessUid;
+                    return isDeleting ? (
+                      <ActivityIndicator size='small' color='#c0392b' style={styles.deleteIcon} />
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => handleOwnedBusinessDelete({ ...business, ...originalBusiness })}
+                        disabled={!isOwner || !onDeleteOwnedBusiness}
+                        accessibilityLabel='Remove business'
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Image
+                          source={require("../assets/delete.png")}
+                          style={[styles.deleteIcon, (!isOwner || !onDeleteOwnedBusiness) && styles.deleteIconDisabled]}
+                        />
+                      </TouchableOpacity>
+                    );
+                  })()}
+                </View>
                 <View style={styles.toggleContainer}>
                   <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, entryVisible && styles.togglePillActiveGreen]}>
                     <Text style={[styles.togglePillText, entryVisible && styles.togglePillTextActive]}>{entryVisible ? "Visible" : "Show"}</Text>
@@ -482,6 +553,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   deleteIcon: { width: 20, height: 20 },
+  deleteIconDisabled: { opacity: 0.25 },
   darkDeleteIcon: {
     /* tintColor moved to Image prop */
   },
