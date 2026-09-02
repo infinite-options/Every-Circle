@@ -75,7 +75,6 @@ export async function upsertExpertiseCartItem(cartItem) {
     ...cartItem,
     cart_key: cartKey,
     addedAt: existing?.addedAt || cartItem.addedAt,
-    escrow: cartItem.escrow ?? existing?.escrow,
     ...recomputeExpertiseCartTotals({ ...existing, ...cartItem }, mergedQty),
   };
 

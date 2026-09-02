@@ -4,7 +4,6 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
-import BountyInfoTooltip, { ESCROW_INFO_COPY } from "../components/BountyInfoTooltip";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -611,8 +610,6 @@ const ShoppingCartScreenContent = ({
   const [showPaymentFailure, setShowPaymentFailure] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
-  /** Per seller (business / expertise profile): whether this checkout uses escrow. */
-  const [escrowBySeller, setEscrowBySeller] = useState({});
   const [refundAcknowledged, setRefundAcknowledged] = useState(false); //refund acknowledgement state
   const [refundError, setRefundError] = useState(false);
   const [shippingFirstName, setShippingFirstName] = useState("");
@@ -743,7 +740,7 @@ const ShoppingCartScreenContent = ({
         setLoading(false);
         return;
       }
-      await recordSingleBusinessTransaction(buyerUid, null, group, escrowBySeller[group.sellerId] !== false, group.walletApplied || 0);
+      await recordSingleBusinessTransaction(buyerUid, null, group, group.walletApplied || 0);
       const nextIndex = session.index + 1;
       if (nextIndex >= session.groups.length) {
         await finishWebCheckoutSuccess();
@@ -773,7 +770,7 @@ const ShoppingCartScreenContent = ({
       const group = sess.groups[sess.index];
       console.log(`Recording web payment step ${sess.index + 1}/${sess.groups.length} for`, group.sellerId);
 
-      await recordSingleBusinessTransaction(buyerUid, paymentIntent, group, escrowBySeller[group.sellerId] !== false, group.walletApplied || 0);
+      await recordSingleBusinessTransaction(buyerUid, paymentIntent, group, group.walletApplied || 0);
 
       const nextIndex = sess.index + 1;
       if (nextIndex < sess.groups.length) {
@@ -937,7 +934,7 @@ const ShoppingCartScreenContent = ({
           }
         }
 
-        await recordSingleBusinessTransaction(buyerUid, paymentIntentId, group, escrowBySeller[group.sellerId] !== false, group.walletApplied || 0);
+        await recordSingleBusinessTransaction(buyerUid, paymentIntentId, group, group.walletApplied || 0);
         completedGroups.push(group);
       }
 
@@ -999,21 +996,6 @@ const ShoppingCartScreenContent = ({
   useEffect(() => {
     setCartItems(normalizeCartItemsFulfillment(Array.isArray(initialCartItems) ? initialCartItems : []));
   }, [initialCartItems]);
-
-  useEffect(() => {
-    const ids = new Set(cartItems.map(getCheckoutSellerId).filter(Boolean));
-    if (ids.size === 0) return;
-    setEscrowBySeller((prev) => {
-      const next = { ...prev };
-      ids.forEach((id) => {
-        if (next[id] === undefined) next[id] = true;
-      });
-      Object.keys(next).forEach((k) => {
-        if (!ids.has(k)) delete next[k];
-      });
-      return next;
-    });
-  }, [cartItems]);
 
   const loadStripePublicKey = async (businessCode = checkoutBusinessCode) => {
     try {
@@ -1225,7 +1207,7 @@ const ShoppingCartScreenContent = ({
   };
 
   /** POST one transaction row for one Stripe payment (one seller's lines only). */
-  const recordSingleBusinessTransaction = async (buyerUid, paymentIntent, group, escrowValue = true, walletAmount = 0) => {
+  const recordSingleBusinessTransaction = async (buyerUid, paymentIntent, group, walletAmount = 0) => {
     try {
       console.log("Recording transaction for seller", group.sellerId, "items:", group.items, "wallet:", walletAmount);
 
@@ -1244,8 +1226,6 @@ const ShoppingCartScreenContent = ({
       const walletApplied = roundMoney(Math.max(0, Number(walletAmount) || 0));
 
       const defaultRecommender = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : buyerProfileId;
-
-      const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
       // In recordSingleBusinessTransaction, update the items map:
       const items = group.items.map((item) => {
@@ -1307,7 +1287,6 @@ const ShoppingCartScreenContent = ({
         total_taxes: salesTaxRounded,
         total_shipping: shippingRounded,
         total_fees: parseFloat(Number(processingFee).toFixed(2)),
-        transaction_in_escrow: transactionInEscrow,
         items,
       };
       if (shippingAddress) {
@@ -1330,7 +1309,6 @@ const ShoppingCartScreenContent = ({
         total_taxes: transactionData.total_taxes,
         total_shipping: transactionData.total_shipping,
         total_fees: transactionData.total_fees,
-        transaction_in_escrow: transactionData.transaction_in_escrow,
         items_count: Array.isArray(transactionData.items) ? transactionData.items.length : 0,
         items: transactionData.items,
       });
@@ -1724,26 +1702,6 @@ const ShoppingCartScreenContent = ({
                         <Text style={styles.totalValue}>${(g.cardCharge || 0).toFixed(2)}</Text>
                       </View>
                     ) : null}
-                    <View style={styles.escrowSection}>
-                      <View style={styles.escrowRow}>
-                        <TouchableOpacity
-                          style={styles.escrowTogglePressable}
-                          onPress={() =>
-                            setEscrowBySeller((prev) => {
-                              const cur = prev[g.sellerId] !== false;
-                              return { ...prev, [g.sellerId]: !cur };
-                            })
-                          }
-                          activeOpacity={0.7}
-                        >
-                          <View style={[styles.checkbox, escrowBySeller[g.sellerId] !== false && styles.checkboxChecked]}>
-                            {escrowBySeller[g.sellerId] !== false && <Text style={styles.checkmark}>✓</Text>}
-                          </View>
-                          <Text style={styles.escrowLabel}>Escrow ({g.displayName})</Text>
-                        </TouchableOpacity>
-                        <BountyInfoTooltip message={ESCROW_INFO_COPY} darkMode={false} placement='left' accessibilityLabel='About escrow' />
-                      </View>
-                    </View>
                   </View>
                 ))}
                 {multiSellerCheckout ? (
@@ -1757,13 +1715,13 @@ const ShoppingCartScreenContent = ({
               {cartRequiresReturnAcknowledgement ? (
                 <View
                   collapsable={false}
-                  style={styles.escrowSection}
+                  style={styles.refundPolicySection}
                   onLayout={(e) => {
                     refundSectionScrollYRef.current = e.nativeEvent.layout.y;
                   }}
                 >
                   <TouchableOpacity
-                    style={styles.escrowRow}
+                    style={styles.refundPolicyRow}
                     onPress={() => {
                       setRefundAcknowledged(!refundAcknowledged);
                       setRefundError(false);
@@ -1773,7 +1731,7 @@ const ShoppingCartScreenContent = ({
                     <View style={[styles.checkbox, refundAcknowledged && styles.checkboxChecked, refundError && { borderColor: "#FF3B30" }]}>
                       {refundAcknowledged && <Text style={styles.checkmark}>✓</Text>}
                     </View>
-                    <Text style={[styles.escrowLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
+                    <Text style={[styles.refundPolicyLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
                       Return must be made in 5 days for a full refund, any returns past 5 days will result in a partial refund. Check the box to acknowledge.
                     </Text>
                   </TouchableOpacity>
@@ -2402,21 +2360,16 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#9C45F7",
   },
-  escrowSection: {
+  refundPolicySection: {
     backgroundColor: "#fff",
     padding: 15,
     borderRadius: 10,
     marginTop: 10,
   },
-  escrowRow: {
+  refundPolicyRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-  },
-  escrowTogglePressable: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
   },
   checkbox: {
     width: 24,
@@ -2436,7 +2389,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "bold",
   },
-  escrowLabel: {
+  refundPolicyLabel: {
     fontSize: 16,
     color: "#333",
     flex: 1,
