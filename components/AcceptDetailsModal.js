@@ -1,9 +1,8 @@
-// AcceptDetailsModal.js - Modal for accepting a wish response with escrow, quantity, and total
+// AcceptDetailsModal.js - Modal for accepting a wish response with quantity and total
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, TextInput } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
-import BountyInfoTooltip, { ESCROW_INFO_COPY } from "./BountyInfoTooltip";
 import { computeCreditCardChargeTotal, computeCreditCardProcessingFee, CREDIT_CARD_FEE_DISPLAY_LABEL } from "../utils/cartCreditCardFee";
 import {
   getSeekingBountyLineTotal,
@@ -50,13 +49,11 @@ const AcceptDetailsModal = ({ show, setShow, wishData, response, onContinue, onC
   const bountyType = getSeekingBountyType(wishData);
   const bountyUnit = parseSeekingBountyUnitAmount(wishData);
 
-  const [escrow, setEscrow] = useState(true);
   const [quantity, setQuantity] = useState("1");
   const [quantityError, setQuantityError] = useState("");
 
   useEffect(() => {
     if (show) {
-      setEscrow(true);
       setQuantity("1");
       setQuantityError("");
     }
@@ -87,7 +84,6 @@ const AcceptDetailsModal = ({ show, setShow, wishData, response, onContinue, onC
       subtotal,
       totalWithFee,
       quantity: qtyNum,
-      escrow,
       costAmount,
       costValue,
       bountyAmount,
@@ -126,16 +122,6 @@ const AcceptDetailsModal = ({ show, setShow, wishData, response, onContinue, onC
               <MiniCard user={miniCardUser} />
             </View>
           )}
-
-          <View style={styles.section}>
-            <View style={[styles.checkboxRow, darkMode && styles.darkCheckboxRow]}>
-              <TouchableOpacity style={styles.escrowTogglePressable} onPress={() => setEscrow(!escrow)} activeOpacity={0.7}>
-                <View style={[styles.checkbox, escrow && styles.checkboxChecked, darkMode && styles.darkCheckbox]}>{escrow && <Text style={styles.checkmark}>✓</Text>}</View>
-                <Text style={[styles.checkboxLabel, darkMode && styles.darkCheckboxLabel]}>Escrow</Text>
-              </TouchableOpacity>
-              <BountyInfoTooltip message={ESCROW_INFO_COPY} darkMode={darkMode} accessibilityLabel='About escrow' />
-            </View>
-          </View>
 
           {costValue > 0 && !isTotalUnit && (
             <View style={styles.section}>
@@ -287,44 +273,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   darkLabel: {
-    color: "#fff",
-  },
-  checkboxRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  escrowTogglePressable: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  darkCheckboxRow: {},
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: "#9C45F7",
-    borderRadius: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-  checkboxChecked: {
-    backgroundColor: "#9C45F7",
-  },
-  darkCheckbox: {
-    borderColor: "#7B35C7",
-  },
-  checkmark: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  checkboxLabel: {
-    fontSize: 16,
-    color: "#333",
-  },
-  darkCheckboxLabel: {
     color: "#fff",
   },
   quantityRow: {

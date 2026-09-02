@@ -140,7 +140,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       if (!buyerUid) throw new Error("User ID not found");
       if (!pendingAccept) throw new Error("No pending acceptance found");
 
-      const { recommendedProfileUid, recommenderProfileUid, wishResponseUid, subtotal, escrow, bountyAmount, quantity, costAmount, costValue } = pendingAccept;
+      const { recommendedProfileUid, recommenderProfileUid, wishResponseUid, subtotal, bountyAmount, quantity, costAmount, costValue } = pendingAccept;
 
       const processingFee = computeCreditCardProcessingFee(subtotal, true);
       const totalAmount = computeCreditCardChargeTotal(subtotal, true);
@@ -153,7 +153,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         wishResponseUid,
         processingFee,
         totalAmount,
-        escrow,
         bountyAmount,
         quantity,
         costAmount,
@@ -267,7 +266,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     wishResponseUid,
     processingFee = 0,
     totalAmountPaid = null,
-    transactionInEscrow = false,
     bountyAmount = null,
     quantity = 1,
     costAmount = 0,
@@ -329,8 +327,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         total_taxes: orderMoney.total_taxes,
         total_shipping: orderMoney.total_shipping,
         total_fees: orderMoney.total_fees,
-        // Ensure tinyint: 1 or 0 only (backend expects tinyint)
-        transaction_in_escrow: transactionInEscrow === true || transactionInEscrow === 1 ? 1 : 0,
         items: [
           {
             // Keep both for backward compatibility + explicit ti_bs_id for API mapping
@@ -472,7 +468,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       wishResponseUid,
       subtotal,
       totalWithFee,
-      escrow: details.escrow,
       bountyAmount: details.bountyAmount,
       quantity: details.quantity,
       costAmount: details.costAmount,
@@ -564,7 +559,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         wishResponseUid,
         processingFee,
         totalWithFee,
-        details.escrow,
         details.bountyAmount,
         details.quantity,
         details.costAmount,
@@ -805,7 +799,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         </ScrollView>
       )}
 
-      {/* Accept Details Modal (Escrow, Quantity, Total) */}
+      {/* Accept Details Modal (Quantity, Total) */}
       <AcceptDetailsModal
         show={showAcceptDetailsModal}
         setShow={setShowAcceptDetailsModal}

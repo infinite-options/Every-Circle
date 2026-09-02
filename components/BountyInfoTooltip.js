@@ -10,9 +10,6 @@ export const BOUNTY_INFO_COPY = {
     "Earn part of this bounty when someone you referred buys. Bounty is pending until the buyer confirms receipt (and through any return window for returnable items). Look for the 💰 and recommend offerings with bounties to your network—you get rewarded when they purchase.",
 };
 
-export const ESCROW_INFO_COPY =
-  "If selected, everyCircle will hold payment until you verify receipt of the product or service. This does not change when bounty earnings become available.";
-
 const TOOLTIP_WIDTH = 260;
 const TOOLTIP_Z = 100000;
 

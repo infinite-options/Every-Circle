@@ -6,7 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 import { formatCostValue, parsePrice } from "../utils/priceUtils";
 import { isTruthyTaxableFlag, isValidTaxRate, validateTaxableRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
-import { getAddressSuggestions, getPlaceDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
+import { getAddressSuggestions, getPlaceAddressDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
 import {
   toDateTimeLocalValue,
@@ -468,7 +468,7 @@ const ExpertiseSection = ({
     try {
       const suggs = await getAddressSuggestions(item.profile_expertise_location.trim());
       if (!suggs.length) return;
-      const pd = await getPlaceDetails(suggs[0].place_id);
+      const pd = await getPlaceAddressDetails(suggs[0].place_id);
       if (pd.lat == null || pd.lng == null) return;
       setExpertise(
         expertise.map((e, i) => {
@@ -494,7 +494,7 @@ const ExpertiseSection = ({
     setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: [] }));
     setAddressLoadingIndex(index);
     try {
-      const pd = await getPlaceDetails(place.place_id);
+      const pd = await getPlaceAddressDetails(place.place_id);
       if (pd.lat == null || pd.lng == null) {
         Alert.alert("Error", "Could not determine coordinates for this address.");
         return;

@@ -64,7 +64,7 @@ import {
 } from "../utils/profileOfferingShipping";
 import { businessDeliveredModeSelected, countListingModes, validateListingFulfillmentForSave } from "../utils/listingFulfillmentMode";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
-import { getAddressSuggestions, getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
+import { getAddressSuggestions, getBusinessSuggestions, getPlaceAddressDetails, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
 import { buildBusinessModerationItem, isBusinessOwnerRestricted } from "../utils/businessModeration";
 import { businessUserHasRealOwnership, getBusinessMembershipRole } from "../utils/businessOwnership";
 import {
@@ -79,6 +79,8 @@ import {
   googlePhotoUrlsMatch,
   resolveFavoriteGoogleImage,
   isGoogleHostedPhotoUrl,
+  normalizeGooglePhotosForStorage,
+  resolveGooglePhotoDisplayUrl,
   buildBusinessGalleryUploads,
   resolveBusinessUploadUri,
   normalizeBusinessUploadKey,
@@ -1050,7 +1052,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setPlaceSearchText(place.structured_formatting?.main_text || place.description || "");
     setPlaceSearchLoading(true);
     try {
-      const pd = await getPlaceDetails(place.place_id);
+      const pd = await getPlaceAddressDetails(place.place_id);
       const streetAddress = pd.address_line_1 || pd.formatted_address || "";
       setAddressInput(streetAddress);
       setFormData((prev) => {
@@ -1104,7 +1106,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setAddressSuggestions([]);
     setAddressSearchLoading(true);
     try {
-      const pd = await getPlaceDetails(place.place_id);
+      const pd = await getPlaceAddressDetails(place.place_id);
       if (pd.lat == null || pd.lng == null) {
         Alert.alert("Error", "Could not determine coordinates for this address.");
         return;
@@ -1351,12 +1353,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setRefreshingGooglePhotos(true);
     try {
       const pd = await getPlaceDetails(businessGoogleId);
-      const freshPhotos = dedupeGooglePhotoUrls((pd.photo_urls || []).map((url) => resolveRestGooglePhotoUrl(url) || url));
+      const freshPhotos = normalizeGooglePhotosForStorage(
+        dedupeGooglePhotoUrls((pd.photo_urls || []).map((url) => resolveRestGooglePhotoUrl(url) || url)),
+      );
       if (freshPhotos.length === 0) {
         Alert.alert("No Photos", "Google did not return any photos for this business.");
         return;
       }
-      const currentPhotos = filterFreshGooglePhotoUrls(googlePanelPhotos || []).map((url) => resolveRestGooglePhotoUrl(url) || url);
+      const currentPhotos = normalizeGooglePhotosForStorage(
+        filterFreshGooglePhotoUrls(googlePanelPhotos || []).map((url) => resolveRestGooglePhotoUrl(url) || url),
+      );
       const mergedPhotos = mergeRefreshedGooglePhotos(currentPhotos, freshPhotos);
       const photosToSet = mergedPhotos.length > 0 ? mergedPhotos : freshPhotos;
       googlePhotosUserEditedRef.current = true;
@@ -1364,9 +1370,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       setGooglePanelPhotos(photosToSet);
       setShowGooglePhotosPanel(true);
       setBusinessImageUri((prev) => {
-        if (!prev) return photosToSet[0] || prev;
+        if (!prev) return resolveGooglePhotoDisplayUrl(photosToSet[0]) || prev;
         const favorite = resolveFavoriteGoogleImage(prev, photosToSet);
-        return favorite || prev;
+        return resolveGooglePhotoDisplayUrl(favorite) || favorite || prev;
       });
       setImageUpdateKey((k) => k + 1);
       setIsChanged(true);
@@ -2858,15 +2864,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           <Text style={[styles.sublabel, darkMode && styles.darkSublabel, styles.gallerySectionLabel, styles.googlePhotosPanelLabel]}>Google Images</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll} contentContainerStyle={styles.imageRow}>
             {googlePhotos
-              .filter((uri) => uri && String(uri).trim())
-              .map((uri, index) => {
-                const isSelected = profileImgMatchesUri(businessImageUri, uri, businessUID);
+              .filter((stored) => stored && String(stored).trim())
+              .map((stored, index) => {
+                const displayUri = resolveGooglePhotoDisplayUrl(stored);
+                const isSelected = profileImgMatchesUri(businessImageUri, stored, businessUID);
                 return (
-                  <View key={`google-${uri}-${index}`} style={styles.galleryImageWrapper}>
-                    <TouchableOpacity style={styles.galleryThumbTouchable} onPress={() => selectProfileImage(uri)} activeOpacity={0.8}>
-                      <Image source={{ uri }} style={[styles.galleryThumb, darkMode && styles.darkGalleryThumb, isSelected && styles.galleryImageSelected]} resizeMode='cover' />
+                  <View key={`google-${stored}-${index}`} style={styles.galleryImageWrapper}>
+                    <TouchableOpacity style={styles.galleryThumbTouchable} onPress={() => selectProfileImage(displayUri)} activeOpacity={0.8}>
+                      <Image source={{ uri: displayUri }} style={[styles.galleryThumb, darkMode && styles.darkGalleryThumb, isSelected && styles.galleryImageSelected]} resizeMode='cover' />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.deleteIcon} onPress={() => removeGooglePhoto(uri, index)}>
+                    <TouchableOpacity style={styles.deleteIcon} onPress={() => removeGooglePhoto(stored, index)}>
                       <Text style={styles.deleteText}>✕</Text>
                     </TouchableOpacity>
                     {isSelected ? (

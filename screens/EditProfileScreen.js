@@ -64,7 +64,7 @@ function mapBusinessEntryForEdit(biz) {
     business_updated_at: biz.business_updated_at ?? biz.updated_at,
   };
 }
-import { getAddressSuggestions, getPlaceDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
+import { getAddressSuggestions, getPlaceAddressDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
 import { Ionicons } from "@expo/vector-icons";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -456,7 +456,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     setAddressSuggestions([]);
     setAddressSearchLoading(true);
     try {
-      const pd = await getPlaceDetails(place.place_id);
+      const pd = await getPlaceAddressDetails(place.place_id);
       if (pd.lat == null || pd.lng == null) {
         Alert.alert("Error", "Could not determine coordinates for this address.");
         return;
