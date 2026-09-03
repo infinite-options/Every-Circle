@@ -117,6 +117,7 @@ export default function InboxScreen() {
     const initials = getInitials(item.first_name, item.last_name);
     const preview = item.last_message || "No messages yet";
     const time = formatRelativeTime(item.last_sent_at || item.last_message_at);
+    const unread = !!item.isUnread;
 
     return (
       <TouchableOpacity style={[styles.row, darkMode && styles.rowDark]} onPress={() => openChat(item)} activeOpacity={0.7}>
@@ -129,17 +130,18 @@ export default function InboxScreen() {
               <Text style={styles.avatarText}>{initials}</Text>
             </View>
           )}
+          {unread ? <View style={[styles.unreadDot, darkMode && styles.unreadDotDark]} /> : null}
         </View>
 
         {/* Text block */}
         <View style={styles.textBlock}>
           <View style={styles.nameRow}>
-            <Text style={[styles.name, darkMode && styles.nameDark]} numberOfLines={1}>
+            <Text style={[styles.name, darkMode && styles.nameDark, unread && styles.nameUnread, unread && darkMode && styles.nameUnreadDark]} numberOfLines={1}>
               {name}
             </Text>
-            <Text style={[styles.time, darkMode && styles.timeDark]}>{time}</Text>
+            <Text style={[styles.time, darkMode && styles.timeDark, unread && styles.timeUnread]}>{time}</Text>
           </View>
-          <Text style={[styles.preview, darkMode && styles.previewDark]} numberOfLines={1}>
+          <Text style={[styles.preview, darkMode && styles.previewDark, unread && styles.previewUnread, unread && darkMode && styles.previewUnreadDark]} numberOfLines={1}>
             {preview}
           </Text>
         </View>
@@ -215,7 +217,7 @@ const styles = StyleSheet.create({
   separatorDark: { backgroundColor: "#2a2a2a" },
 
   // Avatar
-  avatarWrap: { marginRight: 12 },
+  avatarWrap: { marginRight: 12, position: "relative" },
   avatar: { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 },
   avatarFallback: {
     backgroundColor: PURPLE,
@@ -223,6 +225,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  unreadDot: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: PURPLE,
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+  unreadDotDark: { borderColor: "#121212" },
 
   // Text
   textBlock: { flex: 1 },
@@ -234,10 +248,15 @@ const styles = StyleSheet.create({
   },
   name: { fontSize: 15, fontWeight: "600", color: "#222", flex: 1, marginRight: 8 },
   nameDark: { color: "#fff" },
+  nameUnread: { fontWeight: "800", color: "#000" },
+  nameUnreadDark: { color: "#fff" },
   time: { fontSize: 12, color: "#999" },
   timeDark: { color: "#666" },
+  timeUnread: { color: PURPLE, fontWeight: "700" },
   preview: { fontSize: 13, color: "#666" },
   previewDark: { color: "#aaa" },
+  previewUnread: { color: "#333", fontWeight: "600" },
+  previewUnreadDark: { color: "#ddd" },
 
   // Empty state
   emptyContainer: { flexGrow: 1 },

@@ -98,6 +98,12 @@ export function normalizeConversationListItem(conv, myProfileUid) {
   const lastSent = conv.message_sent_at || conv.last_message_at || null;
   const preview = conv.message_body != null ? String(conv.message_body) : "";
 
+  /** The conversations GET joins in the last message row, so message_sender_uid/message_read_at
+   *  here describe that last message. Unread = it came from the other side and I haven't read it. */
+  const lastMessageSenderUid = String(conv.message_sender_uid ?? "").trim();
+  const lastMessageReadAt = conv.message_read_at || null;
+  const isUnread = Boolean(lastMessageSenderUid && lastMessageSenderUid !== my && !lastMessageReadAt);
+
   return {
     conversation_uid: conv.conversation_uid,
     other_uid: otherUid,
@@ -110,6 +116,9 @@ export function normalizeConversationListItem(conv, myProfileUid) {
     last_message: preview,
     last_sent_at: lastSent,
     last_message_at: conv.last_message_at || lastSent,
+    last_message_sender_uid: lastMessageSenderUid,
+    last_message_read_at: lastMessageReadAt,
+    isUnread,
   };
 }
 

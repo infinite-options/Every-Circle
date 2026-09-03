@@ -134,8 +134,11 @@ export default function ChatScreen() {
   const ablyClientRef = useRef(null);
   const ablyChannelRef = useRef(null);
   const ablyMessageHandlerRef = useRef(null);
+  const ablyReadHandlerRef = useRef(null);
   // Keep a live ref to myUid so Ably callbacks can read it without stale closure
   const myUidRef = useRef(null);
+  // message_uids already PUT as read this session — avoids redundant re-marking on re-render
+  const markedReadRef = useRef(new Set());
 
   const paramMiniCardUser = useMemo(() => {
     if (!other_uid) return null;
@@ -195,6 +198,7 @@ export default function ChatScreen() {
     setError(null);
     setLoading(true);
     setFetchedMiniCard(null);
+    markedReadRef.current = new Set();
   }, [initialConvUid, other_uid, paramOtherName, paramOtherImage, reply_context]);
 
   // Load other party profile for MiniCard (personal user or business).
@@ -310,12 +314,44 @@ export default function ChatScreen() {
       const mapped = raw.map(normalizeMessageForUi);
       setMessages(orderMessagesForChatList(mapped));
       setRecipientMessagesDisabled(!!json.recipient_messages_disabled);
+      markMessagesRead(mapped, cid);
     } catch (e) {
       setError("Could not load messages.");
     } finally {
       setLoading(false);
     }
   };
+
+  /** PUT message_read_at for any messages from the other participant I haven't marked read yet — drives their read receipt. */
+  const markMessagesRead = useCallback(
+    (msgs, cidOverride) => {
+      const cid = cidOverride || convUid;
+      if (!cid || !myUid) return;
+      const toMark = (msgs || []).filter((m) => {
+        const sender = m.message_sender_uid ?? m.sender_uid;
+        const uid = m.message_uid;
+        return sender && sender !== myUid && uid && !m.message_read_at && !markedReadRef.current.has(uid);
+      });
+      toMark.forEach((m) => {
+        markedReadRef.current.add(m.message_uid);
+        fetch(`${CHAT_MESSAGES_ENDPOINT}/${encodeURIComponent(cid)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message_uid: m.message_uid }),
+        }).catch(() => {
+          markedReadRef.current.delete(m.message_uid); // allow retry on next render
+        });
+      });
+    },
+    [convUid, myUid],
+  );
+
+  // subscribeAbly below is frozen (empty useCallback deps) so its handler must read markMessagesRead
+  // via a ref rather than closing over it directly, or it would keep calling a stale (pre-login) version.
+  const markMessagesReadRef = useRef(markMessagesRead);
+  useEffect(() => {
+    markMessagesReadRef.current = markMessagesRead;
+  }, [markMessagesRead]);
 
   // Tell UnreadContext we're on a chat screen so it suppresses both the banner
   // and the unread dot for this specific conversation.
@@ -400,9 +436,22 @@ export default function ChatScreen() {
           if (prev.some((m) => m.message_uid === incoming.message_uid)) return prev;
           return [...prev, incoming];
         });
+        markMessagesReadRef.current([incoming], cid); // I'm actively viewing this chat — mark their new message read immediately
       };
       ablyMessageHandlerRef.current = handler;
       channel.subscribe("new-message", handler);
+
+      // Live read receipt: the recipient's PUT (via markMessagesRead) publishes this when they
+      // read one of my messages, so my own bubble flips "Sent" → "Read" without a reload.
+      const readHandler = (msg) => {
+        const data = msg.data || {};
+        const readUid = data.message_uid;
+        if (!readUid) return;
+        const readAt = data.message_read_at || new Date().toISOString();
+        setMessages((prev) => prev.map((m) => (m.message_uid === readUid ? { ...m, message_read_at: m.message_read_at || readAt } : m)));
+      };
+      ablyReadHandlerRef.current = readHandler;
+      channel.subscribe("message-read", readHandler);
     } catch (e) {
       console.warn("ChatScreen Ably error:", e);
     }
@@ -412,7 +461,11 @@ export default function ChatScreen() {
     try {
       if (ablyChannelRef.current && ablyMessageHandlerRef.current) {
         ablyChannelRef.current.unsubscribe("new-message", ablyMessageHandlerRef.current);
-      } else {
+      }
+      if (ablyChannelRef.current && ablyReadHandlerRef.current) {
+        ablyChannelRef.current.unsubscribe("message-read", ablyReadHandlerRef.current);
+      }
+      if (!ablyMessageHandlerRef.current && !ablyReadHandlerRef.current) {
         ablyChannelRef.current?.unsubscribe();
       }
       // Do not close shared client here; other screens reuse it.
@@ -420,6 +473,7 @@ export default function ChatScreen() {
     ablyChannelRef.current = null;
     ablyClientRef.current = null;
     ablyMessageHandlerRef.current = null;
+    ablyReadHandlerRef.current = null;
   }, []);
 
   // ─── send ────────────────────────────────────────────────────────────────
@@ -526,6 +580,15 @@ export default function ChatScreen() {
 
   // ─── render helpers ───────────────────────────────────────────────────────
 
+  /** Most recent message I sent — only it shows the "Sent"/"Read" receipt, like iMessage/WhatsApp. */
+  const lastMineMessageUid = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const sender = messages[i].message_sender_uid ?? messages[i].sender_uid;
+      if (sender === myUid) return messages[i].message_uid;
+    }
+    return null;
+  }, [messages, myUid]);
+
   const renderMessage = ({ item, index }) => {
     const sender = item.message_sender_uid ?? item.sender_uid;
     const isMine = sender === myUid;
@@ -534,6 +597,7 @@ export default function ChatScreen() {
     const parsedBody = parseReplyBody(bodyText);
     const prevSent = index > 0 ? messages[index - 1].message_sent_at ?? messages[index - 1].sent_at : null;
     const showDayLabel = index === 0 || !sameDay(prevSent, sentAt);
+    const showReadReceipt = isMine && item.message_uid === lastMineMessageUid;
 
     return (
       <>
@@ -554,6 +618,11 @@ export default function ChatScreen() {
             <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : darkMode && styles.bubbleTextDark]}>{parsedBody.text}</Text>
           </View>
           <Text style={[styles.msgTime, isMine ? styles.msgTimeMine : darkMode && styles.msgTimeDark]}>{formatTime(sentAt)}</Text>
+          {showReadReceipt ? (
+            <Text style={[styles.readReceipt, item.message_read_at ? styles.readReceiptRead : styles.readReceiptSent]}>
+              {item.message_read_at ? "Read" : "Sent"}
+            </Text>
+          ) : null}
         </View>
       </>
     );
@@ -810,6 +879,11 @@ const styles = StyleSheet.create({
   msgTime: { fontSize: 10, color: "#bbb", marginTop: 2, marginHorizontal: 4 },
   msgTimeMine: { textAlign: "right" },
   msgTimeDark: { color: "#555" },
+
+  // Read receipt — shown only under the most recent message I sent
+  readReceipt: { fontSize: 10, marginTop: 1, marginHorizontal: 4, fontWeight: "600" },
+  readReceiptSent: { color: "#bbb" },
+  readReceiptRead: { color: PURPLE },
   messagesOffBanner: { color: "#c0392b", backgroundColor: "#ffe0e0", fontWeight: "600" },
 
   // Empty messages

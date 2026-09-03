@@ -60,6 +60,8 @@ import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import ReviewImageStrip from "../components/ReviewImageStrip";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import { recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
+import { getOfferingUidsWithNewResponses } from "../utils/offeringResponseNotifications";
+import OfferingResponseNotificationBanner from "../components/OfferingResponseNotificationBanner";
 import { recordWishMessageResponse } from "../utils/wishMessageResponse";
 import { buildOfferingReplyContext, buildSeekingReplyContext } from "../utils/chatReplyContext";
 import FeedbackPopup from "../components/FeedbackPopup";
@@ -288,6 +290,10 @@ const ProfileScreen = ({ route, navigation }) => {
   const [circleUid, setCircleUid] = useState(null);
   /** Logged-in viewer profile_uid — used for connection path chain when viewing others. */
   const [viewerProfileUid, setViewerProfileUid] = useState("");
+  /** Offerings (profile_expertise_uid) with responses the owner hasn't seen yet — drives the top-of-profile notification. */
+  const [newResponseOfferingUids, setNewResponseOfferingUids] = useState([]);
+  const [responseNotificationDismissed, setResponseNotificationDismissed] = useState(false);
+  const seenNewResponseUidsKeyRef = useRef("");
   const { darkMode } = useDarkMode();
   const { businesses: sessionBusinesses } = useSessionBusinesses();
   const businessesData = useMemo(() => {
@@ -655,6 +661,37 @@ const ProfileScreen = ({ route, navigation }) => {
     setShowOffering(true);
     scrollToFocusedOffering(focusOfferingUid);
   }, [loading, focusOfferingUid, focusOfferingToken, user?.expertise, isCurrentUserProfile, scrollToFocusedOffering]);
+
+  // Drives the "new response" notification banner at the top of the owner's own profile, and
+  // (inverted) the "Responses:" label color on each offering — green once fully viewed, default
+  // while it still has responses the owner hasn't opened OfferingResponses to see.
+  useEffect(() => {
+    if (loading || !isCurrentUserProfile || !profileUID || !user?.expertise) {
+      setNewResponseOfferingUids([]);
+      return;
+    }
+    let cancelled = false;
+    getOfferingUidsWithNewResponses(profileUID, user.expertise).then((uids) => {
+      if (cancelled) return;
+      const key = uids.slice().sort().join(",");
+      if (key !== seenNewResponseUidsKeyRef.current) {
+        seenNewResponseUidsKeyRef.current = key;
+        setResponseNotificationDismissed(false);
+      }
+      setNewResponseOfferingUids(uids);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, isCurrentUserProfile, profileUID, user?.expertise]);
+
+  const handleResponseNotificationPress = useCallback(() => {
+    setResponseNotificationDismissed(true);
+    setShowOffering(true);
+    if (newResponseOfferingUids[0]) {
+      scrollToFocusedOffering(newResponseOfferingUids[0]);
+    }
+  }, [newResponseOfferingUids, scrollToFocusedOffering]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1789,6 +1826,14 @@ const ProfileScreen = ({ route, navigation }) => {
             style: [styles.scrollContainer, darkMode && styles.darkScrollContainer, { zIndex: 1 }],
           })}
         >
+          {isCurrentUserProfile && !responseNotificationDismissed ? (
+            <OfferingResponseNotificationBanner
+              offeringCount={newResponseOfferingUids.length}
+              onPress={handleResponseNotificationPress}
+              onDismiss={() => setResponseNotificationDismissed(true)}
+              darkMode={darkMode}
+            />
+          ) : null}
           {routeProfileUID && !isCurrentUserProfile && isAdminViewer && profileVisibilityBlocked ? (
             <View
               style={{
@@ -2084,38 +2129,30 @@ const ProfileScreen = ({ route, navigation }) => {
                                 ) : (
                                   <View style={{ flex: 1 }} />
                                 )}
-                                {isCurrentUserProfile && (exp.expertise_sales > 0 || exp.expertise_responses > 0) && (
+                                {isCurrentUserProfile && exp.expertise_responses > 0 && (
                                   <View style={styles.offeringStatsColumn}>
-                                    {exp.expertise_sales > 0 ? (
-                                      <TouchableOpacity
-                                        onPress={() =>
-                                          navigation.navigate("Account", {
-                                            offeringSalesUid: exp.profile_expertise_uid,
-                                            offeringSalesToken: Date.now(),
-                                          })
-                                        }
-                                        activeOpacity={0.7}
+                                    <TouchableOpacity
+                                      onPress={() => {
+                                        navigation.navigate("OfferingResponses", {
+                                          expertiseData: expertiseDataForCartModal(exp, profileUID),
+                                          profileData: profileDataForCartModal(user),
+                                          profile_uid: profileUID,
+                                          profileState: { profile_uid: profileUID, returnTo, searchState },
+                                        });
+                                      }}
+                                      activeOpacity={0.7}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.wishResponseLinkText,
+                                          darkMode && styles.darkWishResponseLinkText,
+                                          !newResponseOfferingUids.includes(offeringUid) && styles.wishResponseLinkTextReplied,
+                                          !newResponseOfferingUids.includes(offeringUid) && darkMode && styles.darkWishResponseLinkTextReplied,
+                                        ]}
                                       >
-                                        <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Sales: {exp.expertise_sales || 0}</Text>
-                                      </TouchableOpacity>
-                                    ) : (
-                                      <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Sales: 0</Text>
-                                    )}
-                                    {exp.expertise_responses > 0 ? (
-                                      <TouchableOpacity
-                                        onPress={() => {
-                                          navigation.navigate("OfferingResponses", {
-                                            expertiseData: expertiseDataForCartModal(exp, profileUID),
-                                            profileData: profileDataForCartModal(user),
-                                            profile_uid: profileUID,
-                                            profileState: { profile_uid: profileUID, returnTo, searchState },
-                                          });
-                                        }}
-                                        activeOpacity={0.7}
-                                      >
-                                        <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Responses: {exp.expertise_responses || 0}</Text>
-                                      </TouchableOpacity>
-                                    ) : null}
+                                        Responses: {exp.expertise_responses || 0}
+                                      </Text>
+                                    </TouchableOpacity>
                                   </View>
                                 )}
                               </View>
@@ -2167,7 +2204,6 @@ const ProfileScreen = ({ route, navigation }) => {
                                   other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
                                   other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
                                   reply_context: buildOfferingReplyContext({
-                                    label: `Offering: ${sanitizeText(exp.name) || "Offering"}`,
                                     profileExpertiseUid: expertiseUid,
                                     expertiseResponseUid,
                                   }),
@@ -3295,6 +3331,13 @@ const styles = StyleSheet.create({
     color: "#800000",
     fontSize: 14,
     fontWeight: "600",
+  },
+  /** "Responses:" label once the owner has opened OfferingResponses and viewed all current responses. */
+  wishResponseLinkTextReplied: {
+    color: "#66BB6A",
+  },
+  darkWishResponseLinkTextReplied: {
+    color: "#81C784",
   },
   darkWishResponseLinkText: {
     color: "#c77dff",

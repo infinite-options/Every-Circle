@@ -3,13 +3,16 @@
  * when the user sends their first contextual message.
  */
 
-export function buildOfferingReplyContext({ label, quote, profileExpertiseUid, expertiseResponseUid }) {
+/**
+ * Offering context is tracked silently (message_context_type/uid columns + the owner-replied
+ * indicator on Profile) but intentionally carries no label/quote — Chat shouldn't show an
+ * "Offering: ..." banner or prefix the message body with one.
+ */
+export function buildOfferingReplyContext({ profileExpertiseUid, expertiseResponseUid }) {
   const profile_expertise_uid = String(profileExpertiseUid || "").trim();
   const expertise_response_uid = String(expertiseResponseUid || "").trim();
   return {
     type: "offering",
-    label: String(label || "").trim(),
-    ...(quote ? { quote: String(quote).trim() } : {}),
     ...(profile_expertise_uid ? { profile_expertise_uid } : {}),
     ...(expertise_response_uid ? { expertise_response_uid } : {}),
   };

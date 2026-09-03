@@ -74,7 +74,6 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
 
   const handleMessagePress = async () => {
     if (!profile_uid) return;
-    const offeringLabel = offeringTitle || "Offering";
     const responderUid = (currentProfileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
     let expertiseResponseUid = null;
     if (expertiseUid && responderUid && profile_uid !== responderUid) {
@@ -86,7 +85,6 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
       other_name: [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim() || "Chat",
       other_image: profileData?.imageIsPublic && profileData?.image && String(profileData.image).trim() !== "" ? String(profileData.image) : null,
       reply_context: buildOfferingReplyContext({
-        label: `Offering: ${offeringLabel}`,
         profileExpertiseUid: expertiseUid,
         expertiseResponseUid,
       }),

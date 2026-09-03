@@ -12,6 +12,7 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import { buildOfferingReplyContext } from "../utils/chatReplyContext";
+import { markOfferingResponsesSeen } from "../utils/offeringResponseNotifications";
 
 const formatDateTimeForDisplay = (value) => {
   if (!value || typeof value !== "string" || value.trim() === "") return "";
@@ -52,6 +53,8 @@ const OfferingResponsesScreenContent = ({ route, navigation }) => {
       const result = await response.json();
       if (response.ok && result.code === 200 && Array.isArray(result.data)) {
         setResponses(result.data);
+        // Viewing this offering's responses marks them seen, clearing the Profile notification for it.
+        markOfferingResponsesSeen(profile_uid, expertiseUid, result.data.length);
       } else {
         throw new Error(result.message || "Failed to fetch responses");
       }
@@ -235,8 +238,6 @@ const OfferingResponsesScreenContent = ({ route, navigation }) => {
                                   ? responderMicroCardUser.profileImage
                                   : null,
                               reply_context: buildOfferingReplyContext({
-                                label: `Offering: ${offeringTitle || "Offering"}`,
-                                quote: responseDisplayText || undefined,
                                 profileExpertiseUid: expertiseData?.expertise_uid || expertiseData?.profile_expertise_uid,
                                 expertiseResponseUid: response.expertise_response_uid,
                               }),
