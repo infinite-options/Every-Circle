@@ -1383,6 +1383,15 @@ export default function SettingsScreen() {
                 <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
+              {/* How to Delete Your Account */}
+              <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("DeleteAccountInfo")}>
+                <View style={styles.itemLabel}>
+                  <MaterialIcons name='info-outline' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How to Delete Your Account</Text>
+                </View>
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
+              </TouchableOpacity>
+
               {/* Change Password */}
               {!hideChangePassword && (
                 <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>

@@ -66,7 +66,13 @@ export default function DeleteAccountScreen() {
       </View>
       <Text style={[styles.title, darkMode && styles.darkTitle]}>Delete your account?</Text>
       <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
-        Your account and personal data will be permanently deleted.
+        Your account will be removed from public view and will no longer be available for ordinary use.
+      </Text>
+      <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
+        EveryCircle holds your account information for 30 days after deletion. During that period, you can reinstate your account by logging in again with the same credentials.
+      </Text>
+      <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
+        After 30 days, deletion becomes permanent and you will not be able to restore the account by logging in.
       </Text>
       <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
         Transaction history and financial records are retained as required by law.
@@ -74,7 +80,7 @@ export default function DeleteAccountScreen() {
       <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
         Any wallet balance will be frozen and cannot be withdrawn after deletion.
       </Text>
-      <Text style={[styles.bodyText, styles.emphasis, darkMode && styles.darkEmphasis]}>This cannot be undone.</Text>
+      <Text style={[styles.bodyText, styles.emphasis, darkMode && styles.darkEmphasis]}>After 30 days, deletion cannot be undone.</Text>
 
       <View style={styles.buttonRow}>
         <TouchableOpacity style={[styles.secondaryButton, darkMode && styles.darkSecondaryButton]} onPress={() => navigation.goBack()} activeOpacity={0.8}>
@@ -91,7 +97,10 @@ export default function DeleteAccountScreen() {
     <View style={styles.contentBlock}>
       <Text style={[styles.title, darkMode && styles.darkTitle]}>Final confirmation</Text>
       <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
-        Type <Text style={styles.mono}>{CONFIRM_PHRASE}</Text> below to permanently delete your account.
+        Type <Text style={styles.mono}>{CONFIRM_PHRASE}</Text> below to delete your account.
+      </Text>
+      <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
+        Account information will be held for 30 days. You can reinstate your account by logging in during that period. After 30 days, deletion is permanent.
       </Text>
       <TextInput
         value={confirmText}
@@ -139,7 +148,13 @@ export default function DeleteAccountScreen() {
       </View>
       <Text style={[styles.title, darkMode && styles.darkTitle]}>Account deleted</Text>
       <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
-        Your account has been deleted. Personal data has been removed from our records.
+        Your account has been deleted and removed from public view.
+      </Text>
+      <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
+        We will hold your account information for 30 days. To reinstate your account, log in again with the same credentials within 30 days.
+      </Text>
+      <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>
+        After 30 days, deletion becomes permanent.
       </Text>
       {confirmation?.deleted_at ? (
         <Text style={[styles.metaText, darkMode && styles.darkMetaText]}>Deleted at: {confirmation.deleted_at}</Text>
