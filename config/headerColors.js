@@ -41,6 +41,7 @@ export const HEADER_COLORS = {
   // Legal/Info screens
   termsAndConditions: "#AF52DE", // Purple
   privacyPolicy: "#AF52DE", // Purple
+  childSafety: "#AF52DE", // Purple
 };
 
 /**

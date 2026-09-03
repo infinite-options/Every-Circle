@@ -67,6 +67,7 @@ import DeleteAccountScreen from "./screens/DeleteAccountScreen";
 import FilterScreen from "./screens/FilterScreen-DNU";
 import TermsAndConditionsScreen from "./screens/TermsAndConditionsScreen";
 import PrivacyPolicyScreen from "./screens/PrivacyPolicyScreen";
+import ChildSafetyScreen from "./screens/ChildSafetyScreen";
 //import SearchResults from './screens/SearchResults';
 import EditBusinessProfileScreen from "./screens/EditBusinessProfileScreen";
 import ShoppingCartScreen from "./screens/ShoppingCartScreen";
@@ -907,6 +908,9 @@ export default function App() {
           <TouchableOpacity style={styles.privacyLink} onPress={() => navigation.navigate("PrivacyPolicy")} activeOpacity={0.7}>
             <Text style={styles.privacyLinkText}>Privacy Policy</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.privacyLink} onPress={() => navigation.navigate("ChildSafety")} activeOpacity={0.7}>
+            <Text style={styles.privacyLinkText}>Child Safety Policy</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -973,6 +977,8 @@ export default function App() {
     EditProfile: "edit-profile",
     ShoppingCart: "cart",
     EveryCircleMap: "map",
+    PrivacyPolicy: "privacy-policy",
+    ChildSafety: "child-safety",
   };
 
   const linking = {
@@ -1034,10 +1040,10 @@ export default function App() {
     const cookiesAllowedValue = cookiesStatus !== null ? JSON.parse(cookiesStatus) : true;
 
     // Allowed screens when cookies are not allowed (only Settings)
-    const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap"];
+    const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap", "PrivacyPolicy", "ChildSafety"];
 
     // Allowed screens when terms are not accepted
-    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions", "PrivacyPolicy", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
+    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions", "PrivacyPolicy", "ChildSafety", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
 
     // If cookies not allowed and trying to access any screen except Settings
     if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
@@ -1131,6 +1137,7 @@ export default function App() {
 
                     <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
                     <Stack.Screen name='PrivacyPolicy' component={PrivacyPolicyScreen} options={{ title: "Privacy Policy" }} />
+                    <Stack.Screen name='ChildSafety' component={ChildSafetyScreen} options={{ title: "Child Safety" }} />
                     <Stack.Screen name='EditBusinessProfile' component={EditBusinessProfileScreen} />
                     <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
                     <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />

@@ -1374,6 +1374,15 @@ export default function SettingsScreen() {
                 <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
+              {/* Child Safety */}
+              <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChildSafety")}>
+                <View style={styles.itemLabel}>
+                  <MaterialIcons name='child-care' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Child Safety Policy</Text>
+                </View>
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
+              </TouchableOpacity>
+
               {/* Change Password */}
               {!hideChangePassword && (
                 <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
