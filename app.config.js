@@ -54,6 +54,8 @@ module.exports = ({ config: expoConfig }) => ({
         ],
         NSLocationWhenInUseUsageDescription: "This app needs access to location to show it on the map.",
         NSLocationAlwaysUsageDescription: "This app needs access to location to show it on the map.",
+        NSPhotoLibraryUsageDescription:
+          "everyCircle uses your photo library so you can add pictures to your profile and listings. For example, you can choose a headshot from your camera roll as your profile photo, or add product photos to a business offering.",
       },
 
       config: {
@@ -136,6 +138,13 @@ module.exports = ({ config: expoConfig }) => ({
         "expo-camera",
         {
           cameraPermission: "Allow $(PRODUCT_NAME) to use the camera to scan QR codes.",
+        },
+      ],
+      [
+        "expo-image-picker",
+        {
+          photosPermission:
+            "everyCircle uses your photo library so you can add pictures to your profile and listings. For example, you can choose a headshot from your camera roll as your profile photo, or add product photos to a business offering.",
         },
       ],
     ],

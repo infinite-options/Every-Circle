@@ -218,7 +218,7 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
     const previousUserUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
     await AsyncStorage.setItem("user_uid", String(userUid));
     await AsyncStorage.setItem("user_email_id", userEmail || "");
-    await AsyncStorage.setItem("isThirdPartyAuth", true);
+    await AsyncStorage.setItem("isThirdPartyAuth", "true");
     await clearSessionAsyncStorageOnLogin({
       userUid: String(userUid),
       previousUserUid,
@@ -312,8 +312,8 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
 
   const previousUserUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
   await AsyncStorage.setItem("user_uid", String(userUid));
-  await AsyncStorage.setItem("user_email_id", userInfo.user.email);
-  await AsyncStorage.setItem("isThirdPartyAuth", true);
+  await AsyncStorage.setItem("user_email_id", userInfo.user.email || "");
+  await AsyncStorage.setItem("isThirdPartyAuth", "true");
   await clearSessionAsyncStorageOnLogin({
     userUid: String(userUid),
     previousUserUid,
@@ -909,12 +909,6 @@ export default function App() {
           <TouchableOpacity style={styles.privacyLink} onPress={() => navigation.navigate("PrivacyPolicy")} activeOpacity={0.7}>
             <Text style={styles.privacyLinkText}>Privacy Policy</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.privacyLink} onPress={() => navigation.navigate("ChildSafety")} activeOpacity={0.7}>
-            <Text style={styles.privacyLinkText}>Child Safety Policy</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.privacyLink} onPress={() => navigation.navigate("DeleteAccountInfo")} activeOpacity={0.7}>
-            <Text style={styles.privacyLinkText}>How to Delete Your Account</Text>
-          </TouchableOpacity>
         </View>
       </View>
     );
@@ -1045,10 +1039,10 @@ export default function App() {
     const cookiesAllowedValue = cookiesStatus !== null ? JSON.parse(cookiesStatus) : true;
 
     // Allowed screens when cookies are not allowed (only Settings)
-    const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo"];
+    const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen"];
 
     // Allowed screens when terms are not accepted
-    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
+    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
 
     // If cookies not allowed and trying to access any screen except Settings
     if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
