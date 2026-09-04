@@ -9,6 +9,7 @@ import { EXPO_PUBLIC_API_STAGE } from "@env";
 
 const API_STAGE_URLS = {
   dev: "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev",
+  // dev: "http://localhost:4090",
   production: "https://ml7xmrvue6.execute-api.us-west-1.amazonaws.com/production",
 };
 
@@ -158,6 +159,8 @@ export const ACCOUNT_SCREEN_BUSINESS_ENDPOINT = `${API_BASE_URL}/api/v1/account-
  * (including return/cancel clawbacks — BE must populate signed labels, not "—" when balance moves).
  */
 export const WALLET_LEDGER_ENDPOINT = `${API_BASE_URL}/api/v1/wallet_ledger`;
+/** GET /:profile_id — rebuild wallet row from bounty ledger + seller proceeds (actor or admin). */
+export const WALLET_RECONCILE_ENDPOINT = `${API_BASE_URL}/api/v1/wallet_reconcile`;
 /** GET /:orderUid?profile_id= | ?business_uid= — combined sale + returns order detail */
 export const ORDERS_ENDPOINT = `${API_BASE_URL}/api/v1/orders`;
 export const TRANSACTION_RECEIPT_ENDPOINT = `${API_BASE_URL}/api/transactionreceipt`;
