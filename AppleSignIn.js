@@ -302,7 +302,14 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
     }
     return (
       <View style={styles.container}>
-        <View style={[styles.iosButtonWrap, disabled && styles.iosButtonWrapDisabled]} pointerEvents={disabled ? "none" : "auto"}>
+        <View
+          style={[
+            styles.iosButtonWrap,
+            { width: btnW, height: AUTH_BTN_H },
+            disabled && styles.iosButtonWrapDisabled,
+          ]}
+          pointerEvents={disabled ? "none" : "auto"}
+        >
           <AppleAuthentication.AppleAuthenticationButton
             buttonType={useSignUpType ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
             buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
@@ -354,12 +361,17 @@ const styles = StyleSheet.create({
   container: {
     marginTop: 12,
   },
-  iosButtonWrap: {},
+  iosButtonWrap: {
+    alignSelf: "center",
+    backgroundColor: "#000000",
+    borderRadius: 6,
+    overflow: "hidden",
+  },
   iosButtonWrapDisabled: {
     opacity: 0.45,
   },
   appleButtonBase: {
-    // width/height set per layout
+    backgroundColor: "#000000",
   },
   fallbackButton: {
     alignSelf: "center",

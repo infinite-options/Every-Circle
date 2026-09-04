@@ -247,6 +247,16 @@ export default function HowItWorksScreen({ navigation, route }) {
           </Bullet>
         </View>
 
+        <View style={styles.card}>
+          <Text style={styles.secTitle}>Policies</Text>
+          <TouchableOpacity onPress={() => navigation.navigate("ChildSafety")} activeOpacity={0.7} accessibilityRole='link' accessibilityLabel='Child Safety Policy'>
+            <Text style={styles.policyLink}>Child Safety Policy</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate("DeleteAccountInfo")} activeOpacity={0.7} accessibilityRole='link' accessibilityLabel='How to Delete Your Account'>
+            <Text style={styles.policyLink}>How to Delete Your Account</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* SIGN UP BUTTON - Only show if user is not logged in */}
         {!isLoggedIn && (
           <TouchableOpacity style={styles.continueBtn} activeOpacity={0.9} onPress={() => navigation.navigate("SignUp")}>
@@ -624,6 +634,14 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   continueText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+
+  policyLink: {
+    fontSize: 16,
+    color: "#2434C2",
+    textDecorationLine: "underline",
+    marginTop: 8,
+    lineHeight: 22,
+  },
 
   /* Feedback banner */
   feedbackBanner: {

@@ -68,6 +68,8 @@ import ReactivateScreen from "./screens/ReactivateScreen";
 import FilterScreen from "./screens/FilterScreen-DNU";
 import TermsAndConditionsScreen from "./screens/TermsAndConditionsScreen";
 import PrivacyPolicyScreen from "./screens/PrivacyPolicyScreen";
+import ChildSafetyScreen from "./screens/ChildSafetyScreen";
+import DeleteAccountInfoScreen from "./screens/DeleteAccountInfoScreen";
 //import SearchResults from './screens/SearchResults';
 import EditBusinessProfileScreen from "./screens/EditBusinessProfileScreen";
 import ShoppingCartScreen from "./screens/ShoppingCartScreen";
@@ -229,7 +231,7 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
     const previousUserUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
     await AsyncStorage.setItem("user_uid", String(userUid));
     await AsyncStorage.setItem("user_email_id", userEmail || "");
-    await AsyncStorage.setItem("isThirdPartyAuth", true);
+    await AsyncStorage.setItem("isThirdPartyAuth", "true");
     await clearSessionAsyncStorageOnLogin({
       userUid: String(userUid),
       previousUserUid,
@@ -346,8 +348,8 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
 
   const previousUserUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
   await AsyncStorage.setItem("user_uid", String(userUid));
-  await AsyncStorage.setItem("user_email_id", userInfo.user.email);
-  await AsyncStorage.setItem("isThirdPartyAuth", true);
+  await AsyncStorage.setItem("user_email_id", userInfo.user.email || "");
+  await AsyncStorage.setItem("isThirdPartyAuth", "true");
   await clearSessionAsyncStorageOnLogin({
     userUid: String(userUid),
     previousUserUid,
@@ -1021,6 +1023,9 @@ export default function App() {
     EditProfile: "edit-profile",
     ShoppingCart: "cart",
     EveryCircleMap: "map",
+    PrivacyPolicy: "privacy-policy",
+    ChildSafety: "child-safety",
+    DeleteAccountInfo: "delete-account",
   };
 
   const linking = {
@@ -1082,10 +1087,10 @@ export default function App() {
     const cookiesAllowedValue = cookiesStatus !== null ? JSON.parse(cookiesStatus) : true;
 
     // Allowed screens when cookies are not allowed (only Settings)
-    const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap"];
+    const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen"];
 
     // Allowed screens when terms are not accepted
-    const termsAllowedScreens = ["Home", "Login", "SignUp", "Reactivate", "Settings", "TermsAndConditions", "PrivacyPolicy", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
+    const termsAllowedScreens = ["Home", "Login", "SignUp", "Reactivate", "Settings", "TermsAndConditions", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
 
     // If cookies not allowed and trying to access any screen except Settings
     if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
@@ -1180,6 +1185,8 @@ export default function App() {
 
                     <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
                     <Stack.Screen name='PrivacyPolicy' component={PrivacyPolicyScreen} options={{ title: "Privacy Policy" }} />
+                    <Stack.Screen name='ChildSafety' component={ChildSafetyScreen} options={{ title: "Child Safety" }} />
+                    <Stack.Screen name='DeleteAccountInfo' component={DeleteAccountInfoScreen} options={{ title: "How to Delete Your Account" }} />
                     <Stack.Screen name='EditBusinessProfile' component={EditBusinessProfileScreen} />
                     <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
                     <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />

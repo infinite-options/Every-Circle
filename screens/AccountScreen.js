@@ -894,13 +894,7 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
     }
     if (lineShipKnown) txnShipping = roundCreditCardMoney(lineShipSum);
   }
-  const txnBountyReported = receiptMoneyFromSources(first, fallback, [
-    "bounty_paid",
-    "transaction_bounty",
-    "total_bounty_paid",
-    "order_bounty_paid",
-    "total_bounty",
-  ]);
+  const txnBountyReported = receiptMoneyFromSources(first, fallback, ["bounty_paid", "transaction_bounty", "total_bounty_paid", "order_bounty_paid", "total_bounty"]);
   const txnTotal = receiptMoneyFromSources(first, fallback, ["transaction_total", "total_amount_paid", "seller_total"]);
 
   const merchDisplay = txnMerch != null ? txnMerch : fromLines;
@@ -922,9 +916,7 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
 
   // Seeking: buyer pays bounty — included in amount paid but often omitted from API breakdown fields.
   // Offering/product: bounty is seller-funded; amount paid ≈ merch+tax+shipping+fees (gap ≈ 0).
-  const withoutBuyerBounty = roundCreditCardMoney(
-    (merchDisplay || 0) + (txnTaxes || 0) + (txnShipping || 0) + (txnOtherFees && txnOtherFees > 0 ? txnOtherFees : 0) + (txnFeesReported || 0),
-  );
+  const withoutBuyerBounty = roundCreditCardMoney((merchDisplay || 0) + (txnTaxes || 0) + (txnShipping || 0) + (txnOtherFees && txnOtherFees > 0 ? txnOtherFees : 0) + (txnFeesReported || 0));
   const paidGap = txnTotal != null ? roundCreditCardMoney(txnTotal - withoutBuyerBounty) : 0;
   let buyerPaidBounty = 0;
   if (paidGap > RECEIPT_TOTAL_EPS) {
@@ -940,8 +932,7 @@ function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, dark
     buyerPaidBounty = 0;
   }
 
-  const hasAnyBreakdown =
-    txnMerch != null || txnTaxes != null || txnFeesReported != null || txnShipping != null || buyerPaidBounty > 0 || txnTotal != null;
+  const hasAnyBreakdown = txnMerch != null || txnTaxes != null || txnFeesReported != null || txnShipping != null || buyerPaidBounty > 0 || txnTotal != null;
   if (!hasAnyBreakdown) return null;
 
   const labelColor = darkMode ? "#ccc" : "#444";
@@ -1356,13 +1347,7 @@ function isReturnRequestUid(value) {
 function resolveListRowOrderUid(row) {
   // Parent purchase uid (500-…): return-request sale link, completed-return original, else self.
   // Never treat trr_uid / pending-row transaction_uid (540-…) as the order/sale id.
-  const candidates = [
-    row?.trr_transaction_uid,
-    row?.transaction_original_uid,
-    row?.original_transaction_uid,
-    row?.order_uid,
-    row?.transaction_uid,
-  ];
+  const candidates = [row?.trr_transaction_uid, row?.transaction_original_uid, row?.original_transaction_uid, row?.order_uid, row?.transaction_uid];
   for (const candidate of candidates) {
     const resolved = String(candidate || "").trim();
     if (resolved && !isReturnRequestUid(resolved)) return resolved;
@@ -2352,8 +2337,7 @@ function resolveReturnLineBountyAmounts(line, _returnQty, bountyRows, transactio
   const fromApi = resolveReturnLineBountyFromApi(line, { isSellerView });
   const bountyRow = findBountyResultForReceiptLine(bountyRows, line, transactionUid);
   const receiptDisplay = !isSellerView ? resolveReceiptLineBountyDisplay(line, bountyRow) : null;
-  const earnedShare =
-    receiptDisplay?.earned ?? parseAccountScreenLineMoneyField(line, ["bounty_earned", "tb_amount", "your_share"]) ?? 0;
+  const earnedShare = receiptDisplay?.earned ?? parseAccountScreenLineMoneyField(line, ["bounty_earned", "tb_amount", "your_share"]) ?? 0;
   const percentage = receiptDisplay?.percentage ?? null;
 
   let poolAbs = null;
@@ -2462,6 +2446,7 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
       received,
       attentionLevel: row.attention_level ?? resolveSellerReturnRowAttentionLevel(row),
       daysOpen: display?.days_open || ACCOUNT_SCREEN_DISPLAY_NA,
+      returnWindowCloses: resolveReturnWindowClosesLabel(row, { isReturnRow: true }),
       returnLogistics,
       rawRow: row,
     };
@@ -2492,6 +2477,7 @@ function mapTransactionListRowToOrderTableRow(row, saleSibling = null, sellerLin
     received,
     attentionLevel,
     daysOpen: display?.days_open || ACCOUNT_SCREEN_DISPLAY_NA,
+    returnWindowCloses: resolveReturnWindowClosesLabel(row),
     returnLogistics,
     rawRow: row,
   };
@@ -3077,6 +3063,51 @@ function pickReturnPolicyFields(line) {
     out[key] = val;
   }
   return out;
+}
+
+function formatReturnWindowClosesDate(raw) {
+  if (raw == null || String(raw).trim() === "") return null;
+  const parsed = parseTransactionDateTime({ transaction_datetime: raw, transaction_datetime_local: raw });
+  if (parsed && !isNaN(parsed.getTime())) {
+    return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+  const fallback = new Date(raw);
+  if (!isNaN(fallback.getTime())) {
+    return fallback.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+  return null;
+}
+
+/** Item Fulfillment / product-summary table — when the buyer return window ends for this line. */
+function resolveReturnWindowClosesLabel(row, { isReturnRow = false } = {}) {
+  if (!row || typeof row !== "object") return ACCOUNT_SCREEN_DISPLAY_NA;
+  if (isReturnRow) return "—";
+
+  const display = row.display && typeof row.display === "object" ? row.display : null;
+  for (const key of ["return_window_closes_label", "return_window_close_label", "return_window_expires_label"]) {
+    const label = display?.[key];
+    if (label != null && String(label).trim() !== "" && String(label).trim() !== "—") {
+      return String(label).trim();
+    }
+  }
+
+  const policy = { ...pickReturnPolicyFields(row), ...pickReturnPolicyFields(row?.line ?? row?.sale_line ?? null) };
+  const returnable = parseOptionalBoolean(
+    policy.returnable ?? policy.is_returnable ?? policy.bs_is_returnable ?? policy.ti_bs_is_returnable ?? policy.profile_expertise_is_returnable,
+  );
+  const windowDaysRaw = policy.return_window_days ?? policy.bs_return_window_days ?? policy.ti_bs_return_window_days ?? policy.profile_expertise_return_window_days;
+  const windowDays = windowDaysRaw == null || String(windowDaysRaw).trim() === "" ? null : parseInt(windowDaysRaw, 10);
+
+  const expired = parseOptionalBoolean(policy.return_window_expired ?? policy.is_return_window_expired);
+  if (expired === true) return "Closed";
+
+  const expiresAtRaw = policy.return_window_expires_at ?? policy.return_eligible_until ?? policy.return_deadline;
+  const formattedExpiry = formatReturnWindowClosesDate(expiresAtRaw);
+  if (formattedExpiry) return formattedExpiry;
+
+  if (returnable === false || (returnable == null && windowDays === 0)) return "Not returnable";
+
+  return ACCOUNT_SCREEN_DISPLAY_NA;
 }
 
 function mergeReceiptLineWithOrderDetail(receiptLine, orderLine) {
@@ -4289,15 +4320,7 @@ function resolveOrderDetailBuyerLabel({ orderDetail, sale, walletLedgerEntries =
 
   if (isSellerView) {
     const buyer = String(
-      src.purchaser_name ||
-        src.buyer_name ||
-        src.transaction_profile_name ||
-        src.profile_name ||
-        src.customer_name ||
-        src.buyer_profile_name ||
-        list.purchaser_name ||
-        list.buyer_name ||
-        "",
+      src.purchaser_name || src.buyer_name || src.transaction_profile_name || src.profile_name || src.customer_name || src.buyer_profile_name || list.purchaser_name || list.buyer_name || "",
     ).trim();
     if (buyer) return buyer;
     const shipping = extractShippingAddress(sale) || extractShippingAddress(orderDetail);
@@ -7889,13 +7912,16 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
         <Text style={[styles.productSalesDetailCell, styles.productSummaryColDaysOpen, darkMode && { color: "#ccc" }]} numberOfLines={1}>
           {row.daysOpen}
         </Text>
+        <Text style={[styles.productSalesDetailCell, styles.productSummaryColReturnWindow, darkMode && { color: "#ccc" }]} numberOfLines={2}>
+          {row.returnWindowCloses ?? ACCOUNT_SCREEN_DISPLAY_NA}
+        </Text>
       </View>
     );
   };
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator nestedScrollEnabled>
-      <ScrollView style={{ maxHeight: maxBodyHeight, minWidth: 680 }} nestedScrollEnabled showsVerticalScrollIndicator>
+      <ScrollView style={{ maxHeight: maxBodyHeight, minWidth: 780 }} nestedScrollEnabled showsVerticalScrollIndicator>
         {groups.map((group, groupIndex) => {
           const openGroupOrder = () => {
             const saleRow = group.rows.find((row) => !row.isReturn) || group.rows[0];
@@ -7949,6 +7975,9 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
                 <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColDaysOpen, { color: headerColor }]} numberOfLines={1}>
                   Days open
                 </Text>
+                <Text style={[styles.productSalesDetailHeaderCell, styles.productSummaryColReturnWindow, { color: headerColor }]} numberOfLines={2}>
+                  Return window closes
+                </Text>
               </View>
               {group.rows.map(renderLineRow)}
             </View>
@@ -7965,6 +7994,7 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
           <Text style={[styles.productSalesDetailCell, styles.productSummaryColStatus]} />
           <Text style={[styles.productSalesDetailCell, styles.productSummaryColStatus]} />
           <Text style={[styles.productSalesDetailCell, styles.productSummaryColDaysOpen]} />
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColReturnWindow]} />
         </View>
       </ScrollView>
     </ScrollView>
@@ -8888,6 +8918,8 @@ export default function AccountScreen({ navigation, route }) {
   const refreshBusinessInFlightRef = useRef(null);
   /** Skip wallet fetch in selectedAccount effect when useFocusEffect already loaded it. */
   const skipWalletOnNextPersonalEffectRef = useRef(true);
+  /** Skip personal account-screen fetch in selectedAccount effect when useFocusEffect already loaded it. */
+  const skipPersonalOnNextSelectedAccountEffectRef = useRef(true);
   /** Ignore in-flight account-screen responses after a profile switch. */
   const personalFetchGenRef = useRef(0);
   const businessFetchGenRef = useRef(0);
@@ -8960,6 +8992,7 @@ export default function AccountScreen({ navigation, route }) {
       refreshWalletLedgerInFlightRef.current = null;
       refreshBusinessInFlightRef.current = null;
       skipWalletOnNextPersonalEffectRef.current = false;
+      skipPersonalOnNextSelectedAccountEffectRef.current = false;
       clearBusinessAccountSections();
       clearPersonalAccountSections();
     } else {
@@ -10805,7 +10838,11 @@ export default function AccountScreen({ navigation, route }) {
     if (selectedAccount === "personal" || !selectedAccount) {
       setSelectedBusinessFullData(null);
       setBusinessSellerTransactionList([]);
-      refreshAccountScreenPersonal();
+      if (skipPersonalOnNextSelectedAccountEffectRef.current) {
+        skipPersonalOnNextSelectedAccountEffectRef.current = false;
+      } else {
+        refreshAccountScreenPersonal();
+      }
       if (skipWalletOnNextPersonalEffectRef.current) {
         skipWalletOnNextPersonalEffectRef.current = false;
       }
@@ -14062,6 +14099,11 @@ const styles = StyleSheet.create({
   },
   productSummaryColDaysOpen: {
     width: 92,
+    flexShrink: 0,
+    textAlign: "right",
+  },
+  productSummaryColReturnWindow: {
+    width: 108,
     flexShrink: 0,
     textAlign: "right",
   },

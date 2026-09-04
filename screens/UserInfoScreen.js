@@ -19,8 +19,11 @@ export default function UserInfoScreen({ navigation, route }) {
   const [profileExists, setProfileExists] = useState(false);
   const [profilePersonalUid, setProfilePersonalUid] = useState(null);
 
-  // Validation state
-  const isValid = firstName.trim() && lastName.trim() && phoneNumber.replace(/\D/g, "").length === 10;
+  const appleUserInfo = route?.params?.appleUserInfo || null;
+  const isAppleSignIn = !!appleUserInfo;
+
+  // Apple already provided name/email via Authentication Services — do not require them again.
+  const isValid = isAppleSignIn ? phoneNumber.replace(/\D/g, "").length === 10 : firstName.trim() && lastName.trim() && phoneNumber.replace(/\D/g, "").length === 10;
 
   useEffect(() => {
     console.log("UserInfoScreen - route.params:", route.params);
@@ -42,7 +45,7 @@ export default function UserInfoScreen({ navigation, route }) {
       console.log("UserInfoScreen - Pre-filling with Apple user info:", { aFirst, aLast, aEmail });
       if (aFirst) setFirstName(aFirst);
       if (aLast) setLastName(aLast);
-      if (aEmail) {
+      if (aEmail && aEmail !== "Apple User") {
         storeUserEmail(aEmail);
       }
     }
@@ -50,6 +53,18 @@ export default function UserInfoScreen({ navigation, route }) {
     // Load saved first and last name if they exist (only if not already set by social login)
     const loadSavedData = async () => {
       try {
+        const appleId = route?.params?.appleUserInfo?.appleId;
+        if (appleId) {
+          try {
+            const storedNameRaw = await AsyncStorage.getItem(`apple_user_${appleId}`);
+            if (storedNameRaw) {
+              const storedName = JSON.parse(storedNameRaw);
+              if (storedName?.givenName) setFirstName((prev) => prev || storedName.givenName);
+              if (storedName?.familyName) setLastName((prev) => prev || storedName.familyName);
+            }
+          } catch (_) {}
+        }
+
         const savedEmail = await getUserEmail();
         const savedFirstName = await AsyncStorage.getItem("user_first_name");
         const savedLastName = await AsyncStorage.getItem("user_last_name");
@@ -124,23 +139,24 @@ export default function UserInfoScreen({ navigation, route }) {
 
   const handleContinue = async () => {
     console.log("UserInfoScreen - Continue button pressed");
-    if (!firstName.trim() || !lastName.trim() || !phoneNumber.trim()) {
+    const cleanPhoneNumber = phoneNumber.replace(/\D/g, "");
+    if (!isAppleSignIn && (!firstName.trim() || !lastName.trim())) {
       Alert.alert("Error", "Please fill in all fields");
       return;
     }
-
-    // Validate phone number is exactly 10 digits
-    const cleanPhoneNumber = phoneNumber.replace(/\D/g, "");
     if (cleanPhoneNumber.length !== 10) {
       Alert.alert("Error", "Please enter a valid 10-digit phone number");
       return;
     }
 
+    const submitFirstName = firstName.trim();
+    const submitLastName = lastName.trim();
+
     setLoading(true);
     try {
       // Save the updated information to AsyncStorage
-      await AsyncStorage.setItem("user_first_name", firstName.trim());
-      await AsyncStorage.setItem("user_last_name", lastName.trim());
+      await AsyncStorage.setItem("user_first_name", submitFirstName);
+      await AsyncStorage.setItem("user_last_name", submitLastName);
       await AsyncStorage.setItem("user_phone_number", phoneNumber.trim());
       console.log("UserInfoScreen - AsyncStorage - saved data");
 
@@ -169,8 +185,8 @@ export default function UserInfoScreen({ navigation, route }) {
       // Phone number is already validated and cleaned above
 
       const formData = new FormData();
-      formData.append("profile_personal_first_name", firstName.trim());
-      formData.append("profile_personal_last_name", lastName.trim());
+      formData.append("profile_personal_first_name", submitFirstName);
+      formData.append("profile_personal_last_name", submitLastName);
       formData.append("profile_personal_phone_number", cleanPhoneNumber);
       formData.append("profile_personal_referred_by", referralId || "100-000001");
       formData.append("user_uid", userUid);
@@ -182,8 +198,8 @@ export default function UserInfoScreen({ navigation, route }) {
 
       // Log the form data contents
       console.log("Form data contents:");
-      console.log(`profile_personal_first_name: ${firstName.trim()}`);
-      console.log(`profile_personal_last_name: ${lastName.trim()}`);
+      console.log(`profile_personal_first_name: ${submitFirstName}`);
+      console.log(`profile_personal_last_name: ${submitLastName}`);
       console.log(`profile_personal_phone_number: ${cleanPhoneNumber} (formatted: ${phoneNumber.trim()})`);
       console.log(`profile_personal_referred_by: ${referralId || "100-000001"}`);
       console.log(`user_uid: ${userUid}`);
@@ -284,30 +300,45 @@ export default function UserInfoScreen({ navigation, route }) {
         Complete Your Profile
       </Text>
 
-      <Text style={styles.subtitle}>Please provide your information to continue</Text>
+      <Text style={styles.subtitle}>
+        {isAppleSignIn ? "Your name and email come from Sign in with Apple. Add a phone number to continue." : "Please provide your information to continue"}
+      </Text>
 
       <View style={styles.inputContainer}>
-        <Text style={styles.label}>First Name (Required)</Text>
-        <TextInput
-          style={styles.input}
-          value={firstName}
-          onChangeText={setFirstName}
-          placeholder='Enter your first name'
-          autoCapitalize='words'
-          accessibilitylabel='First name'
-          accessibilityHint='Required'
-        />
+        {isAppleSignIn ? (
+          <View style={styles.appleIdentityBox} accessibilityRole='text'>
+            <Text style={styles.appleIdentityLabel}>Signed in with Apple</Text>
+            {firstName || lastName ? (
+              <Text style={styles.appleIdentityValue}>{[firstName, lastName].filter(Boolean).join(" ")}</Text>
+            ) : (
+              <Text style={styles.appleIdentityValue}>Name and email were provided by Apple</Text>
+            )}
+          </View>
+        ) : (
+          <>
+            <Text style={styles.label}>First Name (Required)</Text>
+            <TextInput
+              style={styles.input}
+              value={firstName}
+              onChangeText={setFirstName}
+              placeholder='Enter your first name'
+              autoCapitalize='words'
+              accessibilitylabel='First name'
+              accessibilityHint='Required'
+            />
 
-        <Text style={styles.label}>Last Name (Required)</Text>
-        <TextInput
-          style={styles.input}
-          value={lastName}
-          onChangeText={setLastName}
-          placeholder='Enter your last name'
-          autoCapitalize='words'
-          accessibilitylabel='Last name'
-          accessibilityHint='Required'
-        />
+            <Text style={styles.label}>Last Name (Required)</Text>
+            <TextInput
+              style={styles.input}
+              value={lastName}
+              onChangeText={setLastName}
+              placeholder='Enter your last name'
+              autoCapitalize='words'
+              accessibilitylabel='Last name'
+              accessibilityHint='Required'
+            />
+          </>
+        )}
 
         <Text style={styles.label}>Phone Number (Required for password recovery)</Text>
         <TextInput
@@ -327,7 +358,7 @@ export default function UserInfoScreen({ navigation, route }) {
         disabled={!isValid || loading}
         accessibilityRole='button'
         accessibilitylabel={loading ? "Continuing" : "Continue"}
-        accessibilityHint={!isValid ? "Complete all required fields before continuing" : "Continues to the next step"}
+        accessibilityHint={!isValid ? (isAppleSignIn ? "Enter a 10-digit phone number before continuing" : "Complete all required fields before continuing") : "Continues to the next step"}
         accessibilityState={{ disabled: !isValid || loading, busy: loading }}
       >
         {loading ? <ActivityIndicator color='#fff' /> : <Text style={styles.buttonText}>Continue</Text>}
@@ -357,6 +388,24 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     marginBottom: 30,
+  },
+  appleIdentityBox: {
+    backgroundColor: "#F5F5F5",
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  appleIdentityLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#666",
+    marginBottom: 4,
+  },
+  appleIdentityValue: {
+    fontSize: 16,
+    color: "#111",
   },
   label: {
     fontSize: 16,
