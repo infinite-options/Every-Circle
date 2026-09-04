@@ -9,6 +9,7 @@ import { EXPO_PUBLIC_API_STAGE } from "@env";
 
 const API_STAGE_URLS = {
   dev: "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev",
+  // dev: "http://localhost:4090",
   production: "https://ml7xmrvue6.execute-api.us-west-1.amazonaws.com/production",
 };
 
@@ -82,8 +83,10 @@ export const AUTH_REFRESH_ENDPOINT = `${API_BASE_URL}/api/v1/auth/refresh`;
 export const AUTH_SOCIAL_ENDPOINT = `${API_BASE_URL}/api/v1/auth/social`;
 export const AUTH_LOGOUT_ENDPOINT = `${API_BASE_URL}/api/v1/auth/logout`;
 export const AUTH_ME_ENDPOINT = `${API_BASE_URL}/api/v1/auth/me`;
-/** DELETE JSON `{ confirm_deletion: true }` — permanently delete authenticated account (App Store / Play compliant). */
+/** DELETE JSON `{ confirm_deletion: true }` — schedules soft-delete (30-day grace); permanent purge after grace. */
 export const DELETE_ACCOUNT_ENDPOINT = `${API_BASE_URL}/api/v1/account`;
+/** POST JSON `{ email, password, confirm_reactivation: true }` — restore soft-deleted account during grace (no JWT). */
+export const REACTIVATE_ACCOUNT_ENDPOINT = `${API_BASE_URL}/api/v1/account/reactivate`;
 
 // User Profile Endpoints
 export const USER_INFO_ENDPOINT = `${API_BASE_URL}/userinfo`;
@@ -156,6 +159,8 @@ export const ACCOUNT_SCREEN_BUSINESS_ENDPOINT = `${API_BASE_URL}/api/v1/account-
  * (including return/cancel clawbacks — BE must populate signed labels, not "—" when balance moves).
  */
 export const WALLET_LEDGER_ENDPOINT = `${API_BASE_URL}/api/v1/wallet_ledger`;
+/** GET /:profile_id — rebuild wallet row from bounty ledger + seller proceeds (actor or admin). */
+export const WALLET_RECONCILE_ENDPOINT = `${API_BASE_URL}/api/v1/wallet_reconcile`;
 /** GET /:orderUid?profile_id= | ?business_uid= — combined sale + returns order detail */
 export const ORDERS_ENDPOINT = `${API_BASE_URL}/api/v1/orders`;
 export const TRANSACTION_RECEIPT_ENDPOINT = `${API_BASE_URL}/api/transactionreceipt`;

@@ -16,7 +16,7 @@ import { clearSessionAsyncStorage, clearSessionAsyncStorageOnLogin } from "../ut
 import { fetchCircleAuthLogin } from "../utils/authSession";
 import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
-import { isAccountDeletedAuthMessage } from "../utils/deletedProfile";
+import { isAccountDeletedAuthMessage, isPendingDeletionAuthResponse, reactivateNavParamsFromAuthPayload } from "../utils/deletedProfile";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 // import SignUpScreen from "./screens/SignUpScreen";
@@ -36,6 +36,9 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
   const [passwordError, setPasswordError] = useState("");
   const [emailError, setEmailError] = useState("");
 
+  const goToReactivate = (payload) => {
+    navigation.navigate("Reactivate", reactivateNavParamsFromAuthPayload(payload, { email, password }));
+  };
   const validateInputs = (email, password) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{3,}$/;
     const isEmailValid = email.trim() !== "" && emailRegex.test(email);
@@ -84,7 +87,11 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
       if (saltObject.code !== 200) {
         setShowSpinner(false);
         setPasswordError("");
-        if (isAccountDeletedAuthMessage(saltObject)) {
+        if (isPendingDeletionAuthResponse(saltObject, saltResponse.status)) {
+          goToReactivate(saltObject);
+          return;
+        }
+        if (isAccountDeletedAuthMessage(saltObject, saltResponse.status)) {
           setEmailError("This account has been deleted.");
         } else {
           setEmailError("Email is not valid");
@@ -114,10 +121,16 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
       const loginObject = await loginResponse.json();
       console.log("LoginScreen - loginObject returned", loginObject);
 
+      if (isPendingDeletionAuthResponse(loginObject, loginResponse.status)) {
+        setShowSpinner(false);
+        goToReactivate(loginObject);
+        return;
+      }
+
       // Check if login failed (wrong password, deleted account, or other error)
       if (loginObject.code !== 200 || !loginObject.result || !loginObject.result.user_uid) {
         setShowSpinner(false);
-        if (isAccountDeletedAuthMessage(loginObject)) {
+        if (isAccountDeletedAuthMessage(loginObject, loginResponse.status)) {
           setPasswordError("");
           setEmailError("This account has been deleted.");
         } else {
@@ -172,7 +185,14 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
         preserveKeys: ["user_uid", "user_email_id"],
       });
 
-      await fetchCircleAuthLogin(email, hashedPassword, fetch);
+      const circleAuth = await fetchCircleAuthLogin(email, hashedPassword, fetch);
+      if (circleAuth?.pendingDeletion) {
+        await clearSessionAsyncStorage();
+        await clearUserProfileCacheStorage();
+        setShowSpinner(false);
+        goToReactivate(circleAuth.data || {});
+        return;
+      }
 
       const scanProfileUid = route?.params?.returnToScanLanding ? route?.params?.profile_uid : null;
       if (scanProfileUid) {

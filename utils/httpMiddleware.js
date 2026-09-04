@@ -30,16 +30,16 @@ function alreadyEncrypted(body) {
   }
 }
 
-/** Login/social/refresh/logout must not trigger a refresh-retry loop. */
+/** Login/social/refresh/logout/reactivate must not trigger a refresh-retry loop. */
 function shouldSkipAuthRefresh(url) {
   if (!url || typeof url !== "string") return true;
-  return /\/api\/v1\/auth\/(login|social|refresh|logout)(\/|$|\?)/.test(url);
+  return /\/api\/v1\/auth\/(login|social|refresh|logout)(\/|$|\?)/.test(url) || /\/api\/v1\/account\/reactivate(\/|$|\?)/.test(url);
 }
 
-/** Do not send a leftover access token to login/social/refresh. */
+/** Do not send a leftover access token to login/social/refresh/reactivate. */
 function shouldAttachAccessToken(url) {
   if (!isLocalBackend(url)) return false;
-  return !/\/api\/v1\/auth\/(login|social|refresh)(\/|$|\?)/.test(url);
+  return !/\/api\/v1\/auth\/(login|social|refresh)(\/|$|\?)/.test(url) && !/\/api\/v1\/account\/reactivate(\/|$|\?)/.test(url);
 }
 
 function mergeHeaders(headers, extra) {
