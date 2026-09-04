@@ -28,15 +28,16 @@ function parseOfferingCost(cost) {
   const cleaned = raw.replace(/^\$/, "").trim();
   if (cleaned.toLowerCase().endsWith("total")) {
     const amount = cleaned.replace(/\s*total$/i, "").trim();
-    return { columnLabel: "Total cost", value: `$${amount}`, subtext: null };
+    // A unit was chosen but no amount was ever entered — show 0.00, never a bare "$".
+    return { columnLabel: "Total cost", value: `$${amount || "0.00"}`, subtext: null };
   }
   const slashIdx = cleaned.indexOf("/");
   if (slashIdx >= 0) {
     const amount = cleaned.slice(0, slashIdx).trim();
     const unit = cleaned.slice(slashIdx + 1).trim();
-    return { columnLabel: "Cost", value: `$${amount}/${unit}`, subtext: null };
+    return { columnLabel: "Cost", value: `$${amount || "0.00"}/${unit}`, subtext: null };
   }
-  return { columnLabel: "Total cost", value: `$${cleaned}`, subtext: null };
+  return { columnLabel: "Total cost", value: `$${cleaned || "0.00"}`, subtext: null };
 }
 
 function getOfferingTaxSubtext(offering) {

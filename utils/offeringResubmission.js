@@ -78,6 +78,29 @@ export function buildOfferingCardModel(source, profileUid = "") {
   );
 }
 
+/**
+ * A blank Cost amount (e.g. only a unit was picked, or nothing was entered at all) defaults
+ * to 0.00 at submit time — it should never be saved/displayed blank, and never silently
+ * becomes "Free" (that only happens when the user explicitly types "Free").
+ */
+export function normalizeOfferingCostForSubmit(cost) {
+  const raw = String(cost ?? "").trim();
+  if (!raw) return "0.00";
+  if (raw.toLowerCase() === "free") return raw;
+
+  const cleaned = raw.replace(/\$/g, "").trim();
+  const lower = cleaned.toLowerCase();
+  if (lower === "total") return "0.00 total";
+  if (lower.endsWith("total")) {
+    const amount = cleaned.replace(/total$/i, "").trim();
+    return amount ? cleaned : "0.00 total";
+  }
+  if (cleaned.startsWith("/")) return `0.00${cleaned}`;
+  const parts = cleaned.split("/");
+  if (parts.length >= 2 && !parts[0].trim()) return `0.00/${parts.slice(1).join("/").trim()}`;
+  return cleaned;
+}
+
 function buildOfferingConditionForApi(e) {
   const condRaw = e?.profile_expertise_condition_type;
   const condLow = condRaw == null ? "" : String(condRaw).trim().toLowerCase();
@@ -94,13 +117,14 @@ export function mapOfferingFormToPayload(e) {
   const isPublicValue = publicBlocked && wantsPublic ? 0 : wantsPublic ? 1 : 0;
   const unlimited = isOfferingQtyUnlimited(e);
   const shippingFields = buildOfferingShippingForApi(e);
+  const normalizedCost = normalizeOfferingCostForSubmit(e.cost);
   return {
     profile_expertise_uid: e.profile_expertise_uid || "",
     profile_expertise_title: e.name || "",
     profile_expertise_description: e.description || "",
     // Unlimited stock: omit quantity or send "" — backend has no qty_unlimited column.
     profile_expertise_quantity: unlimited ? "" : e.quantity != null && e.quantity !== "" ? String(e.quantity) : "",
-    profile_expertise_cost: e.cost || "",
+    profile_expertise_cost: normalizedCost,
     profile_expertise_bounty: e.bounty || "",
     profile_expertise_is_public: isPublicValue,
     profile_expertise_image: e.profile_expertise_image || "",
@@ -135,7 +159,7 @@ export function mapOfferingFormToPayload(e) {
     name: e.name || "",
     description: e.description || "",
     quantity: unlimited ? "" : e.quantity || "",
-    cost: e.cost || "",
+    cost: normalizedCost,
     bounty: e.bounty || "",
     isPublic: isPublicValue === 1,
   };

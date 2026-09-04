@@ -345,6 +345,12 @@ export function createProfileItemCardFormStyles(accent = PROFILE_ITEM_FORM_ACCEN
       flexWrap: "wrap",
       gap: 10,
     },
+    modeRowError: {
+      borderColor: "#FF3B30",
+      borderWidth: 2,
+      borderRadius: 8,
+      padding: 8,
+    },
     modeBtn: {
       flexGrow: 1,
       flexBasis: "30%",

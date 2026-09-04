@@ -788,7 +788,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           "Offerings with Delivered mode must have Delivery charge set (Free delivery charge, Buyer pays fixed, or Buyer pays actual). Fixed delivery charge also requires an amount.",
         );
       } else {
-        Alert.alert("Required Field", "Please fill in title, description, and unit for all Offering entries before submitting.");
+        Alert.alert("Required Field", "Please fill in title, description, unit, and Mode (Virtual, Delivered, or In-Person) for all Offering entries before submitting.");
       }
       return;
     }

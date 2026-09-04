@@ -19,7 +19,7 @@ import {
   isStartDateValid,
   isEndDateValid,
 } from "../utils/profileDateTime";
-import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expertiseMode";
+import { parseExpertiseModeFlags, serializeExpertiseMode, countExpertiseModes } from "../utils/expertiseMode";
 import { rejectNativeImageAsset, rejectWebImageFile } from "../utils/imageUploadLimits";
 import OfferingModerationBanner from "./OfferingModerationBanner";
 import ProfileOfferingListCard from "./ProfileOfferingListCard";
@@ -85,7 +85,8 @@ export const isOfferingItemReadyToFinish = (item) => {
   const hasTitle = !!String(item.name || "").trim();
   const hasDescription = !!String(item.description || "").trim();
   const hasUnit = !!getOfferingCostUnit(item.cost);
-  if (!hasTitle || !hasDescription || !hasUnit) return false;
+  const hasMode = countExpertiseModes(item.profile_expertise_mode) > 0;
+  if (!hasTitle || !hasDescription || !hasUnit || !hasMode) return false;
   if (!validateOfferingDeliveredShipping(item)) return false;
   if (!validateTaxableRate(item.profile_expertise_is_taxable, item.profile_expertise_tax_rate)) return false;
   if (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") {
@@ -102,6 +103,7 @@ export const getOfferingMissingRequirements = (item) => {
   if (!String(item.name || "").trim()) missing.push("Title");
   if (!String(item.description || "").trim()) missing.push("Description");
   if (!getOfferingCostUnit(item.cost)) missing.push("Pricing unit");
+  if (countExpertiseModes(item.profile_expertise_mode) === 0) missing.push("Mode");
   if (offeringDeliveredModeSelected(item) && !validateOfferingDeliveredShipping(item)) missing.push("Delivery charge");
   if (!validateTaxableRate(item.profile_expertise_is_taxable, item.profile_expertise_tax_rate)) missing.push("Tax rate");
   if (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") {
@@ -211,6 +213,10 @@ const ExpertiseSection = ({
       const hasUnit = !!getOfferingCostUnit(item?.cost);
       if (!hasTitle || !hasDescription || !hasUnit) {
         Alert.alert("Required Field", "Please fill in title, description, and unit before finishing this Offering.");
+        return;
+      }
+      if (countExpertiseModes(item?.profile_expertise_mode) === 0) {
+        Alert.alert("Required Field", "Please select at least one Mode (Virtual, Delivered, or In-Person) before finishing this Offering.");
         return;
       }
       if (!validateOfferingDeliveredShipping(item)) {
@@ -668,7 +674,8 @@ const ExpertiseSection = ({
     // Check if it ends with "total" (no leading /)
     if (cleaned.toLowerCase().endsWith("total")) {
       const amount = cleaned.replace(/total$/i, "").trim();
-      return { amount: amount || "Free", unit: "total" };
+      // A blank amount here is just "not entered yet" — never silently treat it as "Free".
+      return { amount, unit: "total" };
     }
 
     // Try to split by / to get unit
@@ -1129,8 +1136,8 @@ const ExpertiseSection = ({
               </View>
             </View>
             <View style={formStyles.fieldStack}>
-              <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Mode</Text>
-              <View style={formStyles.modeRow}>
+              <Text style={[formStyles.fieldLabel, darkMode && formStyles.darkFieldLabel]}>Mode *</Text>
+              <View style={[formStyles.modeRow, countExpertiseModes(item.profile_expertise_mode) === 0 && formStyles.modeRowError]}>
                 {(() => {
                   const { virtual, delivered, inPerson } = parseExpertiseModeFlags(item.profile_expertise_mode);
                   return (
