@@ -31,6 +31,12 @@ export function UnreadProvider({ children }) {
   const ablyClientRef = useRef(null);
   // All subscribed channels (personal + owned businesses)
   const ablyChannelsRef = useRef([]);
+  // The user's own personal channel — tracked separately so we can enter/leave
+  // Ably Presence on it as the app foregrounds/backgrounds (see presence effect
+  // below). The backend checks this presence before sending an SMS fallback
+  // notification (notifications_service.is_uid_present) — entering it here is
+  // what tells the backend "the app is open, don't bother texting me".
+  const personalChannelRef = useRef(null);
   // Tracks the specific conversation_uid the user is in → suppresses the unread dot
   const activeChatRef = useRef(null);
   // True whenever the user is on ChatScreen or InboxScreen → suppresses the banner
@@ -39,7 +45,14 @@ export function UnreadProvider({ children }) {
   const subscribedUidRef = useRef(null);
   const subscribedBizUidsRef = useRef([]);
 
+  const leavePresence = () => {
+    try {
+      personalChannelRef.current?.presence?.leave();
+    } catch (_) {}
+  };
+
   const teardown = () => {
+    leavePresence();
     ablyChannelsRef.current.forEach((ch) => {
       try {
         ch.unsubscribe("new-message");
@@ -48,6 +61,7 @@ export function UnreadProvider({ children }) {
     ablyChannelsRef.current = [];
     // Do not close the shared Ably client here; other screens reuse it.
     ablyClientRef.current = null;
+    personalChannelRef.current = null;
     subscribedUidRef.current = null;
     subscribedBizUidsRef.current = [];
   };
@@ -117,6 +131,15 @@ export function UnreadProvider({ children }) {
       const personalCh = client.channels.get(`/${uid}`);
       personalCh.subscribe("new-message", handler);
       ablyChannelsRef.current.push(personalCh);
+      personalChannelRef.current = personalCh;
+
+      // Enter presence immediately if the app is already in the foreground
+      // (e.g. this setup ran because of a fresh login, not an AppState change).
+      if (AppState.currentState === "active") {
+        try {
+          personalCh.presence.enter();
+        } catch (_) {}
+      }
 
       // Subscribe to each owned business channel
       bizUids.forEach((bizUid) => {
@@ -146,7 +169,18 @@ export function UnreadProvider({ children }) {
 
     // Re-check when app returns to foreground (e.g. logged in elsewhere, or storage updated) — no periodic polling
     const sub = AppState.addEventListener("change", (next) => {
-      if (next === "active" && !cancelled) trySetup();
+      if (cancelled) return;
+      if (next === "active") {
+        trySetup();
+        try {
+          personalChannelRef.current?.presence?.enter();
+        } catch (_) {}
+      } else {
+        // "background" or "inactive" — leave presence so the backend's SMS
+        // fallback (notifications_service.is_uid_present) kicks in for any
+        // event that happens while we're not in the foreground.
+        leavePresence();
+      }
     });
 
     return () => {
