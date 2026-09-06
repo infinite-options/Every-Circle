@@ -3092,9 +3092,7 @@ function resolveReturnWindowClosesLabel(row, { isReturnRow = false } = {}) {
   }
 
   const policy = { ...pickReturnPolicyFields(row), ...pickReturnPolicyFields(row?.line ?? row?.sale_line ?? null) };
-  const returnable = parseOptionalBoolean(
-    policy.returnable ?? policy.is_returnable ?? policy.bs_is_returnable ?? policy.ti_bs_is_returnable ?? policy.profile_expertise_is_returnable,
-  );
+  const returnable = parseOptionalBoolean(policy.returnable ?? policy.is_returnable ?? policy.bs_is_returnable ?? policy.ti_bs_is_returnable ?? policy.profile_expertise_is_returnable);
   const windowDaysRaw = policy.return_window_days ?? policy.bs_return_window_days ?? policy.ti_bs_return_window_days ?? policy.profile_expertise_return_window_days;
   const windowDays = windowDaysRaw == null || String(windowDaysRaw).trim() === "" ? null : parseInt(windowDaysRaw, 10);
 
@@ -11762,15 +11760,9 @@ export default function AccountScreen({ navigation, route }) {
                     <Text style={styles.errorText}>Unable to load earnings.</Text>
                   ) : (
                     <View style={styles.balanceSectionBody}>
-                      <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
-                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>
-                          {personalEarnings?.bounty_total_earned != null ? `$${Number(personalEarnings.bounty_total_earned).toFixed(2)}` : ACCOUNT_SCREEN_DISPLAY_NA}
-                        </Text>
-                      </View>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Useable</Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to Spend</Text>
                           <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on purchases</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>
@@ -11794,6 +11786,12 @@ export default function AccountScreen({ navigation, route }) {
                           <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{ACCOUNT_SCREEN_DISPLAY_NA}</Text>
                         </View>
                       ) : null}
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total Bounties Earned</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>
+                          {personalEarnings?.bounty_total_earned != null ? `$${Number(personalEarnings.bounty_total_earned).toFixed(2)}` : ACCOUNT_SCREEN_DISPLAY_NA}
+                        </Text>
+                      </View>
                     </View>
                   )}
                   <NetEarningChart />
@@ -11817,7 +11815,7 @@ export default function AccountScreen({ navigation, route }) {
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to spend</Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to Spend</Text>
                           <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on purchases</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(personalWallet.wallet_useable_balance)}</Text>
@@ -11831,7 +11829,7 @@ export default function AccountScreen({ navigation, route }) {
                       </View>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total on hand</Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total Balance</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(personalWallet.wallet_actual_balance)}</Text>
                       </View>
@@ -12062,7 +12060,7 @@ export default function AccountScreen({ navigation, route }) {
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to spend</Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to Spend</Text>
                           <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on business purchases</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(businessWallet.wallet_useable_balance)}</Text>
@@ -12076,7 +12074,7 @@ export default function AccountScreen({ navigation, route }) {
                       </View>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total on hand</Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total Balance </Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(businessWallet.wallet_actual_balance)}</Text>
                       </View>

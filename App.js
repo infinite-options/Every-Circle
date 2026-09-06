@@ -1024,6 +1024,7 @@ export default function App() {
     ShoppingCart: "cart",
     EveryCircleMap: "map",
     PrivacyPolicy: "privacy-policy",
+    TermsAndConditions: "terms-and-conditions",
     ChildSafety: "child-safety",
     DeleteAccountInfo: "delete-account",
   };

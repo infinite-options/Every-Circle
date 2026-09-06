@@ -10,6 +10,10 @@ import { publishStoredNearbyCoords } from "./nearbyLocationUpdate";
 export { SHARE_LIVE_LOCATION_UNTIL_KEY };
 
 export const SHARE_LOCATION_DURATION_HOURS = 1;
+
+export function formatShareLocationDurationLabel() {
+  return SHARE_LOCATION_DURATION_HOURS === 1 ? "1 hour" : `${SHARE_LOCATION_DURATION_HOURS} hours`;
+}
 const SHARE_LOCATION_DISTANCE_METERS = 50;
 const SHARE_LOCATION_MIN_PATCH_MINS = 2;
 

@@ -23,7 +23,6 @@ everyCircle is a technology platform and marketplace that helps people discover,
 everyCircle generally acts as a marketplace and technology provider rather than as the seller or provider of products and services listed by independent Sellers and Service Providers.
 
 everyCircle
-6123 Corte de la Reina
 San Jose, CA 95120
 United States
 
@@ -710,7 +709,6 @@ We encourage you to review this Privacy Policy periodically.
 If you have questions, concerns, or requests regarding this Privacy Policy or everyCircle's privacy practices, please contact us:
 
 everyCircle
-6123 Corte de la Reina
 San Jose, CA 95120
 United States
 

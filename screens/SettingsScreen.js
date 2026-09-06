@@ -13,10 +13,16 @@ import MiniCard from "../components/MiniCard";
 import NearbyLocationPrivacyModal from "../components/NearbyLocationPrivacyModal";
 import NearbyLocationPickerModal from "../components/NearbyLocationPickerModal";
 import { DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS, loadNearbySettings, subscribeNearbySettings, syncNearbySettingsToServer, formatNearbyPrivacySummary } from "../utils/nearbySettings";
-import { subscribeStoredNearbyCoords, formatStoredNearbyCoordsSummary, publishStoredNearbyCoords, NEARBY_LOCATION_PICKER_OPTIONS, resolveNearbyLocationOptionCoords } from "../utils/nearbyLocationUpdate";
+import {
+  subscribeStoredNearbyCoords,
+  formatStoredNearbyCoordsSummary,
+  publishStoredNearbyCoords,
+  NEARBY_LOCATION_PICKER_OPTIONS,
+  resolveNearbyLocationOptionCoords,
+} from "../utils/nearbyLocationUpdate";
 import { resetSharedAblyClient } from "../utils/ablyClient";
 import {
-  SHARE_LOCATION_DURATION_HOURS,
+  formatShareLocationDurationLabel,
   startLiveLocationSharing as startLiveLocationSharingSession,
   stopLiveLocationSharing as stopLiveLocationSharingSession,
   subscribeLiveLocationSharingStatus,
@@ -124,7 +130,7 @@ const COLORS = {
 // Audience rules gate cold messages; allow_transaction is an independent exception for
 // people linked via purchases / offering / seeking replies.
 const DEFAULT_MESSAGES_SETTINGS = {
-  receiveFrom: "all_circles", // who can message me: 'everyone' | 'all_circles' | 'specific'
+  receiveFrom: "everyone", // who can message me: 'everyone' | 'all_circles' | 'specific'
   receiveFromTypes: { friends: true, colleagues: true, family: true },
 };
 
@@ -173,7 +179,6 @@ export default function SettingsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { user, profile_uid } = route.params || {};
-  const [allowNotifications, setAllowNotifications] = useState(true);
   const [shareLocationActive, setShareLocationActive] = useState(false);
   const [shareLocationUntil, setShareLocationUntil] = useState(null); // Date | null
   const { darkMode, toggleDarkMode } = useDarkMode();
@@ -296,7 +301,7 @@ export default function SettingsScreen() {
           if (!cancelled) setIsAdmin(false);
           return;
         }
-        const row = Array.isArray(result?.result) ? result.result[0] : result?.result ?? result?.data ?? result;
+        const row = Array.isArray(result?.result) ? result.result[0] : (result?.result ?? result?.data ?? result);
         if (!cancelled) setIsAdmin(row?.user_role === "ADMIN");
       } catch (_) {
         if (!cancelled) setIsAdmin(false);
@@ -588,7 +593,7 @@ export default function SettingsScreen() {
       setHomeAddressCoords({ lat: homeLat, lng: homeLng });
     }
     setMessagesSettings({
-      receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
+      receiveFrom: result.personal_info.profile_personal_messages_receive_from || DEFAULT_MESSAGES_SETTINGS.receiveFrom,
       receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
     });
     setMessagesOff(parseProfileBoolFlag(result.personal_info.profile_personal_messages_off, false));
@@ -657,6 +662,9 @@ export default function SettingsScreen() {
       void getLiveLocationSharingStatus().then(({ active, until }) => {
         setShareLocationActive(active);
         setShareLocationUntil(until);
+      });
+      void AsyncStorage.getItem("termsAccepted").then((t) => {
+        if (t !== null) setTermsAccepted(JSON.parse(t));
       });
     }, []),
   );
@@ -1219,33 +1227,22 @@ export default function SettingsScreen() {
                 </View>
               )}
 
-              {/* Allow Notifications */}
-              <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
-                  <MaterialIcons name='notifications' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Location-Based Notifications</Text>
-                  </Text>
-                </View>
-                <SettingsBoolPills value={allowNotifications} onValueChange={setAllowNotifications} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
-              </View>
-
-              {/* Share Live Location */}
+              {/* Allow Location-Based Notifications — starts 1-hour live location sharing */}
               <View style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}>
                 <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                  <MaterialIcons name='location-on' size={20} style={styles.icon} color={shareLocationActive ? COLORS.primary : settingsMenuIconColor} />
+                  <MaterialIcons name='notifications' size={20} style={styles.icon} color={shareLocationActive ? COLORS.primary : settingsMenuIconColor} />
                   <View>
                     <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Share Live Location</Text>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Location-Based Notifications</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
                       {shareLocationActive && shareLocationUntil
                         ? `Active · expires at ${shareLocationUntil.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                        : `Shares for ${SHARE_LOCATION_DURATION_HOURS}h`}
+                        : `Location currently not shared`}
                     </Text>
                   </View>
                 </View>
-                <SettingsBoolPills value={shareLocationActive} onValueChange={handleShareLocationToggle} leftLabel='Off' rightLabel='On' darkMode={darkMode} />
+                <SettingsBoolPills value={shareLocationActive} onValueChange={handleShareLocationToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
               </View>
 
               {/* Location Privacy — opens modal */}
@@ -2194,9 +2191,7 @@ export default function SettingsScreen() {
             <View style={styles.messagesPrivacyToggleRow}>
               <View style={styles.messagesPrivacyToggleLabelWrap}>
                 <Text style={[styles.nearbyPrivacyGroupLabel, styles.messagesPrivacyToggleLabel, darkMode && styles.darkItemText]}>Allow Messages About Purchases, Offerings & Seeking</Text>
-                <Text style={[styles.messagesPrivacyToggleHint, darkMode && styles.darkNearbySubText]}>
-                  People you have an order or reply relationship with can still contact you about it.
-                </Text>
+                <Text style={[styles.messagesPrivacyToggleHint, darkMode && styles.darkNearbySubText]}>People you have an order or reply relationship with can still contact you about it.</Text>
               </View>
               <SettingsBoolPills value={messagesAllowTransaction} onValueChange={toggleMessagesAllowTransaction} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
             </View>
@@ -2322,7 +2317,7 @@ export default function SettingsScreen() {
             <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
             <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Share Live Location</Text>
             <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>
-              Turning this on will share your live location with your circles for the next {SHARE_LOCATION_DURATION_HOURS} hours. You can turn it off anytime here in Settings.
+              Turning this on will share your live location with your circles for the next {formatShareLocationDurationLabel()}. You can turn it off anytime here in Settings.
             </Text>
             <View style={styles.warningButtonContainer}>
               <TouchableOpacity onPress={cancelShareLocation} style={[styles.warningButton, styles.cancelButton]}>

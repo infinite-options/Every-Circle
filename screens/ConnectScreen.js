@@ -560,6 +560,11 @@ function formatAsyncStorageDisplayValue(raw) {
 }
 
 const NEARBY_LOCATION_EXPIRED_MSG = "Your location has expired. Use the menu above to update your nearby location.";
+const EXCHANGE_CONTACT_INFO_STORAGE_KEY = "exchange_contact_info_enabled";
+
+function isExchangeContactInfoEnabled(storedValue) {
+  return storedValue !== "false";
+}
 
 const ConnectScreen = ({ navigation }) => {
   const route = useRoute();
@@ -594,8 +599,8 @@ const ConnectScreen = ({ navigation }) => {
   const ablyAnyMessageHandlerRef = useRef(null);
   const ablyNetworkChannelRef = useRef(null);
   const ablyStateSyncCleanupRef = useRef(null);
-  const [formSwitchEnabled, setFormSwitchEnabled] = useState(false); // Form Switch: show form when others scan your QR code
-  const formSwitchEnabledRef = React.useRef(false); // Ref to track current value for Ably callback
+  const [formSwitchEnabled, setFormSwitchEnabled] = useState(true); // Exchange Contact Info: on by default when others scan your QR code
+  const formSwitchEnabledRef = React.useRef(true); // Ref to track current value for Ably callback
   const [showDebugBlocks, setShowDebugBlocks] = useState(false); // Toggle visibility of QR Code Contains and Ably Messages Received blocks
   const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false); // Settings → Debug Mode (requires SHOW_NETWORK_DEBUG_UI)
   const [showAsyncStorage, setShowAsyncStorage] = useState(false);
@@ -1070,14 +1075,15 @@ const ConnectScreen = ({ navigation }) => {
           }
         }
 
-        // Load Form Switch setting
-        const formSwitchSetting = await AsyncStorage.getItem("form_switch_enabled");
-        if (formSwitchSetting !== null) {
-          const isEnabled = formSwitchSetting === "true";
-          setFormSwitchEnabled(isEnabled);
-          formSwitchEnabledRef.current = isEnabled; // Update ref
-          console.log("📋 Loaded form_switch_enabled from AsyncStorage:", isEnabled);
+        // Exchange Contact Info: on unless the user has explicitly turned it off
+        const exchangeContactSetting = await AsyncStorage.getItem(EXCHANGE_CONTACT_INFO_STORAGE_KEY);
+        const isEnabled = isExchangeContactInfoEnabled(exchangeContactSetting);
+        setFormSwitchEnabled(isEnabled);
+        formSwitchEnabledRef.current = isEnabled;
+        if (exchangeContactSetting === null) {
+          await AsyncStorage.setItem(EXCHANGE_CONTACT_INFO_STORAGE_KEY, "true");
         }
+        console.log("📋 Loaded exchange_contact_info_enabled from AsyncStorage:", isEnabled, "stored:", exchangeContactSetting);
       } catch (e) {
         setStorageData([["error", e.message]]);
       }
@@ -2669,7 +2675,7 @@ const ConnectScreen = ({ navigation }) => {
                           setFormSwitchEnabled(value);
                           formSwitchEnabledRef.current = value; // Update ref
                           // Persist the setting
-                          await AsyncStorage.setItem("form_switch_enabled", value ? "true" : "false");
+                          await AsyncStorage.setItem(EXCHANGE_CONTACT_INFO_STORAGE_KEY, value ? "true" : "false");
                           console.log("🔵 ConnectScreen - Form Switch set to:", value);
                           // Update QR code with new setting
                           if (profileUid) {

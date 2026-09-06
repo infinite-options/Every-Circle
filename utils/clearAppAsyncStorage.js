@@ -41,6 +41,7 @@ const SESSION_EXACT_KEYS = new Set([
   "referral_uid",
   "referral_email",
   "form_switch_enabled",
+  "exchange_contact_info_enabled",
   "nearby_share_settings",
   "nearby_ignored_uids",
 ]);

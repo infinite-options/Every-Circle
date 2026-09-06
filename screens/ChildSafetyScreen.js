@@ -9,17 +9,17 @@ const CHILD_SAFETY_POLICY_TEXT = `Last updated: September 3, 2026
 
 1. Our Commitment to Child Safety
 
-EveryCircle is committed to maintaining a safe environment for its users and has a zero-tolerance policy toward child sexual abuse and exploitation (CSAE).
+everyCircle is committed to maintaining a safe environment for its users and has a zero-tolerance policy toward child sexual abuse and exploitation (CSAE).
 
-This Child Safety & CSAE Policy applies to the EveryCircle application, website, services, and content and interactions made available through EveryCircle.
+This Child Safety & CSAE Policy applies to the everyCircle application, website, services, and content and interactions made available through everyCircle.
 
-EveryCircle strictly prohibits any content, conduct, or activity that sexually exploits, abuses, or endangers children.
+everyCircle strictly prohibits any content, conduct, or activity that sexually exploits, abuses, or endangers children.
 
-EveryCircle will take appropriate action when it becomes aware of suspected child sexual abuse, exploitation, or child sexual abuse material (CSAM), consistent with applicable law and this policy.
+everyCircle will take appropriate action when it becomes aware of suspected child sexual abuse, exploitation, or child sexual abuse material (CSAM), consistent with applicable law and this policy.
 
 2. Prohibited Child Sexual Abuse and Exploitation
 
-Users may not use EveryCircle to:
+Users may not use everyCircle to:
 • Sexually exploit or abuse a child.
 • Groom, solicit, manipulate, or otherwise prepare a child for sexual exploitation or abuse.
 • Engage in or facilitate sexual activity involving a child.
@@ -28,19 +28,19 @@ Users may not use EveryCircle to:
 • Engage in sextortion or threaten a child using actual or alleged intimate images.
 • Advertise, solicit, arrange, or facilitate the commercial sexual exploitation or trafficking of a child.
 • Facilitate contact between an adult and a child for the purpose of sexual exploitation or abuse.
-• Use EveryCircle to obtain sexual images or other sexually exploitative material involving a child.
-• Attempt to circumvent EveryCircle's safety or moderation systems to facilitate CSAE.
+• Use everyCircle to obtain sexual images or other sexually exploitative material involving a child.
+• Attempt to circumvent everyCircle's safety or moderation systems to facilitate CSAE.
 • Encourage, promote, assist, or provide instructions for any prohibited conduct involving the sexual abuse or exploitation of children.
 
-These prohibitions apply to all content and activity supported by EveryCircle, including user profiles, photographs, videos, recommendations, offerings, listings, reviews, comments, messages, and other user-generated content.
+These prohibitions apply to all content and activity supported by everyCircle, including user profiles, photographs, videos, recommendations, offerings, listings, reviews, comments, messages, and other user-generated content.
 
 3. Child Sexual Abuse Material (CSAM)
 
-EveryCircle does not permit the creation, upload, storage, sharing, distribution, solicitation, or promotion of CSAM.
+everyCircle does not permit the creation, upload, storage, sharing, distribution, solicitation, or promotion of CSAM.
 
-Users must not upload CSAM to EveryCircle, including for the purpose of reporting it. Suspected CSAM should instead be reported through EveryCircle's reporting mechanisms or by contacting EveryCircle Support.
+Users must not upload CSAM to everyCircle, including for the purpose of reporting it. Suspected CSAM should instead be reported through everyCircle's reporting mechanisms or by contacting everyCircle Support.
 
-If EveryCircle becomes aware of suspected CSAM or other content involving the sexual exploitation or abuse of a child, EveryCircle may take appropriate action, including:
+If everyCircle becomes aware of suspected CSAM or other content involving the sexual exploitation or abuse of a child, everyCircle may take appropriate action, including:
 • Removing or restricting access to the reported content.
 • Restricting, suspending, or terminating accounts involved in prohibited activity.
 • Preserving relevant information when appropriate and legally permitted.
@@ -49,28 +49,28 @@ If EveryCircle becomes aware of suspected CSAM or other content involving the se
 
 4. Community Reporting and Safety Measures
 
-EveryCircle provides users with the ability to flag or report a business, user profile, or offering that they believe violates EveryCircle's Terms of Service, Community Guidelines, Child Safety & CSAE Policy, or other applicable policies.
+everyCircle provides users with the ability to flag or report a business, user profile, or offering that they believe violates everyCircle's Terms of Service, Community Guidelines, Child Safety & CSAE Policy, or other applicable policies.
 
-EveryCircle uses community reporting as one part of its overall safety and moderation system.
+everyCircle uses community reporting as one part of its overall safety and moderation system.
 
 Automatic Temporary Removal
 
-When a business, profile, or offering receives three or more independent user flags, EveryCircle automatically removes that business, profile, or offering from public view and places it into an internal review process.
+When a business, profile, or offering receives three or more independent user flags, everyCircle automatically removes that business, profile, or offering from public view and places it into an internal review process.
 
 The reported business, profile, or offering remains unavailable to users while the internal review is conducted.
 
-Following review, EveryCircle may:
+Following review, everyCircle may:
 • Restore the business, profile, or offering if the reports are determined to be unfounded.
 • Remove or restrict the reported content.
 • Suspend or terminate the associated user account.
-• Take additional enforcement action under EveryCircle's policies.
+• Take additional enforcement action under everyCircle's policies.
 • Report suspected illegal activity to appropriate authorities when required or appropriate.
 
-An automatic removal following three flags is a precautionary safety measure and does not, by itself, constitute a finding that the reported content or conduct violated the law or EveryCircle's policies.
+An automatic removal following three flags is a precautionary safety measure and does not, by itself, constitute a finding that the reported content or conduct violated the law or everyCircle's policies.
 
 Immediate Safety Action
 
-EveryCircle may take immediate action without waiting for three flags when it identifies content or conduct presenting a serious or urgent safety concern.
+everyCircle may take immediate action without waiting for three flags when it identifies content or conduct presenting a serious or urgent safety concern.
 
 This may include suspected:
 • Child sexual abuse or exploitation.
@@ -81,26 +81,26 @@ This may include suspected:
 • Credible threats of violence or other serious harm.
 • Other potentially illegal or dangerous activity.
 
-EveryCircle may immediately restrict access to the relevant content, business, profile, offering, or account and conduct an internal review.
+everyCircle may immediately restrict access to the relevant content, business, profile, offering, or account and conduct an internal review.
 
 5. Reporting Child Safety Concerns
 
-Users should report suspected CSAE, CSAM, grooming, sexual exploitation of a child, or other child-safety concerns through the reporting functionality available within the EveryCircle application.
+Users should report suspected CSAE, CSAM, grooming, sexual exploitation of a child, or other child-safety concerns through the reporting functionality available within the everyCircle application.
 
 Users may also contact:
 
-EveryCircle Support
+everyCircle Support
 Email: support@everycircle.com
 
-Reports should include sufficient information for EveryCircle to identify and investigate the reported account, content, business, profile, offering, or conduct.
+Reports should include sufficient information for everyCircle to identify and investigate the reported account, content, business, profile, offering, or conduct.
 
-EveryCircle takes reports involving the safety of children seriously and will review reports and take appropriate action consistent with this policy, applicable law, and the circumstances of the report.
+everyCircle takes reports involving the safety of children seriously and will review reports and take appropriate action consistent with this policy, applicable law, and the circumstances of the report.
 
-Users should not upload or send suspected CSAM to EveryCircle for the purpose of making a report.
+Users should not upload or send suspected CSAM to everyCircle for the purpose of making a report.
 
 6. Enforcement
 
-EveryCircle may take action against accounts, content, businesses, profiles, offerings, or other activity that violates this policy.
+everyCircle may take action against accounts, content, businesses, profiles, offerings, or other activity that violates this policy.
 
 Depending on the circumstances, enforcement may include:
 • Removal of content.
@@ -108,79 +108,79 @@ Depending on the circumstances, enforcement may include:
 • Restriction of content visibility.
 • Suspension of an account.
 • Permanent termination of an account.
-• Restriction or termination of access to EveryCircle services.
+• Restriction or termination of access to everyCircle services.
 • Preservation of information when appropriate and legally permitted.
 • Reporting to appropriate authorities or child-safety organizations.
 
-EveryCircle may take action based on user reports, internal investigations, automated or other safety measures, information provided by users, or information received from law enforcement or other authorized organizations.
+everyCircle may take action based on user reports, internal investigations, automated or other safety measures, information provided by users, or information received from law enforcement or other authorized organizations.
 
 7. Cooperation With Authorities
 
-EveryCircle will comply with applicable child-safety laws and legal requirements.
+everyCircle will comply with applicable child-safety laws and legal requirements.
 
-Where required by applicable law, EveryCircle will report confirmed or suspected CSAM or child sexual exploitation to the appropriate authorities or designated reporting organizations.
+Where required by applicable law, everyCircle will report confirmed or suspected CSAM or child sexual exploitation to the appropriate authorities or designated reporting organizations.
 
 For users and activity in the United States, this may include reporting to the National Center for Missing & Exploited Children (NCMEC) when required by applicable law.
 
-EveryCircle may also cooperate with law enforcement and other authorized authorities investigating child sexual abuse or exploitation.
+everyCircle may also cooperate with law enforcement and other authorized authorities investigating child sexual abuse or exploitation.
 
 8. Child Safety Point of Contact
 
-EveryCircle maintains a designated point of contact for child-safety matters.
+everyCircle maintains a designated point of contact for child-safety matters.
 
 The child-safety point of contact is responsible for receiving and responding to child-safety concerns and coordinating appropriate enforcement and reporting procedures.
 
-Child Safety Contact: EveryCircle Support
+Child Safety Contact: everyCircle Support
 Email: support@everycircle.com
 
-This contact may also receive communications from Google Play or other authorized parties concerning potential child sexual abuse and exploitation on the EveryCircle platform.
+This contact may also receive communications from Google Play or other authorized parties concerning potential child sexual abuse and exploitation on the everyCircle platform.
 
 9. User-Generated Content
 
-EveryCircle contains user-generated content, which may include profiles, recommendations, photographs, reviews, offerings, listings, comments, messages, and other content submitted by users.
+everyCircle contains user-generated content, which may include profiles, recommendations, photographs, reviews, offerings, listings, comments, messages, and other content submitted by users.
 
-Users are responsible for complying with EveryCircle's Terms of Service, Community Guidelines, and this Child Safety & CSAE Policy.
+Users are responsible for complying with everyCircle's Terms of Service, Community Guidelines, and this Child Safety & CSAE Policy.
 
-EveryCircle prohibits user-generated content or behavior that facilitates, promotes, depicts, solicits, or encourages the sexual abuse or exploitation of children.
+everyCircle prohibits user-generated content or behavior that facilitates, promotes, depicts, solicits, or encourages the sexual abuse or exploitation of children.
 
-EveryCircle will take appropriate action when it becomes aware of prohibited content or conduct.
+everyCircle will take appropriate action when it becomes aware of prohibited content or conduct.
 
 10. Protection of Children
 
-EveryCircle does not permit the platform to be used to facilitate sexual contact, grooming, sexual exploitation, trafficking, or abuse of children.
+everyCircle does not permit the platform to be used to facilitate sexual contact, grooming, sexual exploitation, trafficking, or abuse of children.
 
-Users must not use EveryCircle to establish or maintain relationships with children for the purpose of sexual exploitation, abuse, grooming, sextortion, trafficking, or obtaining sexual imagery.
+Users must not use everyCircle to establish or maintain relationships with children for the purpose of sexual exploitation, abuse, grooming, sextortion, trafficking, or obtaining sexual imagery.
 
-Any attempt to use EveryCircle for these purposes may result in immediate account termination and, where appropriate or legally required, reporting to authorities.
+Any attempt to use everyCircle for these purposes may result in immediate account termination and, where appropriate or legally required, reporting to authorities.
 
 11. No Retaliation for Good-Faith Reports
 
-EveryCircle prohibits retaliation against users who make good-faith reports concerning child safety, CSAE, or CSAM.
+everyCircle prohibits retaliation against users who make good-faith reports concerning child safety, CSAE, or CSAM.
 
-False reports or abuse of EveryCircle's reporting system may violate EveryCircle's Terms of Service or Community Guidelines and may result in enforcement action.
+False reports or abuse of everyCircle's reporting system may violate everyCircle's Terms of Service or Community Guidelines and may result in enforcement action.
 
-The three-flag automatic removal mechanism is intended as a safety measure and does not prevent EveryCircle from investigating reports individually or taking action based on the circumstances of a particular report.
+The three-flag automatic removal mechanism is intended as a safety measure and does not prevent everyCircle from investigating reports individually or taking action based on the circumstances of a particular report.
 
 12. Privacy and Information Handling
 
-EveryCircle handles information associated with reports, investigations, and enforcement actions in accordance with its Privacy Policy and applicable law.
+everyCircle handles information associated with reports, investigations, and enforcement actions in accordance with its Privacy Policy and applicable law.
 
-EveryCircle may retain and disclose information relating to suspected CSAE or CSAM when reasonably necessary to investigate violations, protect users, comply with legal obligations, or respond to lawful requests from authorities.
+everyCircle may retain and disclose information relating to suspected CSAE or CSAM when reasonably necessary to investigate violations, protect users, comply with legal obligations, or respond to lawful requests from authorities.
 
 13. Updates to This Policy
 
-EveryCircle may update this Child Safety & CSAE Policy from time to time to reflect changes in applicable law, Google Play requirements, safety practices, or EveryCircle's services.
+everyCircle may update this Child Safety & CSAE Policy from time to time to reflect changes in applicable law, Google Play requirements, safety practices, or everyCircle's services.
 
-The current version of this policy will remain publicly accessible on the EveryCircle website.
+The current version of this policy will remain publicly accessible on the everyCircle website.
 
 14. Contact
 
 Questions or concerns regarding child safety, CSAE, CSAM, or this policy may be directed to:
 
-EveryCircle Support
+everyCircle Support
 support@everycircle.com
 
-EveryCircle is committed to maintaining a platform that does not facilitate child sexual abuse or exploitation and to taking appropriate action when such activity is identified.`;
+everyCircle is committed to maintaining a platform that does not facilitate child sexual abuse or exploitation and to taking appropriate action when such activity is identified.`;
 
 const NUMBERED_HEADING_PATTERN = /^\d+(?:\.\d+)?\. .+$/;
 const SUBHEADING_PATTERN = /^[A-Z][A-Za-z0-9 &'/-]+$/;
@@ -217,7 +217,7 @@ export default function ChildSafetyScreen() {
     <SafeAreaView style={[styles.container, darkMode && styles.darkContainer]}>
       <AppHeader title='CHILD SAFETY' backgroundColor='#AF52DE' onBackPress={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.title, darkMode && styles.darkTitle]}>Every Circle Child Safety & Child Sexual Abuse and Exploitation (CSAE) Policy</Text>
+        <Text style={[styles.title, darkMode && styles.darkTitle]}>everyCircle Child Safety & Child Sexual Abuse and Exploitation (CSAE) Policy</Text>
         {renderPolicyBlocks(CHILD_SAFETY_POLICY_TEXT, darkMode)}
 
         <TouchableOpacity style={[styles.closeButton, darkMode && styles.darkCloseButton]} onPress={() => navigation.goBack()}>
