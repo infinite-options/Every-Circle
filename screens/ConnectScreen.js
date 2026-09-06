@@ -1975,25 +1975,30 @@ const ConnectScreen = ({ navigation }) => {
     data.forEach((n) => allUids.add(n.network_profile_personal_uid));
 
     data.forEach((n) => {
+      const nodeUid = n.network_profile_personal_uid;
+      if (nodeUid && youId && String(nodeUid) === String(youId)) {
+        return;
+      }
       const isDeleted = isProfileDeleted(n) || n.__mc?.isDeleted;
       const name = isDeleted ? DELETED_USER_LABEL : n.__mc?.personal_info?.profile_personal_first_name || n.__mc?.firstName || "";
       const last = isDeleted ? "" : n.__mc?.personal_info?.profile_personal_last_name || n.__mc?.lastName || "";
-      const label = isDeleted ? DELETED_USER_LABEL : [name, last].filter(Boolean).join(" ") || (n.network_profile_personal_uid ? n.network_profile_personal_uid.slice(-3) : "???");
+      const label = isDeleted ? DELETED_USER_LABEL : [name, last].filter(Boolean).join(" ") || (nodeUid ? String(nodeUid).slice(-3) : "???");
 
       const img = isDeleted ? "" : n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
 
       const hasImg = img && String(img).trim() !== "";
-      const isZeroNode = n.network_profile_personal_uid === EVERY_CIRCLE_ZERO_NODE_UID;
+      const isZeroNode = nodeUid === EVERY_CIRCLE_ZERO_NODE_UID;
+      const useImage = hasImg && !isDeleted;
 
       nodes.push({
-        id: n.network_profile_personal_uid,
+        id: nodeUid,
         label,
-        shape: hasImg && !isZeroNode && !isDeleted ? "circularImage" : "dot",
-        image: hasImg && !isZeroNode && !isDeleted ? img : undefined,
+        shape: useImage ? "circularImage" : "dot",
+        image: useImage ? img : undefined,
         size: isZeroNode ? userNodeSize : isDeleted ? 10 : hasImg ? 18 : 10,
         borderWidth: isZeroNode ? userNodeBorderWidth : undefined,
         color: isZeroNode
-          ? { border: NETWORK_GRAPH_PURPLE, background: NETWORK_GRAPH_PURPLE_FILL_50 }
+          ? { border: NETWORK_GRAPH_PURPLE, background: useImage ? "#ffffff" : NETWORK_GRAPH_PURPLE_FILL_50 }
           : isDeleted
             ? { border: "#bbb", background: "#ccc" }
             : hasImg
@@ -2009,6 +2014,9 @@ const ConnectScreen = ({ navigation }) => {
     data.forEach((n) => {
       const deg = Number(n.degree) || 1;
       const nodeUid = n.network_profile_personal_uid;
+      if (nodeUid && youId && String(nodeUid) === String(youId)) {
+        return;
+      }
       console.log(`\n  Processing node ${nodeUid} (degree ${deg}):`, {
         profile_personal_referred_by: n.profile_personal_referred_by,
         profile_personal_uid: n.profile_personal_uid,
@@ -2114,7 +2122,7 @@ const ConnectScreen = ({ navigation }) => {
         }
       }
 
-      if (parent) {
+      if (parent && parent !== nodeUid) {
         console.log(`  ✅ Edge: ${parent} -> ${nodeUid} (degree ${deg})`);
         edges.push({
           from: parent,
@@ -2171,6 +2179,9 @@ const ConnectScreen = ({ navigation }) => {
         layout: {
           improvedLayout: true,
           randomSeed: 58  // for consistent layout
+        },
+        nodes: {
+          shapeProperties: { useBorderWithImage: true }
         },
         physics: {
           enabled: true,
