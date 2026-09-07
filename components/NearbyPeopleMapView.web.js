@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from "react";
-import { StyleSheet, View } from "react-native";
-import { loadGoogleMapsJs } from "../utils/googleMapsLoader";
+import React, { useEffect, useRef, useState } from "react";
+import { StyleSheet, View, Text } from "react-native";
+import { loadGoogleMapsJs, subscribeGoogleMapsAuthFailure } from "../utils/googleMapsLoader";
 import { DEFAULT_MAP_ZOOM } from "../utils/mapDefaults";
 import { getMapStylesForEveryCircleOnly } from "../utils/mapStyles";
 
@@ -95,6 +95,22 @@ function addPeopleMarkers(mapsApi, map, people, infoWindowRef, onPersonPressRef,
   });
 }
 
+const MAP_HOST_DOM_STYLE = {
+  width: "100%",
+  height: 220,
+  minHeight: 220,
+  borderRadius: 10,
+  overflow: "hidden",
+  backgroundColor: "#e8eaed",
+};
+
+function toLatLng(coords) {
+  const lat = Number(coords?.lat);
+  const lng = Number(coords?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
 export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPress, radiusMiles }) {
   const hostRef = useRef(null);
   const mapRef = useRef(null);
@@ -105,6 +121,7 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
   const mapCenterRef = useRef(mapCenter);
   const peopleRef = useRef(people);
   const radiusMilesRef = useRef(radiusMiles);
+  const [mapError, setMapError] = useState(null);
 
   useEffect(() => {
     onPersonPressRef.current = onPersonPress;
@@ -123,17 +140,35 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
   }, [radiusMiles]);
 
   useEffect(() => {
-    if (!mapCenter) return;
+    return subscribeGoogleMapsAuthFailure((message) => {
+      setMapError(message);
+    });
+  }, []);
+
+  useEffect(() => {
+    const center = toLatLng(mapCenter);
+    if (!center) return undefined;
 
     let cancelled = false;
 
-    async function initMap() {
-      if (!hostRef.current) return;
+    async function initMap(attempt = 0) {
+      const host = hostRef.current;
+      if (!host) {
+        if (!cancelled && attempt < 20) {
+          requestAnimationFrame(() => {
+            void initMap(attempt + 1);
+          });
+        }
+        return;
+      }
+
+      host.style.width = "100%";
+      host.style.height = "220px";
+      host.style.minHeight = "220px";
 
       const mapsApi = await loadGoogleMapsJs();
       if (cancelled || !hostRef.current) return;
 
-      const center = { lat: mapCenter.lat, lng: mapCenter.lng };
       const map = new mapsApi.Map(hostRef.current, {
         center,
         zoom: DEFAULT_MAP_ZOOM,
@@ -147,6 +182,7 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
 
       mapRef.current = map;
       infoWindowRef.current = new mapsApi.InfoWindow();
+      setMapError(null);
 
       homeMarkerRef.current = new mapsApi.Marker({
         position: center,
@@ -165,10 +201,20 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
 
       addPeopleMarkers(mapsApi, map, peopleRef.current, infoWindowRef, onPersonPressRef, markersRef);
       fitMapToPeople(mapsApi, map, mapCenterRef.current, peopleRef.current, radiusMilesRef.current);
+
+      const reveal = () => {
+        if (cancelled || !mapRef.current) return;
+        mapsApi.event.trigger(map, "resize");
+        const latest = toLatLng(mapCenterRef.current) || center;
+        map.setCenter(latest);
+      };
+      mapsApi.event.addListenerOnce(map, "idle", reveal);
+      requestAnimationFrame(reveal);
     }
 
     initMap().catch((err) => {
       console.error("NearbyPeopleMapView web init failed:", err);
+      if (!cancelled) setMapError("Map couldn't load. Check your connection and try again.");
     });
 
     return () => {
@@ -185,9 +231,9 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
   }, []);
 
   useEffect(() => {
-    if (!mapRef.current || !mapCenter) return;
+    const center = toLatLng(mapCenter);
+    if (!mapRef.current || !center) return;
 
-    const center = { lat: mapCenter.lat, lng: mapCenter.lng };
     if (homeMarkerRef.current) {
       homeMarkerRef.current.setPosition(center);
     }
@@ -195,19 +241,25 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
     loadGoogleMapsJs()
       .then((mapsApi) => {
         if (!mapRef.current) return;
+        mapsApi.event.trigger(mapRef.current, "resize");
         addPeopleMarkers(mapsApi, mapRef.current, people, infoWindowRef, onPersonPressRef, markersRef);
-        fitMapToPeople(mapsApi, mapRef.current, mapCenter, people, radiusMiles);
+        fitMapToPeople(mapsApi, mapRef.current, center, people, radiusMiles);
       })
       .catch((err) => {
         console.error("NearbyPeopleMapView web marker update failed:", err);
       });
   }, [mapCenter, people, radiusMiles]);
 
-  if (!mapCenter) return null;
+  if (!toLatLng(mapCenter)) return null;
 
   return (
     <View style={styles.container}>
-      <div ref={hostRef} style={styles.mapHost} />
+      <div ref={hostRef} style={MAP_HOST_DOM_STYLE} />
+      {mapError ? (
+        <View style={styles.mapError}>
+          <Text style={styles.mapErrorText}>{mapError}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -215,12 +267,23 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
 const styles = StyleSheet.create({
   container: {
     width: "100%",
-    marginBottom: 12,
-  },
-  mapHost: {
-    width: "100%",
     height: 220,
+    marginBottom: 12,
     borderRadius: 10,
     overflow: "hidden",
+    backgroundColor: "#e8eaed",
+  },
+  mapError: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    backgroundColor: "#e8eaed",
+  },
+  mapErrorText: {
+    fontSize: 13,
+    color: "#555",
+    textAlign: "center",
   },
 });
+

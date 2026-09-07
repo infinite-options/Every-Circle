@@ -1,7 +1,6 @@
 //SettingsScreen.js
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, TextInput } from "react-native";
-import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { useTabRefresh } from "../hooks/useTabRefresh";
@@ -11,12 +10,8 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyLocationPrivacyModal from "../components/NearbyLocationPrivacyModal";
-import NearbyLocationPickerModal from "../components/NearbyLocationPickerModal";
 import { DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS, loadNearbySettings, subscribeNearbySettings, syncNearbySettingsToServer, formatNearbyPrivacySummary } from "../utils/nearbySettings";
 import {
-  subscribeStoredNearbyCoords,
-  formatStoredNearbyCoordsSummary,
-  publishStoredNearbyCoords,
   NEARBY_LOCATION_PICKER_OPTIONS,
   resolveNearbyLocationOptionCoords,
 } from "../utils/nearbyLocationUpdate";
@@ -200,10 +195,6 @@ export default function SettingsScreen() {
   const [privacyModeEnabled, setPrivacyModeEnabled] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
-
-  // Nearby POC state
-  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
-  const [storedCoords, setStoredCoords] = useState({ lat: null, lng: null, updatedAt: null });
 
   // Home address coordinates (profile_personal_latitude / profile_personal_longitude)
   const [homeAddressPickerVisible, setHomeAddressPickerVisible] = useState(false);
@@ -489,7 +480,6 @@ export default function SettingsScreen() {
       // Reset dark mode to light mode when logging out
       toggleDarkMode(false);
       stopLiveLocationSharing();
-      setStoredCoords({ lat: null, lng: null, updatedAt: null });
       // console.log("SettingsScreen.js - Dark mode reset to light");
 
       // Navigate to Home screen using CommonActions.reset for reliable navigation
@@ -581,12 +571,6 @@ export default function SettingsScreen() {
       locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
       imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
     });
-    const nearbyLat = parseCoordinateValue(result.personal_info.profile_personal_nearby_lat);
-    const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
-    const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
-    if (nearbyLat != null && nearbyLng != null) {
-      setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
-    }
     const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
     const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
     if (homeLat != null && homeLng != null) {
@@ -642,10 +626,6 @@ export default function SettingsScreen() {
     });
   }, []);
 
-  useEffect(() => {
-    return subscribeStoredNearbyCoords(setStoredCoords);
-  }, []);
-
   // Keep Settings UI in sync with the shared live-location session.
   useEffect(() => {
     const unsubStatus = subscribeLiveLocationSharingStatus(({ active, until }) => {
@@ -689,8 +669,8 @@ export default function SettingsScreen() {
   };
 
   const confirmShareLocation = async () => {
-    setShareLocationWarningVisible(false);
     await startLiveLocationSharing();
+    setShareLocationWarningVisible(false);
   };
 
   const cancelShareLocation = () => {
@@ -704,8 +684,7 @@ export default function SettingsScreen() {
       const action = route.params?.locationAction;
       if (!action) return;
       setShowSettings(true);
-      if (action === "updateLocation") setLocationPickerVisible(true);
-      else if (action === "locationPrivacy") setNearbyPrivacyModalVisible(true);
+      if (action === "locationPrivacy") setNearbyPrivacyModalVisible(true);
       navigation.setParams({ locationAction: undefined });
     }, [route.params?.locationAction, navigation]),
   );
@@ -1254,25 +1233,6 @@ export default function SettingsScreen() {
                       <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Location Privacy</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>{formatNearbyPrivacySummary(nearbySettings)}</Text>
-                  </View>
-                </View>
-                <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setLocationPickerVisible(true)} activeOpacity={0.8}>
-                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                  <MaterialIcons name='my-location' size={20} style={styles.icon} color={COLORS.primary} />
-                  <View>
-                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Update Nearby Location</Text>
-                    </Text>
-                    <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                      {(() => {
-                        const lat = parseCoordinateValue(storedCoords.lat);
-                        const lng = parseCoordinateValue(storedCoords.lng);
-                        return lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "No location set";
-                      })()}
-                    </Text>
                   </View>
                 </View>
                 <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
@@ -1924,9 +1884,6 @@ export default function SettingsScreen() {
           )}
         </ScrollView>
       </SafeAreaView>
-
-      {/* Nearby location picker modal */}
-      <NearbyLocationPickerModal visible={locationPickerVisible} onClose={() => setLocationPickerVisible(false)} darkMode={darkMode} />
 
       {/* Offering moderation review modal */}
       <Modal visible={offeringReviewModalVisible} transparent animationType='slide' onRequestClose={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}>

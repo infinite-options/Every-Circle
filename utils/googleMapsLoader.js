@@ -2,6 +2,30 @@ import config from "../config";
 
 const MAPS_CALLBACK_NAME = "__everyCircleMapsReady";
 let mapsApiPromise = null;
+const authFailureListeners = new Set();
+
+function mapsAuthFailureMessage() {
+  const origin = typeof window !== "undefined" ? window.location.origin : "this origin";
+  return `Google Maps blocked ${origin}. In Google Cloud Console → Credentials, open the web Maps API key and add this HTTP referrer: ${origin}/*`;
+}
+
+if (typeof window !== "undefined") {
+  window.gm_authFailure = () => {
+    const message = mapsAuthFailureMessage();
+    console.error("[Google Maps]", message);
+    authFailureListeners.forEach((listener) => {
+      try {
+        listener(message);
+      } catch (_) {}
+    });
+  };
+}
+
+/** Called when the Maps JS key is rejected (invalid key or HTTP referrer not allowed). */
+export function subscribeGoogleMapsAuthFailure(listener) {
+  authFailureListeners.add(listener);
+  return () => authFailureListeners.delete(listener);
+}
 
 function buildMapsApi() {
   const maps = window.google?.maps;
