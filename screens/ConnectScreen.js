@@ -3126,7 +3126,9 @@ const ConnectScreen = ({ navigation }) => {
                               }
                             }}
                             javaScriptEnabled
-                            domStorageEnabled
+                            incognito
+                            sharedCookiesEnabled={false}
+                            thirdPartyCookiesEnabled={false}
                             automaticallyAdjustContentInsets
                             allowsInlineMediaPlayback
                             androidLayerType={Platform.OS === "android" ? "hardware" : "none"}

@@ -15,10 +15,14 @@ import {
 /**
  * CookieConsentBanner
  *
- * Persistent footer-style bar shown app-wide (mounted once in App.js), but only once someone
- * is logged in — never on Home/Login/SignUp before there's a profile to tie consent to. Once
- * logged in, it only hides after the profile has explicitly accepted — i.e. the server's
- * users_cookies_date is set AND user_cookies is "true" (mirrored locally in `allowCookies`).
+ * Persistent footer-style bar shown on web only (mounted from App.js when
+ * SHOW_COOKIE_CONSENT_UI is true). Native iOS/Android never mount this, because
+ * the apps do not collect cookies for tracking (Apple Guideline 5.1.2(i)).
+ *
+ * On web it only appears once someone is logged in — never on Home/Login/SignUp
+ * before there's a profile to tie consent to. Once logged in, it only hides after
+ * the profile has explicitly accepted — i.e. the server's users_cookies_date is set
+ * AND user_cookies is "true" (mirrored locally in `allowCookies`).
  * Unanswered (null) *or* opted-out (false) both keep it showing, so opting out doesn't
  * permanently dismiss it.
  * - "Accept Necessary Cookies" saves allowCookies = true and hides the banner.
@@ -105,7 +109,7 @@ export default function CookieConsentBanner({ navigationRef }) {
             <Text style={[styles.link, darkMode && styles.darkLink]} onPress={openPrivacyPolicy} accessibilityRole='link' accessibilityLabel='Open Privacy Policy'>
               Privacy Policy
             </Text>
-            . We never share your information with third parties. Cookies are only used to enable your user experience. To exercise other rights you may have related to cookies, see our{" "}
+            . We never share your information with third parties for advertising. Cookies on this website are only used to keep you signed in, remember preferences, and operate the site — they are not used to track you. To exercise other rights you may have related to cookies, see our{" "}
             <Text style={[styles.link, darkMode && styles.darkLink]} onPress={openPrivacyPolicy} accessibilityRole='link' accessibilityLabel='Open Privacy Policy'>
               Privacy Policy
             </Text>

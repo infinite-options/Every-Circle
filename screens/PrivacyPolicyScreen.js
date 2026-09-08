@@ -6,7 +6,7 @@ import AppHeader from "../components/AppHeader";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
 const PRIVACY_POLICY_TEXT = `Effective Date: August 18, 2026
-Last Updated: August 18, 2026
+Last Updated: September 7, 2026
 
 everyCircle ("everyCircle," "EC," "we," "us," or "our") respects your privacy.
 
@@ -220,21 +220,19 @@ If a feature requires location access, the Platform may request permission befor
 
 8. Cookies and Similar Technologies
 
-everyCircle and its service providers may use cookies, pixels, software development kits ("SDKs"), local storage, and similar technologies.
+everyCircle does not use cookies, pixels, or similar technologies to track users across other companies' apps or websites for advertising, and does not share cookie data with data brokers.
 
-These technologies may be used to:
+On the everyCircle website, we may use cookies, local storage, and similar technologies only as needed to:
 • keep you signed in;
 • remember preferences;
 • maintain security;
-• understand Platform usage;
-• analyze performance;
-• measure the effectiveness of features;
-• detect fraud;
-• improve the Platform; and
+• detect fraud; and
 
-provide relevant content or communications.
+operate the website.
 
-Additional information is provided in the everyCircle Cookie Policy.
+The everyCircle iOS app does not collect cookies for tracking purposes and does not present cookie-consent prompts. Session, preference, and account information in the iOS app is stored on the device and on everyCircle's servers solely to provide the service you requested (for example, keeping you signed in and remembering settings). Because the iOS app does not track users as Apple defines tracking, it does not use the App Tracking Transparency framework.
+
+Additional information about website cookies is provided in the everyCircle Cookie Policy.
 
 9. Information From Third Parties
 
@@ -244,11 +242,9 @@ These sources may include:
 • payment processors;
 • shipping and delivery providers;
 • authentication providers;
-• analytics providers;
 • fraud-prevention providers;
 • identity-verification providers;
 • Business partners;
-• advertising or marketing providers, where applicable;
 • publicly available sources; and
 
 other service providers.
@@ -682,9 +678,11 @@ We encourage you to review the privacy policies of third-party services before p
 
 35. Do Not Track
 
-Some web browsers and devices provide "Do Not Track" or similar mechanisms.
+Some web browsers provide "Do Not Track" or similar mechanisms.
 
-Because there is not currently a universally accepted standard for responding to all such signals, everyCircle may not respond to every browser-based Do Not Track signal.
+The everyCircle iOS app does not track users and therefore does not use App Tracking Transparency.
+
+On the website, because there is not currently a universally accepted standard for responding to all browser-based Do Not Track signals, everyCircle may not respond to every such signal.
 
 If applicable law requires everyCircle to recognize a particular privacy preference signal, we will process that signal as required by law.
 

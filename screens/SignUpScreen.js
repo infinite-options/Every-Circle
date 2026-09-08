@@ -62,9 +62,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const oauthReferralHandledRef = useRef(false);
   const requireReferralHandledRef = useRef(false);
   const referralRequired = blockingOAuthReferral || pendingReferralCompletion;
-  /** No post-signup consent gate anymore — cookie consent is handled by the persistent
-   *  bottom banner (components/CookieConsentBanner.js), and tracking consent has been
-   *  removed entirely (Share Live Location now warns inline in Settings instead).
+  /** No post-signup consent gate anymore — website cookie consent is handled by
+   *  CookieConsentBanner (web only). Native apps do not collect cookies for tracking
+   *  and do not show cookie prompts (Apple Guideline 5.1.2(i)).
    *  Kept as a passthrough so existing call sites don't need to change. */
   const proceedAfterAccountCreation = useCallback(async (next) => {
     await next();

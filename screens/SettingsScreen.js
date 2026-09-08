@@ -29,7 +29,7 @@ import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUS
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { logoutCircleSession } from "../utils/authSession";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
-import { setAllowCookies as persistAllowCookies, subscribeAllowCookies, persistServerCookieConsentForCurrentUser } from "../utils/cookieConsent";
+import { setAllowCookies as persistAllowCookies, subscribeAllowCookies, persistServerCookieConsentForCurrentUser, SHOW_COOKIE_CONSENT_UI } from "../utils/cookieConsent";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
 import { fetchProfileModerationReviewQueue, fetchProfileModerationDetail, reviewProfileModeration } from "../utils/profileModeration";
@@ -161,10 +161,14 @@ function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMo
   return (
     <View style={styles.settingsToggleRow}>
       <TouchableOpacity onPress={() => value !== false && onValueChange(false)} style={[styles.togglePill, leftBgStyle]} accessibilityRole='button' accessibilityState={{ selected: leftOn }}>
-        <Text style={[styles.togglePillText, darkMode && !leftOn && styles.darkTogglePillText, leftTextActiveStyle]}>{leftLabel}</Text>
+        <Text style={[styles.togglePillText, darkMode && !leftOn && styles.darkTogglePillText, leftTextActiveStyle]} numberOfLines={1}>
+          {leftLabel}
+        </Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={() => value !== true && onValueChange(true)} style={[styles.togglePill, rightBgStyle]} accessibilityRole='button' accessibilityState={{ selected: rightOn }}>
-        <Text style={[styles.togglePillText, darkMode && !rightOn && styles.darkTogglePillText, rightTextActiveStyle]}>{rightLabel}</Text>
+        <Text style={[styles.togglePillText, darkMode && !rightOn && styles.darkTogglePillText, rightTextActiveStyle]} numberOfLines={1}>
+          {rightLabel}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -343,6 +347,7 @@ export default function SettingsScreen() {
   // Keep the "Allow Cookies" pill in sync if the choice is made from the bottom
   // consent banner (components/CookieConsentBanner.js) instead of this screen.
   useEffect(() => {
+    if (!SHOW_COOKIE_CONSENT_UI) return undefined;
     return subscribeAllowCookies((value) => {
       if (value !== null) setAllowCookies(value);
     });
@@ -1150,16 +1155,17 @@ export default function SettingsScreen() {
           {/* Settings/Toggles Container */}
           {showSettings && (
             <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
-              {/* Allow Cookies */}
-              <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
-                  <MaterialIcons name='cookie' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Cookies*</Text>
-                  </Text>
+              {SHOW_COOKIE_CONSENT_UI ? (
+                <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+                  <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                    <MaterialIcons name='cookie' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Cookies*</Text>
+                    </Text>
+                  </View>
+                  <SettingsBoolPills value={allowCookies} onValueChange={handleCookiesToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
                 </View>
-                <SettingsBoolPills value={allowCookies} onValueChange={handleCookiesToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
-              </View>
+              ) : null}
 
               {/* Terms and Conditions */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
@@ -2248,8 +2254,8 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Cookies Warning Modal */}
-      <Modal visible={cookiesWarningVisible} transparent={true} animationType='fade'>
+      {/* Cookies Warning Modal (web only — native apps do not collect tracking cookies) */}
+      <Modal visible={SHOW_COOKIE_CONSENT_UI && cookiesWarningVisible} transparent={true} animationType='fade'>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
             <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
@@ -2422,7 +2428,7 @@ const styles = StyleSheet.create({
   },
   itemLabelWithToggle: {
     flex: 1,
-    marginRight: 8,
+    marginRight: 16,
     minWidth: 0,
   },
   icon: {
@@ -2438,15 +2444,18 @@ const styles = StyleSheet.create({
   settingsToggleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 20,
+    justifyContent: "flex-end",
+    gap: 6,
+    width: 138,
     flexShrink: 0,
   },
   togglePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 14,
-    minWidth: 52,
-    alignItems: "stretch",
+    width: 66,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    borderRadius: 12,
+    minHeight: 24,
+    alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
   },
@@ -2463,11 +2472,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   togglePillText: {
-    fontSize: 12,
+    fontSize: 11,
+    lineHeight: 14,
     color: "#4e4e4e",
     fontWeight: "500",
     textAlign: "center",
-    width: "100%",
+    includeFontPadding: false,
+    textAlignVertical: "center",
   },
   togglePillTextActive: {
     color: "#fff",

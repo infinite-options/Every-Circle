@@ -41,7 +41,7 @@ import { UnreadProvider } from "./contexts/UnreadContext";
 import { NearbyAlertProvider, useNearbyAlert } from "./contexts/NearbyAlertContext";
 import MessageNotificationBanner from "./components/MessageNotificationBanner";
 import CookieConsentBanner from "./components/CookieConsentBanner";
-import { syncAllowCookiesForUser, reportLoggedIn } from "./utils/cookieConsent";
+import { syncAllowCookiesForUser, reportLoggedIn, SHOW_COOKIE_CONSENT_UI } from "./utils/cookieConsent";
 import NearbyAlertBanner from "./components/NearbyAlertBanner";
 import { SessionProfileProvider } from "./contexts/SessionProfileContext";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
@@ -823,20 +823,26 @@ export default function App() {
 
   const HomeScreen = ({ navigation }) => {
     console.log("App.js - Rendering HomeScreen");
-    const { width: windowWidth } = useWindowDimensions();
+    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
     const [hasLoggedPlaying, setHasLoggedPlaying] = useState(false);
     // Static timestamp - set once when component mounts (represents last build/change time)
     const [buildTimestamp] = useState(new Date());
 
+    // iPad / large web: shortest side ≥ 768 matches iPad Air 11" and iPad Pro 13".
+    const isTablet = Math.min(windowWidth, windowHeight) >= 768 || windowWidth >= 768;
+    const homeColumnWidth = isTablet ? Math.min(560, windowWidth * 0.62) : windowWidth;
+
     // Fit tagline on one line: slightly less horizontal padding on narrow devices + scale font
-    const brandingPaddingH = windowWidth < 400 ? 8 : windowWidth < 480 ? 16 : 20;
-    const taglineFontSize = Math.max(14, Math.min(24, (windowWidth - 56) / 14));
-    // Version line: small enough to stay on one line; scales down on narrow screens
-    const buildInfoFontSize = Math.max(9, Math.min(12, (windowWidth - 32) / 42));
-    // Three circles in one row: contentBox padding 20*2, circles row padding 8*2, gaps 8*2 between circles
-    const circlesInnerW = windowWidth - 40 - 32;
-    const circleSize = Math.max(60, Math.min(102, (circlesInnerW - 16) / 3));
-    const circleLabelSize = Math.max(10, Math.min(15, circleSize * 0.17));
+    const brandingPaddingH = isTablet ? 12 : windowWidth < 400 ? 8 : windowWidth < 480 ? 16 : 20;
+    const taglineFontSize = isTablet ? 26 : Math.max(14, Math.min(24, (windowWidth - 56) / 14));
+    const buildInfoFontSize = isTablet ? 13 : Math.max(9, Math.min(12, (windowWidth - 32) / 42));
+    const logoSize = isTablet ? 300 : 200;
+    const welcomeFontSize = isTablet ? 52 : 36;
+    const brandFontSize = isTablet ? 44 : 36;
+    const brandDotFontSize = isTablet ? 24 : 20;
+    const circlesInnerW = homeColumnWidth - (isTablet ? 24 : 40) - 32;
+    const circleSize = isTablet ? Math.max(120, Math.min(148, (circlesInnerW - 16) / 3)) : Math.max(60, Math.min(102, (circlesInnerW - 16) / 3));
+    const circleLabelSize = isTablet ? Math.max(14, Math.min(18, circleSize * 0.125)) : Math.max(10, Math.min(15, circleSize * 0.17));
 
     // Format date and time
     const formatDateTime = (date) => {
@@ -867,94 +873,57 @@ export default function App() {
       }
     }, []);
 
+    const renderActionCircle = (label, color, onPress) => (
+      <TouchableOpacity style={styles.circleBox} onPress={onPress} activeOpacity={0.85}>
+        <View style={[styles.circle, { width: circleSize, height: circleSize, borderRadius: circleSize / 2, backgroundColor: color }]}>
+          <Text
+            style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]}
+            numberOfLines={2}
+            adjustsFontSizeToFit={Platform.OS === "ios"}
+            minimumFontScale={0.75}
+          >
+            {label}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+
     return (
       <View style={styles.container}>
-        <View style={styles.contentBox}>
-          {/* Welcome Text */}
-          <Text style={styles.welcomeText}>Welcome!</Text>
+        <View style={[styles.contentBox, isTablet && styles.tabletContentBox, isTablet && { width: homeColumnWidth }]}>
+          <Text style={[styles.welcomeText, isTablet && { fontSize: welcomeFontSize, marginTop: 16, marginBottom: 24 }]}>Welcome!</Text>
 
-          <View style={styles.circleMain}>
-            <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: 200, height: 200, resizeMode: "contain" }} accessibilitylabel='everyCircle Logo' />
-            {/* <View style={styles.videoContainer}>
-            <Video
-              source={{ uri: "https://every-circle.s3.us-west-1.amazonaws.com/EveryB2B.mp4" }}
-              style={styles.video}
-              resizeMode='contain'
-              isLooping
-              shouldPlay
-              isMuted={true}
-              useNativeControls={false}
-            />
-          </View> */}
+          <View style={[styles.circleMain, { width: logoSize, height: logoSize, borderRadius: logoSize / 2 }]}>
+            <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: logoSize, height: logoSize, resizeMode: "contain" }} accessibilityLabel='everyCircle Logo' />
           </View>
 
-          {/* Branding Text */}
-          <View style={[styles.brandingContainer, { paddingHorizontal: brandingPaddingH }]}>
-            <Text style={styles.brandName}>
+          <View style={[styles.brandingContainer, { paddingHorizontal: brandingPaddingH }, isTablet && { marginTop: 24, marginBottom: 12 }]}>
+            <Text style={[styles.brandName, isTablet && { fontSize: brandFontSize }]}>
               <Text style={styles.brandItalicText}>every</Text>
               <Text style={styles.brandRegularText}>Circle</Text>
-              <Text style={styles.brandText}>.com</Text>
+              <Text style={[styles.brandText, isTablet && { fontSize: brandDotFontSize }]}>.com</Text>
             </Text>
             <Text style={[styles.tagline, { fontSize: taglineFontSize }]} numberOfLines={1} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.72}>
               It Pays to be Connected
             </Text>
-            {/* <Text style={styles.tagline}>It Pays to be Connected</Text> */}
-
-            {SHOW_HOME_BUILD_INFO && (
+            {SHOW_HOME_BUILD_INFO ? (
               <Text style={[styles.dateTimeText, { fontSize: buildInfoFontSize }]} numberOfLines={1} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.7}>
                 PM {versionData.pm_version} Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
               </Text>
-            )}
+            ) : null}
           </View>
 
-          <View style={styles.circlesContainer}>
-            <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("SignUp")} activeOpacity={0.85}>
-              <View style={[styles.circle, { width: circleSize, height: circleSize, borderRadius: circleSize / 2, backgroundColor: "#800000" }]}>
-                <Text
-                  style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]}
-                  numberOfLines={2}
-                  adjustsFontSizeToFit={Platform.OS === "ios"}
-                  minimumFontScale={0.75}
-                >
-                  Sign Up
-                </Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("HowItWorksScreen")} activeOpacity={0.85}>
-              <View style={[styles.circle, { width: circleSize, height: circleSize, borderRadius: circleSize / 2, backgroundColor: "#FF9500" }]}>
-                <Text
-                  style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]}
-                  numberOfLines={2}
-                  adjustsFontSizeToFit={Platform.OS === "ios"}
-                  minimumFontScale={0.75}
-                >
-                  How It Works
-                </Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.circleBox}
-              onPress={() => {
-                console.log("App.js - Login Button Pressed");
-                navigation.navigate("Login");
-              }}
-              activeOpacity={0.85}
-            >
-              <View style={[styles.circle, { width: circleSize, height: circleSize, borderRadius: circleSize / 2, backgroundColor: "#2434C2" }]}>
-                <Text
-                  style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]}
-                  numberOfLines={2}
-                  adjustsFontSizeToFit={Platform.OS === "ios"}
-                  minimumFontScale={0.75}
-                >
-                  Log In
-                </Text>
-              </View>
-            </TouchableOpacity>
+          <View style={[styles.circlesContainer, isTablet && { marginTop: 36 }]}>
+            {renderActionCircle("Sign Up", "#800000", () => navigation.navigate("SignUp"))}
+            {renderActionCircle("How It Works", "#FF9500", () => navigation.navigate("HowItWorksScreen"))}
+            {renderActionCircle("Log In", "#2434C2", () => {
+              console.log("App.js - Login Button Pressed");
+              navigation.navigate("Login");
+            })}
           </View>
 
-          <TouchableOpacity style={styles.privacyLink} onPress={() => navigation.navigate("PrivacyPolicy")} activeOpacity={0.7}>
-            <Text style={styles.privacyLinkText}>Privacy Policy</Text>
+          <TouchableOpacity style={[styles.privacyLink, isTablet && { marginTop: 20 }]} onPress={() => navigation.navigate("PrivacyPolicy")} activeOpacity={0.7}>
+            <Text style={[styles.privacyLinkText, isTablet && { fontSize: 16 }]}>Privacy Policy</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1067,12 +1036,11 @@ export default function App() {
     const currentRouteName = getCurrentRoute(state);
     console.log("App.js - Current route:", currentRouteName);
 
-    // Cookie consent is tied to the profile (users.users_cookies_date), not the device —
-    // reconcile once per logged-in user_uid so a different profile logging in on this same
-    // device doesn't inherit a stale answer left behind by whoever used it before.
+    // Cookie consent is a website concern (GDPR/CCPA). Native apps do not show
+    // cookie prompts and do not gate features on cookie consent (Apple 5.1.2(i)).
     const loggedInUserUid = ((await AsyncStorage.getItem("user_uid")) || "").trim();
     reportLoggedIn(!!loggedInUserUid);
-    if (loggedInUserUid && syncedCookiesUserRef.current !== loggedInUserUid) {
+    if (SHOW_COOKIE_CONSENT_UI && loggedInUserUid && syncedCookiesUserRef.current !== loggedInUserUid) {
       syncedCookiesUserRef.current = loggedInUserUid;
       syncAllowCookiesForUser(loggedInUserUid).catch((e) => console.log("App.js - cookie consent sync failed:", e));
     } else if (!loggedInUserUid) {
@@ -1084,17 +1052,20 @@ export default function App() {
     const termsAcceptedValue = termsStatus !== null ? JSON.parse(termsStatus) : true;
     setTermsAccepted(termsAcceptedValue);
 
-    const cookiesStatus = await AsyncStorage.getItem("allowCookies");
-    const cookiesAllowedValue = cookiesStatus !== null ? JSON.parse(cookiesStatus) : true;
+    let cookiesAllowedValue = true;
+    if (SHOW_COOKIE_CONSENT_UI) {
+      const cookiesStatus = await AsyncStorage.getItem("allowCookies");
+      cookiesAllowedValue = cookiesStatus !== null ? JSON.parse(cookiesStatus) : true;
+    }
 
-    // Allowed screens when cookies are not allowed (only Settings)
+    // Allowed screens when cookies are not allowed (web only; native apps skip this gate)
     const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen"];
 
     // Allowed screens when terms are not accepted
     const termsAllowedScreens = ["Home", "Login", "SignUp", "Reactivate", "Settings", "TermsAndConditions", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
 
-    // If cookies not allowed and trying to access any screen except Settings
-    if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
+    // If cookies not allowed and trying to access any screen except Settings (web only)
+    if (SHOW_COOKIE_CONSENT_UI && !cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
       console.log("App.js - Cookies not allowed, redirecting to Settings");
 
       // Show alert explaining the restriction
@@ -1219,7 +1190,7 @@ export default function App() {
                   }}
                 />
                 <RootNearbyAlertBanner navigationRef={navigationRef} />
-                <CookieConsentBanner navigationRef={navigationRef} />
+                {SHOW_COOKIE_CONSENT_UI ? <CookieConsentBanner navigationRef={navigationRef} /> : null}
               </View>
             </NearbyAlertProvider>
           </UnreadProvider>
@@ -1247,6 +1218,10 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     padding: 20,
     alignItems: "center",
+  },
+  tabletContentBox: {
+    paddingVertical: 36,
+    paddingHorizontal: 12,
   },
   centeredContainer: {
     flex: 1,

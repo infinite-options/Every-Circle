@@ -3,9 +3,18 @@
 // Single source of truth for the "allowCookies" preference so the persistent
 // bottom banner (components/CookieConsentBanner.js) and the Settings screen
 // toggle stay in sync without a nav-state refresh in between.
+//
+// Cookie-consent UI is web-only. Apple Guideline 5.1.2(i) treats in-app cookie
+// prompts as tracking unless App Tracking Transparency is used. This app does
+// not collect cookies to track users on Apple devices, so iOS/Android never
+// show the banner, Settings toggle, or cookie gate.
+import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetchWithAuth } from "./httpMiddleware";
+
+/** Cookie consent prompts, Settings toggle, and navigation gate — website only. */
+export const SHOW_COOKIE_CONSENT_UI = Platform.OS === "web";
 
 const listeners = new Set();
 
