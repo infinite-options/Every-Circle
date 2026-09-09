@@ -46,7 +46,16 @@ import { offeringBountyExceedsCost } from "../components/ExpertiseSection";
 import { isTruthyTaxableFlag, isValidTaxRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagListUtils";
 import { fetchServiceChoiceGroups } from "../utils/parseServiceOptionsResponse";
-import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceShippingRefundable, normServiceTags, productImageFileFieldName, productImageUploadKey } from "../utils/buildBusinessServiceForApi";
+import {
+  buildBusinessServiceForApi,
+  DEFAULT_RETURN_WINDOW_DAYS,
+  normServiceReturnable,
+  normServiceReturnWindowDays,
+  normServiceShippingRefundable,
+  normServiceTags,
+  productImageFileFieldName,
+  productImageUploadKey,
+} from "../utils/buildBusinessServiceForApi";
 import {
   BS_SHIPPING_BUYER_ACTUAL,
   BS_SHIPPING_BUYER_FIXED,
@@ -57,11 +66,7 @@ import {
   parseBsShippingAmount,
 } from "../utils/businessServiceShipping";
 import FulfillmentModePicker from "../components/FulfillmentModePicker";
-import {
-  FIXED_DELIVERY_CHARGE_AMOUNT_LABEL,
-  getBusinessServiceShippingDropdownOptions,
-  OFFERING_DELIVERY_CHARGE_LABEL,
-} from "../utils/profileOfferingShipping";
+import { FIXED_DELIVERY_CHARGE_AMOUNT_LABEL, getBusinessServiceShippingDropdownOptions, OFFERING_DELIVERY_CHARGE_LABEL } from "../utils/profileOfferingShipping";
 import { businessDeliveredModeSelected, countListingModes, validateListingFulfillmentForSave } from "../utils/listingFulfillmentMode";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getAddressSuggestions, getBusinessSuggestions, getPlaceAddressDetails, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
@@ -1365,16 +1370,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setRefreshingGooglePhotos(true);
     try {
       const pd = await getPlaceDetails(businessGoogleId);
-      const freshPhotos = normalizeGooglePhotosForStorage(
-        dedupeGooglePhotoUrls((pd.photo_urls || []).map((url) => resolveRestGooglePhotoUrl(url) || url)),
-      );
+      const freshPhotos = normalizeGooglePhotosForStorage(dedupeGooglePhotoUrls((pd.photo_urls || []).map((url) => resolveRestGooglePhotoUrl(url) || url)));
       if (freshPhotos.length === 0) {
         Alert.alert("No Photos", "Google did not return any photos for this business.");
         return;
       }
-      const currentPhotos = normalizeGooglePhotosForStorage(
-        filterFreshGooglePhotoUrls(googlePanelPhotos || []).map((url) => resolveRestGooglePhotoUrl(url) || url),
-      );
+      const currentPhotos = normalizeGooglePhotosForStorage(filterFreshGooglePhotoUrls(googlePanelPhotos || []).map((url) => resolveRestGooglePhotoUrl(url) || url));
       const mergedPhotos = mergeRefreshedGooglePhotos(currentPhotos, freshPhotos);
       const photosToSet = mergedPhotos.length > 0 ? mergedPhotos : freshPhotos;
       googlePhotosUserEditedRef.current = true;
@@ -1528,11 +1529,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   // Owner/partner may add any role; admins may add admin/employee/other only.
   const viewerCanAddMembers = () => canViewerAddBusinessMembers(viewerBusinessRole);
   const viewerCanChangeRoles = () => roleIsSenior(viewerBusinessRole);
-  const viewerCanEditAnyRoles = () => roleIsSenior(viewerBusinessRole) || String(viewerBusinessRole || "").trim().toLowerCase() === "admin";
+  const viewerCanEditAnyRoles = () =>
+    roleIsSenior(viewerBusinessRole) ||
+    String(viewerBusinessRole || "")
+      .trim()
+      .toLowerCase() === "admin";
   const newMemberRoleOptions = () => getNewMemberRoleOptions(viewerBusinessRole, businessRoles);
 
-  const viewerCanChangeMemberRole = (businessUser) =>
-    canViewerEditMemberRole(viewerBusinessRole, businessUser, { isSelf: isBusinessUserSelf(businessUser), draftMode: true });
+  const viewerCanChangeMemberRole = (businessUser) => canViewerEditMemberRole(viewerBusinessRole, businessUser, { isSelf: isBusinessUserSelf(businessUser), draftMode: true });
 
   const viewerCanRemoveMember = (businessUser) =>
     canViewerRemoveMember(viewerBusinessRole, businessUser, {
@@ -1682,29 +1686,24 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
     // BUSINESS-SPECIFIC: every added editor row needs both an email and a role,
     // otherwise it is dropped silently on submit.
-    const incompleteEditor = additionalBusinessUsers.find(
-      (u) => (String(u.email || "").trim() ? 1 : 0) + (String(u.role || "").trim() ? 1 : 0) === 1,
-    );
+    const incompleteEditor = additionalBusinessUsers.find((u) => (String(u.email || "").trim() ? 1 : 0) + (String(u.role || "").trim() ? 1 : 0) === 1);
     if (incompleteEditor) {
       Alert.alert("Incomplete editor", "Each added user needs both an email address and a role. Remove the empty row or fill it in.");
       return;
     }
 
     const remainingExistingUsersForValidation = existingBusinessUsers.filter((user) => !deletedBusinessUsers.includes(user.business_user_id));
-    const draftMemberCount =
-      remainingExistingUsersForValidation.length +
-      additionalBusinessUsers.filter((u) => String(u.email || "").trim() && String(u.role || "").trim()).length;
+    const draftMemberCount = remainingExistingUsersForValidation.length + additionalBusinessUsers.filter((u) => String(u.email || "").trim() && String(u.role || "").trim()).length;
     const draftSeniorCount = countDraftSeniorBusinessMembers(remainingExistingUsersForValidation, additionalBusinessUsers);
     if (draftMemberCount > 0 && draftSeniorCount < 1) {
-      Alert.alert(
-        "Missing owner or partner",
-        "At least one owner or partner must remain associated with this business. Add or keep an owner/partner before saving.",
-      );
+      Alert.alert("Missing owner or partner", "At least one owner or partner must remain associated with this business. Add or keep an owner/partner before saving.");
       return;
     }
 
     const invalidAdminInvite = additionalBusinessUsers.find((u) => {
-      const role = String(u.role || "").trim().toLowerCase();
+      const role = String(u.role || "")
+        .trim()
+        .toLowerCase();
       return String(u.email || "").trim() && role && !getNewMemberRoleOptions(viewerBusinessRole, businessRoles).some((r) => r.value === role);
     });
     if (invalidAdminInvite) {
@@ -2131,12 +2130,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       // Build [email, role] pairs together so the two arrays sent to the backend
       // always line up — filtering them independently could make the lengths
       // differ, and the backend then silently drops the whole update.
-      const existingPairs = remainingExistingUsers
-        .map((user) => [String(user.user_email || "").trim(), String(user.business_role || "").trim()])
-        .filter(([email, role]) => email && role);
-      const newPairs = additionalBusinessUsers
-        .map((user) => [String(user.email || "").trim(), String(user.role || "").trim()])
-        .filter(([email, role]) => email && role);
+      const existingPairs = remainingExistingUsers.map((user) => [String(user.user_email || "").trim(), String(user.business_role || "").trim()]).filter(([email, role]) => email && role);
+      const newPairs = additionalBusinessUsers.map((user) => [String(user.email || "").trim(), String(user.role || "").trim()]).filter(([email, role]) => email && role);
       const allPairs = [...existingPairs, ...newPairs];
 
       if (allPairs.length > 0) {
@@ -2206,26 +2201,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         throw new Error(errBody || `Update failed (${response.status})`);
       }
 
-      // Surface editors the backend could not add (email has no Every Circle account).
+      // Surface editors the backend could not add (email has no everyCircle account).
       const saveResult = await response.json().catch(() => ({}));
       const buResult = saveResult?.business_users || {};
       const notAddedEditors = Array.isArray(buResult.not_found) ? buResult.not_found : [];
       if (notAddedEditors.length > 0) {
-        Alert.alert(
-          "Some editors were not added",
-          `No Every Circle account was found for: ${notAddedEditors.join(", ")}. Ask them to sign up first, then add them again.`,
-        );
+        Alert.alert("Some editors were not added", `No everyCircle account was found for: ${notAddedEditors.join(", ")}. Ask them to sign up first, then add them again.`);
       }
       // Role edits the backend rejected under the owner/partner rules.
-      const blockedEditors = [
-        ...(Array.isArray(buResult.protected) ? buResult.protected : []),
-        ...(Array.isArray(buResult.forbidden) ? buResult.forbidden : []),
-      ];
+      const blockedEditors = [...(Array.isArray(buResult.protected) ? buResult.protected : []), ...(Array.isArray(buResult.forbidden) ? buResult.forbidden : [])];
       if (blockedEditors.length > 0) {
-        Alert.alert(
-          "Some role changes were not applied",
-          `The server rejected role changes for: ${blockedEditors.join(", ")}. Owner/partner targets may still be protected on the backend.`,
-        );
+        Alert.alert("Some role changes were not applied", `The server rejected role changes for: ${blockedEditors.join(", ")}. Owner/partner targets may still be protected on the backend.`);
       }
 
       if (response.status === 200) {
@@ -2286,12 +2272,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           let uid = localSvc.bs_uid && String(localSvc.bs_uid).trim() !== "" ? localSvc.bs_uid : null;
 
           if (!uid) {
-            uid =
-              returnedServices.find(
-                (r) =>
-                  String(r.bs_service_name || "").trim() === String(localSvc.bs_service_name || "").trim() &&
-                  String(r.bs_uid || "").trim() !== "",
-              )?.bs_uid || null;
+            uid = returnedServices.find((r) => String(r.bs_service_name || "").trim() === String(localSvc.bs_service_name || "").trim() && String(r.bs_uid || "").trim() !== "")?.bs_uid || null;
           }
 
           console.log(`🔵 Service "${localSvc.bs_service_name}" -> uid: ${uid}, groups: ${(localSvc.bs_choice_groups || []).length}`);
@@ -2359,10 +2340,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             .map((f) => f.name)
             .filter(Boolean)
             .join(", ");
-          throw new Error(
-            optionFailures[0]?.message ||
-              `Could not save product options${names ? ` for: ${names}` : ""}. Your other changes may have been saved — please try again.`,
-          );
+          throw new Error(optionFailures[0]?.message || `Could not save product options${names ? ` for: ${names}` : ""}. Your other changes may have been saved — please try again.`);
         }
 
         if (deferFavoriteToSecondPut || deferProfileToSecondPut) {
@@ -2698,11 +2676,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     <View style={[styles.fieldContainer, darkMode && styles.darkFieldContainer, styles.fieldContainerCompact]}>
       <View style={styles.labelRow}>
         <Text style={[styles.sublabel, darkMode && styles.darkSublabel, styles.fieldContainerCompactLabel]}>
-          {viewerCanChangeRoles()
-            ? "Add editors or co-owners by email"
-            : viewerCanAddMembers()
-              ? "Add team members by email"
-              : "Editors & owners"}
+          {viewerCanChangeRoles() ? "Add editors or co-owners by email" : viewerCanAddMembers() ? "Add team members by email" : "Editors & owners"}
         </Text>
         {viewerCanAddMembers() && (
           <TouchableOpacity onPress={addBusinessEditor}>
@@ -2776,10 +2750,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 <MiniCard user={userForMiniCard} />
               </View>
               <View style={styles.existingBusinessUserToggles}>
-                <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.togglePill, styles.existingBusinessUserTogglePill, isIndividualPublic && styles.togglePillActiveGreen]}>
+                <TouchableOpacity
+                  onPress={() => toggleBusinessUserIndividualPublic(businessUser)}
+                  style={[styles.togglePill, styles.existingBusinessUserTogglePill, isIndividualPublic && styles.togglePillActiveGreen]}
+                >
                   <Text style={[styles.togglePillText, isIndividualPublic && styles.togglePillTextActive]}>{isIndividualPublic ? "Visible" : "Show"}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.togglePill, styles.existingBusinessUserTogglePill, !isIndividualPublic && styles.togglePillActiveRed]}>
+                <TouchableOpacity
+                  onPress={() => toggleBusinessUserIndividualPublic(businessUser)}
+                  style={[styles.togglePill, styles.existingBusinessUserTogglePill, !isIndividualPublic && styles.togglePillActiveRed]}
+                >
                   <Text style={[styles.togglePillText, !isIndividualPublic && styles.togglePillTextActive]}>{!isIndividualPublic ? "Hidden" : "Hide"}</Text>
                 </TouchableOpacity>
               </View>
@@ -2804,9 +2784,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                   flatListProps={{ nestedScrollEnabled: true }}
                 />
               ) : (
-                <Text style={[styles.input, styles.roleDropdown, styles.readOnlyRoleText, darkMode && styles.darkInput, darkMode && { color: "#ffffff" }]}>
-                  {businessUser.business_role || "N/A"}
-                </Text>
+                <Text style={[styles.input, styles.roleDropdown, styles.readOnlyRoleText, darkMode && styles.darkInput, darkMode && { color: "#ffffff" }]}>{businessUser.business_role || "N/A"}</Text>
               )}
               {canRemove ? (
                 <TouchableOpacity
@@ -2822,45 +2800,46 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           </View>
         );
       })}
-      {viewerCanAddMembers() && additionalBusinessUsers.map((user, index) => (
-        <View key={index} style={[styles.businessEditorCard, darkMode && styles.darkBusinessEditorCard]}>
-          <View style={styles.businessEditorHeader}>
-            <Text style={[styles.businessEditorLabel, darkMode && styles.darkBusinessEditorLabel]}>Editor #{index + 1}</Text>
-            <TouchableOpacity onPress={() => removeBusinessEditor(index)}>
-              <Text style={[styles.removeButtonText, darkMode && styles.darkRemoveButtonText]}>Remove</Text>
-            </TouchableOpacity>
+      {viewerCanAddMembers() &&
+        additionalBusinessUsers.map((user, index) => (
+          <View key={index} style={[styles.businessEditorCard, darkMode && styles.darkBusinessEditorCard]}>
+            <View style={styles.businessEditorHeader}>
+              <Text style={[styles.businessEditorLabel, darkMode && styles.darkBusinessEditorLabel]}>Editor #{index + 1}</Text>
+              <TouchableOpacity onPress={() => removeBusinessEditor(index)}>
+                <Text style={[styles.removeButtonText, darkMode && styles.darkRemoveButtonText]}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Email Address</Text>
+            <TextInput
+              style={[styles.input, darkMode && styles.darkInput]}
+              value={user.email}
+              placeholder='Enter email address'
+              placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+              keyboardType='email-address'
+              autoCapitalize='none'
+              onChangeText={(text) => updateBusinessEditor(index, "email", text)}
+            />
+            <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Business Role</Text>
+            <Dropdown
+              style={[styles.input, darkMode && styles.darkInput]}
+              data={newMemberRoleOptions()}
+              labelField='label'
+              valueField='value'
+              placeholder='Select role'
+              placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+              value={user.role}
+              onChange={(item) => updateBusinessEditor(index, "role", item.value)}
+              containerStyle={[{ borderRadius: 10, marginTop: 5 }, darkMode && { backgroundColor: "#1a1a1a", borderColor: "#404040" }]}
+              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
+              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
+              activeColor={darkMode ? "#404040" : "#f0f0f0"}
+              itemContainerStyle={darkMode ? { backgroundColor: "#1a1a1a" } : {}}
+              flatListProps={{
+                nestedScrollEnabled: true,
+              }}
+            />
           </View>
-          <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Email Address</Text>
-          <TextInput
-            style={[styles.input, darkMode && styles.darkInput]}
-            value={user.email}
-            placeholder='Enter email address'
-            placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-            keyboardType='email-address'
-            autoCapitalize='none'
-            onChangeText={(text) => updateBusinessEditor(index, "email", text)}
-          />
-          <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Business Role</Text>
-          <Dropdown
-            style={[styles.input, darkMode && styles.darkInput]}
-            data={newMemberRoleOptions()}
-            labelField='label'
-            valueField='value'
-            placeholder='Select role'
-            placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-            value={user.role}
-            onChange={(item) => updateBusinessEditor(index, "role", item.value)}
-            containerStyle={[{ borderRadius: 10, marginTop: 5 }, darkMode && { backgroundColor: "#1a1a1a", borderColor: "#404040" }]}
-            itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
-            selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000" }}
-            activeColor={darkMode ? "#404040" : "#f0f0f0"}
-            itemContainerStyle={darkMode ? { backgroundColor: "#1a1a1a" } : {}}
-            flatListProps={{
-              nestedScrollEnabled: true,
-            }}
-          />
-        </View>
-      ))}
+        ))}
     </View>
   );
 
@@ -3090,14 +3069,18 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   // BUSINESS-SPECIFIC: renderBusinessRoleField — editable when the viewer may change their own role.
   const renderBusinessRoleField = () => {
     const canEditOwnRole = canViewerEditMemberRole(viewerBusinessRole, formData.businessRole || viewerBusinessRole, { isSelf: true, draftMode: true });
-    const known = businessRoles.find((r) => r.value.toLowerCase() === String(formData.businessRole || "").trim().toLowerCase());
+    const known = businessRoles.find(
+      (r) =>
+        r.value.toLowerCase() ===
+        String(formData.businessRole || "")
+          .trim()
+          .toLowerCase(),
+    );
     if (!canEditOwnRole) {
       return (
         <View style={styles.fieldContainer}>
           <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Role</Text>
-          <Text style={[styles.input, styles.readOnlyRoleText, darkMode && styles.darkInput, darkMode && { color: "#ffffff" }]}>
-            {known ? known.label : formData.businessRole || "N/A"}
-          </Text>
+          <Text style={[styles.input, styles.readOnlyRoleText, darkMode && styles.darkInput, darkMode && { color: "#ffffff" }]}>{known ? known.label : formData.businessRole || "N/A"}</Text>
         </View>
       );
     }
@@ -3114,9 +3097,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           value={formData.businessRole}
           onChange={(item) => {
             setFormData({ ...formData, businessRole: item.value });
-            setExistingBusinessUsers((prev) =>
-              prev.map((u) => (isBusinessUserSelf(u) ? { ...u, business_role: item.value } : u)),
-            );
+            setExistingBusinessUsers((prev) => prev.map((u) => (isBusinessUserSelf(u) ? { ...u, business_role: item.value } : u)));
             setIsChanged(true);
           }}
           containerStyle={[{ borderRadius: 10 }, darkMode && { backgroundColor: "#1a1a1a", borderColor: "#404040" }]}
@@ -3436,10 +3417,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_shipping: shippingApi.bs_shipping,
       bs_shipping_amount: shippingApi.bs_shipping_amount,
       bs_free_shipping: shippingApi.bs_shipping === BS_SHIPPING_FREE ? 1 : 0,
-      bs_buyer_pays_shipping:
-        shippingApi.bs_shipping === BS_SHIPPING_BUYER_ACTUAL || shippingApi.bs_shipping === BS_SHIPPING_BUYER_FIXED ? 1 : 0,
-      bs_shipping_cost_type:
-        shippingApi.bs_shipping === BS_SHIPPING_BUYER_FIXED ? "fixed" : shippingApi.bs_shipping === BS_SHIPPING_BUYER_ACTUAL ? "actual" : "",
+      bs_buyer_pays_shipping: shippingApi.bs_shipping === BS_SHIPPING_BUYER_ACTUAL || shippingApi.bs_shipping === BS_SHIPPING_BUYER_FIXED ? 1 : 0,
+      bs_shipping_cost_type: shippingApi.bs_shipping === BS_SHIPPING_BUYER_FIXED ? "fixed" : shippingApi.bs_shipping === BS_SHIPPING_BUYER_ACTUAL ? "actual" : "",
       bs_fixed_shipping_amount: shippingApi.bs_shipping_amount == null ? "" : String(shippingApi.bs_shipping_amount),
       bs_is_taxable: formTaxable ? 1 : 0,
       bs_tax_rate: formTaxable && isValidTaxRate(formSource.bs_tax_rate) ? String(formSource.bs_tax_rate).trim() : "0",
@@ -3452,12 +3431,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_choice_groups: formSource.bs_choice_groups || [],
       bs_special_instructions_enabled: formSource.bs_special_instructions_enabled || 0,
       bs_special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
-      _serviceOptionsTouched: Boolean(
-        formSource._serviceOptionsTouched ||
-          formSource._choiceGroupsTouched ||
-          existingService?._serviceOptionsTouched ||
-          existingService?._choiceGroupsTouched,
-      ),
+      _serviceOptionsTouched: Boolean(formSource._serviceOptionsTouched || formSource._choiceGroupsTouched || existingService?._serviceOptionsTouched || existingService?._choiceGroupsTouched),
       _svcNewImageUri,
       _svcWebImageFile,
       _svcDeleteImageUrl,
@@ -3468,9 +3442,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const existingService = editingServiceIndex !== null ? services[editingServiceIndex] : null;
     const isUnlimited = formSource.bs_qty_unlimited === 1 || formSource.bs_qty_unlimited === "1" || formSource.bs_qty_unlimited === true;
     const formTaxable = isTruthyTaxableFlag(formSource.bs_is_taxable);
-    const previewTags = productTagInput.trim()
-      ? serializeTagList(mergeCustomTags(parseTagList(formSource.bs_tags), productTagInput))
-      : normServiceTags(formSource);
+    const previewTags = productTagInput.trim() ? serializeTagList(mergeCustomTags(parseTagList(formSource.bs_tags), productTagInput)) : normServiceTags(formSource);
     const condForm = formSource.bs_condition_type;
     const condLow = condForm == null ? "" : String(condForm).trim().toLowerCase();
     const conditionTypeForPreview = condLow === "used" ? "used" : condLow === "new" ? "new" : condLow === "na" ? "na" : "";
@@ -3499,10 +3471,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_shipping: shippingApi.bs_shipping,
       bs_shipping_amount: shippingApi.bs_shipping_amount,
       bs_free_shipping: shippingApi.bs_shipping === BS_SHIPPING_FREE ? 1 : 0,
-      bs_buyer_pays_shipping:
-        shippingApi.bs_shipping === BS_SHIPPING_BUYER_ACTUAL || shippingApi.bs_shipping === BS_SHIPPING_BUYER_FIXED ? 1 : 0,
-      bs_shipping_cost_type:
-        shippingApi.bs_shipping === BS_SHIPPING_BUYER_FIXED ? "fixed" : shippingApi.bs_shipping === BS_SHIPPING_BUYER_ACTUAL ? "actual" : "",
+      bs_buyer_pays_shipping: shippingApi.bs_shipping === BS_SHIPPING_BUYER_ACTUAL || shippingApi.bs_shipping === BS_SHIPPING_BUYER_FIXED ? 1 : 0,
+      bs_shipping_cost_type: shippingApi.bs_shipping === BS_SHIPPING_BUYER_FIXED ? "fixed" : shippingApi.bs_shipping === BS_SHIPPING_BUYER_ACTUAL ? "actual" : "",
       bs_fixed_shipping_amount: shippingApi.bs_shipping_amount == null ? "" : String(shippingApi.bs_shipping_amount),
       bs_is_taxable: formTaxable ? 1 : 0,
       bs_tax_rate: formTaxable ? String(formSource.bs_tax_rate || "").trim() : "0",
@@ -3749,9 +3719,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         if (Array.isArray(business_users) && business_users.length > 0) {
           const mine = business_users.find((u) => businessUserMatchesViewer(u, userUid, profileUid));
           setViewerBusinessRole(getBusinessMembershipRole(mine));
-          const isInBusinessUsers = business_users.some(
-            (u) => businessUserHasRealOwnership(u) && businessUserMatchesViewer(u, userUid, profileUid),
-          );
+          const isInBusinessUsers = business_users.some((u) => businessUserHasRealOwnership(u) && businessUserMatchesViewer(u, userUid, profileUid));
           setIsOwner(isInBusinessUsers);
           return;
         }
@@ -4040,26 +4008,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const buyerPaysSelected = isBuyerPaysShipping(serviceForm);
     const shippingValue = parseBsShipping(serviceForm);
     const fixedAmount = parseBsShippingAmount(serviceForm.bs_shipping_amount);
-    const fixedAmountZero =
-      serviceForm.bs_shipping_amount === 0 || serviceForm.bs_shipping_amount === "0" || serviceForm.bs_shipping_amount === "0.00";
-    const buyerPaysShippingBlocked =
-      buyerPaysSelected &&
-      (shippingValue === "Buyer" ||
-        !shippingValue ||
-        (shippingValue === BS_SHIPPING_BUYER_FIXED && fixedAmount == null && !fixedAmountZero));
+    const fixedAmountZero = serviceForm.bs_shipping_amount === 0 || serviceForm.bs_shipping_amount === "0" || serviceForm.bs_shipping_amount === "0.00";
+    const buyerPaysShippingBlocked = buyerPaysSelected && (shippingValue === "Buyer" || !shippingValue || (shippingValue === BS_SHIPPING_BUYER_FIXED && fixedAmount == null && !fixedAmountZero));
     const shippingDropdownValue = getServiceShippingDropdownValue(serviceForm);
     const isTaxable = serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1";
     const modeAddBlocked = countListingModes(serviceForm.bs_mode) < 1;
     const deliveredMode = businessDeliveredModeSelected(serviceForm);
-    const deliveredShippingInvalid =
-      deliveredMode &&
-      (shippingDropdownValue === "na" ||
-        (shippingValue === BS_SHIPPING_BUYER_FIXED && fixedAmount == null && !fixedAmountZero));
+    const deliveredShippingInvalid = deliveredMode && (shippingDropdownValue === "na" || (shippingValue === BS_SHIPPING_BUYER_FIXED && fixedAmount == null && !fixedAmountZero));
     const highlightShippingDropdown = deliveredMode && parseBsShipping(serviceForm) == null;
-    const highlightFixedAmount =
-      deliveredMode && isFixedShipping(serviceForm) && fixedAmount == null && !fixedAmountZero;
-    const taxRateHighlight =
-      isTaxable && (!String(serviceForm.bs_tax_rate ?? "").trim() || !isValidTaxRate(serviceForm.bs_tax_rate));
+    const highlightFixedAmount = deliveredMode && isFixedShipping(serviceForm) && fixedAmount == null && !fixedAmountZero;
+    const taxRateHighlight = isTaxable && (!String(serviceForm.bs_tax_rate ?? "").trim() || !isValidTaxRate(serviceForm.bs_tax_rate));
     const parsedServiceCost = parseServiceCost(serviceForm.bs_cost || "");
     const costUnitRequired = serviceCostUnitIsRequired(serviceForm.bs_cost);
     const costUnitHighlight = serviceFormCostUnitError || costUnitRequired;
@@ -4089,362 +4047,130 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       <View style={styles.serviceFormLivePreviewBlock}>
         {renderServiceFormLivePreview()}
         <View style={[styles.serviceFormContainer, darkMode && styles.darkServiceFormContainer]}>
-        <View style={[styles.serviceFormTitleBar, darkMode && styles.darkServiceFormTitleBar]}>
-          <Text style={[styles.serviceFormTitleText, darkMode && styles.darkServiceFormTitleText]}>{editingServiceIndex !== null ? "Edit Product/Service" : "Add New Product/Service"}</Text>
-        </View>
-
-        <View style={[styles.serviceFormTopRow, darkMode && styles.darkServiceFormTopRow]}>
-          <View style={styles.serviceFormMediaColumn}>
-            <Image
-              source={serviceProductImageUri && !serviceProductImageError ? { uri: serviceProductImageUri } : DEFAULT_BUSINESS_IMAGE}
-              style={[styles.serviceFormProductImage, darkMode && styles.serviceFormProductImageDark]}
-              onError={handleServiceProductImageError}
-            />
-            <View style={styles.serviceImageShowHideRow}>
-              <TouchableOpacity
-                onPress={() => {
-                  handleServiceChange("bs_service_image_is_public", 1);
-                  setIsChanged(true);
-                }}
-                style={[styles.serviceImageTogglePill, imageIsPublic && styles.serviceImageTogglePillActive, darkMode && !imageIsPublic && styles.serviceImageTogglePillDark]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.serviceImageTogglePillText, imageIsPublic && styles.serviceImageTogglePillTextActive, !imageIsPublic && darkMode && styles.serviceImageTogglePillTextMutedDark]}>Show</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  handleServiceChange("bs_service_image_is_public", 0);
-                  setIsChanged(true);
-                }}
-                style={[styles.serviceImageTogglePill, !imageIsPublic && styles.serviceImageTogglePillActive, darkMode && imageIsPublic && styles.serviceImageTogglePillDark]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.serviceImageTogglePillText, !imageIsPublic && styles.serviceImageTogglePillTextActive, imageIsPublic && darkMode && styles.serviceImageTogglePillTextMutedDark]}>Hide</Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity style={[styles.serviceUploadButtonOutlined, darkMode && styles.darkServiceUploadButtonOutlined]} onPress={handlePickServiceProductImage} activeOpacity={0.8}>
-              <Ionicons name='cloud-upload-outline' size={16} color={darkMode ? "#C98AEF" : BUSINESS_PROFILE_ACCENT} />
-              <Text style={[styles.serviceUploadButtonOutlinedText, darkMode && styles.darkServiceUploadButtonOutlinedText]}>Upload</Text>
-            </TouchableOpacity>
-            {serviceProductImageUri ? (
-              <TouchableOpacity onPress={handleRemoveServiceProductImage} style={styles.serviceRemoveImageBtn}>
-                <Text style={[styles.serviceRemoveImageText, darkMode && styles.darkServiceRemoveImageText]}>Remove image</Text>
-              </TouchableOpacity>
-            ) : null}
-            {Platform.OS === "web" &&
-              React.createElement("input", {
-                ref: serviceImageFileInputRef,
-                type: "file",
-                accept: "image/*",
-                style: { display: "none" },
-                onChange: handleWebServiceProductImagePick,
-              })}
+          <View style={[styles.serviceFormTitleBar, darkMode && styles.darkServiceFormTitleBar]}>
+            <Text style={[styles.serviceFormTitleText, darkMode && styles.darkServiceFormTitleText]}>{editingServiceIndex !== null ? "Edit Product/Service" : "Add New Product/Service"}</Text>
           </View>
-          <View style={styles.serviceFormDetailsColumn}>
-            <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Name</Text>
-            <TextInput
-              style={[styles.serviceFormFieldInput, darkMode && styles.darkServiceFormFieldInput]}
-              value={serviceForm.bs_service_name}
-              onChangeText={(t) => handleServiceChange("bs_service_name", t)}
-              placeholder='Product or Service Name'
-              placeholderTextColor={darkMode ? "#888" : "#999"}
-            />
-            <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, { marginTop: 10 }]}>Description</Text>
-            <ResizableMultilineField
-              value={serviceForm.bs_service_desc}
-              onChangeText={(t) => handleServiceChange("bs_service_desc", t)}
-              placeholder='Description'
-              darkMode={darkMode}
-              compactHeight={SERVICE_DESC_COMPACT_HEIGHT}
-              expandedMaxHeight={SERVICE_DESC_EXPANDED_MAX_HEIGHT}
-              resizeAccessibilityLabel='Resize description'
-            />
-            <View style={styles.serviceFormSkuTagsRow}>
-              <View style={styles.serviceFormSkuInline}>
-                <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>SKU</Text>
-                <TextInput
-                  style={[styles.serviceFormFieldInput, styles.serviceFormSkuInput, darkMode && styles.darkServiceFormFieldInput]}
-                  value={serviceForm.bs_sku || ""}
-                  onChangeText={(t) => handleServiceChange("bs_sku", t)}
-                  placeholder='Optional'
-                  placeholderTextColor={darkMode ? "#888" : "#999"}
-                  autoCapitalize='characters'
-                  autoCorrect={false}
-                />
+
+          <View style={[styles.serviceFormTopRow, darkMode && styles.darkServiceFormTopRow]}>
+            <View style={styles.serviceFormMediaColumn}>
+              <Image
+                source={serviceProductImageUri && !serviceProductImageError ? { uri: serviceProductImageUri } : DEFAULT_BUSINESS_IMAGE}
+                style={[styles.serviceFormProductImage, darkMode && styles.serviceFormProductImageDark]}
+                onError={handleServiceProductImageError}
+              />
+              <View style={styles.serviceImageShowHideRow}>
+                <TouchableOpacity
+                  onPress={() => {
+                    handleServiceChange("bs_service_image_is_public", 1);
+                    setIsChanged(true);
+                  }}
+                  style={[styles.serviceImageTogglePill, imageIsPublic && styles.serviceImageTogglePillActive, darkMode && !imageIsPublic && styles.serviceImageTogglePillDark]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.serviceImageTogglePillText, imageIsPublic && styles.serviceImageTogglePillTextActive, !imageIsPublic && darkMode && styles.serviceImageTogglePillTextMutedDark]}>
+                    Show
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    handleServiceChange("bs_service_image_is_public", 0);
+                    setIsChanged(true);
+                  }}
+                  style={[styles.serviceImageTogglePill, !imageIsPublic && styles.serviceImageTogglePillActive, darkMode && imageIsPublic && styles.serviceImageTogglePillDark]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.serviceImageTogglePillText, !imageIsPublic && styles.serviceImageTogglePillTextActive, imageIsPublic && darkMode && styles.serviceImageTogglePillTextMutedDark]}>
+                    Hide
+                  </Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.serviceFormTagsInline}>
-                <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Product tags</Text>
-                {renderTagEditor({
-                  compact: true,
-                  inputValue: productTagInput,
-                  onChangeInput: (text) => {
-                    setProductTagInput(text);
-                    if (text.trim()) setIsChanged(true);
-                  },
-                  onAdd: addProductTag,
-                  tags: parseTagList(serviceForm.bs_tags),
-                  onRemove: removeProductTag,
+              <TouchableOpacity style={[styles.serviceUploadButtonOutlined, darkMode && styles.darkServiceUploadButtonOutlined]} onPress={handlePickServiceProductImage} activeOpacity={0.8}>
+                <Ionicons name='cloud-upload-outline' size={16} color={darkMode ? "#C98AEF" : BUSINESS_PROFILE_ACCENT} />
+                <Text style={[styles.serviceUploadButtonOutlinedText, darkMode && styles.darkServiceUploadButtonOutlinedText]}>Upload</Text>
+              </TouchableOpacity>
+              {serviceProductImageUri ? (
+                <TouchableOpacity onPress={handleRemoveServiceProductImage} style={styles.serviceRemoveImageBtn}>
+                  <Text style={[styles.serviceRemoveImageText, darkMode && styles.darkServiceRemoveImageText]}>Remove image</Text>
+                </TouchableOpacity>
+              ) : null}
+              {Platform.OS === "web" &&
+                React.createElement("input", {
+                  ref: serviceImageFileInputRef,
+                  type: "file",
+                  accept: "image/*",
+                  style: { display: "none" },
+                  onChange: handleWebServiceProductImagePick,
                 })}
-              </View>
             </View>
-          </View>
-        </View>
-
-        <View style={[styles.serviceFormSectionDivider, darkMode && styles.darkServiceFormSectionDivider]} />
-
-        <View style={styles.serviceFormSection}>
-          <View style={styles.serviceFormSectionHeaderRow}>
-            <Text style={[styles.serviceFormSectionTitle, darkMode && styles.darkServiceFormSectionTitle, { marginBottom: 0 }]}>Pricing</Text>
-            <Dropdown
-              style={[...serviceDropdownStyle, styles.serviceFormHeaderCurrencyDropdown]}
-              data={SERVICE_CURRENCY_OPTIONS}
-              labelField='label'
-              valueField='value'
-              placeholder='USD'
-              placeholderTextColor={darkMode ? "#999" : "#666"}
-              value={serviceForm.bs_cost_currency || "USD"}
-              onChange={(item) => {
-                setServiceForm((prev) => ({
-                  ...prev,
-                  bs_cost_currency: item.value,
-                  bs_bounty_currency: item.value,
-                }));
-                setIsChanged(true);
-              }}
-              containerStyle={serviceDropdownContainerStyle}
-              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-              activeColor={darkMode ? "#404040" : "#f0f0f0"}
-              maxHeight={220}
-              flatListProps={{ nestedScrollEnabled: true }}
-            />
-          </View>
-          <View style={styles.serviceFormPricingGrid}>
-            <View style={styles.serviceFormPricingCol}>
-              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, serviceFormCostUnitError && { color: "#FF3B30" }]}>Cost</Text>
-              <View style={styles.serviceFormInlineControls}>
-                <TextInput
-                  style={[styles.serviceFormFieldInput, styles.serviceFormInlineAmountInput, darkMode && styles.darkServiceFormFieldInput, serviceFormCostUnitError && styles.serviceFormFieldInputError]}
-                  value={(() => {
-                    const parsed = parsedServiceCost;
-                    const amount = parsed.amount;
-                    if (!amount) return "";
-                    if (amount.toLowerCase() === "free") return "Free";
-                    return formatAmountWithCurrencySymbol(amount, serviceCurrencyCode);
-                  })()}
-                  onChangeText={handleServiceCostAmountChange}
-                  onBlur={handleServiceCostAmountBlur}
-                  placeholder={`${currencySymbol}0.00`}
-                  keyboardType='decimal-pad'
-                  placeholderTextColor={darkMode ? "#888" : "#999"}
-                />
-                <Dropdown
-                  style={[...serviceDropdownStyle, styles.serviceFormUnitDropdown, costUnitHighlight && styles.serviceFormFieldInputError]}
-                  data={SERVICE_COST_UNIT_OPTIONS}
-                  labelField='label'
-                  valueField='value'
-                  placeholder='Unit *'
-                  placeholderStyle={{ color: costUnitHighlight ? "#FF3B30" : darkMode ? "#999" : "#666" }}
-                  value={parsedServiceCost.unit || null}
-                  onChange={handleServiceCostUnitChange}
-                  containerStyle={serviceDropdownContainerStyle}
-                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                  maxHeight={220}
-                  flatListProps={{ nestedScrollEnabled: true }}
-                />
-              </View>
-            </View>
-
-            <View ref={serviceSalesTaxSectionRef} collapsable={false} style={styles.serviceFormPricingCol}>
-              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, serviceFormTaxRateError && { color: "#FF3B30" }]}>Sales tax</Text>
-              <View style={styles.serviceFormInlineControls}>
-                <Dropdown
-                  style={[...serviceDropdownStyle, styles.serviceFormTaxDropdown]}
-                  data={SERVICE_TAX_OPTIONS}
-                  labelField='label'
-                  valueField='value'
-                  value={isTaxable ? "taxable" : "no_tax"}
-                  onChange={(item) => {
-                    if (item.value === "taxable") {
-                      setServiceForm((prev) => ({
-                        ...prev,
-                        bs_is_taxable: 1,
-                        bs_tax_rate: taxRateForTaxableSelection(prev.bs_tax_rate),
-                      }));
-                    } else {
-                      setServiceForm((prev) => ({ ...prev, bs_is_taxable: 0, bs_tax_rate: "0" }));
-                    }
-                    setServiceFormTaxRateError(false);
-                    setIsChanged(true);
-                  }}
-                  containerStyle={serviceDropdownContainerStyle}
-                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                  maxHeight={120}
-                  flatListProps={{ nestedScrollEnabled: true }}
-                />
-                {isTaxable ? (
-                  <View style={styles.serviceFormInputWithSuffix}>
-                    <TextInput
-                      ref={serviceTaxRateInputRef}
-                      style={[styles.serviceFormFieldInput, styles.serviceFormTaxRateInput, darkMode && styles.darkServiceFormFieldInput, taxRateHighlight && styles.serviceFormFieldInputError]}
-                      value={String(serviceForm.bs_tax_rate ?? "")}
-                      onChangeText={(t) => {
-                        handleServiceChange("bs_tax_rate", t.replace(/[^0-9.]/g, ""));
-                        setServiceFormTaxRateError(false);
-                        setIsChanged(true);
-                      }}
-                      onBlur={() => {
-                        const formTaxable = isTruthyTaxableFlag(serviceForm.bs_is_taxable);
-                        if (formTaxable && !isValidTaxRate(serviceForm.bs_tax_rate)) {
-                          setServiceFormTaxRateError(true);
-                        }
-                      }}
-                      placeholder='9.00'
-                      keyboardType='decimal-pad'
-                      placeholderTextColor={darkMode ? "#888" : "#999"}
-                    />
-                    <Text style={[styles.serviceFormInputSuffix, darkMode && styles.darkServiceFormInputSuffix]}>%</Text>
-                  </View>
-                ) : null}
-              </View>
-            </View>
-
-            <View style={styles.serviceFormPricingCol}>
-              <View style={styles.bountyFieldLabelRow}>
-                <Text style={[styles.serviceFormFieldLabel, styles.bountyFieldLabelInRow, darkMode && styles.darkServiceFormFieldLabel]}>Bounty</Text>
-                <BountyInfoTooltip perspective='seller' darkMode={darkMode} />
-              </View>
-              <View style={styles.serviceFormInlineControls}>
-                <Dropdown
-                  style={[...serviceDropdownStyle, styles.serviceFormBountyTypeDropdown]}
-                  data={SERVICE_BOUNTY_TYPE_OPTIONS}
-                  labelField='label'
-                  valueField='value'
-                  value={serviceForm.bs_bounty_type || "none"}
-                  onChange={(item) => {
-                    if (item.value === "none") {
-                      setServiceForm((prev) => ({ ...prev, bs_bounty_type: "none", bs_bounty: "" }));
-                    } else {
-                      setServiceForm((prev) => ({ ...prev, bs_bounty_type: item.value }));
-                    }
-                    setIsChanged(true);
-                  }}
-                  containerStyle={serviceDropdownContainerStyle}
-                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                  maxHeight={160}
-                  flatListProps={{ nestedScrollEnabled: true }}
-                />
-                {serviceForm.bs_bounty_type !== "none" ? (
+            <View style={styles.serviceFormDetailsColumn}>
+              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Name</Text>
+              <TextInput
+                style={[styles.serviceFormFieldInput, darkMode && styles.darkServiceFormFieldInput]}
+                value={serviceForm.bs_service_name}
+                onChangeText={(t) => handleServiceChange("bs_service_name", t)}
+                placeholder='Product or Service Name'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+              />
+              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, { marginTop: 10 }]}>Description</Text>
+              <ResizableMultilineField
+                value={serviceForm.bs_service_desc}
+                onChangeText={(t) => handleServiceChange("bs_service_desc", t)}
+                placeholder='Description'
+                darkMode={darkMode}
+                compactHeight={SERVICE_DESC_COMPACT_HEIGHT}
+                expandedMaxHeight={SERVICE_DESC_EXPANDED_MAX_HEIGHT}
+                resizeAccessibilityLabel='Resize description'
+              />
+              <View style={styles.serviceFormSkuTagsRow}>
+                <View style={styles.serviceFormSkuInline}>
+                  <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>SKU</Text>
                   <TextInput
-                    style={[styles.serviceFormFieldInput, styles.serviceFormInlineAmountInput, darkMode && styles.darkServiceFormFieldInput]}
-                    value={(() => {
-                      const amount = String(serviceForm.bs_bounty || "").trim();
-                      if (!amount) return "";
-                      return formatAmountWithCurrencySymbol(amount, serviceCurrencyCode);
-                    })()}
-                    onChangeText={(t) => handleServiceChange("bs_bounty", stripLeadingCurrencySymbol(t))}
-                    onBlur={handleServiceBountyAmountBlur}
-                    placeholder={`${currencySymbol}0.00`}
-                    keyboardType='decimal-pad'
+                    style={[styles.serviceFormFieldInput, styles.serviceFormSkuInput, darkMode && styles.darkServiceFormFieldInput]}
+                    value={serviceForm.bs_sku || ""}
+                    onChangeText={(t) => handleServiceChange("bs_sku", t)}
+                    placeholder='Optional'
                     placeholderTextColor={darkMode ? "#888" : "#999"}
+                    autoCapitalize='characters'
+                    autoCorrect={false}
                   />
-                ) : null}
+                </View>
+                <View style={styles.serviceFormTagsInline}>
+                  <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Product tags</Text>
+                  {renderTagEditor({
+                    compact: true,
+                    inputValue: productTagInput,
+                    onChangeInput: (text) => {
+                      setProductTagInput(text);
+                      if (text.trim()) setIsChanged(true);
+                    },
+                    onAdd: addProductTag,
+                    tags: parseTagList(serviceForm.bs_tags),
+                    onRemove: removeProductTag,
+                  })}
+                </View>
               </View>
             </View>
           </View>
-          {bountyExceedsCost ? (
-            <Text style={[styles.bountyCostWarning, darkMode && styles.bountyCostWarningDark]}>
-              Warning: Bounty is greater than the item cost. You may pay referrers more than you charge per item.
-            </Text>
-          ) : null}
-        </View>
 
-        <View style={[styles.serviceFormSectionDivider, darkMode && styles.darkServiceFormSectionDivider]} />
+          <View style={[styles.serviceFormSectionDivider, darkMode && styles.darkServiceFormSectionDivider]} />
 
-        <View style={styles.serviceFormSection}>
-          <Text style={[styles.serviceFormSectionTitle, darkMode && styles.darkServiceFormSectionTitle]}>Fulfillment</Text>
-          <View style={styles.serviceFormFulfillmentModeRow}>
-            <FulfillmentModePicker
-              modeStr={serviceForm.bs_mode || ""}
-              onChange={(modeStr) => {
-                setServiceForm((prev) => {
-                  const next = { ...prev, bs_mode: modeStr };
-                  if (!businessDeliveredModeSelected({ bs_mode: modeStr })) {
-                    return { ...next, ...applyServiceShippingDropdownValue("na") };
-                  }
-                  return next;
-                });
-                setServiceFormModeError(false);
-                setIsChanged(true);
-              }}
-              darkMode={darkMode}
-              required
-              highlight={serviceFormModeError && modeAddBlocked}
-              accentColor={BUSINESS_PROFILE_ACCENT}
-              accentDarkColor={BUSINESS_PROFILE_ACCENT_DARK}
-            />
-          </View>
-          <View style={styles.serviceFormFulfillmentGrid}>
-            <View style={styles.serviceFormFulfillmentCol}>
-              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Condition</Text>
+          <View style={styles.serviceFormSection}>
+            <View style={styles.serviceFormSectionHeaderRow}>
+              <Text style={[styles.serviceFormSectionTitle, darkMode && styles.darkServiceFormSectionTitle, { marginBottom: 0 }]}>Pricing</Text>
               <Dropdown
-                style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown]}
-                data={SERVICE_CONDITION_OPTIONS}
+                style={[...serviceDropdownStyle, styles.serviceFormHeaderCurrencyDropdown]}
+                data={SERVICE_CURRENCY_OPTIONS}
                 labelField='label'
                 valueField='value'
-                value={serviceForm.bs_condition_type || "na"}
+                placeholder='USD'
+                placeholderTextColor={darkMode ? "#999" : "#666"}
+                value={serviceForm.bs_cost_currency || "USD"}
                 onChange={(item) => {
                   setServiceForm((prev) => ({
                     ...prev,
-                    bs_condition_type: item.value,
-                    bs_condition_detail: item.value === "used" ? prev.bs_condition_detail : "",
+                    bs_cost_currency: item.value,
+                    bs_bounty_currency: item.value,
                   }));
-                  setIsChanged(true);
-                }}
-                containerStyle={serviceDropdownContainerStyle}
-                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                maxHeight={160}
-                flatListProps={{ nestedScrollEnabled: true }}
-              />
-              {serviceForm.bs_condition_type === "used" ? (
-                <View style={styles.serviceFormFulfillmentExtra}>
-                  <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Condition details</Text>
-                  <ResizableMultilineField
-                    value={serviceForm.bs_condition_detail}
-                    onChangeText={(t) => handleServiceChange("bs_condition_detail", t.slice(0, CONDITION_DETAIL_MAX_CHARS))}
-                    placeholder='Description (max 250 characters)'
-                    maxLength={CONDITION_DETAIL_MAX_CHARS}
-                    darkMode={darkMode}
-                    compactHeight={CONDITION_DETAIL_COMPACT_HEIGHT}
-                    expandedMaxHeight={CONDITION_DETAIL_EXPANDED_MAX_HEIGHT}
-                    resizeAccessibilityLabel='Resize condition details'
-                    extraInputStyle={styles.serviceFormFulfillmentExtraInput}
-                  />
-                </View>
-              ) : null}
-            </View>
-
-            <View style={styles.serviceFormFulfillmentCol}>
-              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>
-                {OFFERING_DELIVERY_CHARGE_LABEL}
-                {deliveredMode ? " *" : ""}
-              </Text>
-              <Dropdown
-                style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown, highlightShippingDropdown && styles.serviceFormFieldInputError]}
-                data={getBusinessServiceShippingDropdownOptions(serviceForm)}
-                labelField='label'
-                valueField='value'
-                value={shippingDropdownValue}
-                onChange={(item) => {
-                  setServiceForm((prev) => ({ ...prev, ...applyServiceShippingDropdownValue(item.value) }));
                   setIsChanged(true);
                 }}
                 containerStyle={serviceDropdownContainerStyle}
@@ -4454,241 +4180,487 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 maxHeight={220}
                 flatListProps={{ nestedScrollEnabled: true }}
               />
-              {isFixedShipping(serviceForm) ? (
-                <View style={styles.serviceFormFulfillmentExtra}>
-                  <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>{FIXED_DELIVERY_CHARGE_AMOUNT_LABEL}</Text>
-                  <View style={[styles.serviceFormOfferingFixedShippingRow, darkMode && styles.darkServiceFormOfferingFixedShippingRow, highlightFixedAmount && styles.serviceFormFieldInputError]}>
-                    <Text style={[styles.serviceFormOfferingFixedShippingPrefix, darkMode && styles.darkServiceFormOfferingFixedShippingPrefix]}>{currencySymbol}</Text>
+            </View>
+            <View style={styles.serviceFormPricingGrid}>
+              <View style={styles.serviceFormPricingCol}>
+                <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, serviceFormCostUnitError && { color: "#FF3B30" }]}>Cost</Text>
+                <View style={styles.serviceFormInlineControls}>
+                  <TextInput
+                    style={[
+                      styles.serviceFormFieldInput,
+                      styles.serviceFormInlineAmountInput,
+                      darkMode && styles.darkServiceFormFieldInput,
+                      serviceFormCostUnitError && styles.serviceFormFieldInputError,
+                    ]}
+                    value={(() => {
+                      const parsed = parsedServiceCost;
+                      const amount = parsed.amount;
+                      if (!amount) return "";
+                      if (amount.toLowerCase() === "free") return "Free";
+                      return formatAmountWithCurrencySymbol(amount, serviceCurrencyCode);
+                    })()}
+                    onChangeText={handleServiceCostAmountChange}
+                    onBlur={handleServiceCostAmountBlur}
+                    placeholder={`${currencySymbol}0.00`}
+                    keyboardType='decimal-pad'
+                    placeholderTextColor={darkMode ? "#888" : "#999"}
+                  />
+                  <Dropdown
+                    style={[...serviceDropdownStyle, styles.serviceFormUnitDropdown, costUnitHighlight && styles.serviceFormFieldInputError]}
+                    data={SERVICE_COST_UNIT_OPTIONS}
+                    labelField='label'
+                    valueField='value'
+                    placeholder='Unit *'
+                    placeholderStyle={{ color: costUnitHighlight ? "#FF3B30" : darkMode ? "#999" : "#666" }}
+                    value={parsedServiceCost.unit || null}
+                    onChange={handleServiceCostUnitChange}
+                    containerStyle={serviceDropdownContainerStyle}
+                    itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                    maxHeight={220}
+                    flatListProps={{ nestedScrollEnabled: true }}
+                  />
+                </View>
+              </View>
+
+              <View ref={serviceSalesTaxSectionRef} collapsable={false} style={styles.serviceFormPricingCol}>
+                <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, serviceFormTaxRateError && { color: "#FF3B30" }]}>Sales tax</Text>
+                <View style={styles.serviceFormInlineControls}>
+                  <Dropdown
+                    style={[...serviceDropdownStyle, styles.serviceFormTaxDropdown]}
+                    data={SERVICE_TAX_OPTIONS}
+                    labelField='label'
+                    valueField='value'
+                    value={isTaxable ? "taxable" : "no_tax"}
+                    onChange={(item) => {
+                      if (item.value === "taxable") {
+                        setServiceForm((prev) => ({
+                          ...prev,
+                          bs_is_taxable: 1,
+                          bs_tax_rate: taxRateForTaxableSelection(prev.bs_tax_rate),
+                        }));
+                      } else {
+                        setServiceForm((prev) => ({ ...prev, bs_is_taxable: 0, bs_tax_rate: "0" }));
+                      }
+                      setServiceFormTaxRateError(false);
+                      setIsChanged(true);
+                    }}
+                    containerStyle={serviceDropdownContainerStyle}
+                    itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                    maxHeight={120}
+                    flatListProps={{ nestedScrollEnabled: true }}
+                  />
+                  {isTaxable ? (
+                    <View style={styles.serviceFormInputWithSuffix}>
+                      <TextInput
+                        ref={serviceTaxRateInputRef}
+                        style={[styles.serviceFormFieldInput, styles.serviceFormTaxRateInput, darkMode && styles.darkServiceFormFieldInput, taxRateHighlight && styles.serviceFormFieldInputError]}
+                        value={String(serviceForm.bs_tax_rate ?? "")}
+                        onChangeText={(t) => {
+                          handleServiceChange("bs_tax_rate", t.replace(/[^0-9.]/g, ""));
+                          setServiceFormTaxRateError(false);
+                          setIsChanged(true);
+                        }}
+                        onBlur={() => {
+                          const formTaxable = isTruthyTaxableFlag(serviceForm.bs_is_taxable);
+                          if (formTaxable && !isValidTaxRate(serviceForm.bs_tax_rate)) {
+                            setServiceFormTaxRateError(true);
+                          }
+                        }}
+                        placeholder='9.00'
+                        keyboardType='decimal-pad'
+                        placeholderTextColor={darkMode ? "#888" : "#999"}
+                      />
+                      <Text style={[styles.serviceFormInputSuffix, darkMode && styles.darkServiceFormInputSuffix]}>%</Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+
+              <View style={styles.serviceFormPricingCol}>
+                <View style={styles.bountyFieldLabelRow}>
+                  <Text style={[styles.serviceFormFieldLabel, styles.bountyFieldLabelInRow, darkMode && styles.darkServiceFormFieldLabel]}>Bounty</Text>
+                  <BountyInfoTooltip perspective='seller' darkMode={darkMode} />
+                </View>
+                <View style={styles.serviceFormInlineControls}>
+                  <Dropdown
+                    style={[...serviceDropdownStyle, styles.serviceFormBountyTypeDropdown]}
+                    data={SERVICE_BOUNTY_TYPE_OPTIONS}
+                    labelField='label'
+                    valueField='value'
+                    value={serviceForm.bs_bounty_type || "none"}
+                    onChange={(item) => {
+                      if (item.value === "none") {
+                        setServiceForm((prev) => ({ ...prev, bs_bounty_type: "none", bs_bounty: "" }));
+                      } else {
+                        setServiceForm((prev) => ({ ...prev, bs_bounty_type: item.value }));
+                      }
+                      setIsChanged(true);
+                    }}
+                    containerStyle={serviceDropdownContainerStyle}
+                    itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                    activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                    maxHeight={160}
+                    flatListProps={{ nestedScrollEnabled: true }}
+                  />
+                  {serviceForm.bs_bounty_type !== "none" ? (
                     <TextInput
-                      style={[styles.serviceFormOfferingFixedShippingInput, darkMode && styles.darkServiceFormOfferingFixedShippingInput]}
-                      value={shippingAmountDisplayValue(serviceForm)}
-                      onFocus={() => {
-                        setServiceForm((prev) => ({
-                          ...prev,
-                          bs_shipping: BS_SHIPPING_BUYER_FIXED,
-                          bs_shipping_amount: prev.bs_shipping === BS_SHIPPING_BUYER_FIXED ? prev.bs_shipping_amount : null,
-                        }));
-                        setIsChanged(true);
-                      }}
-                      onChangeText={(text) => {
-                        const cleaned = String(text).replace(/[^0-9.]/g, "");
-                        const parts = cleaned.split(".");
-                        const normalized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join("")}` : cleaned;
-                        setServiceForm((prev) => ({
-                          ...prev,
-                          bs_shipping: BS_SHIPPING_BUYER_FIXED,
-                          bs_shipping_amount: normalized === "" ? null : normalized,
-                        }));
-                        setIsChanged(true);
-                      }}
-                      onBlur={() => {
-                        if (!isFixedShipping(serviceForm)) return;
-                        const raw = String(serviceForm.bs_shipping_amount ?? "").trim();
-                        if (!raw || raw === ".") {
-                          handleServiceChange("bs_shipping_amount", null);
-                          return;
-                        }
-                        const amount = parseBsShippingAmount(raw);
-                        if (amount == null && !(raw === "0" || raw === "0." || raw === "0.0" || raw === "0.00")) return;
-                        const nextAmount = amount == null ? 0 : amount;
-                        if (nextAmount !== serviceForm.bs_shipping_amount) {
-                          handleServiceChange("bs_shipping_amount", nextAmount);
-                        }
-                      }}
-                      placeholder='Fixed delivery charge'
+                      style={[styles.serviceFormFieldInput, styles.serviceFormInlineAmountInput, darkMode && styles.darkServiceFormFieldInput]}
+                      value={(() => {
+                        const amount = String(serviceForm.bs_bounty || "").trim();
+                        if (!amount) return "";
+                        return formatAmountWithCurrencySymbol(amount, serviceCurrencyCode);
+                      })()}
+                      onChangeText={(t) => handleServiceChange("bs_bounty", stripLeadingCurrencySymbol(t))}
+                      onBlur={handleServiceBountyAmountBlur}
+                      placeholder={`${currencySymbol}0.00`}
                       keyboardType='decimal-pad'
                       placeholderTextColor={darkMode ? "#888" : "#999"}
                     />
-                  </View>
+                  ) : null}
                 </View>
-              ) : null}
+              </View>
             </View>
+            {bountyExceedsCost ? (
+              <Text style={[styles.bountyCostWarning, darkMode && styles.bountyCostWarningDark]}>
+                Warning: Bounty is greater than the item cost. You may pay referrers more than you charge per item.
+              </Text>
+            ) : null}
+          </View>
 
-            <View style={styles.serviceFormFulfillmentCol}>
-              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Returnable</Text>
-              <Dropdown
-                style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown]}
-                data={SERVICE_RETURNABLE_OPTIONS}
-                labelField='label'
-                valueField='value'
-                value={isReturnable ? "yes" : "no"}
-                onChange={(item) => {
-                  if (item.value === "yes") {
+          <View style={[styles.serviceFormSectionDivider, darkMode && styles.darkServiceFormSectionDivider]} />
+
+          <View style={styles.serviceFormSection}>
+            <Text style={[styles.serviceFormSectionTitle, darkMode && styles.darkServiceFormSectionTitle]}>Fulfillment</Text>
+            <View style={styles.serviceFormFulfillmentModeRow}>
+              <FulfillmentModePicker
+                modeStr={serviceForm.bs_mode || ""}
+                onChange={(modeStr) => {
+                  setServiceForm((prev) => {
+                    const next = { ...prev, bs_mode: modeStr };
+                    if (!businessDeliveredModeSelected({ bs_mode: modeStr })) {
+                      return { ...next, ...applyServiceShippingDropdownValue("na") };
+                    }
+                    return next;
+                  });
+                  setServiceFormModeError(false);
+                  setIsChanged(true);
+                }}
+                darkMode={darkMode}
+                required
+                highlight={serviceFormModeError && modeAddBlocked}
+                accentColor={BUSINESS_PROFILE_ACCENT}
+                accentDarkColor={BUSINESS_PROFILE_ACCENT_DARK}
+              />
+            </View>
+            <View style={styles.serviceFormFulfillmentGrid}>
+              <View style={styles.serviceFormFulfillmentCol}>
+                <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Condition</Text>
+                <Dropdown
+                  style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown]}
+                  data={SERVICE_CONDITION_OPTIONS}
+                  labelField='label'
+                  valueField='value'
+                  value={serviceForm.bs_condition_type || "na"}
+                  onChange={(item) => {
                     setServiceForm((prev) => ({
                       ...prev,
-                      bs_is_returnable: 1,
-                      bs_return_window_days:
-                        prev.bs_return_window_days != null && String(prev.bs_return_window_days).trim() !== "" && String(prev.bs_return_window_days).trim() !== "0"
-                          ? String(prev.bs_return_window_days).trim()
-                          : DEFAULT_RETURN_WINDOW_DAYS,
+                      bs_condition_type: item.value,
+                      bs_condition_detail: item.value === "used" ? prev.bs_condition_detail : "",
                     }));
-                  } else {
-                    setServiceForm((prev) => ({ ...prev, bs_is_returnable: 0, bs_return_window_days: "0", bs_shipping_refundable: 0 }));
-                  }
-                  setIsChanged(true);
-                }}
-                containerStyle={serviceDropdownContainerStyle}
-                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                maxHeight={120}
-                flatListProps={{ nestedScrollEnabled: true }}
-              />
-              {isReturnable ? (
-                <View style={styles.serviceFormFulfillmentExtra}>
-                  <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Return window</Text>
-                  <View style={styles.serviceFormFulfillmentInlineRow}>
+                    setIsChanged(true);
+                  }}
+                  containerStyle={serviceDropdownContainerStyle}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  maxHeight={160}
+                  flatListProps={{ nestedScrollEnabled: true }}
+                />
+                {serviceForm.bs_condition_type === "used" ? (
+                  <View style={styles.serviceFormFulfillmentExtra}>
+                    <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Condition details</Text>
+                    <ResizableMultilineField
+                      value={serviceForm.bs_condition_detail}
+                      onChangeText={(t) => handleServiceChange("bs_condition_detail", t.slice(0, CONDITION_DETAIL_MAX_CHARS))}
+                      placeholder='Description (max 250 characters)'
+                      maxLength={CONDITION_DETAIL_MAX_CHARS}
+                      darkMode={darkMode}
+                      compactHeight={CONDITION_DETAIL_COMPACT_HEIGHT}
+                      expandedMaxHeight={CONDITION_DETAIL_EXPANDED_MAX_HEIGHT}
+                      resizeAccessibilityLabel='Resize condition details'
+                      extraInputStyle={styles.serviceFormFulfillmentExtraInput}
+                    />
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.serviceFormFulfillmentCol}>
+                <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>
+                  {OFFERING_DELIVERY_CHARGE_LABEL}
+                  {deliveredMode ? " *" : ""}
+                </Text>
+                <Dropdown
+                  style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown, highlightShippingDropdown && styles.serviceFormFieldInputError]}
+                  data={getBusinessServiceShippingDropdownOptions(serviceForm)}
+                  labelField='label'
+                  valueField='value'
+                  value={shippingDropdownValue}
+                  onChange={(item) => {
+                    setServiceForm((prev) => ({ ...prev, ...applyServiceShippingDropdownValue(item.value) }));
+                    setIsChanged(true);
+                  }}
+                  containerStyle={serviceDropdownContainerStyle}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  maxHeight={220}
+                  flatListProps={{ nestedScrollEnabled: true }}
+                />
+                {isFixedShipping(serviceForm) ? (
+                  <View style={styles.serviceFormFulfillmentExtra}>
+                    <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>{FIXED_DELIVERY_CHARGE_AMOUNT_LABEL}</Text>
+                    <View style={[styles.serviceFormOfferingFixedShippingRow, darkMode && styles.darkServiceFormOfferingFixedShippingRow, highlightFixedAmount && styles.serviceFormFieldInputError]}>
+                      <Text style={[styles.serviceFormOfferingFixedShippingPrefix, darkMode && styles.darkServiceFormOfferingFixedShippingPrefix]}>{currencySymbol}</Text>
+                      <TextInput
+                        style={[styles.serviceFormOfferingFixedShippingInput, darkMode && styles.darkServiceFormOfferingFixedShippingInput]}
+                        value={shippingAmountDisplayValue(serviceForm)}
+                        onFocus={() => {
+                          setServiceForm((prev) => ({
+                            ...prev,
+                            bs_shipping: BS_SHIPPING_BUYER_FIXED,
+                            bs_shipping_amount: prev.bs_shipping === BS_SHIPPING_BUYER_FIXED ? prev.bs_shipping_amount : null,
+                          }));
+                          setIsChanged(true);
+                        }}
+                        onChangeText={(text) => {
+                          const cleaned = String(text).replace(/[^0-9.]/g, "");
+                          const parts = cleaned.split(".");
+                          const normalized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join("")}` : cleaned;
+                          setServiceForm((prev) => ({
+                            ...prev,
+                            bs_shipping: BS_SHIPPING_BUYER_FIXED,
+                            bs_shipping_amount: normalized === "" ? null : normalized,
+                          }));
+                          setIsChanged(true);
+                        }}
+                        onBlur={() => {
+                          if (!isFixedShipping(serviceForm)) return;
+                          const raw = String(serviceForm.bs_shipping_amount ?? "").trim();
+                          if (!raw || raw === ".") {
+                            handleServiceChange("bs_shipping_amount", null);
+                            return;
+                          }
+                          const amount = parseBsShippingAmount(raw);
+                          if (amount == null && !(raw === "0" || raw === "0." || raw === "0.0" || raw === "0.00")) return;
+                          const nextAmount = amount == null ? 0 : amount;
+                          if (nextAmount !== serviceForm.bs_shipping_amount) {
+                            handleServiceChange("bs_shipping_amount", nextAmount);
+                          }
+                        }}
+                        placeholder='Fixed delivery charge'
+                        keyboardType='decimal-pad'
+                        placeholderTextColor={darkMode ? "#888" : "#999"}
+                      />
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.serviceFormFulfillmentCol}>
+                <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Returnable</Text>
+                <Dropdown
+                  style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown]}
+                  data={SERVICE_RETURNABLE_OPTIONS}
+                  labelField='label'
+                  valueField='value'
+                  value={isReturnable ? "yes" : "no"}
+                  onChange={(item) => {
+                    if (item.value === "yes") {
+                      setServiceForm((prev) => ({
+                        ...prev,
+                        bs_is_returnable: 1,
+                        bs_return_window_days:
+                          prev.bs_return_window_days != null && String(prev.bs_return_window_days).trim() !== "" && String(prev.bs_return_window_days).trim() !== "0"
+                            ? String(prev.bs_return_window_days).trim()
+                            : DEFAULT_RETURN_WINDOW_DAYS,
+                      }));
+                    } else {
+                      setServiceForm((prev) => ({ ...prev, bs_is_returnable: 0, bs_return_window_days: "0", bs_shipping_refundable: 0 }));
+                    }
+                    setIsChanged(true);
+                  }}
+                  containerStyle={serviceDropdownContainerStyle}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  maxHeight={120}
+                  flatListProps={{ nestedScrollEnabled: true }}
+                />
+                {isReturnable ? (
+                  <View style={styles.serviceFormFulfillmentExtra}>
+                    <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Return window</Text>
+                    <View style={styles.serviceFormFulfillmentInlineRow}>
+                      <TextInput
+                        style={[styles.serviceFormFieldInput, styles.serviceFormFulfillmentDaysInput, darkMode && styles.darkServiceFormFieldInput]}
+                        value={String(serviceForm.bs_return_window_days ?? DEFAULT_RETURN_WINDOW_DAYS)}
+                        onChangeText={(t) => {
+                          handleServiceChange("bs_return_window_days", t.replace(/\D/g, "").slice(0, RETURN_WINDOW_MAX_DIGITS));
+                          setIsChanged(true);
+                        }}
+                        placeholder={DEFAULT_RETURN_WINDOW_DAYS}
+                        keyboardType='number-pad'
+                        maxLength={RETURN_WINDOW_MAX_DIGITS}
+                        placeholderTextColor={darkMode ? "#888" : "#999"}
+                      />
+                      <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>days</Text>
+                      {isBuyerPaysShipping(serviceForm) ? (
+                        <TouchableOpacity
+                          style={styles.serviceCheckboxRowInline}
+                          onPress={() => {
+                            const checked = serviceForm.bs_shipping_refundable === 1 || serviceForm.bs_shipping_refundable === "1";
+                            handleServiceChange("bs_shipping_refundable", checked ? 0 : 1);
+                          }}
+                        >
+                          <Ionicons
+                            name={serviceForm.bs_shipping_refundable === 1 || serviceForm.bs_shipping_refundable === "1" ? "checkbox" : "square-outline"}
+                            size={18}
+                            color={serviceForm.bs_shipping_refundable === 1 || serviceForm.bs_shipping_refundable === "1" ? "#111" : darkMode ? "#aaa" : "#666"}
+                          />
+                          <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>{OFFERING_DELIVERY_CHARGE_LABEL} is refundable</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+
+              <View ref={serviceQuantitySectionRef} collapsable={false} style={styles.serviceFormFulfillmentCol}>
+                <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, serviceFormQuantityError && { color: "#FF3B30" }]}>Quantity</Text>
+                <Dropdown
+                  style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown, serviceFormQuantityError && styles.serviceFormFieldInputError]}
+                  data={SERVICE_QUANTITY_OPTIONS}
+                  labelField='label'
+                  valueField='value'
+                  value={isQtyUnlimited ? "unlimited" : "limited"}
+                  onChange={(item) => {
+                    if (item.value === "unlimited") {
+                      handleServiceChange("bs_qty_unlimited", 1);
+                      setServiceFormQuantityError(false);
+                    } else {
+                      handleServiceChange("bs_qty_unlimited", 0);
+                    }
+                    setIsChanged(true);
+                  }}
+                  containerStyle={serviceDropdownContainerStyle}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                  maxHeight={120}
+                  flatListProps={{ nestedScrollEnabled: true }}
+                />
+                {!isQtyUnlimited ? (
+                  <View style={styles.serviceFormFulfillmentExtra}>
+                    <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, serviceFormQuantityError && { color: "#FF3B30" }]}>Available quantity</Text>
                     <TextInput
-                      style={[styles.serviceFormFieldInput, styles.serviceFormFulfillmentDaysInput, darkMode && styles.darkServiceFormFieldInput]}
-                      value={String(serviceForm.bs_return_window_days ?? DEFAULT_RETURN_WINDOW_DAYS)}
+                      ref={serviceQuantityInputRef}
+                      style={[
+                        styles.serviceFormFieldInput,
+                        styles.serviceFormFulfillmentExtraInput,
+                        darkMode && styles.darkServiceFormFieldInput,
+                        serviceFormQuantityError && styles.serviceFormFieldInputError,
+                      ]}
+                      value={serviceForm.bs_available_quantity}
                       onChangeText={(t) => {
-                        handleServiceChange("bs_return_window_days", t.replace(/\D/g, "").slice(0, RETURN_WINDOW_MAX_DIGITS));
+                        handleServiceChange("bs_available_quantity", t.replace(/\D/g, "").slice(0, QUANTITY_MAX_DIGITS));
+                        setServiceFormQuantityError(false);
                         setIsChanged(true);
                       }}
-                      placeholder={DEFAULT_RETURN_WINDOW_DAYS}
+                      placeholder='Count'
                       keyboardType='number-pad'
-                      maxLength={RETURN_WINDOW_MAX_DIGITS}
+                      maxLength={QUANTITY_MAX_DIGITS}
                       placeholderTextColor={darkMode ? "#888" : "#999"}
                     />
-                    <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>days</Text>
-                    {isBuyerPaysShipping(serviceForm) ? (
-                      <TouchableOpacity
-                        style={styles.serviceCheckboxRowInline}
-                        onPress={() => {
-                          const checked = serviceForm.bs_shipping_refundable === 1 || serviceForm.bs_shipping_refundable === "1";
-                          handleServiceChange("bs_shipping_refundable", checked ? 0 : 1);
-                        }}
-                      >
-                        <Ionicons
-                          name={serviceForm.bs_shipping_refundable === 1 || serviceForm.bs_shipping_refundable === "1" ? "checkbox" : "square-outline"}
-                          size={18}
-                          color={serviceForm.bs_shipping_refundable === 1 || serviceForm.bs_shipping_refundable === "1" ? "#111" : darkMode ? "#aaa" : "#666"}
-                        />
-                        <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>{OFFERING_DELIVERY_CHARGE_LABEL} is refundable</Text>
-                      </TouchableOpacity>
-                    ) : null}
                   </View>
-                </View>
-              ) : null}
-            </View>
-
-            <View ref={serviceQuantitySectionRef} collapsable={false} style={styles.serviceFormFulfillmentCol}>
-              <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, serviceFormQuantityError && { color: "#FF3B30" }]}>Quantity</Text>
-              <Dropdown
-                style={[...serviceDropdownStyle, styles.serviceFormFulfillmentDropdown, serviceFormQuantityError && styles.serviceFormFieldInputError]}
-                data={SERVICE_QUANTITY_OPTIONS}
-                labelField='label'
-                valueField='value'
-                value={isQtyUnlimited ? "unlimited" : "limited"}
-                onChange={(item) => {
-                  if (item.value === "unlimited") {
-                    handleServiceChange("bs_qty_unlimited", 1);
-                    setServiceFormQuantityError(false);
-                  } else {
-                    handleServiceChange("bs_qty_unlimited", 0);
-                  }
-                  setIsChanged(true);
-                }}
-                containerStyle={serviceDropdownContainerStyle}
-                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-                activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                maxHeight={120}
-                flatListProps={{ nestedScrollEnabled: true }}
-              />
-              {!isQtyUnlimited ? (
-                <View style={styles.serviceFormFulfillmentExtra}>
-                  <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, serviceFormQuantityError && { color: "#FF3B30" }]}>Available quantity</Text>
-                  <TextInput
-                    ref={serviceQuantityInputRef}
-                    style={[styles.serviceFormFieldInput, styles.serviceFormFulfillmentExtraInput, darkMode && styles.darkServiceFormFieldInput, serviceFormQuantityError && styles.serviceFormFieldInputError]}
-                    value={serviceForm.bs_available_quantity}
-                    onChangeText={(t) => {
-                      handleServiceChange("bs_available_quantity", t.replace(/\D/g, "").slice(0, QUANTITY_MAX_DIGITS));
-                      setServiceFormQuantityError(false);
-                      setIsChanged(true);
-                    }}
-                    placeholder='Count'
-                    keyboardType='number-pad'
-                    maxLength={QUANTITY_MAX_DIGITS}
-                    placeholderTextColor={darkMode ? "#888" : "#999"}
-                  />
-                </View>
-              ) : null}
+                ) : null}
+              </View>
             </View>
           </View>
-        </View>
 
-        <View style={[styles.serviceFormSectionDivider, darkMode && styles.darkServiceFormSectionDivider]} />
+          <View style={[styles.serviceFormSectionDivider, darkMode && styles.darkServiceFormSectionDivider]} />
 
-        <View style={styles.serviceFormSection}>
-          <View style={styles.serviceFormSectionHeaderRow}>
-            <Text style={[styles.serviceFormSectionTitle, darkMode && styles.darkServiceFormSectionTitle, { marginBottom: 0 }]}>Customer choices</Text>
-            <TouchableOpacity style={[styles.serviceFormOutlineButton, darkMode && styles.darkServiceFormOutlineButton]} onPress={addChoiceGroup} activeOpacity={0.8}>
-              <Ionicons name='add' size={16} color={darkMode ? "#ddd" : "#333"} />
-              <Text style={[styles.serviceFormOutlineButtonText, darkMode && styles.darkServiceFormOutlineButtonText]}>Add group</Text>
+          <View style={styles.serviceFormSection}>
+            <View style={styles.serviceFormSectionHeaderRow}>
+              <Text style={[styles.serviceFormSectionTitle, darkMode && styles.darkServiceFormSectionTitle, { marginBottom: 0 }]}>Customer choices</Text>
+              <TouchableOpacity style={[styles.serviceFormOutlineButton, darkMode && styles.darkServiceFormOutlineButton]} onPress={addChoiceGroup} activeOpacity={0.8}>
+                <Ionicons name='add' size={16} color={darkMode ? "#ddd" : "#333"} />
+                <Text style={[styles.serviceFormOutlineButtonText, darkMode && styles.darkServiceFormOutlineButtonText]}>Add group</Text>
+              </TouchableOpacity>
+            </View>
+            <ChoiceGroupsEditor
+              groups={serviceForm.bs_choice_groups || []}
+              onChange={(groups) => {
+                setServiceForm((prev) => ({ ...prev, bs_choice_groups: groups, _serviceOptionsTouched: true }));
+                setIsChanged(true);
+              }}
+              darkMode={darkMode}
+              hideAddGroupButton
+            />
+          </View>
+
+          <View style={[styles.serviceFormSectionDivider, darkMode && styles.darkServiceFormSectionDivider]} />
+
+          <View style={styles.serviceFormSpecialInstructionsRow}>
+            <Text style={[styles.serviceFormSpecialInstructionsTitle, darkMode && styles.darkServiceFormRowTitle]} numberOfLines={2}>
+              Allow customer special instructions
+            </Text>
+            <Dropdown
+              style={[...serviceDropdownStyle, styles.serviceFormSpecialInstructionsDropdown]}
+              data={SERVICE_SPECIAL_INSTRUCTIONS_OPTIONS}
+              labelField='label'
+              valueField='value'
+              value={specialInstructionsEnabled ? "yes" : "no"}
+              onChange={(item) => {
+                if (item.value === "yes") {
+                  setServiceForm((prev) => ({
+                    ...prev,
+                    bs_special_instructions_enabled: 1,
+                    bs_special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
+                    _serviceOptionsTouched: true,
+                  }));
+                } else {
+                  setServiceForm((prev) => ({ ...prev, bs_special_instructions_enabled: 0, _serviceOptionsTouched: true }));
+                }
+                setIsChanged(true);
+              }}
+              containerStyle={serviceDropdownContainerStyle}
+              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
+              activeColor={darkMode ? "#404040" : "#f0f0f0"}
+              maxHeight={120}
+              flatListProps={{ nestedScrollEnabled: true }}
+            />
+          </View>
+
+          <View style={styles.serviceFormFooterButtons}>
+            <TouchableOpacity style={[styles.serviceFormCancelButton, darkMode && styles.darkServiceFormCancelButton]} onPress={handleCancelEdit}>
+              <Text style={[styles.serviceFormCancelButtonText, darkMode && styles.darkServiceFormCancelButtonText]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.serviceFormPrimaryButton, addServiceBlocked && styles.serviceFormPrimaryButtonDisabled, darkMode && addServiceBlocked && styles.darkServiceFormPrimaryButtonDisabled]}
+              onPress={handleAddService}
+              disabled={addServiceBlocked}
+              activeOpacity={addServiceBlocked ? 1 : 0.7}
+            >
+              <Text style={[styles.serviceFormPrimaryButtonText, addServiceBlocked && styles.serviceFormPrimaryButtonTextDisabled]}>
+                {editingServiceIndex !== null ? "Update product" : "Add product"}
+              </Text>
             </TouchableOpacity>
           </View>
-          <ChoiceGroupsEditor
-            groups={serviceForm.bs_choice_groups || []}
-            onChange={(groups) => {
-              setServiceForm((prev) => ({ ...prev, bs_choice_groups: groups, _serviceOptionsTouched: true }));
-              setIsChanged(true);
-            }}
-            darkMode={darkMode}
-            hideAddGroupButton
-          />
-        </View>
-
-        <View style={[styles.serviceFormSectionDivider, darkMode && styles.darkServiceFormSectionDivider]} />
-
-        <View style={styles.serviceFormSpecialInstructionsRow}>
-          <Text style={[styles.serviceFormSpecialInstructionsTitle, darkMode && styles.darkServiceFormRowTitle]} numberOfLines={2}>
-            Allow customer special instructions
-          </Text>
-          <Dropdown
-            style={[...serviceDropdownStyle, styles.serviceFormSpecialInstructionsDropdown]}
-            data={SERVICE_SPECIAL_INSTRUCTIONS_OPTIONS}
-            labelField='label'
-            valueField='value'
-            value={specialInstructionsEnabled ? "yes" : "no"}
-            onChange={(item) => {
-              if (item.value === "yes") {
-                setServiceForm((prev) => ({
-                  ...prev,
-                  bs_special_instructions_enabled: 1,
-                  bs_special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
-                  _serviceOptionsTouched: true,
-                }));
-              } else {
-                setServiceForm((prev) => ({ ...prev, bs_special_instructions_enabled: 0, _serviceOptionsTouched: true }));
-              }
-              setIsChanged(true);
-            }}
-            containerStyle={serviceDropdownContainerStyle}
-            itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-            selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 13 }}
-            activeColor={darkMode ? "#404040" : "#f0f0f0"}
-            maxHeight={120}
-            flatListProps={{ nestedScrollEnabled: true }}
-          />
-        </View>
-
-        <View style={styles.serviceFormFooterButtons}>
-          <TouchableOpacity style={[styles.serviceFormCancelButton, darkMode && styles.darkServiceFormCancelButton]} onPress={handleCancelEdit}>
-            <Text style={[styles.serviceFormCancelButtonText, darkMode && styles.darkServiceFormCancelButtonText]}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.serviceFormPrimaryButton, addServiceBlocked && styles.serviceFormPrimaryButtonDisabled, darkMode && addServiceBlocked && styles.darkServiceFormPrimaryButtonDisabled]}
-            onPress={handleAddService}
-            disabled={addServiceBlocked}
-            activeOpacity={addServiceBlocked ? 1 : 0.7}
-          >
-            <Text style={[styles.serviceFormPrimaryButtonText, addServiceBlocked && styles.serviceFormPrimaryButtonTextDisabled]}>
-              {editingServiceIndex !== null ? "Update product" : "Add product"}
-            </Text>
-          </TouchableOpacity>
-        </View>
         </View>
       </View>
     );
@@ -4791,9 +4763,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 </TouchableOpacity>
               </View>
             ) : null}
-            {services.length === 0 && !showServiceForm ? (
-              <Text style={[styles.noServicesText, darkMode && styles.darkNoServicesText]}>No products or services added yet.</Text>
-            ) : null}
+            {services.length === 0 && !showServiceForm ? <Text style={[styles.noServicesText, darkMode && styles.darkNoServicesText]}>No products or services added yet.</Text> : null}
             {services.map((service, idx) => (
               <View key={service.bs_uid ? String(service.bs_uid) : `svc-${idx}`} style={styles.productCardEditWrapper}>
                 {!(showServiceForm && editingServiceIndex === idx) ? (
@@ -6611,13 +6581,7 @@ function ResizableMultilineField({
   ).current;
 
   const placeholderColor = darkMode ? "#888" : "#999";
-  const sharedInputStyle = [
-    styles.serviceFormFieldInput,
-    styles.serviceFormResizableFieldInput,
-    extraInputStyle,
-    darkMode && styles.darkServiceFormFieldInput,
-    { minHeight: compactHeight },
-  ];
+  const sharedInputStyle = [styles.serviceFormFieldInput, styles.serviceFormResizableFieldInput, extraInputStyle, darkMode && styles.darkServiceFormFieldInput, { minHeight: compactHeight }];
 
   if (Platform.OS === "web") {
     return (

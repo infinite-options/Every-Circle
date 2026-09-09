@@ -318,13 +318,11 @@ const ConnectWebScreen = () => {
           {/* Who Viewed My Profile */}
           <View style={styles.viewersContainer}>
             <TouchableOpacity style={styles.viewersSectionHeader} onPress={() => setShowViewers(!showViewers)}>
-              <Text style={styles.viewersSectionHeaderText}>
-                {selectedAccount === "personal" ? "WHO VIEWED MY PROFILE" : "WHO VIEWED MY BUSINESS"}
-              </Text>
+              <Text style={styles.viewersSectionHeaderText}>{selectedAccount === "personal" ? "WHO VIEWED MY PROFILE" : "WHO VIEWED MY BUSINESS"}</Text>
               <Ionicons name={showViewers ? "chevron-up" : "chevron-down"} size={20} color='#000' />
             </TouchableOpacity>
-            {showViewers && (
-              viewersLoading ? (
+            {showViewers &&
+              (viewersLoading ? (
                 <ActivityIndicator size='small' color='#AF52DE' style={{ marginVertical: 12 }} />
               ) : profileViewers.length > 0 ? (
                 profileViewers.map((viewer, index) => (
@@ -351,27 +349,22 @@ const ConnectWebScreen = () => {
                         locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
                       }}
                     />
-                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? (
-                      <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text>
-                    ) : null}
+                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text> : null}
                   </TouchableOpacity>
                 ))
               ) : (
-                <Text style={[styles.noViewersText, darkMode && styles.darkNoViewersText]}>
-                  {selectedAccount === "personal" ? "No profile views yet" : "No business profile views yet"}
-                </Text>
-              )
-            )}
+                <Text style={[styles.noViewersText, darkMode && styles.darkNoViewersText]}>{selectedAccount === "personal" ? "No profile views yet" : "No business profile views yet"}</Text>
+              ))}
           </View>
 
           {/* Divider before scanned person card (QR scan) */}
           {profileData && <View style={styles.divider} />}
 
           {/* Scanned person card + web-specific actions (only when arriving via QR) */}
-          {profileData && (
-            appOpened ? (
+          {profileData &&
+            (appOpened ? (
               <View style={styles.appOpeningContainer}>
-                <Text style={[styles.title, darkMode && styles.darkTitle]}>Opening EveryCircle App...</Text>
+                <Text style={[styles.title, darkMode && styles.darkTitle]}>Opening everyCircle App...</Text>
                 <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>If the app doesn't open, use the options below</Text>
               </View>
             ) : (
@@ -388,7 +381,7 @@ const ConnectWebScreen = () => {
                     style={styles.primaryButton}
                     onPress={() => (Platform.OS === "web" && typeof window !== "undefined" ? (window.location.href = "/SignUp") : navigation.navigate("SignUp"))}
                   >
-                    <Text style={styles.primaryButtonText}>Sign Up for EveryCircle</Text>
+                    <Text style={styles.primaryButtonText}>Sign Up for everyCircle</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity style={styles.secondaryButton} onPress={downloadVCard}>
@@ -400,8 +393,7 @@ const ConnectWebScreen = () => {
                   </TouchableOpacity>
                 </View>
               </>
-            )
-          )}
+            ))}
         </ScrollView>
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>

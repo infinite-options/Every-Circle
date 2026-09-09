@@ -1,13 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  Platform,
-  ActivityIndicator,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, ActivityIndicator } from "react-native";
 import { Camera, CameraView } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -98,14 +90,10 @@ export default function QRScannerScreen({ route }) {
         throw new Error("Invalid QR format");
       }
     } catch (err) {
-      Alert.alert(
-        "Invalid QR Code",
-        "This is not a valid EveryCircle QR code.",
-        [
-          { text: "Try Again", onPress: () => setScanned(false) },
-          { text: "Cancel", style: "cancel", onPress: () => navigation.goBack() },
-        ]
-      );
+      Alert.alert("Invalid QR Code", "This is not a valid everyCircle QR code.", [
+        { text: "Try Again", onPress: () => setScanned(false) },
+        { text: "Cancel", style: "cancel", onPress: () => navigation.goBack() },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -115,7 +103,7 @@ export default function QRScannerScreen({ route }) {
   if (hasPermission === null) {
     return (
       <View style={styles.container}>
-        <AppHeader title="QR Scanner" onBackPress={() => navigation.goBack()} />
+        <AppHeader title='QR Scanner' onBackPress={() => navigation.goBack()} />
         <View style={styles.center}>
           <Text style={styles.text}>Requesting camera permission…</Text>
         </View>
@@ -127,14 +115,10 @@ export default function QRScannerScreen({ route }) {
   if (hasPermission === false) {
     return (
       <View style={styles.container}>
-        <AppHeader title="QR Scanner" onBackPress={() => navigation.goBack()} />
+        <AppHeader title='QR Scanner' onBackPress={() => navigation.goBack()} />
         <View style={styles.center}>
           <Text style={styles.error}>Camera access denied</Text>
-          <Text style={styles.text}>
-            {Platform.OS === "web"
-              ? "Enable camera access in your browser settings."
-              : "Enable camera access in system settings."}
-          </Text>
+          <Text style={styles.text}>{Platform.OS === "web" ? "Enable camera access in your browser settings." : "Enable camera access in system settings."}</Text>
         </View>
       </View>
     );
@@ -144,7 +128,7 @@ export default function QRScannerScreen({ route }) {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="QR Scanner" onBackPress={() => navigation.goBack()} />
+      <AppHeader title='QR Scanner' onBackPress={() => navigation.goBack()} />
 
       <CameraView
         style={StyleSheet.absoluteFillObject}
@@ -164,17 +148,14 @@ export default function QRScannerScreen({ route }) {
 
       {loading && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#fff" />
+          <ActivityIndicator size='large' color='#fff' />
           <Text style={styles.loadingText}>Processing…</Text>
         </View>
       )}
 
       {scanned && !loading && (
         <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={styles.scanAgainButton}
-            onPress={() => setScanned(false)}
-          >
+          <TouchableOpacity style={styles.scanAgainButton} onPress={() => setScanned(false)}>
             <Text style={styles.scanAgainText}>Scan Again</Text>
           </TouchableOpacity>
         </View>
@@ -235,5 +216,4 @@ const styles = StyleSheet.create({
     boxShadow: "0px 0px 10px rgba(175, 82, 222, 0.8)",
     ...(Platform.OS !== "web" && { elevation: 5 }),
   },
-  
 });

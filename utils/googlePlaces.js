@@ -9,15 +9,17 @@
 import { Platform } from "react-native";
 import config from "../config";
 
-const PLACES_KEY = config.googleApiKey;
+function getPlacesKey() {
+  return config.googleApiKey;
+}
 
 // ─── Web: load Maps JS SDK once ──────────────────────────────────────────────
 let _sdkPromise = null;
 
 function loadGoogleMapsApi() {
   if (typeof window === "undefined") return Promise.resolve(); // native guard
-  if (!PLACES_KEY) {
-    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env");
+  if (!getPlacesKey()) {
+    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_LOCAL (localhost), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env");
     return Promise.resolve();
   }
   if (_sdkPromise) return _sdkPromise;                        // already loading or loaded
@@ -27,7 +29,7 @@ function loadGoogleMapsApi() {
     if (window.google?.maps?.places) { resolve(); return; }
 
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${PLACES_KEY}&libraries=places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${getPlacesKey()}&libraries=places`;
     script.async = true;
     script.onload = () => resolve();
     script.onerror = () => reject(new Error("Google Maps JS SDK failed to load"));
@@ -70,14 +72,14 @@ async function _getPlacePredictions(input, types) {
     }
   }
 
-  if (!PLACES_KEY) {
-    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env");
+  if (!getPlacesKey()) {
+    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_LOCAL (localhost), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env");
     return [];
   }
 
   try {
     const typesParam = Array.isArray(types) && types.length ? `&types=${encodeURIComponent(types.join("|"))}` : "";
-    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input.trim())}&key=${PLACES_KEY}${typesParam}&language=en`;
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input.trim())}&key=${getPlacesKey()}${typesParam}&language=en`;
     const res = await fetch(url);
     const json = await res.json();
     if (json.status && json.status !== "OK" && json.status !== "ZERO_RESULTS") {
@@ -138,7 +140,7 @@ function _photoUrlsFromReferences(photos) {
 export function buildRestGooglePhotoUrl(photoReference) {
   const ref = String(photoReference || "").trim();
   if (!ref) return "";
-  return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${encodeURIComponent(ref)}&key=${PLACES_KEY}`;
+  return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${encodeURIComponent(ref)}&key=${getPlacesKey()}`;
 }
 
 /** Convert JS SDK ephemeral PhotoService URL to REST place/photo URL when possible. */
@@ -249,14 +251,14 @@ async function _fetchPlaceDetails(placeId, { includePhotos, includeContact, incl
     }
   }
 
-  if (!PLACES_KEY) {
-    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env");
+  if (!getPlacesKey()) {
+    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_LOCAL (localhost), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env");
     return {};
   }
 
   try {
     const fields = includePhotos || includeContact || includeTypes ? FULL_DETAIL_FIELDS_REST : ADDRESS_DETAIL_FIELDS_REST;
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${PLACES_KEY}&fields=${fields}`;
+    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${getPlacesKey()}&fields=${fields}`;
     const res = await fetch(url);
     const json = await res.json();
     if (json.status && json.status !== "OK") {

@@ -9,33 +9,33 @@ const DELETE_ACCOUNT_INFO_TEXT = `Last updated: September 3, 2026
 
 1. Overview
 
-EveryCircle allows you to delete your account from within the application.
+everyCircle allows you to delete your account from within the application.
 
-This page explains how to delete your EveryCircle account, what happens after you request deletion, and how you may reinstate your account during the 30-day retention period.
+This page explains how to delete your everyCircle account, what happens after you request deletion, and how you may reinstate your account during the 30-day retention period.
 
-You may also contact EveryCircle Support at support@everycircle.com if you need help with account deletion.
+You may also contact everyCircle Support at support@everycircle.com if you need help with account deletion.
 
 2. How to Delete Your Account
 
-To delete your EveryCircle account, complete the following steps:
+To delete your everyCircle account, complete the following steps:
 
-1. Log in to your EveryCircle account.
+1. Log in to your everyCircle account.
 2. Go to the Settings page.
 3. Click Delete Account.
 4. Review the on-screen warnings.
 5. Type DELETE to confirm that you want to delete your account.
 
-You must be logged in to delete your account. The Delete Account option is available in Settings on the EveryCircle website and in the EveryCircle mobile applications.
+You must be logged in to delete your account. The Delete Account option is available in Settings on the everyCircle website and in the everyCircle mobile applications.
 
 3. What Happens After Deletion
 
 After you confirm deletion, your account is removed from public view and is no longer available for ordinary use.
 
-EveryCircle holds account information for 30 days after deletion.
+everyCircle holds account information for 30 days after deletion.
 
-During this 30-day period, you may reinstate your account by logging in to EveryCircle again with the same credentials you used before deletion.
+During this 30-day period, you may reinstate your account by logging in to everyCircle again with the same credentials you used before deletion.
 
-If you log in during the 30-day retention period, your account may be restored and you may continue using EveryCircle.
+If you log in during the 30-day retention period, your account may be restored and you may continue using everyCircle.
 
 4. After the 30-Day Period
 
@@ -43,7 +43,7 @@ If you do not log in and reinstate your account within 30 days, deletion becomes
 
 After the 30-day period, you will not be able to restore the deleted account by logging in.
 
-Certain information may still be retained when required or permitted by law, including transaction history, financial records, tax and accounting records, fraud-prevention information, and other information EveryCircle is legally required or permitted to keep.
+Certain information may still be retained when required or permitted by law, including transaction history, financial records, tax and accounting records, fraud-prevention information, and other information everyCircle is legally required or permitted to keep.
 
 Wallet balances, if any, are frozen upon deletion and cannot be withdrawn after the account is deleted.
 
@@ -51,7 +51,7 @@ Wallet balances, if any, are frozen upon deletion and cannot be withdrawn after 
 
 Questions about account deletion or reinstatement may be directed to:
 
-EveryCircle Support
+everyCircle Support
 support@everycircle.com`;
 
 const NUMBERED_HEADING_PATTERN = /^\d+(?:\.\d+)?\. .+$/;

@@ -32,7 +32,7 @@ function buildVCard(data) {
     if (phone) lines.push(`TEL:${phone}`);
   }
   if (data.profile_uid) {
-    lines.push(`NOTE:EveryCircle profile: ${data.profile_uid}`);
+    lines.push(`NOTE:everyCircle profile: ${data.profile_uid}`);
   }
   if (data.user_uid) {
     lines.push(`NOTE:User ID: ${data.user_uid}`);
@@ -200,8 +200,8 @@ export default function ScanLandingScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps='handled'>
-        <Text style={styles.brand}>EveryCircle</Text>
-        <Text style={styles.headline}>Connect on EveryCircle</Text>
+        <Text style={styles.brand}>everyCircle</Text>
+        <Text style={styles.headline}>Connect on everyCircle</Text>
         <Text style={styles.sub}>{showRedirecting ? "Taking you to your network…" : "Someone shared their profile with you. Log in or sign up to connect, or save their public contact card."}</Text>
 
         {(loading || showRedirecting) && (

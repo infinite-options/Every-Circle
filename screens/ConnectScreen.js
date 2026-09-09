@@ -40,6 +40,9 @@ import {
   stopLiveLocationSharing,
   subscribeLiveLocationSharingStatus,
   getLiveLocationSharingStatus,
+  refreshLiveLocationIfActive,
+  formatShareLocationDurationLabel,
+  getLastLiveLocationError,
 } from "../utils/liveLocationSharing";
 import {
   DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS,
@@ -48,6 +51,7 @@ import {
   formatNearbyPrivacySummary,
 } from "../utils/nearbySettings";
 import { subscribeStoredNearbyCoords, formatStoredNearbyCoordsSummary } from "../utils/nearbyLocationUpdate";
+import { parseCoordinateValue } from "../utils/validateCoordinates";
 import { nearbyPeopleToMapMarkers } from "../utils/nearbyPeopleToMapMarkers";
 import { searchReferralProfiles } from "../utils/searchReferralProfiles";
 
@@ -480,6 +484,7 @@ function formatMiles(miles) {
 function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
   const trackRef = useRef(200);
   const startXRef = useRef(0);
+  const grantedRef = useRef(false);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onReleaseRef = useRef(onRelease);
@@ -505,6 +510,7 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (e) => {
+        grantedRef.current = true;
         const tapX = e.nativeEvent.locationX - NEARBY_THUMB / 2;
         const clamped = Math.max(0, Math.min(trackRef.current - NEARBY_THUMB, tapX));
         startXRef.current = clamped;
@@ -514,8 +520,15 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
         const newX = Math.max(0, Math.min(trackRef.current - NEARBY_THUMB, startXRef.current + gs.dx));
         onChangeRef.current(xToMile(newX));
       },
-      onPanResponderRelease: () => { onReleaseRef.current?.(); },
-      onPanResponderTerminate: () => { onReleaseRef.current?.(); },
+      onPanResponderRelease: () => {
+        if (!grantedRef.current) return;
+        grantedRef.current = false;
+        onReleaseRef.current?.();
+      },
+      // MapView / layout on web steals the responder; do not treat that as a slider change.
+      onPanResponderTerminate: () => {
+        grantedRef.current = false;
+      },
     })
   ).current;
 
@@ -560,6 +573,11 @@ function formatAsyncStorageDisplayValue(raw) {
 }
 
 const NEARBY_LOCATION_EXPIRED_MSG = "Your location has expired. Use the menu above to update your nearby location.";
+const EXCHANGE_CONTACT_INFO_STORAGE_KEY = "exchange_contact_info_enabled";
+
+function isExchangeContactInfoEnabled(storedValue) {
+  return storedValue !== "false";
+}
 
 const ConnectScreen = ({ navigation }) => {
   const route = useRoute();
@@ -594,8 +612,8 @@ const ConnectScreen = ({ navigation }) => {
   const ablyAnyMessageHandlerRef = useRef(null);
   const ablyNetworkChannelRef = useRef(null);
   const ablyStateSyncCleanupRef = useRef(null);
-  const [formSwitchEnabled, setFormSwitchEnabled] = useState(false); // Form Switch: show form when others scan your QR code
-  const formSwitchEnabledRef = React.useRef(false); // Ref to track current value for Ably callback
+  const [formSwitchEnabled, setFormSwitchEnabled] = useState(true); // Exchange Contact Info: on by default when others scan your QR code
+  const formSwitchEnabledRef = React.useRef(true); // Ref to track current value for Ably callback
   const [showDebugBlocks, setShowDebugBlocks] = useState(false); // Toggle visibility of QR Code Contains and Ably Messages Received blocks
   const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false); // Settings → Debug Mode (requires SHOW_NETWORK_DEBUG_UI)
   const [showAsyncStorage, setShowAsyncStorage] = useState(false);
@@ -646,6 +664,7 @@ const ConnectScreen = ({ navigation }) => {
   const [showNearbyMenu, setShowNearbyMenu] = useState(false);
   const [showNearbyPrivacyModal, setShowNearbyPrivacyModal] = useState(false);
   const [showNearbyLocationPickerModal, setShowNearbyLocationPickerModal] = useState(false);
+  const [shareLocationWarningVisible, setShareLocationWarningVisible] = useState(false);
   const [storedNearbyCoords, setStoredNearbyCoords] = useState({ lat: null, lng: null, updatedAt: null });
   const [nearbySettings, setNearbySettings] = useState(INITIAL_NEARBY_SETTINGS);
   const [nearbyUsers, setNearbyUsers] = useState([]);
@@ -659,6 +678,9 @@ const ConnectScreen = ({ navigation }) => {
   const nearbyRadiusMilesRef = useRef(null);
   const showNearbyRef = useRef(false);
   const fetchNearbyUsersRef = useRef(async () => {});
+  const nearbyFetchInFlightRef = useRef(false);
+  const nearbyFetchQueuedRef = useRef(null);
+  const nearbySharingActiveRef = useRef(false);
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
   // Who Viewed My Profile
@@ -1070,14 +1092,15 @@ const ConnectScreen = ({ navigation }) => {
           }
         }
 
-        // Load Form Switch setting
-        const formSwitchSetting = await AsyncStorage.getItem("form_switch_enabled");
-        if (formSwitchSetting !== null) {
-          const isEnabled = formSwitchSetting === "true";
-          setFormSwitchEnabled(isEnabled);
-          formSwitchEnabledRef.current = isEnabled; // Update ref
-          console.log("📋 Loaded form_switch_enabled from AsyncStorage:", isEnabled);
+        // Exchange Contact Info: on unless the user has explicitly turned it off
+        const exchangeContactSetting = await AsyncStorage.getItem(EXCHANGE_CONTACT_INFO_STORAGE_KEY);
+        const isEnabled = isExchangeContactInfoEnabled(exchangeContactSetting);
+        setFormSwitchEnabled(isEnabled);
+        formSwitchEnabledRef.current = isEnabled;
+        if (exchangeContactSetting === null) {
+          await AsyncStorage.setItem(EXCHANGE_CONTACT_INFO_STORAGE_KEY, "true");
         }
+        console.log("📋 Loaded exchange_contact_info_enabled from AsyncStorage:", isEnabled, "stored:", exchangeContactSetting);
       } catch (e) {
         setStorageData([["error", e.message]]);
       }
@@ -1969,25 +1992,30 @@ const ConnectScreen = ({ navigation }) => {
     data.forEach((n) => allUids.add(n.network_profile_personal_uid));
 
     data.forEach((n) => {
+      const nodeUid = n.network_profile_personal_uid;
+      if (nodeUid && youId && String(nodeUid) === String(youId)) {
+        return;
+      }
       const isDeleted = isProfileDeleted(n) || n.__mc?.isDeleted;
       const name = isDeleted ? DELETED_USER_LABEL : n.__mc?.personal_info?.profile_personal_first_name || n.__mc?.firstName || "";
       const last = isDeleted ? "" : n.__mc?.personal_info?.profile_personal_last_name || n.__mc?.lastName || "";
-      const label = isDeleted ? DELETED_USER_LABEL : [name, last].filter(Boolean).join(" ") || (n.network_profile_personal_uid ? n.network_profile_personal_uid.slice(-3) : "???");
+      const label = isDeleted ? DELETED_USER_LABEL : [name, last].filter(Boolean).join(" ") || (nodeUid ? String(nodeUid).slice(-3) : "???");
 
       const img = isDeleted ? "" : n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
 
       const hasImg = img && String(img).trim() !== "";
-      const isZeroNode = n.network_profile_personal_uid === EVERY_CIRCLE_ZERO_NODE_UID;
+      const isZeroNode = nodeUid === EVERY_CIRCLE_ZERO_NODE_UID;
+      const useImage = hasImg && !isDeleted;
 
       nodes.push({
-        id: n.network_profile_personal_uid,
+        id: nodeUid,
         label,
-        shape: hasImg && !isZeroNode && !isDeleted ? "circularImage" : "dot",
-        image: hasImg && !isZeroNode && !isDeleted ? img : undefined,
+        shape: useImage ? "circularImage" : "dot",
+        image: useImage ? img : undefined,
         size: isZeroNode ? userNodeSize : isDeleted ? 10 : hasImg ? 18 : 10,
         borderWidth: isZeroNode ? userNodeBorderWidth : undefined,
         color: isZeroNode
-          ? { border: NETWORK_GRAPH_PURPLE, background: NETWORK_GRAPH_PURPLE_FILL_50 }
+          ? { border: NETWORK_GRAPH_PURPLE, background: useImage ? "#ffffff" : NETWORK_GRAPH_PURPLE_FILL_50 }
           : isDeleted
             ? { border: "#bbb", background: "#ccc" }
             : hasImg
@@ -2003,6 +2031,9 @@ const ConnectScreen = ({ navigation }) => {
     data.forEach((n) => {
       const deg = Number(n.degree) || 1;
       const nodeUid = n.network_profile_personal_uid;
+      if (nodeUid && youId && String(nodeUid) === String(youId)) {
+        return;
+      }
       console.log(`\n  Processing node ${nodeUid} (degree ${deg}):`, {
         profile_personal_referred_by: n.profile_personal_referred_by,
         profile_personal_uid: n.profile_personal_uid,
@@ -2108,7 +2139,7 @@ const ConnectScreen = ({ navigation }) => {
         }
       }
 
-      if (parent) {
+      if (parent && parent !== nodeUid) {
         console.log(`  ✅ Edge: ${parent} -> ${nodeUid} (degree ${deg})`);
         edges.push({
           from: parent,
@@ -2165,6 +2196,9 @@ const ConnectScreen = ({ navigation }) => {
         layout: {
           improvedLayout: true,
           randomSeed: 58  // for consistent layout
+        },
+        nodes: {
+          shapeProperties: { useBorderWithImage: true }
         },
         physics: {
           enabled: true,
@@ -2311,6 +2345,13 @@ const ConnectScreen = ({ navigation }) => {
     return searchableText.includes(nearbySearchLower);
   };
 
+  const nearbyMapCenter = useMemo(() => {
+    const lat = parseCoordinateValue(myNearbyLocation?.lat ?? storedNearbyCoords?.lat);
+    const lng = parseCoordinateValue(myNearbyLocation?.lng ?? storedNearbyCoords?.lng);
+    if (lat == null || lng == null) return null;
+    return { lat, lng };
+  }, [myNearbyLocation, storedNearbyCoords]);
+
   const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
 
   const showNearbyExpiredState = useCallback(() => {
@@ -2320,11 +2361,18 @@ const ConnectScreen = ({ navigation }) => {
     setNearbyLoading(false);
   }, []);
 
-  const fetchNearbyUsers = useCallback(async (radiusMiles) => {
+  const fetchNearbyUsers = useCallback(async (radiusMiles, { retryOnExpired = true } = {}) => {
+    if (nearbyFetchInFlightRef.current) {
+      nearbyFetchQueuedRef.current = { radiusMiles, retryOnExpired };
+      return;
+    }
+    nearbyFetchInFlightRef.current = true;
+    try {
     const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
     if (!uid) return;
 
     const sharingActive = await isNearbySharingActive();
+    nearbySharingActiveRef.current = sharingActive;
     setNearbySharingActive(sharingActive);
 
     if (!sharingActive) {
@@ -2352,12 +2400,20 @@ const ConnectScreen = ({ navigation }) => {
       setNearbyUsers([]);
       setMyNearbyLocation(null);
     }
+
+    // Server nearby TTL can expire while the local 1-hour share session is still on.
+    // Refresh GPS first so GET /nearby is not treated as "location expired".
+    if (retryOnExpired && !isRadiusRefresh) {
+      await refreshLiveLocationIfActive();
+    }
+
     try {
       const radiusMeters = radiusMiles != null ? Math.round(radiusMiles * 1609) : null;
       const radiusParam = radiusMeters != null ? `&radius_meters=${radiusMeters}` : "";
       const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}${radiusParam}`);
       const json = await res.json();
-      if (json.code === 200) {
+      const expiredOnServer = Number(json.code) === 410 || res.status === 410;
+      if (Number(json.code) === 200) {
         const raw = json.result || [];
         const seen = new Set();
         const deduped = raw.filter((u) => {
@@ -2368,11 +2424,35 @@ const ConnectScreen = ({ navigation }) => {
         });
         setNearbyUsers(deduped);
         const viewer = json.viewer_location;
-        if (viewer?.lat != null && viewer?.lng != null) {
-          setMyNearbyLocation({ lat: viewer.lat, lng: viewer.lng });
+        const viewerLat = parseCoordinateValue(viewer?.lat ?? viewer?.latitude);
+        const viewerLng = parseCoordinateValue(viewer?.lng ?? viewer?.longitude);
+        if (viewerLat != null && viewerLng != null) {
+          setMyNearbyLocation({ lat: viewerLat, lng: viewerLng });
         }
-      } else if (json.code === 410) {
-        if (!isRadiusRefresh) setNearbyError(NEARBY_LOCATION_EXPIRED_MSG);
+        setNearbyError(null);
+      } else if (expiredOnServer) {
+        if (sharingActive && retryOnExpired) {
+          nearbyFetchInFlightRef.current = false;
+          const patched = await refreshLiveLocationIfActive();
+          if (patched) {
+            await new Promise((r) => setTimeout(r, 500));
+            await fetchNearbyUsers(radiusMiles, { retryOnExpired: false });
+            return;
+          }
+          if (!isRadiusRefresh) {
+            setNearbyError(getLastLiveLocationError() || "Couldn't get your location. Turn share live location off and on again.");
+          }
+        } else if (!isRadiusRefresh) {
+          if (sharingActive) {
+            setNearbyError(
+              retryOnExpired
+                ? getLastLiveLocationError() || "Couldn't get your location. Turn share live location off and on again."
+                : "Your location was sent, but nearby people aren't available yet. Close and reopen Who's Nearby.",
+            );
+          } else {
+            setNearbyError(NEARBY_LOCATION_EXPIRED_MSG);
+          }
+        }
       } else {
         if (!isRadiusRefresh) setNearbyError(json.message || "Could not fetch nearby users.");
       }
@@ -2380,6 +2460,14 @@ const ConnectScreen = ({ navigation }) => {
       if (!isRadiusRefresh) setNearbyError("Network error. Please try again.");
     }
     if (!isRadiusRefresh) setNearbyLoading(false);
+    } finally {
+      nearbyFetchInFlightRef.current = false;
+      const queued = nearbyFetchQueuedRef.current;
+      nearbyFetchQueuedRef.current = null;
+      if (queued) {
+        void fetchNearbyUsers(queued.radiusMiles, { retryOnExpired: queued.retryOnExpired });
+      }
+    }
   }, [profileUid, showNearbyExpiredState]);
 
   useEffect(() => {
@@ -2400,12 +2488,11 @@ const ConnectScreen = ({ navigation }) => {
 
   useEffect(() => {
     return subscribeLiveLocationSharingStatus(({ active }) => {
+      const wasActive = nearbySharingActiveRef.current;
+      nearbySharingActiveRef.current = active;
       setNearbySharingActive(active);
       if (!showNearbyRef.current) return;
-      if (active) {
-        setNearbyError(null);
-        void fetchNearbyUsersRef.current(nearbyRadiusMilesRef.current);
-      } else {
+      if (!active && wasActive) {
         showNearbyExpiredState();
       }
     });
@@ -2434,7 +2521,22 @@ const ConnectScreen = ({ navigation }) => {
     if (nearbySharingActive) {
       await stopLiveLocationSharing();
     } else {
-      await startLiveLocationSharing();
+      setShareLocationWarningVisible(true);
+    }
+  };
+
+  const confirmShareLiveLocation = async () => {
+    setNearbyError(null);
+    if (showNearbyRef.current) setNearbyLoading(true);
+    const patched = await startLiveLocationSharing();
+    setShareLocationWarningVisible(false);
+    if (showNearbyRef.current) {
+      if (patched) {
+        void fetchNearbyUsersRef.current(nearbyRadiusMilesRef.current);
+      } else {
+        setNearbyLoading(false);
+        setNearbyError(getLastLiveLocationError() || "Couldn't get your location. Allow location when prompted, then try again.");
+      }
     }
   };
 
@@ -2570,13 +2672,18 @@ const ConnectScreen = ({ navigation }) => {
 
   useFocusEffect(
     useCallback(() => {
-      void getLiveLocationSharingStatus().then(({ active }) => {
+      void (async () => {
+        const { active } = await getLiveLocationSharingStatus();
+        nearbySharingActiveRef.current = active;
         setNearbySharingActive(active);
-        if (!showNearby) return;
-        if (active) void fetchNearbyUsers(nearbyRadiusMilesRef.current);
-        else showNearbyExpiredState();
-      });
-    }, [showNearby, showNearbyExpiredState, fetchNearbyUsers]),
+        if (!showNearbyRef.current) return;
+        if (active) {
+          void fetchNearbyUsersRef.current(nearbyRadiusMilesRef.current);
+        } else {
+          showNearbyExpiredState();
+        }
+      })();
+    }, [showNearbyExpiredState]),
   );
 
   const _convRelTime = (iso) => {
@@ -2669,7 +2776,7 @@ const ConnectScreen = ({ navigation }) => {
                           setFormSwitchEnabled(value);
                           formSwitchEnabledRef.current = value; // Update ref
                           // Persist the setting
-                          await AsyncStorage.setItem("form_switch_enabled", value ? "true" : "false");
+                          await AsyncStorage.setItem(EXCHANGE_CONTACT_INFO_STORAGE_KEY, value ? "true" : "false");
                           console.log("🔵 ConnectScreen - Form Switch set to:", value);
                           // Update QR code with new setting
                           if (profileUid) {
@@ -3019,7 +3126,9 @@ const ConnectScreen = ({ navigation }) => {
                               }
                             }}
                             javaScriptEnabled
-                            domStorageEnabled
+                            incognito
+                            sharedCookiesEnabled={false}
+                            thirdPartyCookiesEnabled={false}
                             automaticallyAdjustContentInsets
                             allowsInlineMediaPlayback
                             androidLayerType={Platform.OS === "android" ? "hardware" : "none"}
@@ -3124,7 +3233,11 @@ const ConnectScreen = ({ navigation }) => {
                 const willExpand = !showNearby;
                 setShowNearby(willExpand);
                 if (willExpand) {
-                  fetchNearbyUsers(nearbyRadiusMilesRef.current);
+                  void (async () => {
+                    const { active } = await getLiveLocationSharingStatus();
+                    setNearbySharingActive(active);
+                    fetchNearbyUsers(nearbyRadiusMilesRef.current);
+                  })();
                 } else {
                   setShowNearbyMenu(false);
                 }
@@ -3150,7 +3263,7 @@ const ConnectScreen = ({ navigation }) => {
             <View style={[styles.viewersDropdownMenu, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444" }]}>
               <TouchableOpacity style={styles.viewersDropdownItem} onPress={toggleShareLiveLocation}>
                 <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>
-                  {nearbySharingActive ? "Turn off share live location" : "Turn on share live location (Share for 1hr)"}
+                  {nearbySharingActive ? "Turn off share live location" : `Turn on share live location (Share for ${formatShareLocationDurationLabel()})`}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -3200,10 +3313,10 @@ const ConnectScreen = ({ navigation }) => {
                   </View>
                 </View>
               )}
-              {myNearbyLocation && !nearbyLoading && !nearbyError && (
+              {nearbyMapCenter && !nearbyLoading && !nearbyError && (
                 <View style={styles.nearbyMapWrap}>
                   <NearbyPeopleMapView
-                    mapCenter={myNearbyLocation}
+                    mapCenter={nearbyMapCenter}
                     people={nearbyPeopleToMapMarkers(
                       nearbyUsers
                         .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
@@ -3215,8 +3328,8 @@ const ConnectScreen = ({ navigation }) => {
                   />
                 </View>
               )}
-              {/* Radius slider — always visible when not loading / error */}
-              {!nearbyLoading && !nearbyError && (
+              {/* Radius slider — keep mounted during refresh so web responder steal does not re-fetch */}
+              {!nearbyError && (
                 <View style={[styles.nearbyRadiusRow, darkMode && styles.nearbyRadiusRowDark]}>
                   <Text style={[styles.nearbyRadiusLabel, darkMode && styles.nearbyRadiusLabelDark]}>Within:</Text>
                   <NearbyRadiusSlider
@@ -3920,6 +4033,25 @@ const ConnectScreen = ({ navigation }) => {
       {showBlockedManager && (
         <BlockedPeopleModal visible blockedList={blockedList} onUnblock={toggleBlock} onClose={() => setShowBlockedManager(false)} darkMode={darkMode} />
       )}
+      <Modal visible={shareLocationWarningVisible} transparent animationType='fade' onRequestClose={() => setShareLocationWarningVisible(false)}>
+        <View style={styles.shareLocationModalOverlay}>
+          <View style={[styles.shareLocationModalBox, darkMode && { backgroundColor: "#2a2a2a" }]}>
+            <Ionicons name='warning' size={40} color='#c0392b' style={{ marginBottom: 12 }} />
+            <Text style={[styles.shareLocationModalTitle, darkMode && { color: "#fff" }]}>Share Live Location</Text>
+            <Text style={[styles.shareLocationModalText, darkMode && { color: "#ccc" }]}>
+              Turning this on will share your live location with your circles for the next {formatShareLocationDurationLabel()}. You can turn it off anytime here or in Settings.
+            </Text>
+            <View style={styles.shareLocationModalButtons}>
+              <TouchableOpacity onPress={() => setShareLocationWarningVisible(false)} style={[styles.shareLocationModalBtn, styles.shareLocationModalCancel]}>
+                <Text style={styles.shareLocationModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmShareLiveLocation} style={[styles.shareLocationModalBtn, styles.shareLocationModalConfirm]}>
+                <Text style={styles.shareLocationModalConfirmText}>I Understand</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <NearbyLocationPrivacyModal
         visible={showNearbyPrivacyModal}
         onClose={() => setShowNearbyPrivacyModal(false)}
@@ -4102,6 +4234,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderRadius: 10,
     overflow: "hidden",
+    minHeight: 220,
+    backgroundColor: "#e8eaed",
   },
   nearbyRow: {
     flexDirection: "row",
@@ -4949,6 +5083,62 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
     color: "#555",
+  },
+  shareLocationModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  shareLocationModalBox: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 22,
+    alignItems: "center",
+  },
+  shareLocationModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  shareLocationModalText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#444",
+    textAlign: "center",
+    marginBottom: 18,
+  },
+  shareLocationModalButtons: {
+    flexDirection: "row",
+    gap: 10,
+    width: "100%",
+  },
+  shareLocationModalBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  shareLocationModalCancel: {
+    backgroundColor: "#ccc",
+  },
+  shareLocationModalConfirm: {
+    backgroundColor: "#AF52DE",
+  },
+  shareLocationModalCancelText: {
+    color: "#333",
+    fontWeight: "600",
+    fontSize: 15,
+  },
+  shareLocationModalConfirmText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });
 

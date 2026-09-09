@@ -7,7 +7,8 @@ import { resetSharedAblyClient } from "./ablyClient";
 import { stopLiveLocationSharing } from "./liveLocationSharing";
 
 /**
- * DELETE /api/v1/account — permanently delete the authenticated user's account.
+ * DELETE /api/v1/account — schedule soft-deletion (30-day grace; permanent purge after).
+ * Body: `{ confirm_deletion: true }`. Success includes confirmation.purge_scheduled_at, grace_days, reactivation_available.
  * @returns {{ ok: true, data: object } | { ok: false, status: number, message: string }}
  */
 export async function deleteAccountApi() {
@@ -33,7 +34,7 @@ export async function deleteAccountApi() {
     (response.status === 400
       ? "Please confirm deletion."
       : response.status === 409
-        ? "This account has already been deleted."
+        ? "This account is already scheduled for deletion or has been deleted."
         : response.status === 404
           ? "Account not found."
           : "Could not delete account. Please try again.");
@@ -41,7 +42,7 @@ export async function deleteAccountApi() {
   return { ok: false, status: response.status, message };
 }
 
-/** Clear all local session state after successful account deletion (skip server logout — account is gone). */
+/** Clear all local session state after scheduled deletion (skip server logout; clear tokens so JWT is not kept in-app). */
 export async function clearLocalSessionAfterAccountDeletion() {
   try {
     await stopLiveLocationSharing();

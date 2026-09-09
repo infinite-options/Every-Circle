@@ -1,7 +1,6 @@
 //SettingsScreen.js
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, TextInput } from "react-native";
-import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { useTabRefresh } from "../hooks/useTabRefresh";
@@ -11,12 +10,14 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyLocationPrivacyModal from "../components/NearbyLocationPrivacyModal";
-import NearbyLocationPickerModal from "../components/NearbyLocationPickerModal";
 import { DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS, loadNearbySettings, subscribeNearbySettings, syncNearbySettingsToServer, formatNearbyPrivacySummary } from "../utils/nearbySettings";
-import { subscribeStoredNearbyCoords, formatStoredNearbyCoordsSummary, publishStoredNearbyCoords, NEARBY_LOCATION_PICKER_OPTIONS, resolveNearbyLocationOptionCoords } from "../utils/nearbyLocationUpdate";
+import {
+  NEARBY_LOCATION_PICKER_OPTIONS,
+  resolveNearbyLocationOptionCoords,
+} from "../utils/nearbyLocationUpdate";
 import { resetSharedAblyClient } from "../utils/ablyClient";
 import {
-  SHARE_LOCATION_DURATION_HOURS,
+  formatShareLocationDurationLabel,
   startLiveLocationSharing as startLiveLocationSharingSession,
   stopLiveLocationSharing as stopLiveLocationSharingSession,
   subscribeLiveLocationSharingStatus,
@@ -28,7 +29,7 @@ import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUS
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { logoutCircleSession } from "../utils/authSession";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
-import { setAllowCookies as persistAllowCookies, subscribeAllowCookies, persistServerCookieConsentForCurrentUser } from "../utils/cookieConsent";
+import { setAllowCookies as persistAllowCookies, subscribeAllowCookies, persistServerCookieConsentForCurrentUser, SHOW_COOKIE_CONSENT_UI } from "../utils/cookieConsent";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
 import { fetchProfileModerationReviewQueue, fetchProfileModerationDetail, reviewProfileModeration } from "../utils/profileModeration";
@@ -124,7 +125,7 @@ const COLORS = {
 // Audience rules gate cold messages; allow_transaction is an independent exception for
 // people linked via purchases / offering / seeking replies.
 const DEFAULT_MESSAGES_SETTINGS = {
-  receiveFrom: "all_circles", // who can message me: 'everyone' | 'all_circles' | 'specific'
+  receiveFrom: "everyone", // who can message me: 'everyone' | 'all_circles' | 'specific'
   receiveFromTypes: { friends: true, colleagues: true, family: true },
 };
 
@@ -160,10 +161,14 @@ function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMo
   return (
     <View style={styles.settingsToggleRow}>
       <TouchableOpacity onPress={() => value !== false && onValueChange(false)} style={[styles.togglePill, leftBgStyle]} accessibilityRole='button' accessibilityState={{ selected: leftOn }}>
-        <Text style={[styles.togglePillText, darkMode && !leftOn && styles.darkTogglePillText, leftTextActiveStyle]}>{leftLabel}</Text>
+        <Text style={[styles.togglePillText, darkMode && !leftOn && styles.darkTogglePillText, leftTextActiveStyle]} numberOfLines={1}>
+          {leftLabel}
+        </Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={() => value !== true && onValueChange(true)} style={[styles.togglePill, rightBgStyle]} accessibilityRole='button' accessibilityState={{ selected: rightOn }}>
-        <Text style={[styles.togglePillText, darkMode && !rightOn && styles.darkTogglePillText, rightTextActiveStyle]}>{rightLabel}</Text>
+        <Text style={[styles.togglePillText, darkMode && !rightOn && styles.darkTogglePillText, rightTextActiveStyle]} numberOfLines={1}>
+          {rightLabel}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -173,7 +178,6 @@ export default function SettingsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { user, profile_uid } = route.params || {};
-  const [allowNotifications, setAllowNotifications] = useState(true);
   const [shareLocationActive, setShareLocationActive] = useState(false);
   const [shareLocationUntil, setShareLocationUntil] = useState(null); // Date | null
   const { darkMode, toggleDarkMode } = useDarkMode();
@@ -195,10 +199,6 @@ export default function SettingsScreen() {
   const [privacyModeEnabled, setPrivacyModeEnabled] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
-
-  // Nearby POC state
-  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
-  const [storedCoords, setStoredCoords] = useState({ lat: null, lng: null, updatedAt: null });
 
   // Home address coordinates (profile_personal_latitude / profile_personal_longitude)
   const [homeAddressPickerVisible, setHomeAddressPickerVisible] = useState(false);
@@ -296,7 +296,7 @@ export default function SettingsScreen() {
           if (!cancelled) setIsAdmin(false);
           return;
         }
-        const row = Array.isArray(result?.result) ? result.result[0] : result?.result ?? result?.data ?? result;
+        const row = Array.isArray(result?.result) ? result.result[0] : (result?.result ?? result?.data ?? result);
         if (!cancelled) setIsAdmin(row?.user_role === "ADMIN");
       } catch (_) {
         if (!cancelled) setIsAdmin(false);
@@ -347,6 +347,7 @@ export default function SettingsScreen() {
   // Keep the "Allow Cookies" pill in sync if the choice is made from the bottom
   // consent banner (components/CookieConsentBanner.js) instead of this screen.
   useEffect(() => {
+    if (!SHOW_COOKIE_CONSENT_UI) return undefined;
     return subscribeAllowCookies((value) => {
       if (value !== null) setAllowCookies(value);
     });
@@ -484,7 +485,6 @@ export default function SettingsScreen() {
       // Reset dark mode to light mode when logging out
       toggleDarkMode(false);
       stopLiveLocationSharing();
-      setStoredCoords({ lat: null, lng: null, updatedAt: null });
       // console.log("SettingsScreen.js - Dark mode reset to light");
 
       // Navigate to Home screen using CommonActions.reset for reliable navigation
@@ -576,19 +576,13 @@ export default function SettingsScreen() {
       locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
       imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
     });
-    const nearbyLat = parseCoordinateValue(result.personal_info.profile_personal_nearby_lat);
-    const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
-    const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
-    if (nearbyLat != null && nearbyLng != null) {
-      setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
-    }
     const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
     const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
     if (homeLat != null && homeLng != null) {
       setHomeAddressCoords({ lat: homeLat, lng: homeLng });
     }
     setMessagesSettings({
-      receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
+      receiveFrom: result.personal_info.profile_personal_messages_receive_from || DEFAULT_MESSAGES_SETTINGS.receiveFrom,
       receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
     });
     setMessagesOff(parseProfileBoolFlag(result.personal_info.profile_personal_messages_off, false));
@@ -637,10 +631,6 @@ export default function SettingsScreen() {
     });
   }, []);
 
-  useEffect(() => {
-    return subscribeStoredNearbyCoords(setStoredCoords);
-  }, []);
-
   // Keep Settings UI in sync with the shared live-location session.
   useEffect(() => {
     const unsubStatus = subscribeLiveLocationSharingStatus(({ active, until }) => {
@@ -657,6 +647,9 @@ export default function SettingsScreen() {
       void getLiveLocationSharingStatus().then(({ active, until }) => {
         setShareLocationActive(active);
         setShareLocationUntil(until);
+      });
+      void AsyncStorage.getItem("termsAccepted").then((t) => {
+        if (t !== null) setTermsAccepted(JSON.parse(t));
       });
     }, []),
   );
@@ -681,8 +674,8 @@ export default function SettingsScreen() {
   };
 
   const confirmShareLocation = async () => {
-    setShareLocationWarningVisible(false);
     await startLiveLocationSharing();
+    setShareLocationWarningVisible(false);
   };
 
   const cancelShareLocation = () => {
@@ -696,8 +689,7 @@ export default function SettingsScreen() {
       const action = route.params?.locationAction;
       if (!action) return;
       setShowSettings(true);
-      if (action === "updateLocation") setLocationPickerVisible(true);
-      else if (action === "locationPrivacy") setNearbyPrivacyModalVisible(true);
+      if (action === "locationPrivacy") setNearbyPrivacyModalVisible(true);
       navigation.setParams({ locationAction: undefined });
     }, [route.params?.locationAction, navigation]),
   );
@@ -1163,16 +1155,17 @@ export default function SettingsScreen() {
           {/* Settings/Toggles Container */}
           {showSettings && (
             <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
-              {/* Allow Cookies */}
-              <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
-                  <MaterialIcons name='cookie' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Cookies*</Text>
-                  </Text>
+              {SHOW_COOKIE_CONSENT_UI ? (
+                <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+                  <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                    <MaterialIcons name='cookie' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Cookies*</Text>
+                    </Text>
+                  </View>
+                  <SettingsBoolPills value={allowCookies} onValueChange={handleCookiesToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
                 </View>
-                <SettingsBoolPills value={allowCookies} onValueChange={handleCookiesToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
-              </View>
+              ) : null}
 
               {/* Terms and Conditions */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
@@ -1219,33 +1212,22 @@ export default function SettingsScreen() {
                 </View>
               )}
 
-              {/* Allow Notifications */}
-              <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
-                  <MaterialIcons name='notifications' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Location-Based Notifications</Text>
-                  </Text>
-                </View>
-                <SettingsBoolPills value={allowNotifications} onValueChange={setAllowNotifications} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
-              </View>
-
-              {/* Share Live Location */}
+              {/* Allow Location-Based Notifications — starts 1-hour live location sharing */}
               <View style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}>
                 <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                  <MaterialIcons name='location-on' size={20} style={styles.icon} color={shareLocationActive ? COLORS.primary : settingsMenuIconColor} />
+                  <MaterialIcons name='notifications' size={20} style={styles.icon} color={shareLocationActive ? COLORS.primary : settingsMenuIconColor} />
                   <View>
                     <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Share Live Location</Text>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Location-Based Notifications</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
                       {shareLocationActive && shareLocationUntil
                         ? `Active · expires at ${shareLocationUntil.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                        : `Shares for ${SHARE_LOCATION_DURATION_HOURS}h`}
+                        : `Location currently not shared`}
                     </Text>
                   </View>
                 </View>
-                <SettingsBoolPills value={shareLocationActive} onValueChange={handleShareLocationToggle} leftLabel='Off' rightLabel='On' darkMode={darkMode} />
+                <SettingsBoolPills value={shareLocationActive} onValueChange={handleShareLocationToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
               </View>
 
               {/* Location Privacy — opens modal */}
@@ -1257,25 +1239,6 @@ export default function SettingsScreen() {
                       <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Location Privacy</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>{formatNearbyPrivacySummary(nearbySettings)}</Text>
-                  </View>
-                </View>
-                <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setLocationPickerVisible(true)} activeOpacity={0.8}>
-                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                  <MaterialIcons name='my-location' size={20} style={styles.icon} color={COLORS.primary} />
-                  <View>
-                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Update Nearby Location</Text>
-                    </Text>
-                    <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                      {(() => {
-                        const lat = parseCoordinateValue(storedCoords.lat);
-                        const lng = parseCoordinateValue(storedCoords.lng);
-                        return lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "No location set";
-                      })()}
-                    </Text>
                   </View>
                 </View>
                 <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
@@ -1928,9 +1891,6 @@ export default function SettingsScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      {/* Nearby location picker modal */}
-      <NearbyLocationPickerModal visible={locationPickerVisible} onClose={() => setLocationPickerVisible(false)} darkMode={darkMode} />
-
       {/* Offering moderation review modal */}
       <Modal visible={offeringReviewModalVisible} transparent animationType='slide' onRequestClose={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -2194,9 +2154,7 @@ export default function SettingsScreen() {
             <View style={styles.messagesPrivacyToggleRow}>
               <View style={styles.messagesPrivacyToggleLabelWrap}>
                 <Text style={[styles.nearbyPrivacyGroupLabel, styles.messagesPrivacyToggleLabel, darkMode && styles.darkItemText]}>Allow Messages About Purchases, Offerings & Seeking</Text>
-                <Text style={[styles.messagesPrivacyToggleHint, darkMode && styles.darkNearbySubText]}>
-                  People you have an order or reply relationship with can still contact you about it.
-                </Text>
+                <Text style={[styles.messagesPrivacyToggleHint, darkMode && styles.darkNearbySubText]}>People you have an order or reply relationship with can still contact you about it.</Text>
               </View>
               <SettingsBoolPills value={messagesAllowTransaction} onValueChange={toggleMessagesAllowTransaction} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
             </View>
@@ -2296,8 +2254,8 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Cookies Warning Modal */}
-      <Modal visible={cookiesWarningVisible} transparent={true} animationType='fade'>
+      {/* Cookies Warning Modal (web only — native apps do not collect tracking cookies) */}
+      <Modal visible={SHOW_COOKIE_CONSENT_UI && cookiesWarningVisible} transparent={true} animationType='fade'>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
             <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
@@ -2322,7 +2280,7 @@ export default function SettingsScreen() {
             <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
             <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Share Live Location</Text>
             <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>
-              Turning this on will share your live location with your circles for the next {SHARE_LOCATION_DURATION_HOURS} hours. You can turn it off anytime here in Settings.
+              Turning this on will share your live location with your circles for the next {formatShareLocationDurationLabel()}. You can turn it off anytime here in Settings.
             </Text>
             <View style={styles.warningButtonContainer}>
               <TouchableOpacity onPress={cancelShareLocation} style={[styles.warningButton, styles.cancelButton]}>
@@ -2470,7 +2428,7 @@ const styles = StyleSheet.create({
   },
   itemLabelWithToggle: {
     flex: 1,
-    marginRight: 8,
+    marginRight: 16,
     minWidth: 0,
   },
   icon: {
@@ -2486,15 +2444,18 @@ const styles = StyleSheet.create({
   settingsToggleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 20,
+    justifyContent: "flex-end",
+    gap: 6,
+    width: 138,
     flexShrink: 0,
   },
   togglePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 14,
-    minWidth: 52,
-    alignItems: "stretch",
+    width: 66,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    borderRadius: 12,
+    minHeight: 24,
+    alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
   },
@@ -2511,11 +2472,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   togglePillText: {
-    fontSize: 12,
+    fontSize: 11,
+    lineHeight: 14,
     color: "#4e4e4e",
     fontWeight: "500",
     textAlign: "center",
-    width: "100%",
+    includeFontPadding: false,
+    textAlignVertical: "center",
   },
   togglePillTextActive: {
     color: "#fff",

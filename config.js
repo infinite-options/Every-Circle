@@ -42,11 +42,9 @@ if (!ENV.WEB_CLIENT_ID) {
 if (!ENV.GOOGLE_URL_SCHEME) {
   console.error("ERROR: EXPO_PUBLIC_GOOGLE_URL_SCHEME is not defined in .env file");
 }
-const GOOGLE_API_KEY = resolveGoogleApiKey();
-
-if (!GOOGLE_API_KEY) {
+if (!resolveGoogleApiKey()) {
   console.error(
-    "ERROR: Google API key is not defined — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env",
+    "ERROR: Google API key is not defined — set EXPO_PUBLIC_GOOGLE_API_KEY (web), EXPO_PUBLIC_GOOGLE_API_KEY_LOCAL (localhost), EXPO_PUBLIC_GOOGLE_API_KEY_ANDROID, and/or EXPO_PUBLIC_GOOGLE_API_KEY_IOS in .env",
   );
 }
 if (!ENV.PROJECT_ID) {
@@ -97,7 +95,9 @@ const config = {
   },
   googleURLScheme: getGoogleURLScheme(),
   bundleIdentifier: ENV.BUNDLE_IDENTIFIER,
-  googleApiKey: GOOGLE_API_KEY,
+  get googleApiKey() {
+    return resolveGoogleApiKey();
+  },
 };
 
 // console.log("Exporting config:", config);

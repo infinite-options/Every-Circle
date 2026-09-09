@@ -22,7 +22,15 @@ if (!isWeb) {
   }
 }
 
-import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
+import {
+  TRANSACTIONS_ENDPOINT,
+  USER_PROFILE_INFO_ENDPOINT,
+  CREATE_PAYMENT_INTENT_ENDPOINT,
+  BOUNTY_RESULTS_ENDPOINT,
+  BUSINESS_INFO_ENDPOINT,
+  ACCOUNT_SCREEN_PERSONAL_ENDPOINT,
+  WALLET_RECONCILE_ENDPOINT,
+} from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import {
   resolveCheckoutBusinessCode,
@@ -410,15 +418,46 @@ function parseWalletAmountInput(text) {
   return Number.isFinite(value) ? value : null;
 }
 
+/** Read useable spendable balance from a wallet object (account-screen or legacy bountyresults keys). */
+function parseUseableWalletBalanceFromWallet(wallet) {
+  if (!wallet || typeof wallet !== "object" || Array.isArray(wallet)) return 0;
+  const raw = wallet.useable_balance ?? wallet.wallet_useable_balance;
+  const useable = Number(raw);
+  return Number.isFinite(useable) && useable > 0 ? roundMoney(useable) : 0;
+}
+
+function extractWalletFromPayload(data) {
+  if (!data || typeof data !== "object") return null;
+  return data.wallet || data.data?.wallet || data.bounty_results?.wallet || null;
+}
+
+/**
+ * Prefer account-screen personal wallet (same source as Account), fall back to bountyresults.
+ * Accepts both useable_balance and legacy wallet_useable_balance.
+ * Reconciles the wallet row first so checkout debit matches account-screen computed useable.
+ */
 async function fetchUseableWalletBalance(profileUid) {
   if (!profileUid) return 0;
   try {
-    const response = await fetch(`${BOUNTY_RESULTS_ENDPOINT}/${profileUid}`);
-    if (!response.ok) return 0;
-    const data = await response.json();
-    const wallet = data?.wallet || data?.data?.wallet || data?.bounty_results?.wallet || {};
-    const useable = Number(wallet.wallet_useable_balance);
-    return Number.isFinite(useable) && useable > 0 ? roundMoney(useable) : 0;
+    try {
+      await fetch(`${WALLET_RECONCILE_ENDPOINT}/${profileUid}`);
+    } catch (reconcileErr) {
+      console.warn("Wallet reconcile before balance fetch failed:", reconcileErr);
+    }
+
+    const accountRes = await fetch(`${ACCOUNT_SCREEN_PERSONAL_ENDPOINT}/${profileUid}`);
+    if (accountRes.ok) {
+      const accountData = await accountRes.json();
+      const accountWallet = extractWalletFromPayload(accountData);
+      if (accountWallet) {
+        return parseUseableWalletBalanceFromWallet(accountWallet);
+      }
+    }
+
+    const bountyRes = await fetch(`${BOUNTY_RESULTS_ENDPOINT}/${profileUid}`);
+    if (!bountyRes.ok) return 0;
+    const bountyData = await bountyRes.json();
+    return parseUseableWalletBalanceFromWallet(extractWalletFromPayload(bountyData));
   } catch (e) {
     console.warn("Failed to fetch useable wallet balance:", e);
     return 0;

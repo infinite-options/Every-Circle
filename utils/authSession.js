@@ -9,6 +9,7 @@ import {
 } from "../apiConfig";
 import { decryptResponse } from "./encryption";
 import { isPrivacyModeEnabled } from "./privacyMode";
+import { isPendingDeletionAuthResponse } from "./deletedProfile";
 
 /** Called after a failed token refresh so the app can reset navigation to Home. */
 let onAuthSessionExpired = null;
@@ -74,6 +75,10 @@ export async function hashPasswordWithSalt(password, salt) {
   });
 }
 
+/**
+ * @typedef {{ ok: boolean, pendingDeletion?: boolean, data?: object }} CircleAuthResult
+ */
+
 /** After CREATE_ACCOUNT: salt + SHA-256, then Circle /auth/login. */
 export async function issueCircleTokensFromPassword(email, password, fetchFn) {
   try {
@@ -83,19 +88,26 @@ export async function issueCircleTokensFromPassword(email, password, fetchFn) {
       body: JSON.stringify({ email }),
     });
     const saltObject = await saltResponse.json();
+    if (isPendingDeletionAuthResponse(saltObject, saltResponse.status)) {
+      return { ok: false, pendingDeletion: true, data: saltObject };
+    }
     const salt = saltObject?.result?.[0]?.password_salt;
     if (saltObject?.code !== 200 || !salt) {
       console.warn("issueCircleTokensFromPassword: salt request failed", saltObject);
-      return false;
+      return { ok: false, pendingDeletion: false, data: saltObject };
     }
     const hashedPassword = await hashPasswordWithSalt(password, salt);
     return fetchCircleAuthLogin(email, hashedPassword, fetchFn);
   } catch (e) {
     console.warn("issueCircleTokensFromPassword failed", e?.message || e);
-    return false;
+    return { ok: false, pendingDeletion: false };
   }
 }
 
+/**
+ * Circle /auth/login. Does not store tokens when account is pending deletion.
+ * @returns {Promise<CircleAuthResult>}
+ */
 export async function fetchCircleAuthLogin(email, hashedPassword, fetchFn) {
   try {
     const response = await fetchFn(AUTH_LOGIN_ENDPOINT, {
@@ -104,21 +116,25 @@ export async function fetchCircleAuthLogin(email, hashedPassword, fetchFn) {
       body: JSON.stringify({ email, password: hashedPassword }),
     });
     const data = await response.json();
+    if (isPendingDeletionAuthResponse(data, response.status)) {
+      return { ok: false, pendingDeletion: true, data };
+    }
     const tokens = unwrapAuthResult(data) || data;
     const ok = await persistAuthTokens(tokens);
     if (!ok) {
       console.warn("Circle auth login did not return tokens", data);
     }
-    return ok;
+    return { ok, pendingDeletion: false, data };
   } catch (e) {
     console.warn("Circle auth login failed", e?.message || e);
-    return false;
+    return { ok: false, pendingDeletion: false };
   }
 }
 
 /**
  * Exchange Google/Apple provider tokens for a Circle JWT after Infinite Options social auth.
  * Google web uses id_token (JWT); native Google uses access_token; Apple uses id_token.
+ * @returns {Promise<CircleAuthResult>}
  */
 export async function fetchCircleAuthSocial({ provider, idToken, accessToken }, fetchFn) {
   try {
@@ -131,15 +147,18 @@ export async function fetchCircleAuthSocial({ provider, idToken, accessToken }, 
       body: JSON.stringify(body),
     });
     const data = await response.json();
+    if (isPendingDeletionAuthResponse(data, response.status)) {
+      return { ok: false, pendingDeletion: true, data };
+    }
     const tokens = unwrapAuthResult(data) || data;
     const ok = await persistAuthTokens(tokens);
     if (!ok) {
       console.warn("Circle auth social did not return tokens", data);
     }
-    return ok;
+    return { ok, pendingDeletion: false, data };
   } catch (e) {
     console.warn("Circle auth social failed", e?.message || e);
-    return false;
+    return { ok: false, pendingDeletion: false };
   }
 }
 
