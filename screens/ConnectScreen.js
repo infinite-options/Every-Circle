@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal, PanResponder, Alert, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -600,6 +601,7 @@ const ConnectScreen = ({ navigation }) => {
   const [userProfileData, setUserProfileData] = useState(null);
   const [qrCodeData, setQrCodeData] = useState("");
   const [qrCodeDataObject, setQrCodeDataObject] = useState(null); // Store parsed QR code data object for display
+  const [qrLinkCopied, setQrLinkCopied] = useState(false);
   /** Ably `connection.state` and `Channel.state` (exact strings from the SDK) */
   const [ablyConnectionStatus, setAblyConnectionStatus] = useState("—");
   const [ablyChannelStatus, setAblyChannelStatus] = useState("—");
@@ -612,6 +614,7 @@ const ConnectScreen = ({ navigation }) => {
   const ablyAnyMessageHandlerRef = useRef(null);
   const ablyNetworkChannelRef = useRef(null);
   const ablyStateSyncCleanupRef = useRef(null);
+  const qrLinkCopiedTimeoutRef = useRef(null);
   const [formSwitchEnabled, setFormSwitchEnabled] = useState(true); // Exchange Contact Info: on by default when others scan your QR code
   const formSwitchEnabledRef = React.useRef(true); // Ref to track current value for Ably callback
   const [showDebugBlocks, setShowDebugBlocks] = useState(false); // Toggle visibility of QR Code Contains and Ably Messages Received blocks
@@ -1120,6 +1123,24 @@ const ConnectScreen = ({ navigation }) => {
       form_switch_enabled: formSwitchEnabledRef.current,
     });
     console.log("🔗 QR Code URL:", scanUrl);
+  }, []);
+
+  const copyQrLink = useCallback(async () => {
+    if (!qrCodeData) return;
+    try {
+      await Clipboard.setStringAsync(qrCodeData);
+      setQrLinkCopied(true);
+      if (qrLinkCopiedTimeoutRef.current) clearTimeout(qrLinkCopiedTimeoutRef.current);
+      qrLinkCopiedTimeoutRef.current = setTimeout(() => setQrLinkCopied(false), 2000);
+    } catch (e) {
+      Alert.alert("Error", "Could not copy link.");
+    }
+  }, [qrCodeData]);
+
+  useEffect(() => {
+    return () => {
+      if (qrLinkCopiedTimeoutRef.current) clearTimeout(qrLinkCopiedTimeoutRef.current);
+    };
   }, []);
 
   const hydrateMyProfileFromSession = useCallback(async () => {
@@ -2760,9 +2781,17 @@ const ConnectScreen = ({ navigation }) => {
 
                   {/* QR at original 220px; form rows wider (286px) */}
                   <View style={styles.qrCodeSectionWrapper}>
-                    <View style={[styles.qrCodeWrapper, darkMode && styles.darkQrCodeWrapper]}>
+                    <TouchableOpacity
+                      style={[styles.qrCodeWrapper, darkMode && styles.darkQrCodeWrapper]}
+                      onPress={copyQrLink}
+                      activeOpacity={0.7}
+                      accessibilityRole='button'
+                      accessibilityLabel='Copy connect link'
+                      accessibilityHint='Copies your QR code link to the clipboard'
+                    >
                       <QRCodeComponent value={qrCodeData} size={200} color={darkMode ? "#ffffff" : "#000000"} backgroundColor={darkMode ? "#1a1a1a" : "#ffffff"} />
-                    </View>
+                    </TouchableOpacity>
+                    {qrLinkCopied ? <Text style={[styles.qrCodeInfoText, darkMode && styles.darkQrCodeInfoText, { marginBottom: 10 }]}>Link copied!</Text> : null}
 
                     {/* Form Switch Toggle */}
                     <View style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]}>
