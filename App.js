@@ -155,8 +155,15 @@ function buildAppleAuthRequestBody(userInfo) {
  * @param {boolean} options.clearStorage - true for Sign Up (clean slate, like Google sign-up)
  */
 async function completeAppleAuthSession(navigation, userInfo, options) {
-  const { clearStorage = false, setError, failureAlertTitle = "Apple" } = options;
+  const { clearStorage = false, setError, failureAlertTitle = "Apple", authRouteParams = {} } = options;
   try {
+    // Capture QR/scan referrer before any storage wipe so signup can skip "Who referred you?"
+    const preservedReferralUid =
+      String(authRouteParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+    const preservedProfileUid = String(authRouteParams.profile_uid || "").trim() || null;
+    const preservedReturnToScanLanding = !!authRouteParams.returnToScanLanding;
+    const preservedReturnToNewConnection = !!authRouteParams.returnToNewConnection;
+
     if (clearStorage) {
       await AsyncStorage.clear();
     }
@@ -237,6 +244,10 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
       previousUserUid,
       preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
     });
+    // clearSessionAsyncStorageOnLogin always drops referral_uid — restore QR referrer for signup.
+    if (preservedReferralUid) {
+      await AsyncStorage.setItem("referral_uid", preservedReferralUid);
+    }
     if (idToken) {
       const circleAuth = await fetchCircleAuthSocial(appleCircleAuthPayload(idToken), fetchCircle);
       if (circleAuth?.pendingDeletion) {
@@ -272,6 +283,10 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
       navigation.navigate("SignUp", {
         pendingReferralAfterOAuth: true,
         appleUserInfo: appleUserInfoPayload,
+        ...(preservedReferralUid ? { referralProfileUid: preservedReferralUid } : {}),
+        ...(preservedProfileUid ? { profile_uid: preservedProfileUid } : {}),
+        ...(preservedReturnToScanLanding ? { returnToScanLanding: true } : {}),
+        ...(preservedReturnToNewConnection ? { returnToNewConnection: true } : {}),
       });
     }
   } catch (err) {
@@ -293,7 +308,14 @@ function isExistingSocialAccountApiResult(result) {
  * @param {{ clearStorage?: boolean }} [options] - set true for Sign Up screen to start from a clean local session
  */
 async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, options = {}) {
-  const { clearStorage = false } = options;
+  const { clearStorage = false, authRouteParams = {} } = options;
+  // Capture QR/scan referrer before any storage wipe so signup can skip "Who referred you?"
+  const preservedReferralUid =
+    String(authRouteParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+  const preservedProfileUid = String(authRouteParams.profile_uid || "").trim() || null;
+  const preservedReturnToScanLanding = !!authRouteParams.returnToScanLanding;
+  const preservedReturnToNewConnection = !!authRouteParams.returnToNewConnection;
+
   if (clearStorage) {
     await AsyncStorage.clear();
   }
@@ -355,6 +377,10 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     previousUserUid,
     preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
   });
+  // clearSessionAsyncStorageOnLogin always drops referral_uid — restore QR referrer for signup.
+  if (preservedReferralUid) {
+    await AsyncStorage.setItem("referral_uid", preservedReferralUid);
+  }
   const circleAuth = await fetchCircleAuthSocial(googleCircleAuthPayload(googleAuthToken, userInfo), fetchCircle);
   if (circleAuth?.pendingDeletion) {
     await clearSessionAsyncStorage();
@@ -387,6 +413,10 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     navigation.navigate("SignUp", {
       pendingReferralAfterOAuth: true,
       googleUserInfo,
+      ...(preservedReferralUid ? { referralProfileUid: preservedReferralUid } : {}),
+      ...(preservedProfileUid ? { profile_uid: preservedProfileUid } : {}),
+      ...(preservedReturnToScanLanding ? { returnToScanLanding: true } : {}),
+      ...(preservedReturnToNewConnection ? { returnToNewConnection: true } : {}),
     });
   }
 }
@@ -515,7 +545,7 @@ export default function App() {
   }, []);
 
   // Web Google Sign-In handler using Google Identity Services
-  const handleWebGoogleSignIn = useCallback(async (navigation) => {
+  const handleWebGoogleSignIn = useCallback(async (navigation, authRouteParams = {}) => {
     console.log("App.js - handleWebGoogleSignIn - Starting");
 
     return new Promise((resolve, reject) => {
@@ -532,7 +562,7 @@ export default function App() {
         script.defer = true;
         script.onload = () => {
           console.log("App.js - Google Identity Services script loaded");
-          initializeWebGoogleSignIn(navigation, resolve, reject, "signIn");
+          initializeWebGoogleSignIn(navigation, resolve, reject, "signIn", authRouteParams);
         };
         script.onerror = (error) => {
           console.error("App.js - Failed to load Google Identity Services:", error);
@@ -540,13 +570,13 @@ export default function App() {
         };
         document.head.appendChild(script);
       } else {
-        initializeWebGoogleSignIn(navigation, resolve, reject, "signIn");
+        initializeWebGoogleSignIn(navigation, resolve, reject, "signIn", authRouteParams);
       }
     });
   }, []);
 
   // Web Google Sign-Up: same GSI (JWT) as sign-in, then POST to GOOGLE_SOCIAL_AUTH_ENDPOINT
-  const handleWebGoogleSignUp = useCallback(async (navigation) => {
+  const handleWebGoogleSignUp = useCallback(async (navigation, authRouteParams = {}) => {
     console.log("App.js - handleWebGoogleSignUp - Starting");
     return new Promise((resolve, reject) => {
       if (typeof window === "undefined") {
@@ -560,7 +590,7 @@ export default function App() {
         script.defer = true;
         script.onload = () => {
           console.log("App.js - Google Identity Services script loaded (sign-up)");
-          initializeWebGoogleSignIn(navigation, resolve, reject, "signUp");
+          initializeWebGoogleSignIn(navigation, resolve, reject, "signUp", authRouteParams);
         };
         script.onerror = (error) => {
           console.error("App.js - Failed to load Google Identity Services:", error);
@@ -568,12 +598,12 @@ export default function App() {
         };
         document.head.appendChild(script);
       } else {
-        initializeWebGoogleSignIn(navigation, resolve, reject, "signUp");
+        initializeWebGoogleSignIn(navigation, resolve, reject, "signUp", authRouteParams);
       }
     });
   }, []);
 
-  const initializeWebGoogleSignIn = (navigation, resolve, reject, mode = "signIn") => {
+  const initializeWebGoogleSignIn = (navigation, resolve, reject, mode = "signIn", authRouteParams = {}) => {
     try {
       const webClientId = config.googleClientIds.web;
       console.log("App.js - Initializing Google Sign-In with client ID:", webClientId?.substring(0, 20) + "...");
@@ -625,7 +655,10 @@ export default function App() {
           console.log("App.js - User info extracted:", userInfo);
 
           try {
-            await completeGoogleSocialAuth(navigation, userInfo, credential, { clearStorage: mode === "signUp" });
+            await completeGoogleSocialAuth(navigation, userInfo, credential, {
+              clearStorage: mode === "signUp",
+              authRouteParams,
+            });
             resolve();
           } catch (socialErr) {
             console.error("App.js - Web Google social auth error:", socialErr);
@@ -673,7 +706,7 @@ export default function App() {
     }
   };
 
-  const signInHandler = useCallback(async (navigation) => {
+  const signInHandler = useCallback(async (navigation, authRouteParams = {}) => {
     console.log("App.js - Google Sign In Pressed - signInHandler - Starting");
     console.log("App.js - Platform:", isWeb ? "Web" : "Native");
 
@@ -681,7 +714,7 @@ export default function App() {
     if (isWeb) {
       console.log("App.js - Web platform: Using Google Identity Services");
       try {
-        await handleWebGoogleSignIn(navigation);
+        await handleWebGoogleSignIn(navigation, authRouteParams);
       } catch (error) {
         console.error("App.js - Web Google Sign-In error:", error);
         Alert.alert("Sign In Failed", "Please try again.");
@@ -710,7 +743,10 @@ export default function App() {
       console.log("App.js - Google Sign In successful:", userInfo);
 
       const tokens = await GoogleSignin.getTokens();
-      await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, { clearStorage: false });
+      await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, {
+        clearStorage: false,
+        authRouteParams,
+      });
     } catch (err) {
       console.error("App.js - Google Sign In error:", err);
       if (statusCodes) {
@@ -726,15 +762,15 @@ export default function App() {
       }
       Alert.alert("Sign In Failed", "Please try again.");
     }
-  }, []);
+  }, [handleWebGoogleSignIn]);
 
   const signUpHandler = useCallback(
-    async (navigation) => {
+    async (navigation, authRouteParams = {}) => {
       console.log("App.js - signUpHandler - Google Button Pressed");
 
       if (isWeb) {
         try {
-          await handleWebGoogleSignUp(navigation);
+          await handleWebGoogleSignUp(navigation, authRouteParams);
         } catch (error) {
           console.error("App.js - Web Google Sign-Up error:", error);
         }
@@ -754,7 +790,10 @@ export default function App() {
         await GoogleSignin.hasPlayServices();
         const userInfo = await GoogleSignin.signIn();
         const tokens = await GoogleSignin.getTokens();
-        await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, { clearStorage: true });
+        await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, {
+          clearStorage: true,
+          authRouteParams,
+        });
       } catch (err) {
         console.error("App.js - Google Sign Up error:", err);
         if (statusCodes) {
@@ -774,22 +813,24 @@ export default function App() {
   );
 
   const handleAppleSignIn = useCallback(
-    async (userInfo, navigation) => {
+    async (userInfo, navigation, authRouteParams = {}) => {
       await completeAppleAuthSession(navigation, userInfo, {
         clearStorage: false,
         setError,
         failureAlertTitle: "Apple Sign In",
+        authRouteParams,
       });
     },
     [setError],
   );
 
   const handleAppleSignUp = useCallback(
-    async (userInfo, navigation) => {
+    async (userInfo, navigation, authRouteParams = {}) => {
       await completeAppleAuthSession(navigation, userInfo, {
         clearStorage: true,
         setError,
         failureAlertTitle: "Apple Sign Up",
+        authRouteParams,
       });
     },
     [setError],
@@ -1120,7 +1161,12 @@ export default function App() {
                     <Stack.Screen
                       name='Login'
                       children={(props) => (
-                        <LoginScreen {...props} onGoogleSignIn={() => signInHandler(props.navigation)} onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation)} onError={setError} />
+                        <LoginScreen
+                          {...props}
+                          onGoogleSignIn={() => signInHandler(props.navigation, props.route?.params)}
+                          onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation, props.route?.params)}
+                          onError={setError}
+                        />
                       )}
                     />
                     <Stack.Screen
@@ -1128,8 +1174,8 @@ export default function App() {
                       children={(props) => (
                         <SignUpScreen
                           {...props}
-                          onGoogleSignUp={() => signUpHandler(props.navigation)}
-                          onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation)}
+                          onGoogleSignUp={() => signUpHandler(props.navigation, props.route?.params)}
+                          onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation, props.route?.params)}
                           onError={setError}
                         />
                       )}

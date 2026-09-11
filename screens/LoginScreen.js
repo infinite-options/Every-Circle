@@ -170,7 +170,12 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
             text: "Sign Up",
             onPress: () => {
               setShowSpinner(false);
-              navigation.navigate("SignUp");
+              navigation.navigate("SignUp", {
+                ...(route.params?.profile_uid ? { profile_uid: route.params.profile_uid } : {}),
+                ...(route.params?.referralProfileUid ? { referralProfileUid: route.params.referralProfileUid } : {}),
+                ...(route.params?.returnToScanLanding ? { returnToScanLanding: true } : {}),
+                ...(route.params?.returnToNewConnection ? { returnToNewConnection: true } : {}),
+              });
             },
           },
         ]);
@@ -184,6 +189,12 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
         previousUserUid,
         preserveKeys: ["user_uid", "user_email_id"],
       });
+
+      // Login purge drops referral_uid — restore QR/scan referrer for incomplete-profile signup.
+      const knownReferralUid = String(route.params?.referralProfileUid || "").trim();
+      if (knownReferralUid) {
+        await AsyncStorage.setItem("referral_uid", knownReferralUid);
+      }
 
       const circleAuth = await fetchCircleAuthLogin(email, hashedPassword, fetch);
       if (circleAuth?.pendingDeletion) {
@@ -256,6 +267,44 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
             <Text style={styles.subtitle}>Please choose a login option to continue.</Text>
           </View>
 
+          <View style={styles.socialContainer}>
+            <GoogleBrandedSignInButton
+              label='Sign in with Google'
+              signingIn={signingIn}
+              onPress={async () => {
+                if (!signingIn) {
+                  setSigningIn(true);
+                  try {
+                    await onGoogleSignIn();
+                  } finally {
+                    setSigningIn(false);
+                  }
+                }
+              }}
+            />
+            <AppleSignIn
+              mode='signIn'
+              onSignIn={async (...args) => {
+                if (!signingIn) {
+                  setSigningIn(true);
+                  try {
+                    await onAppleSignIn(...args);
+                  } finally {
+                    setSigningIn(false);
+                  }
+                }
+              }}
+              onError={onError}
+              disabled={signingIn}
+            />
+          </View>
+
+          <View style={styles.dividerContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.divider} />
+          </View>
+
           <View style={styles.inputContainer}>
             <View style={styles.fieldContainer}>
               <Text style={styles.label}>Email</Text>
@@ -299,48 +348,20 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
             )}
           </TouchableOpacity>
 
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.divider} />
-          </View>
-
-          <View style={styles.socialContainer}>
-            <GoogleBrandedSignInButton
-              label='Sign in with Google'
-              signingIn={signingIn}
-              onPress={async () => {
-                if (!signingIn) {
-                  setSigningIn(true);
-                  try {
-                    await onGoogleSignIn();
-                  } finally {
-                    setSigningIn(false);
-                  }
-                }
-              }}
-            />
-            <AppleSignIn
-              mode='signIn'
-              onSignIn={async (...args) => {
-                if (!signingIn) {
-                  setSigningIn(true);
-                  try {
-                    await onAppleSignIn(...args);
-                  } finally {
-                    setSigningIn(false);
-                  }
-                }
-              }}
-              onError={onError}
-              disabled={signingIn}
-            />
-          </View>
-
           <View style={styles.footer}>
             <Text style={styles.footerText}>
               Don't have an account?{" "}
-              <Text style={styles.signUpText} onPress={() => navigation.navigate("SignUp")}>
+              <Text
+                style={styles.signUpText}
+                onPress={() =>
+                  navigation.navigate("SignUp", {
+                    ...(route.params?.profile_uid ? { profile_uid: route.params.profile_uid } : {}),
+                    ...(route.params?.referralProfileUid ? { referralProfileUid: route.params.referralProfileUid } : {}),
+                    ...(route.params?.returnToScanLanding ? { returnToScanLanding: true } : {}),
+                    ...(route.params?.returnToNewConnection ? { returnToNewConnection: true } : {}),
+                  })
+                }
+              >
                 Sign Up
               </Text>
             </Text>
