@@ -1,6 +1,6 @@
 // ScannedProfilePopup.js - Popup to display scanned profile information
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView, Dimensions, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView, useWindowDimensions, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
@@ -8,9 +8,6 @@ import WebTextInput from "./WebTextInput";
 import { parseDateTime } from "../utils/profileDateTime";
 
 const REL_TYPES = ["friend", "colleague", "family"];
-const SCREEN_HEIGHT = Dimensions.get("window").height;
-const MOBILE_MODAL_MAX_HEIGHT = SCREEN_HEIGHT * 0.85;
-const MOBILE_SCROLL_MAX_HEIGHT = MOBILE_MODAL_MAX_HEIGHT - 76;
 
 let DateTimePicker = null;
 if (Platform.OS !== "web") {
@@ -92,6 +89,7 @@ const ScannedProfilePopup = ({
   relationshipRequired = false,
 }) => {
   const { darkMode } = useDarkMode();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [selectedRelationship, setSelectedRelationship] = useState("friend");
   const [event, setEvent] = useState("");
   const [note, setNote] = useState("");
@@ -101,6 +99,12 @@ const ScannedProfilePopup = ({
   const [date, setDate] = useState(getTodayCircleDate());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const wasVisibleRef = useRef(false);
+
+  // Keep the sheet inside the visible viewport (mobile web address bars shrink usable height).
+  const overlayPadding = windowWidth < 400 ? 12 : 20;
+  const modalMaxHeight = Math.max(280, windowHeight - overlayPadding * 2);
+  // Reserve space for title + pinned action buttons so the middle always scrolls.
+  const scrollMaxHeight = Math.max(140, modalMaxHeight - 190);
 
   // Hydrate only when the modal opens/closes — not when parent relationship data arrives later.
   // Re-syncing mid-edit reset TextInput values and can crash Android while the user is typing.
@@ -170,8 +174,14 @@ const ScannedProfilePopup = ({
 
   return (
     <Modal visible={visible} transparent={true} animationType='fade' onRequestClose={onClose}>
-      <View style={[styles.modalOverlay, darkMode && styles.darkModalOverlay]}>
-        <View style={[styles.modalContent, Platform.OS !== "web" && styles.modalContentMobile, darkMode && styles.darkModalContent]}>
+      <View style={[styles.modalOverlay, darkMode && styles.darkModalOverlay, { padding: overlayPadding }]}>
+        <View
+          style={[
+            styles.modalContent,
+            darkMode && styles.darkModalContent,
+            { maxHeight: modalMaxHeight },
+          ]}
+        >
           <View style={styles.header}>
             <Text style={[styles.title, darkMode && styles.darkTitle]}>{title}</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
@@ -180,12 +190,12 @@ const ScannedProfilePopup = ({
           </View>
 
           <ScrollView
-            style={Platform.OS === "web" ? undefined : styles.scrollViewMobile}
+            style={[styles.scrollView, { maxHeight: scrollMaxHeight }]}
             contentContainerStyle={styles.scrollContent}
-            scrollEnabled={Platform.OS !== "web"}
-            showsVerticalScrollIndicator={Platform.OS !== "web"}
+            showsVerticalScrollIndicator
             keyboardShouldPersistTaps='handled'
             nestedScrollEnabled
+            bounces={false}
           >
             <View style={styles.content}>
               <MiniCard user={profileData} />
@@ -310,7 +320,7 @@ const ScannedProfilePopup = ({
               </View>
             </View>
 
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, styles.lastInputContainer]}>
               <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Introduced By:</Text>
               <WebTextInput
                 style={[styles.textInput, darkMode && styles.darkTextInput]}
@@ -320,20 +330,20 @@ const ScannedProfilePopup = ({
                 placeholderTextColor={darkMode ? "#666" : "#999"}
               />
             </View>
-
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[styles.addButton, isSaveDisabled && styles.addButtonDisabled]}
-                onPress={handleAdd}
-                disabled={isSaveDisabled}
-              >
-                <Text style={styles.addButtonText}>{actionLabel}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.viewButton} onPress={onClose}>
-                <Text style={[styles.viewButtonText, darkMode && styles.darkViewButtonText]}>Close</Text>
-              </TouchableOpacity>
-            </View>
           </ScrollView>
+
+          <View style={[styles.buttonContainer, darkMode && styles.darkButtonContainer]}>
+            <TouchableOpacity
+              style={[styles.addButton, isSaveDisabled && styles.addButtonDisabled]}
+              onPress={handleAdd}
+              disabled={isSaveDisabled}
+            >
+              <Text style={styles.addButtonText}>{actionLabel}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.viewButton} onPress={onClose}>
+              <Text style={[styles.viewButtonText, darkMode && styles.darkViewButtonText]}>Close</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -346,7 +356,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
   },
   darkModalOverlay: {
     backgroundColor: "rgba(0, 0, 0, 0.8)",
@@ -354,20 +363,24 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: "#fff",
     borderRadius: 16,
-    padding: 20,
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
     width: "100%",
     maxWidth: 400,
+    flexShrink: 1,
+    overflow: "hidden",
     boxShadow: "0px 2px 4px 0px rgba(0,0,0,0.25)",
     ...(Platform.OS !== "web" && { elevation: 5 }),
   },
-  modalContentMobile: {
-    maxHeight: MOBILE_MODAL_MAX_HEIGHT,
-  },
-  scrollViewMobile: {
-    maxHeight: MOBILE_SCROLL_MAX_HEIGHT,
+  scrollView: {
+    flexGrow: 0,
+    flexShrink: 1,
+    minHeight: 0,
   },
   scrollContent: {
-    paddingBottom: 4,
+    paddingBottom: 8,
+    flexGrow: 0,
   },
   darkModalContent: {
     backgroundColor: "#2a2a2a",
@@ -376,7 +389,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 12,
+    flexShrink: 0,
   },
   title: {
     fontSize: 20,
@@ -393,8 +407,18 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   buttonContainer: {
-    gap: 12,
-    marginTop: 4,
+    gap: 10,
+    marginTop: 8,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e0e0e0",
+    flexShrink: 0,
+  },
+  darkButtonContainer: {
+    borderTopColor: "#444",
+  },
+  lastInputContainer: {
+    marginBottom: 4,
   },
   addButton: {
     backgroundColor: "#AF52DE",

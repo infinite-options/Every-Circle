@@ -25,6 +25,7 @@ function authContinuationParams(route) {
   const p = route?.params || {};
   const out = {};
   if (p.profile_uid) out.profile_uid = p.profile_uid;
+  if (p.referralProfileUid) out.referralProfileUid = p.referralProfileUid;
   if (p.returnToScanLanding) out.returnToScanLanding = true;
   if (p.returnToNewConnection) out.returnToNewConnection = true;
   return out;
@@ -102,6 +103,14 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   };
 
   const promptReferralBeforeUserInfo = async () => {
+    const fromRoute = String(route.params?.referralProfileUid || "").trim();
+    const fromStorage = String((await AsyncStorage.getItem("referral_uid")) || "").trim();
+    const knownReferralUid = fromRoute || fromStorage;
+    if (knownReferralUid) {
+      setBlockingOAuthReferral(true);
+      await completeReferralAndNavigate(knownReferralUid);
+      return;
+    }
     await AsyncStorage.multiRemove(["referral_uid", "referral_email"]);
     setBlockingOAuthReferral(true);
     await openReferralModal();
@@ -123,9 +132,12 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     if (!route.params?.pendingReferralAfterOAuth || oauthReferralHandledRef.current) return;
     oauthReferralHandledRef.current = true;
 
-    const { googleUserInfo: gInfo, appleUserInfo: aInfo, referralProfileUid: refUid } = route.params || {};
+    const { googleUserInfo: gInfo, appleUserInfo: aInfo } = route.params || {};
 
     proceedAfterAccountCreation(async () => {
+      const refUid =
+        String(route.params?.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+
       if (refUid) {
         await AsyncStorage.setItem("referral_uid", refUid);
         navigation.navigate("UserInfo", {
@@ -154,13 +166,13 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     if (route.params?.appleUserInfo) {
       setPendingAppleUserInfo(route.params.appleUserInfo);
       proceedAfterAccountCreation(async () => {
-        // Skip referral modal if referralProfileUid is provided
-        if (route.params?.referralProfileUid) {
-          // Use the referral profile UID directly and skip modal
-          await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+        const refUid =
+          String(route.params?.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+        if (refUid) {
+          await AsyncStorage.setItem("referral_uid", refUid);
           navigation.navigate("UserInfo", {
             appleUserInfo: route.params.appleUserInfo,
-            referralId: route.params.referralProfileUid,
+            referralId: refUid,
             ...authContinuationParams(route),
           });
         } else {
@@ -318,12 +330,18 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           return;
         }
         if (result.user_uid) {
+          // Capture QR referrer before clear — AsyncStorage.clear() would wipe it.
+          const preservedReferralUid =
+            String(route.params?.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
           // Clear AsyncStorage before storing new user data
           await AsyncStorage.clear();
           // AsyncStorage.clear() wipes allowCookies too — tell the persistent banner it's unanswered again.
           refreshAllowCookies();
           await AsyncStorage.setItem("user_uid", result.user_uid);
           await AsyncStorage.setItem("user_email_id", googleUserInfo.email);
+          if (preservedReferralUid) {
+            await AsyncStorage.setItem("referral_uid", preservedReferralUid);
+          }
           const circleAuth = await fetchCircleAuthSocial(googleCircleAuthPayload(googleUserInfo.accessToken), fetch);
           if (circleAuth?.pendingDeletion) {
             await clearSessionAsyncStorage();
@@ -340,13 +358,11 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           setPendingGoogleUserInfo(googleUserInfo);
 
           await proceedAfterAccountCreation(async () => {
-            // Skip referral modal if referralProfileUid is provided
-            if (route.params?.referralProfileUid) {
-              // Use the referral profile UID directly and skip modal
-              await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+            if (preservedReferralUid) {
+              await AsyncStorage.setItem("referral_uid", preservedReferralUid);
               navigation.navigate("UserInfo", {
                 googleUserInfo: googleUserInfo,
-                referralId: route.params.referralProfileUid,
+                referralId: preservedReferralUid,
                 ...authContinuationParams(route),
               });
               setPendingGoogleUserInfo(null);
@@ -528,22 +544,26 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             setUserExistsError("User Already Exists");
           }
         } else if (createAccountData.code === 281 && createAccountData.user_uid) {
+          // Capture QR referrer before clear — AsyncStorage.clear() would wipe it.
+          const preservedReferralUid =
+            String(route.params?.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
           // Clear AsyncStorage before storing new user data
           await AsyncStorage.clear();
           // AsyncStorage.clear() wipes allowCookies too — tell the persistent banner it's unanswered again.
           refreshAllowCookies();
           await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
           await AsyncStorage.setItem("user_email_id", email);
+          if (preservedReferralUid) {
+            await AsyncStorage.setItem("referral_uid", preservedReferralUid);
+          }
           await issueCircleTokensFromPassword(email, password, fetch);
           setPendingRegularSignup(true);
 
           await proceedAfterAccountCreation(async () => {
-            // Skip referral modal if referralProfileUid is provided
-            if (route.params?.referralProfileUid) {
-              // Use the referral profile UID directly and skip modal
-              await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+            if (preservedReferralUid) {
+              await AsyncStorage.setItem("referral_uid", preservedReferralUid);
               navigation.navigate("UserInfo", {
-                referralId: route.params.referralProfileUid,
+                referralId: preservedReferralUid,
                 ...authContinuationParams(route),
               });
               setPendingRegularSignup(false);
@@ -572,6 +592,21 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               {referralRequired ? "Who referred you? Finish this step to complete your sign up." : isGoogleSignUp ? "Complete your sign up" : "Please create your account to continue."}
             </Text>
           </View>
+
+          {!referralRequired && !isGoogleSignUp && (
+            <>
+              <View style={styles.socialContainer}>
+                <GoogleBrandedSignInButton mode='signUp' onPress={onGoogleSignUp} disabled={isAttemptingLogin} />
+                <AppleSignIn mode='signUp' onSignIn={onAppleSignUp} onError={onError} disabled={isAttemptingLogin} />
+              </View>
+
+              <View style={styles.dividerContainer}>
+                <View style={styles.divider} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.divider} />
+              </View>
+            </>
+          )}
 
           {!referralRequired && (
             <View style={styles.inputContainer}>
@@ -661,26 +696,11 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             </View>
           )}
 
-          {!referralRequired && !isGoogleSignUp && (
-            <>
-              <View style={styles.dividerContainer}>
-                <View style={styles.divider} />
-                <Text style={styles.dividerText}>OR</Text>
-                <View style={styles.divider} />
-              </View>
-
-              <View style={styles.socialContainer}>
-                <GoogleBrandedSignInButton mode='signUp' onPress={onGoogleSignUp} disabled={isAttemptingLogin} />
-                <AppleSignIn mode='signUp' onSignIn={onAppleSignUp} onError={onError} disabled={isAttemptingLogin} />
-              </View>
-            </>
-          )}
-
           {!referralRequired && (
             <View style={styles.footer}>
               <Text style={styles.footerText}>
                 Already have an account?{" "}
-                <Text style={styles.logInText} onPress={() => navigation.navigate("Login")}>
+                <Text style={styles.logInText} onPress={() => navigation.navigate("Login", authContinuationParams(route))}>
                   Log In
                 </Text>
               </Text>

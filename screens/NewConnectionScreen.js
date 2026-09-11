@@ -559,14 +559,32 @@ const NewConnectionScreen = () => {
 
                     <TouchableOpacity
                       style={[styles.authButton, styles.loginButton, darkMode && styles.darkLoginButton]}
-                      onPress={() => navigation.navigate("Login", { returnToNewConnection: true, profile_uid: profileUid })}
+                      onPress={() => {
+                        if (profileUid) {
+                          AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
+                        }
+                        navigation.navigate("Login", {
+                          returnToNewConnection: true,
+                          profile_uid: profileUid,
+                          referralProfileUid: profileUid,
+                        });
+                      }}
                     >
                       <Text style={styles.authButtonText}>Login</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={[styles.authButton, styles.signupButton, darkMode && styles.darkSignupButton]}
-                      onPress={() => navigation.navigate("SignUp", { referralProfileUid: profileUid, returnToNewConnection: true, profile_uid: profileUid })}
+                      onPress={() => {
+                        if (profileUid) {
+                          AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
+                        }
+                        navigation.navigate("SignUp", {
+                          referralProfileUid: profileUid,
+                          returnToNewConnection: true,
+                          profile_uid: profileUid,
+                        });
+                      }}
                     >
                       <Text style={styles.authButtonText}>Sign Up</Text>
                     </TouchableOpacity>

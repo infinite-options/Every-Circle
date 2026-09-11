@@ -552,11 +552,13 @@ const ProfileScreen = ({ route, navigation }) => {
               // console.log("ProfileScreen - Profile not found for current user, routing to UserInfo");
               setLoading(false);
               // Clear any existing profile data but keep user credentials
-              await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number", "referral_uid", "referral_email"]);
+              await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
               await clearUserProfileCacheStorage();
               reinitializeUnreadFromOutside().catch(() => {});
+              const referralProfileUid = String((await AsyncStorage.getItem("referral_uid")) || "").trim();
               navigation.navigate("SignUp", {
                 requireReferralCompletion: true,
+                ...(referralProfileUid ? { referralProfileUid } : {}),
                 ...getOauthUserInfoNavigateParams(),
               });
               return;
@@ -750,10 +752,12 @@ const ProfileScreen = ({ route, navigation }) => {
 
       if (isOwnProfileRequest && !viewingOtherViaRoute) {
         setLoading(false);
-        await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number", "referral_uid", "referral_email"]);
+        await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
         await clearUserProfileCacheStorage();
+        const referralProfileUid = String((await AsyncStorage.getItem("referral_uid")) || "").trim();
         navigation.navigate("SignUp", {
           requireReferralCompletion: true,
+          ...(referralProfileUid ? { referralProfileUid } : {}),
           ...getOauthUserInfoNavigateParams(),
         });
         return;

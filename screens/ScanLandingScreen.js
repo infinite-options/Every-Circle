@@ -161,13 +161,25 @@ export default function ScanLandingScreen() {
 
   const authParams = useMemo(() => (profileUid ? scanLandingAuthParams(profileUid) : {}), [profileUid]);
 
+  // Persist QR owner as referrer as soon as the scan link is opened (survives OAuth storage wipes if restored).
+  useEffect(() => {
+    if (!profileUid) return;
+    AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
+  }, [profileUid]);
+
   const goToSignUp = useCallback(() => {
+    if (profileUid) {
+      AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
+    }
     navigation.navigate("SignUp", authParams);
-  }, [navigation, authParams]);
+  }, [navigation, authParams, profileUid]);
 
   const goToLogin = useCallback(() => {
+    if (profileUid) {
+      AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
+    }
     navigation.navigate("Login", authParams);
-  }, [navigation, authParams]);
+  }, [navigation, authParams, profileUid]);
 
   const downloadVCard = useCallback(() => {
     if (!profileData) return;
