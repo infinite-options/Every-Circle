@@ -56,6 +56,12 @@ export const APPLE_AUTH_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.ama
 // Account Management Endpoints
 export const ACCOUNT_SALT_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AccountSalt/EVERY-CIRCLE";
 export const CREATE_ACCOUNT_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccount/EVERY-CIRCLE";
+/**
+ * Email-only signup: BE generates an 8-char alphanumeric temp password, stores it, emails it,
+ * and returns user_uid + session tokens when possible. See FE signup flow in SignUpScreen.
+ */
+export const CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT =
+  "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccountTempPassword/EVERY-CIRCLE";
 export const LOGIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/Login/EVERY-CIRCLE";
 export const UPDATE_EMAIL_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UpdateEmailPassword/EVERY-CIRCLE";
 export const SET_TEMP_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/SetTempPassword/EVERY-CIRCLE";

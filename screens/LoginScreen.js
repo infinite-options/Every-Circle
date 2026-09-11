@@ -16,6 +16,7 @@ import { clearSessionAsyncStorage, clearSessionAsyncStorageOnLogin } from "../ut
 import { fetchCircleAuthLogin } from "../utils/authSession";
 import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
 import { isAccountDeletedAuthMessage, isPendingDeletionAuthResponse, reactivateNavParamsFromAuthPayload } from "../utils/deletedProfile";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
@@ -211,10 +212,11 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
         if (sessionProfileUid) {
           await goToNetworkForScanConnect(navigation, scanProfileUid);
         } else {
-          navigation.navigate("UserInfo", {
-            returnToScanLanding: true,
-            profile_uid: scanProfileUid,
-            referralId: scanProfileUid,
+          await finishSignupAfterReferral(navigation, {
+            referralUid: scanProfileUid,
+            routeParams: route?.params || {},
+            userUid: user_uid,
+            email: user_email,
           });
         }
         return;
@@ -230,31 +232,34 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
   };
 
   const onReset = async () => {
-    if (forgotPasswordEmail === "") {
+    const resetEmail = String(forgotPasswordEmail || "").trim();
+    if (!resetEmail) {
       Alert.alert("Error", "Please enter an email");
       return;
     }
     setShowForgotPasswordSpinner(true);
-    axios
-      .post(SET_TEMP_PASSWORD_ENDPOINT, {
-        email: forgotPasswordEmail,
-      })
-      .then((response) => {
-        if (response.data.message === "A temporary password has been sent") {
-          setShowForgotPasswordSpinner(false);
-          setShowPassModal(true);
-        }
-        if (response.data.code === 280) {
-          Alert.alert("Error", "No account found with that email.");
-          setShowForgotPasswordSpinner(false);
-          return;
-        }
-      })
-      .catch((error) => {
-        console.error("Forgot password error:", error);
-        Alert.alert("Error", "Something went wrong. Please try again.");
-        setShowForgotPasswordSpinner(false);
+    try {
+      const response = await fetch(SET_TEMP_PASSWORD_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: resetEmail }),
       });
+      const data = await response.json().catch(() => ({}));
+      if (data.message === "A temporary password has been sent") {
+        setShowPassModal(true);
+        return;
+      }
+      if (data.code === 280) {
+        Alert.alert("Error", "No account found with that email.");
+        return;
+      }
+      Alert.alert("Error", data.message || "Something went wrong. Please try again.");
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      Alert.alert("Error", "Something went wrong. Please try again.");
+    } finally {
+      setShowForgotPasswordSpinner(false);
+    }
   };
 
   return (
