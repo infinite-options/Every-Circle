@@ -69,6 +69,13 @@ export function scanLandingAuthParams(profileUid) {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function buildVersionLabel() {
+  const pm = versionData?.pm_version || "";
+  const major = versionData?.major ?? "";
+  const build = versionData?.build ?? "";
+  return `PM ${pm} · v${major}.${build} · preview`;
+}
+
 export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onError }) {
   const route = useRoute();
   const navigation = useNavigation();
@@ -135,6 +142,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     await goToNetworkForScanConnect(navigation, profileUid);
   }, [profileUid, navigation]);
 
+  // Already logged in, or returning after login/signup (openConnectModal)
   useEffect(() => {
     if (!profileUid || loading || checkingSession || redirectStartedRef.current) return;
 
@@ -169,6 +177,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
   const authParams = useMemo(() => (profileUid ? scanLandingAuthParams(profileUid) : {}), [profileUid]);
 
+  // Persist QR owner as referrer as soon as the scan link is opened (survives OAuth storage wipes if restored).
   useEffect(() => {
     if (!profileUid) return;
     AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
@@ -248,149 +257,217 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
   const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
+  const versionLabel = buildVersionLabel();
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.column} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator={false}>
-        <Text style={styles.headline}>Connect on everyCircle</Text>
-        <Text style={styles.sub}>
-          {showRedirecting
-            ? "Taking you to your network…"
-            : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
-        </Text>
+    <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator={false}>
+        <View style={styles.panel}>
+          <View style={styles.body}>
+            <Text style={styles.headline}>Connect on everyCircle</Text>
+            <Text style={styles.sub}>
+              {showRedirecting
+                ? "Taking you to your network…"
+                : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+            </Text>
 
-        {(loading || showRedirecting) && (
-          <View style={styles.centerRow}>
-            <ActivityIndicator size='large' color='#2434C2' />
-            <Text style={styles.muted}>{loading ? "Loading profile…" : "Opening connect…"}</Text>
+            {(loading || showRedirecting) && (
+              <View style={styles.centerRow}>
+                <ActivityIndicator size='large' color='#2434C2' />
+                <Text style={styles.muted}>{loading ? "Loading profile…" : "Opening connect…"}</Text>
+              </View>
+            )}
+
+            {!loading && error && <Text style={styles.error}>{error}</Text>}
+
+            {!loading && !error && profileData && showGuestActions && (
+              <>
+                <View style={styles.cardWrap}>
+                  <MiniCard user={profileData} />
+                </View>
+
+                <View style={styles.socialContainer}>
+                  <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
+                  <AppleSignIn mode='signUp' onSignIn={handleAppleSignUp} onError={onError} disabled={signingIn} />
+                </View>
+
+                <View style={styles.dividerContainer}>
+                  <View style={styles.divider} />
+                  <Text style={styles.dividerText}>OR</Text>
+                  <View style={styles.divider} />
+                </View>
+
+                <TextInput
+                  style={styles.emailInput}
+                  placeholder='Email'
+                  placeholderTextColor='#888'
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (emailError) setEmailError("");
+                  }}
+                  keyboardType='email-address'
+                  autoCapitalize='none'
+                  autoCorrect={false}
+                  accessibilityLabel='Email'
+                  accessibilityHint='Enter your email address to sign up'
+                  returnKeyType='go'
+                  onSubmitEditing={goToSignUpWithEmail}
+                />
+                {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
+
+                <TouchableOpacity
+                  style={[styles.primaryBtn, !EMAIL_REGEX.test(email.trim()) && styles.primaryBtnDisabled]}
+                  onPress={goToSignUpWithEmail}
+                  activeOpacity={0.85}
+                  disabled={!EMAIL_REGEX.test(email.trim())}
+                >
+                  <Text style={styles.primaryBtnText}>Continue with email</Text>
+                </TouchableOpacity>
+
+                <View style={styles.sectionRule} />
+
+                <TouchableOpacity style={styles.secondaryBtn} onPress={goToLogin} activeOpacity={0.85}>
+                  <Text style={styles.secondaryBtnText}>Log in</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.secondaryBtn, styles.lastSecondaryBtn]} onPress={downloadVCard} activeOpacity={0.85}>
+                  <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
-        )}
 
-        {!loading && error && <Text style={styles.error}>{error}</Text>}
-
-        {!loading && !error && profileData && showGuestActions && (
-          <>
-            <View style={styles.cardWrap}>
-              <MiniCard user={profileData} />
-            </View>
-
-            <View style={styles.socialContainer}>
-              <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
-              <AppleSignIn mode='signUp' onSignIn={handleAppleSignUp} onError={onError} disabled={signingIn} />
-            </View>
-
-            <View style={styles.dividerContainer}>
-              <View style={styles.divider} />
-              <Text style={styles.dividerText}>OR</Text>
-              <View style={styles.divider} />
-            </View>
-
-            <TextInput
-              style={styles.emailInput}
-              placeholder='Email'
-              placeholderTextColor='#888'
-              value={email}
-              onChangeText={(text) => {
-                setEmail(text);
-                if (emailError) setEmailError("");
-              }}
-              keyboardType='email-address'
-              autoCapitalize='none'
-              autoCorrect={false}
-              accessibilityLabel='Email'
-              returnKeyType='go'
-              onSubmitEditing={goToSignUpWithEmail}
-            />
-            {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
-
-            <TouchableOpacity
-              style={[styles.primaryBtn, !EMAIL_REGEX.test(email.trim()) && styles.primaryBtnDisabled]}
-              onPress={goToSignUpWithEmail}
-              activeOpacity={0.85}
-              disabled={!EMAIL_REGEX.test(email.trim())}
-            >
-              <Text style={styles.primaryBtnText}>Continue with email</Text>
-            </TouchableOpacity>
-
-            <View style={styles.dividerContainer}>
-              <View style={styles.divider} />
-            </View>
-
-            <TouchableOpacity style={styles.secondaryBtn} onPress={goToLogin} activeOpacity={0.85}>
-              <Text style={styles.secondaryBtnText}>Log in</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.secondaryBtn} onPress={downloadVCard} activeOpacity={0.85}>
-              <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        <Text style={styles.versionText}>
-          PM {versionData.pm_version} · v{versionData.major}.{versionData.build} · {versionData.last_change}
-        </Text>
+          <Text style={styles.version}>{versionLabel}</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f6f7fb" },
-  column: {
-    paddingHorizontal: 20,
-    paddingTop: 96,
-    paddingBottom: 24,
+  safe: { flex: 1, backgroundColor: "#ECEEF5" },
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
   },
-  headline: { fontSize: 22, fontWeight: "700", color: "#111", marginBottom: 6, textAlign: "center" },
-  sub: { fontSize: 14, color: "#444", lineHeight: 19, marginBottom: 24, textAlign: "center" },
-  centerRow: { alignItems: "center", paddingVertical: 16, gap: 10 },
+  panel: {
+    flexGrow: 1,
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 14,
+    justifyContent: "space-between",
+    ...Platform.select({
+      web: {
+        boxShadow: "0 2px 12px rgba(20, 30, 70, 0.08)",
+      },
+      default: {
+        shadowColor: "#141E46",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        elevation: 2,
+      },
+    }),
+  },
+  body: {
+    width: "100%",
+  },
+  headline: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#111",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  sub: {
+    fontSize: 15,
+    color: "#555",
+    lineHeight: 21,
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  centerRow: { alignItems: "center", paddingVertical: 24, gap: 12 },
   muted: { fontSize: 14, color: "#666" },
-  error: { color: "#b00020", textAlign: "center", fontSize: 15, marginTop: 16 },
-  cardWrap: { marginBottom: 12 },
-  socialContainer: { alignItems: "center" },
+  error: { color: "#b00020", textAlign: "center", fontSize: 15, marginTop: 8, marginBottom: 8 },
+  cardWrap: { marginBottom: 14 },
+  socialContainer: {
+    alignItems: "center",
+    marginBottom: 2,
+  },
   dividerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 10,
+    marginTop: 4,
+    marginBottom: 12,
   },
-  divider: { flex: 1, height: 1, backgroundColor: "#D0D4E4" },
-  dividerText: { marginHorizontal: 10, color: "#666", fontSize: 12, fontWeight: "600" },
+  divider: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#C8CCD8",
+  },
+  dividerText: {
+    marginHorizontal: 10,
+    color: "#888",
+    fontSize: 13,
+    fontWeight: "600",
+  },
   emailInput: {
     backgroundColor: "#fff",
     borderRadius: 10,
-    paddingVertical: 12,
+    paddingVertical: 13,
     paddingHorizontal: 14,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: "#ccc",
-    marginBottom: 8,
+    borderColor: "#CFD3DE",
+    marginBottom: 10,
     color: "#111",
   },
-  emailError: { color: "#b00020", fontSize: 13, marginBottom: 8, textAlign: "center" },
+  emailError: {
+    color: "#b00020",
+    fontSize: 13,
+    marginBottom: 8,
+    textAlign: "center",
+  },
   primaryBtn: {
     backgroundColor: "#2434C2",
-    paddingVertical: 12,
+    paddingVertical: 13,
     borderRadius: 10,
-    marginBottom: 0,
+    marginBottom: 4,
   },
-  primaryBtnDisabled: { backgroundColor: "#9AA3D9" },
+  primaryBtnDisabled: {
+    backgroundColor: "#9AA3D9",
+  },
   primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "600", textAlign: "center" },
+  sectionRule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#C8CCD8",
+    marginTop: 14,
+    marginBottom: 14,
+  },
   secondaryBtn: {
-    paddingVertical: 11,
+    paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#2434C2",
     backgroundColor: "#fff",
-    marginBottom: 8,
+    marginBottom: 10,
+  },
+  lastSecondaryBtn: {
+    marginBottom: 0,
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
-  versionText: {
-    marginTop: 8,
+  version: {
+    marginTop: 18,
     textAlign: "center",
     fontSize: 12,
-    color: "#889",
+    color: "#9AA0B0",
   },
 });

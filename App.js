@@ -158,8 +158,7 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
   const { clearStorage = false, setError, failureAlertTitle = "Apple", authRouteParams = {} } = options;
   try {
     // Capture QR/scan referrer before any storage wipe so signup can skip "Who referred you?"
-    const preservedReferralUid =
-      String(authRouteParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+    const preservedReferralUid = String(authRouteParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
     const preservedProfileUid = String(authRouteParams.profile_uid || "").trim() || null;
     const preservedReturnToScanLanding = !!authRouteParams.returnToScanLanding;
     const preservedReturnToNewConnection = !!authRouteParams.returnToNewConnection;
@@ -310,8 +309,7 @@ function isExistingSocialAccountApiResult(result) {
 async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, options = {}) {
   const { clearStorage = false, authRouteParams = {} } = options;
   // Capture QR/scan referrer before any storage wipe so signup can skip "Who referred you?"
-  const preservedReferralUid =
-    String(authRouteParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+  const preservedReferralUid = String(authRouteParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
   const preservedProfileUid = String(authRouteParams.profile_uid || "").trim() || null;
   const preservedReturnToScanLanding = !!authRouteParams.returnToScanLanding;
   const preservedReturnToNewConnection = !!authRouteParams.returnToNewConnection;
@@ -706,63 +704,66 @@ export default function App() {
     }
   };
 
-  const signInHandler = useCallback(async (navigation, authRouteParams = {}) => {
-    console.log("App.js - Google Sign In Pressed - signInHandler - Starting");
-    console.log("App.js - Platform:", isWeb ? "Web" : "Native");
+  const signInHandler = useCallback(
+    async (navigation, authRouteParams = {}) => {
+      console.log("App.js - Google Sign In Pressed - signInHandler - Starting");
+      console.log("App.js - Platform:", isWeb ? "Web" : "Native");
 
-    // Handle web Google Sign-In differently
-    if (isWeb) {
-      console.log("App.js - Web platform: Using Google Identity Services");
+      // Handle web Google Sign-In differently
+      if (isWeb) {
+        console.log("App.js - Web platform: Using Google Identity Services");
+        try {
+          await handleWebGoogleSignIn(navigation, authRouteParams);
+        } catch (error) {
+          console.error("App.js - Web Google Sign-In error:", error);
+          Alert.alert("Sign In Failed", "Please try again.");
+        }
+        return;
+      }
+
+      // Native Google Sign-In
+      if (!GoogleSignin) {
+        Alert.alert("Not Available", "Google Sign-In is not available. Please use email/password login.");
+        return;
+      }
+
       try {
-        await handleWebGoogleSignIn(navigation, authRouteParams);
-      } catch (error) {
-        console.error("App.js - Web Google Sign-In error:", error);
+        // First check if user is already signed in
+        const isSignedIn = await GoogleSignin.isSignedIn();
+        if (isSignedIn) {
+          await GoogleSignin.signOut();
+        }
+
+        // Check for Play Services
+        await GoogleSignin.hasPlayServices();
+
+        // Start new sign in process
+        const userInfo = await GoogleSignin.signIn();
+        console.log("App.js - Google Sign In successful:", userInfo);
+
+        const tokens = await GoogleSignin.getTokens();
+        await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, {
+          clearStorage: false,
+          authRouteParams,
+        });
+      } catch (err) {
+        console.error("App.js - Google Sign In error:", err);
+        if (statusCodes) {
+          if (err.code === statusCodes.SIGN_IN_CANCELLED) {
+            // User cancelled the login flow
+            return;
+          }
+          if (err.code === statusCodes.IN_PROGRESS) {
+            // Sign in is in progress already
+            Alert.alert("Sign In In Progress", "Please wait for the current sign in process to complete.");
+            return;
+          }
+        }
         Alert.alert("Sign In Failed", "Please try again.");
       }
-      return;
-    }
-
-    // Native Google Sign-In
-    if (!GoogleSignin) {
-      Alert.alert("Not Available", "Google Sign-In is not available. Please use email/password login.");
-      return;
-    }
-
-    try {
-      // First check if user is already signed in
-      const isSignedIn = await GoogleSignin.isSignedIn();
-      if (isSignedIn) {
-        await GoogleSignin.signOut();
-      }
-
-      // Check for Play Services
-      await GoogleSignin.hasPlayServices();
-
-      // Start new sign in process
-      const userInfo = await GoogleSignin.signIn();
-      console.log("App.js - Google Sign In successful:", userInfo);
-
-      const tokens = await GoogleSignin.getTokens();
-      await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, {
-        clearStorage: false,
-        authRouteParams,
-      });
-    } catch (err) {
-      console.error("App.js - Google Sign In error:", err);
-      if (statusCodes) {
-        if (err.code === statusCodes.SIGN_IN_CANCELLED) {
-          // User cancelled the login flow
-          return;
-        }
-        if (err.code === statusCodes.IN_PROGRESS) {
-          // Sign in is in progress already
-          Alert.alert("Sign In In Progress", "Please wait for the current sign in process to complete.");
-          return;
-        }
-      }
-      Alert.alert("Sign In Failed", "Please try again.");
-    }
-  }, [handleWebGoogleSignIn]);
+    },
+    [handleWebGoogleSignIn],
+  );
 
   const signUpHandler = useCallback(
     async (navigation, authRouteParams = {}) => {
@@ -1103,7 +1104,21 @@ export default function App() {
     const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen"];
 
     // Allowed screens when terms are not accepted
-    const termsAllowedScreens = ["Home", "Login", "SignUp", "Reactivate", "Settings", "TermsAndConditions", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
+    const termsAllowedScreens = [
+      "Home",
+      "Login",
+      "SignUp",
+      "Reactivate",
+      "Settings",
+      "TermsAndConditions",
+      "PrivacyPolicy",
+      "ChildSafety",
+      "DeleteAccountInfo",
+      "HowItWorksScreen",
+      "ScanLanding",
+      "EveryCircleMap",
+      "BusinessProfile",
+    ];
 
     // If cookies not allowed and trying to access any screen except Settings (web only)
     if (SHOW_COOKIE_CONSENT_UI && !cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
@@ -1268,7 +1283,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 360,
     alignSelf: "stretch",
-    backgroundColor: "#f6f7fb",
   },
   container: {
     flex: 1,
