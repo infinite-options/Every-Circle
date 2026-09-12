@@ -482,6 +482,7 @@ const NewConnectionScreen = () => {
         state: sanitizeText(p.profile_personal_state || ""),
         email: sanitizeText(apiUser?.user_email || ""),
         phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+        phoneVerified: p.phone_verified === true || p.phone_verified === 1 || apiUser.phoneVerified === true,
         profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
         emailIsPublic: p.profile_personal_email_is_public === 1,
         phoneIsPublic: p.profile_personal_phone_number_is_public === 1,

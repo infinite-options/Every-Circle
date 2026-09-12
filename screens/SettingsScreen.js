@@ -28,6 +28,12 @@ import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { logoutCircleSession } from "../utils/authSession";
+import {
+  fetchAuthMe,
+  formatUsPhoneDisplay,
+  getCachedPhoneIdentity,
+} from "../utils/phoneVerification";
+import PhoneVerifiedBadge from "../components/PhoneVerifiedBadge";
 import { enforceTempPasswordGraceFromUserRow } from "../utils/tempPasswordGrace";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { setAllowCookies as persistAllowCookies, subscribeAllowCookies, persistServerCookieConsentForCurrentUser, SHOW_COOKIE_CONSENT_UI } from "../utils/cookieConsent";
@@ -279,6 +285,8 @@ export default function SettingsScreen() {
   const [businessReviewLoading, setBusinessReviewLoading] = useState(false);
   const [businessReviewSubmitting, setBusinessReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
+  const [authPhoneNumber, setAuthPhoneNumber] = useState(null);
+  const [authPhoneVerified, setAuthPhoneVerified] = useState(false);
 
   console.log("In SettingsScreen");
 
@@ -568,6 +576,7 @@ export default function SettingsScreen() {
       lastName: result.personal_info.profile_personal_last_name || "",
       email: result.user_email || "",
       phoneNumber: result.personal_info.profile_personal_phone_number || "",
+      phoneVerified: result.personal_info.phone_verified === true || result.personal_info.phone_verified === 1,
       tagLine: result.personal_info.profile_personal_tag_line || "",
       city: result.personal_info.profile_personal_city || "",
       state: result.personal_info.profile_personal_state || "",
@@ -612,9 +621,30 @@ export default function SettingsScreen() {
     }
   }, [applyProfileToSettings]);
 
+  const loadPhoneVerificationStatus = useCallback(async () => {
+    try {
+      const cached = await getCachedPhoneIdentity();
+      if (cached.phone_number != null || cached.phone_verified) {
+        setAuthPhoneNumber(cached.phone_number);
+        setAuthPhoneVerified(Boolean(cached.phone_verified));
+      }
+      const me = await fetchAuthMe();
+      setAuthPhoneNumber(me.phone_number);
+      setAuthPhoneVerified(Boolean(me.phone_verified));
+    } catch (e) {
+      console.warn("SettingsScreen - auth/me phone status failed:", e?.message || e);
+    }
+  }, []);
+
   useEffect(() => {
     loadProfileForSettings();
   }, [loadProfileForSettings]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadPhoneVerificationStatus();
+    }, [loadPhoneVerificationStatus]),
+  );
 
   const reloadSettingsScreen = useCallback(() => {
     void getLiveLocationSharingStatus().then(({ active, until }) => {
@@ -622,7 +652,8 @@ export default function SettingsScreen() {
       setShareLocationUntil(until);
     });
     void loadProfileForSettings();
-  }, [loadProfileForSettings]);
+    void loadPhoneVerificationStatus();
+  }, [loadProfileForSettings, loadPhoneVerificationStatus]);
 
   useTabRefresh("Settings", reloadSettingsScreen);
 
@@ -1143,7 +1174,7 @@ export default function SettingsScreen() {
           {personalProfileData && (
             <TouchableOpacity activeOpacity={0.7} onPress={handleNavigateProfile}>
               <View style={{ marginBottom: 16 }}>
-                <MiniCard user={personalProfileData} />
+                <MiniCard user={{ ...personalProfileData, phoneVerified: authPhoneVerified || personalProfileData.phoneVerified }} />
               </View>
             </TouchableOpacity>
           )}
@@ -1367,6 +1398,24 @@ export default function SettingsScreen() {
                   <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
                 </TouchableOpacity>
               )}
+
+              {/* Phone verification / change */}
+              <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("VerifyPhone")} activeOpacity={0.8}>
+                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                  <MaterialIcons name='phone' size={20} style={styles.icon} color={authPhoneVerified ? COLORS.primary : settingsMenuIconColor} />
+                  <View>
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Phone number</Text>
+                    </Text>
+                    <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
+                      {authPhoneNumber ? formatUsPhoneDisplay(authPhoneNumber) : "Add or verify phone"}
+                      {!authPhoneVerified ? " · Not verified" : ""}
+                    </Text>
+                    {authPhoneVerified ? <PhoneVerifiedBadge showLabel size={14} style={{ marginTop: 4 }} /> : null}
+                  </View>
+                </View>
+                <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
+              </TouchableOpacity>
 
               {/* Delete Account */}
               <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("DeleteAccount")}>

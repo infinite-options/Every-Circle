@@ -308,6 +308,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
           lastName: sanitizeText(personalInfo.profile_personal_last_name),
           email: sanitizeText(personalInfo.profile_personal_email || result.user_email),
           phoneNumber: sanitizeText(personalInfo.profile_personal_phone_number),
+          phoneVerified: personalInfo.phone_verified === true || personalInfo.phone_verified === 1 || result.phoneVerified === true,
           profileImage: personalInfo.profile_personal_image ? sanitizeText(String(personalInfo.profile_personal_image)) : "",
           tagLine: sanitizeText(personalInfo.profile_personal_tagline),
           emailIsPublic: personalInfo.profile_personal_email_is_public === "1" || personalInfo.profile_personal_email_is_public === 1,

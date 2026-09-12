@@ -1637,6 +1637,7 @@ const ConnectScreen = ({ navigation }) => {
       state: sanitizeText(p.profile_personal_state || ""),
       email: sanitizeText(apiUser?.user_email),
       phoneNumber: sanitizeText(p.profile_personal_phone_number),
+      phoneVerified: p.phone_verified === true || p.phone_verified === 1 || apiUser?.phoneVerified === true,
       profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
     };
   };
@@ -1688,6 +1689,7 @@ const ConnectScreen = ({ navigation }) => {
             city: deleted ? "" : sanitizeText(node.profile_personal_city || ""),
             state: deleted ? "" : sanitizeText(node.profile_personal_state || ""),
             phoneNumber: deleted ? "" : sanitizeText(node.profile_personal_phone_number || ""),
+            phoneVerified: !deleted && (node.phone_verified === true || node.phone_verified === 1 || node.phoneVerified === true),
             profileImage: deleted ? "" : sanitizeText(node.profile_personal_image || ""),
             relationship: node.circle_relationship || null,
             emailIsPublic: !deleted && node.profile_personal_email_is_public === 1,
@@ -1744,6 +1746,7 @@ const ConnectScreen = ({ navigation }) => {
               state: deleted ? "" : sanitizeText(p.profile_personal_state || ""),
               email: sanitizeText(emailRaw || ""),
               phoneNumber: deleted ? "" : sanitizeText(p.profile_personal_phone_number || ""),
+              phoneVerified: !deleted && (p.phone_verified === true || p.phone_verified === 1 || circle.phoneVerified === true),
               profileImage: deleted ? "" : sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
               relationship: circle.circle_relationship || null,
               emailIsPublic: !deleted && p.profile_personal_email_is_public === 1,

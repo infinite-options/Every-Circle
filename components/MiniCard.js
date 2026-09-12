@@ -4,6 +4,7 @@ import { View, Text, Image, StyleSheet, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
+import PhoneVerifiedBadge, { resolvePhoneVerified } from "./PhoneVerifiedBadge";
 
 // Web-compatible asset helper: default profile image for MiniCard (user and business)
 // On native, require() works; on web we try require() so the default shows on both platforms
@@ -186,6 +187,7 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
   );
   const email = sanitizeText(user?.email || user?.user_email || user?.personal_info?.profile_personal_email);
   const phone = sanitizeText(user?.phoneNumber || user?.phone || user?.personal_info?.profile_personal_phone_number);
+  const phoneVerified = resolvePhoneVerified(user);
   // Resolve profile image URL from either flattened (profileImage) or API shape (personal_info.profile_personal_image)
   const profileImageRaw = user?.profileImage ?? user?.personal_info?.profile_personal_image ?? "";
   const profileImage = sanitizeText(typeof profileImageRaw === "string" ? profileImageRaw : String(profileImageRaw || ""));
@@ -264,7 +266,12 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
           {(() => {
             if (deleted) return null;
             if (phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "") {
-              return <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>;
+              return (
+                <View style={styles.phoneRow}>
+                  <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>
+                  {phoneVerified ? <PhoneVerifiedBadge size={14} /> : null}
+                </View>
+              );
             }
             return null;
           })()}
@@ -363,6 +370,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
     marginBottom: 0,
+    flexShrink: 1,
+  },
+  phoneRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 2,
   },
   city: {
     fontSize: 14,

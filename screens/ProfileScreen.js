@@ -801,6 +801,7 @@ const ProfileScreen = ({ route, navigation }) => {
         firstName: apiUser.personal_info?.profile_personal_first_name || "",
         lastName: apiUser.personal_info?.profile_personal_last_name || "",
         phoneNumber: apiUser.personal_info?.profile_personal_phone_number || "",
+        phoneVerified: apiUser.personal_info?.phone_verified === true || apiUser.personal_info?.phone_verified === 1,
         tagLine: apiUser.personal_info?.profile_personal_tag_line || "",
         city: apiUser.personal_info?.profile_personal_city || "",
         state: apiUser.personal_info?.profile_personal_state || "",

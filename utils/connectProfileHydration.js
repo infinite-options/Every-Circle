@@ -15,6 +15,7 @@ export function miniCardUserFromSession(session, profileUidOptional, userUidOpti
     lastName: sanitizeText(p.profile_personal_last_name || ""),
     email: sanitizeText(session?.userEmail || session?.rawProfile?.user_email || ""),
     phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+    phoneVerified: p.phone_verified === true || p.phone_verified === 1,
     tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
     city: sanitizeText(p.profile_personal_city || ""),
     state: sanitizeText(p.profile_personal_state || ""),

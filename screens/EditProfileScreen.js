@@ -1,5 +1,5 @@
 //EditProfileScreen.js
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle, Platform, BackHandler } from "react-native";
 import MiniCard from "../components/MiniCard";
 import MicroCard from "../components/MicroCard";
@@ -9,6 +9,15 @@ import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { getHeaderColors } from "../config/headerColors";
+import { useFocusEffect } from "@react-navigation/native";
+import PhoneOtpVerifyModal from "../components/PhoneOtpVerifyModal";
+import PhoneVerifiedBadge from "../components/PhoneVerifiedBadge";
+import {
+  digitsForPhoneApi,
+  fetchAuthMe,
+  getCachedPhoneIdentity,
+  persistPhoneIdentity,
+} from "../utils/phoneVerification";
 
 // PROFILE-SPECIFIC
 import ExperienceSection from "../components/ExperienceSection";
@@ -104,6 +113,7 @@ function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
     firstName: pi.profile_personal_first_name || "",
     lastName: pi.profile_personal_last_name || "",
     phoneNumber: pi.profile_personal_phone_number || "",
+    phone_verified: resolveInitialPhoneVerified({ personal_info: pi, phone_verified: json?.phone_verified }),
     tagLine: pi.profile_personal_tag_line || "",
     city: pi.profile_personal_city || "",
     state: pi.profile_personal_state || "",
@@ -151,6 +161,20 @@ function getInitialHomeLatLng(user) {
   return { lat, lng };
 }
 
+function resolveInitialPhoneVerified(user) {
+  const pi = user?.personal_info;
+  if (typeof pi?.phone_verified === "boolean") return pi.phone_verified;
+  if (pi?.phone_verified === 1 || pi?.phone_verified === "1") return true;
+  if (pi?.phone_verified === 0 || pi?.phone_verified === "0") return false;
+  if (typeof user?.phone_verified === "boolean") return user.phone_verified;
+  if (user?.phone_verified === 1 || user?.phone_verified === "1") return true;
+  return false;
+}
+
+function truthyFlag(value) {
+  return value === true || value === 1 || value === "1";
+}
+
 const EditProfileScreen = ({ route, navigation }) => {
   const { darkMode } = useDarkMode();
   const { user, profile_uid: routeProfileUID, businessesData: preFetchedBusinessesData } = route.params || {};
@@ -186,6 +210,10 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [showEducation, setShowEducation] = useState(true);
   const [showBusiness, setShowBusiness] = useState(true);
   const [showSocial, setShowSocial] = useState(true);
+  const [phoneVerified, setPhoneVerified] = useState(() => resolveInitialPhoneVerified(user));
+  const [showPhoneOtpModal, setShowPhoneOtpModal] = useState(false);
+  const [otpModalPhone, setOtpModalPhone] = useState("");
+  const savedPhoneDigitsRef = useRef(digitsForPhoneApi(user?.phoneNumber || user?.personal_info?.profile_personal_phone_number || ""));
 
   useEffect(() => {
     console.log("EditProfileScreen - Screen Mounted");
@@ -197,6 +225,34 @@ const EditProfileScreen = ({ route, navigation }) => {
       });
     }
   }, [user, navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          // Profile GET enrichment is preferred when present on the route user.
+          if (user?.personal_info?.phone_verified != null || user?.phone_verified != null) {
+            if (!cancelled) setPhoneVerified(resolveInitialPhoneVerified(user));
+          } else {
+            const cached = await getCachedPhoneIdentity();
+            if (!cancelled) setPhoneVerified(Boolean(cached.phone_verified));
+          }
+          const me = await fetchAuthMe();
+          if (cancelled) return;
+          const meDigits = digitsForPhoneApi(me.phone_number);
+          if (meDigits) savedPhoneDigitsRef.current = meDigits;
+          // /me is source of truth for the saved account phone.
+          setPhoneVerified(Boolean(me.phone_verified));
+        } catch (_) {
+          /* keep cached / previous status */
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [user]),
+  );
 
   const initialHomeLatLng = getInitialHomeLatLng(user);
 
@@ -1281,19 +1337,39 @@ const EditProfileScreen = ({ route, navigation }) => {
         throw new Error(errBody || `Update failed (${response.status})`);
       }
 
+      const responseJson = await response.json().catch(() => ({}));
       if (response.status === 200) {
-        console.log("Profile update successful");
+        console.log("Profile update successful", {
+          phone_verified: responseJson?.phone_verified,
+          phone_needs_verification: responseJson?.phone_needs_verification,
+        });
         try {
           await refreshSessionProfileFromNetwork(trimmedProfileUID);
         } catch (e) {
           console.warn("EditProfileScreen - refreshSessionProfileFromNetwork failed:", e);
         }
-        Alert.alert("Success", "Profile updated successfully!");
-        setOriginalProfileImage(profileImageUri); // Update the original image after successful save
-        setWebImageFile(null); // Clear the web file after successful upload
+
+        const savedPhone = formData.phoneNumber;
+        const phoneDigits = digitsForPhoneApi(savedPhone);
+        // Status only — never force OTP. phone_needs_verification is a UI hint that verified is false.
+        const isVerifiedAfterSave = truthyFlag(responseJson?.phone_verified);
+        setPhoneVerified(isVerifiedAfterSave);
+        if (phoneDigits) {
+          savedPhoneDigitsRef.current = phoneDigits;
+        }
+        try {
+          await persistPhoneIdentity({
+            phone_number: responseJson?.phone_number || savedPhone,
+            phone_verified: isVerifiedAfterSave,
+          });
+        } catch (_) {}
+
+        setOriginalProfileImage(profileImageUri);
+        setWebImageFile(null);
         setIsChanged(false);
 
-        // Only show modal for new businesses (those without profile_business_uid)
+        Alert.alert("Success", "Profile updated successfully!");
+
         const newBusinesses = formData.businesses?.filter((biz) => biz.name && !biz.profile_business_uid) || [];
         if (newBusinesses.length > 0) {
           setPendingBusinessNames(newBusinesses.map((biz) => biz.name));
@@ -1302,8 +1378,12 @@ const EditProfileScreen = ({ route, navigation }) => {
           navigation.replace("Profile", {
             updatedUser: {
               ...user,
+              phoneNumber: savedPhone,
+              phone_verified: isVerifiedAfterSave,
               personal_info: {
                 ...user.personal_info,
+                profile_personal_phone_number: savedPhone,
+                phone_verified: isVerifiedAfterSave,
                 profile_personal_city: formData.city,
                 profile_personal_state: formData.state,
                 profile_personal_home_address: homeAddress,
@@ -1362,6 +1442,62 @@ const EditProfileScreen = ({ route, navigation }) => {
     </View>
   );
 
+  const renderPhoneField = () => {
+    const draftDigits = digitsForPhoneApi(formData.phoneNumber);
+    const hasPhone = draftDigits.length === 10;
+    const draftMatchesSaved = hasPhone && draftDigits === savedPhoneDigitsRef.current;
+    const showAsVerified = phoneVerified && draftMatchesSaved;
+    const showVerifyCta = hasPhone && !showAsVerified;
+
+    return (
+      <View style={styles.fieldContainer}>
+        <View style={styles.labelRow}>
+          <View style={styles.phoneLabelCol}>
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Phone Number</Text>
+            {hasPhone ? (
+              showAsVerified ? (
+                <PhoneVerifiedBadge showLabel size={14} style={{ marginTop: 2 }} />
+              ) : (
+                <Text style={[styles.phoneVerifyHint, styles.phoneUnverifiedHint, darkMode && styles.darkHomeCoordHint]}>Not verified</Text>
+              )
+            ) : null}
+          </View>
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity onPress={() => handleToggleVisibility("phoneIsPublic")} style={[styles.togglePill, formData.phoneIsPublic && styles.togglePillActiveGreen]}>
+              <Text style={[styles.togglePillText, formData.phoneIsPublic && styles.togglePillTextActive]}>{formData.phoneIsPublic ? "Visible" : "Show"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleToggleVisibility("phoneIsPublic")} style={[styles.togglePill, !formData.phoneIsPublic && styles.togglePillActiveRed]}>
+              <Text style={[styles.togglePillText, !formData.phoneIsPublic && styles.togglePillTextActive]}>{!formData.phoneIsPublic ? "Hidden" : "Hide"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.phoneInputRow}>
+          <TextInput
+            style={[styles.input, styles.phoneInput, darkMode && styles.darkInput]}
+            value={formData.phoneNumber}
+            onChangeText={(text) => handleFieldChange("phoneNumber", text)}
+            placeholder='Enter phone number'
+            placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+            maxLength={14}
+            keyboardType='phone-pad'
+          />
+          {showVerifyCta ? (
+            <TouchableOpacity
+              style={styles.verifyPhoneButton}
+              onPress={() => {
+                setOtpModalPhone(formData.phoneNumber);
+                setShowPhoneOtpModal(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.verifyPhoneButtonText}>Verify</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+    );
+  };
+
   const renderShortBioField = () => (
     <View style={styles.fieldContainer}>
       {/* Row: Label and Toggle */}
@@ -1397,6 +1533,10 @@ const EditProfileScreen = ({ route, navigation }) => {
     lastName: formData.lastName,
     email: formData.email,
     phoneNumber: formData.phoneNumber,
+    phoneVerified:
+      phoneVerified &&
+      digitsForPhoneApi(formData.phoneNumber).length === 10 &&
+      digitsForPhoneApi(formData.phoneNumber) === savedPhoneDigitsRef.current,
     tagLine: formData.tagLine,
     city: formData.city,
     state: formData.state,
@@ -1714,7 +1854,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           <>
             {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
             {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
-            {renderField("Phone Number", formData.phoneNumber, formData.phoneIsPublic, "phoneNumber", "phoneIsPublic")}
+            {renderPhoneField()}
             {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
             {renderHomeAddressField()}
             {renderField("City", formData.city, formData.locationIsPublic, "city", "locationIsPublic")}
@@ -2063,6 +2203,33 @@ const EditProfileScreen = ({ route, navigation }) => {
           }}
         />
       </View>
+      {/* Optional phone OTP modal (Verify button only — never forced after save) */}
+      <PhoneOtpVerifyModal
+        visible={showPhoneOtpModal}
+        phoneNumber={otpModalPhone}
+        darkMode={darkMode}
+        title='Verify phone number'
+        autoSend
+        onClose={() => setShowPhoneOtpModal(false)}
+        onVerified={async (result) => {
+          setPhoneVerified(true);
+          const digits = digitsForPhoneApi(result?.phone_number || otpModalPhone);
+          if (digits) savedPhoneDigitsRef.current = digits;
+          try {
+            await persistPhoneIdentity(result?.identity || { phone_number: result?.phone_number, phone_verified: true });
+          } catch (_) {}
+          try {
+            await fetchAuthMe();
+          } catch (_) {}
+          try {
+            const uid = (profileUID || "").trim();
+            if (uid) await refreshSessionProfileFromNetwork(uid);
+          } catch (_) {}
+          setShowPhoneOtpModal(false);
+          Alert.alert("Verified", "Phone number verified.");
+        }}
+      />
+
       {/* Business Approval Modal */}
       <Modal visible={showBusinessModal} transparent={true} animationType='fade' onRequestClose={() => setShowBusinessModal(false)}>
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" }}>
@@ -2338,6 +2505,43 @@ const styles = StyleSheet.create({
   toggleContainer: {
     flexDirection: "row",
     gap: 4,
+  },
+  phoneLabelCol: {
+    flex: 1,
+    marginRight: 8,
+  },
+  phoneVerifyHint: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  phoneVerifiedHint: {
+    color: "#2e7d32",
+    fontWeight: "600",
+  },
+  phoneUnverifiedHint: {
+    color: "#e65100",
+    fontWeight: "600",
+  },
+  phoneInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  phoneInput: {
+    flex: 1,
+  },
+  verifyPhoneButton: {
+    backgroundColor: "#18884A",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  verifyPhoneButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 13,
   },
   togglePill: {
     paddingHorizontal: 12,

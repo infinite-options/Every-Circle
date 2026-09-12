@@ -25,6 +25,8 @@ const SESSION_EXACT_KEYS = new Set([
   "user_first_name",
   "user_last_name",
   "user_phone_number",
+  "auth_phone_number",
+  "auth_phone_verified",
   "displayEmail",
   "displayPhone",
   "darkMode",

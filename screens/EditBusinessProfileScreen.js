@@ -2726,6 +2726,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             businessUser.profile_personal_phone_number_is_public === 1 ||
             businessUser.profile_personal_phone_number_is_public === "1",
           phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
+          phoneVerified:
+            businessUser.phone_verified === true ||
+            businessUser.phone_verified === 1 ||
+            businessUser.phoneVerified === true ||
+            businessUser.personal_info?.phone_verified === true ||
+            businessUser.personal_info?.phone_verified === 1,
           tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
           tagLineIsPublic: businessUser.profile_personal_tag_line_is_public === 1 || businessUser.profile_personal_tag_line_is_public === "1" || false,
           city: businessUser.city || businessUser.profile_personal_city || "",

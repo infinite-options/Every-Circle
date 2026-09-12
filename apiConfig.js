@@ -88,6 +88,10 @@ export const AUTH_REFRESH_ENDPOINT = `${API_BASE_URL}/api/v1/auth/refresh`;
 export const AUTH_SOCIAL_ENDPOINT = `${API_BASE_URL}/api/v1/auth/social`;
 export const AUTH_LOGOUT_ENDPOINT = `${API_BASE_URL}/api/v1/auth/logout`;
 export const AUTH_ME_ENDPOINT = `${API_BASE_URL}/api/v1/auth/me`;
+/** POST JSON `{ phone_number }` — SMS OTP for settings verify/change phone (Bearer access token). */
+export const AUTH_PHONE_SEND_OTP_ENDPOINT = `${API_BASE_URL}/api/v1/auth/phone/send-otp`;
+/** POST JSON `{ phone_number, otp }` — verify SMS OTP; returns identity with phone_verified (Bearer). */
+export const AUTH_PHONE_VERIFY_OTP_ENDPOINT = `${API_BASE_URL}/api/v1/auth/phone/verify-otp`;
 /** DELETE JSON `{ confirm_deletion: true }` — schedules soft-delete (30-day grace); permanent purge after grace. */
 export const DELETE_ACCOUNT_ENDPOINT = `${API_BASE_URL}/api/v1/account`;
 /** POST JSON `{ email, password, confirm_reactivation: true }` — restore soft-deleted account during grace (no JWT). */

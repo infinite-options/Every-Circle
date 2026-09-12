@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MenuBar from "../components/MenuBar";
+import PhoneVerifiedBadge from "../components/PhoneVerifiedBadge";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
@@ -94,7 +95,12 @@ export default function UserProfile({ onContinue, onEdit }) {
 
           <View style={styles.infoRow}>
             <Text style={styles.label}>Phone Number</Text>
-            <Text style={styles.value}>{personalInfo.profile_personal_phone_number || "N/A"}</Text>
+            <View style={styles.phoneValueRow}>
+              <Text style={styles.value}>{personalInfo.profile_personal_phone_number || "N/A"}</Text>
+              {personalInfo.phone_verified === true || personalInfo.phone_verified === 1 ? (
+                <PhoneVerifiedBadge size={15} />
+              ) : null}
+            </View>
           </View>
 
           <View style={styles.infoRow}>
@@ -160,6 +166,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#333",
     fontWeight: "500",
+  },
+  phoneValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   button: {
     backgroundColor: "#FF9500",

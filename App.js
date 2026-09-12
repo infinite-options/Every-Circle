@@ -63,6 +63,7 @@ import BusinessSetupController from "./screens/BusinessSetupController";
 import BusinessProfileScreen from "./screens/BusinessProfileScreen";
 import SearchTab from "./screens/SearchTab";
 import ChangePasswordScreen from "./screens/ChangePasswordScreen";
+import VerifyPhoneScreen from "./screens/VerifyPhoneScreen";
 import DeleteAccountScreen from "./screens/DeleteAccountScreen";
 import ReactivateScreen from "./screens/ReactivateScreen";
 import FilterScreen from "./screens/FilterScreen-DNU";
@@ -1098,6 +1099,7 @@ export default function App() {
     },
     BusinessSetup: "business-setup",
     EditProfile: "edit-profile",
+    VerifyPhone: "verify-phone",
     ShoppingCart: "cart",
     EveryCircleMap: "map",
     PrivacyPolicy: "privacy-policy",
@@ -1277,6 +1279,7 @@ export default function App() {
                     <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
                     <Stack.Screen name='BusinessModeration' component={BusinessModerationScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
+                    <Stack.Screen name='VerifyPhone' component={VerifyPhoneScreen} />
                     <Stack.Screen name='DeleteAccount' component={DeleteAccountScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='Reactivate' component={ReactivateScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='Filters' component={FilterScreen} />

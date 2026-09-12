@@ -24,6 +24,7 @@ export async function fetchPublicProfileCard(profileUid) {
     tagLine: tagLineIsPublic ? sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || "") : "",
     email: emailIsPublic ? sanitizeText(apiUser?.user_email || "") : "",
     phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number || "") : "",
+    phoneVerified: phoneIsPublic && (p.phone_verified === true || p.phone_verified === 1),
     profileImage: imageIsPublic ? sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : "") : "",
     city: locationIsPublic ? sanitizeText(p.profile_personal_city || "") : "",
     state: locationIsPublic ? sanitizeText(p.profile_personal_state || "") : "",
