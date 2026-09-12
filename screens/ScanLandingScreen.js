@@ -1,8 +1,22 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, SafeAreaView } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  ScrollView,
+  Platform,
+  Share,
+  TextInput,
+  useWindowDimensions,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MiniCard from "../components/MiniCard";
+import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
+import AppleSignIn from "../AppleSignIn";
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 
@@ -63,10 +77,13 @@ export function scanLandingAuthParams(profileUid) {
   };
 }
 
-export default function ScanLandingScreen() {
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onError }) {
   const route = useRoute();
   const navigation = useNavigation();
   const profileUid = resolveProfileUidFromRoute(route);
+  const { height: windowHeight } = useWindowDimensions();
 
   const [loading, setLoading] = useState(!!profileUid);
   const [error, setError] = useState(null);
@@ -74,6 +91,9 @@ export default function ScanLandingScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [redirecting, setRedirecting] = useState(false);
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
   const redirectStartedRef = useRef(false);
 
   const loadProfile = useCallback(async () => {
@@ -167,19 +187,52 @@ export default function ScanLandingScreen() {
     AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
   }, [profileUid]);
 
-  const goToSignUp = useCallback(() => {
+  const persistReferral = useCallback(() => {
     if (profileUid) {
       AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
     }
-    navigation.navigate("SignUp", authParams);
-  }, [navigation, authParams, profileUid]);
+  }, [profileUid]);
 
   const goToLogin = useCallback(() => {
-    if (profileUid) {
-      AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
-    }
+    persistReferral();
     navigation.navigate("Login", authParams);
-  }, [navigation, authParams, profileUid]);
+  }, [navigation, authParams, persistReferral]);
+
+  const goToSignUpWithEmail = useCallback(() => {
+    const trimmed = email.trim();
+    if (!EMAIL_REGEX.test(trimmed)) {
+      setEmailError("Enter a valid email address.");
+      return;
+    }
+    setEmailError("");
+    persistReferral();
+    navigation.navigate("SignUp", { ...authParams, email: trimmed });
+  }, [email, navigation, authParams, persistReferral]);
+
+  const handleGoogleSignUp = useCallback(async () => {
+    if (signingIn || !onGoogleSignUp) return;
+    persistReferral();
+    setSigningIn(true);
+    try {
+      await onGoogleSignUp(authParams);
+    } finally {
+      setSigningIn(false);
+    }
+  }, [signingIn, onGoogleSignUp, authParams, persistReferral]);
+
+  const handleAppleSignUp = useCallback(
+    async (...args) => {
+      if (signingIn || !onAppleSignUp) return;
+      persistReferral();
+      setSigningIn(true);
+      try {
+        await onAppleSignUp(...args);
+      } finally {
+        setSigningIn(false);
+      }
+    },
+    [signingIn, onAppleSignUp, persistReferral],
+  );
 
   const downloadVCard = useCallback(() => {
     if (!profileData) return;
@@ -208,13 +261,21 @@ export default function ScanLandingScreen() {
 
   const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
+  const compact = windowHeight < 780;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps='handled'>
-        <Text style={styles.brand}>everyCircle</Text>
-        <Text style={styles.headline}>Connect on everyCircle</Text>
-        <Text style={styles.sub}>{showRedirecting ? "Taking you to your network…" : "Someone shared their profile with you. Log in or sign up to connect, or save their public contact card."}</Text>
+    <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { flexGrow: 1, justifyContent: "center" }]}
+        keyboardShouldPersistTaps='handled'
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={[styles.headline, compact && styles.headlineCompact]}>Connect on everyCircle</Text>
+        <Text style={[styles.sub, compact && styles.subCompact]}>
+          {showRedirecting
+            ? "Taking you to your network…"
+            : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+        </Text>
 
         {(loading || showRedirecting) && (
           <View style={styles.centerRow}>
@@ -227,12 +288,47 @@ export default function ScanLandingScreen() {
 
         {!loading && !error && profileData && showGuestActions && (
           <>
-            <View style={styles.cardWrap}>
+            <View style={[styles.cardWrap, compact && styles.cardWrapCompact]}>
               <MiniCard user={profileData} />
             </View>
 
-            <TouchableOpacity style={styles.primaryBtn} onPress={goToSignUp} activeOpacity={0.85}>
-              <Text style={styles.primaryBtnText}>Sign up for everyCircle</Text>
+            <View style={styles.socialContainer}>
+              <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
+              <AppleSignIn mode='signUp' onSignIn={handleAppleSignUp} onError={onError} disabled={signingIn} />
+            </View>
+
+            <View style={styles.dividerContainer}>
+              <View style={styles.divider} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.divider} />
+            </View>
+
+            <TextInput
+              style={styles.emailInput}
+              placeholder='Email'
+              placeholderTextColor='#888'
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (emailError) setEmailError("");
+              }}
+              keyboardType='email-address'
+              autoCapitalize='none'
+              autoCorrect={false}
+              accessibilityLabel='Email'
+              accessibilityHint='Enter your email address to sign up'
+              returnKeyType='go'
+              onSubmitEditing={goToSignUpWithEmail}
+            />
+            {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
+
+            <TouchableOpacity
+              style={[styles.primaryBtn, !EMAIL_REGEX.test(email.trim()) && styles.primaryBtnDisabled]}
+              onPress={goToSignUpWithEmail}
+              activeOpacity={0.85}
+              disabled={!EMAIL_REGEX.test(email.trim())}
+            >
+              <Text style={styles.primaryBtnText}>Continue with email</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.secondaryBtn, styles.loginBtn]} onPress={goToLogin} activeOpacity={0.85}>
@@ -251,31 +347,80 @@ export default function ScanLandingScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f6f7fb" },
-  scroll: { padding: 24, paddingBottom: 48, maxWidth: 480, width: "100%", alignSelf: "center" },
-  brand: { fontSize: 14, fontWeight: "600", color: "#2434C2", marginBottom: 8, textAlign: "center" },
-  headline: { fontSize: 22, fontWeight: "700", color: "#111", marginBottom: 10, textAlign: "center" },
-  sub: { fontSize: 15, color: "#444", lineHeight: 22, marginBottom: 24, textAlign: "center" },
-  centerRow: { alignItems: "center", paddingVertical: 32, gap: 12 },
+  scroll: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
+    maxWidth: 480,
+    width: "100%",
+    alignSelf: "center",
+  },
+  headline: { fontSize: 24, fontWeight: "700", color: "#111", marginBottom: 8, textAlign: "center" },
+  headlineCompact: { fontSize: 22, marginBottom: 6 },
+  sub: { fontSize: 15, color: "#444", lineHeight: 21, marginBottom: 16, textAlign: "center" },
+  subCompact: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
+  centerRow: { alignItems: "center", paddingVertical: 24, gap: 12 },
   muted: { fontSize: 14, color: "#666" },
   error: { color: "#b00020", textAlign: "center", fontSize: 15, marginTop: 16 },
-  cardWrap: { marginBottom: 24 },
+  cardWrap: { marginBottom: 16 },
+  cardWrapCompact: { marginBottom: 12 },
+  socialContainer: {
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  dividerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 12,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#D0D4E4",
+  },
+  dividerText: {
+    marginHorizontal: 10,
+    color: "#666",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  emailInput: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    marginBottom: 8,
+    color: "#111",
+  },
+  emailError: {
+    color: "#b00020",
+    fontSize: 13,
+    marginBottom: 8,
+    textAlign: "center",
+  },
   primaryBtn: {
     backgroundColor: "#2434C2",
     paddingVertical: 14,
     borderRadius: 10,
-    marginBottom: 12,
+    marginBottom: 10,
+  },
+  primaryBtnDisabled: {
+    backgroundColor: "#9AA3D9",
   },
   primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "600", textAlign: "center" },
   secondaryBtn: {
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#2434C2",
     backgroundColor: "#fff",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   loginBtn: {
-    marginBottom: 12,
+    marginTop: 4,
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
 });

@@ -123,6 +123,14 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     await openReferralModal();
   };
 
+  // Prefill email when arriving from ScanLanding (or similar) with an email already entered
+  useEffect(() => {
+    const prefill = String(route.params?.email || "").trim();
+    if (prefill && !route.params?.googleUserInfo) {
+      setEmail(prefill);
+    }
+  }, [route.params?.email, route.params?.googleUserInfo]);
+
   // Handle pre-populated Google user info
   useEffect(() => {
     console.log("SignUpScreen - Rendering after Sign Up Button Press");

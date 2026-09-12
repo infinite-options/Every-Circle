@@ -1215,7 +1215,24 @@ export default function App() {
                     <Stack.Screen name='OfferingResponses' component={OfferingResponsesScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='ConnectLink' component={ConnectLinkScreenWrapper} />
                     <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
-                    <Stack.Screen name='ScanLanding' component={ScanLandingScreen} />
+                    <Stack.Screen
+                      name='ScanLanding'
+                      children={(props) => {
+                        const scanParams = {
+                          ...props.route?.params,
+                          returnToScanLanding: true,
+                          referralProfileUid: props.route?.params?.profile_uid || props.route?.params?.referralProfileUid,
+                        };
+                        return (
+                          <ScanLandingScreen
+                            {...props}
+                            onGoogleSignUp={(extraParams) => signUpHandler(props.navigation, { ...scanParams, ...extraParams })}
+                            onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation, scanParams)}
+                            onError={setError}
+                          />
+                        );
+                      }}
+                    />
                     <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='Inbox' component={InboxScreen} />
                     <Stack.Screen name='Chat' component={ChatScreen} />
