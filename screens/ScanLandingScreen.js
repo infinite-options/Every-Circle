@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, TextInput, useWindowDimensions } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MiniCard from "../components/MiniCard";
@@ -9,45 +9,6 @@ import AppleSignIn from "../AppleSignIn";
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import versionData from "../version.json";
-
-/** Walk up from a DOM node and zero every scrollable ancestor (RN Web ScrollView included). */
-function resetDomScrollChain(startNode) {
-  if (!startNode || typeof startNode !== "object") return;
-  let node = startNode;
-  while (node) {
-    try {
-      if (typeof node.scrollTop === "number" && node.scrollTop !== 0) node.scrollTop = 0;
-      if (typeof node.scrollLeft === "number" && node.scrollLeft !== 0) node.scrollLeft = 0;
-    } catch (_) {
-      /* ignore */
-    }
-    node = node.parentElement;
-  }
-  if (typeof window !== "undefined") {
-    window.scrollTo?.(0, 0);
-    document.documentElement && (document.documentElement.scrollTop = 0);
-    document.body && (document.body.scrollTop = 0);
-    document.scrollingElement && (document.scrollingElement.scrollTop = 0);
-  }
-}
-
-function resolveWebNode(ref) {
-  const cur = ref?.current ?? ref;
-  if (!cur) {
-    return typeof document !== "undefined" ? document.getElementById("scan-landing-top") : null;
-  }
-  if (cur.nodeType === 1) return cur;
-  if (cur._nativeNode?.nodeType === 1) return cur._nativeNode;
-  if (typeof document !== "undefined") {
-    return document.getElementById("scan-landing-top");
-  }
-  return null;
-}
-
-function isMobileWeb() {
-  if (Platform.OS !== "web" || typeof navigator === "undefined") return false;
-  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "") || (typeof window !== "undefined" && window.innerWidth < 700);
-}
 
 function escapeVCardValue(value) {
   if (!value) return "";
@@ -291,80 +252,19 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
   const compact = windowHeight < 780;
-  const insets = useSafeAreaInsets();
-  const scrollRef = useRef(null);
-  const topAnchorRef = useRef(null);
-  // Camera → Chrome paints under the URL bar and often reports safe-area 0.
-  // Keep this modest — oversized padding is what forced scrolling after the top fix.
-  const [webTopPad, setWebTopPad] = useState(() => (isMobileWeb() ? 40 : Platform.OS === "web" ? 12 : 0));
-
-  const ensureTopVisible = useCallback(() => {
-    scrollRef.current?.scrollTo?.({ y: 0, animated: false });
-
-    if (Platform.OS !== "web" || typeof window === "undefined") return;
-
-    const node = resolveWebNode(topAnchorRef);
-    resetDomScrollChain(node);
-
-    if (node && typeof node.getBoundingClientRect === "function") {
-      const rect = node.getBoundingClientRect();
-      // If the headline is still above the visible viewport (scrolled/clipped), push it down.
-      if (rect.top < 8) {
-        const needed = Math.ceil(8 - rect.top);
-        setWebTopPad((prev) => Math.min(96, prev + needed));
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    ensureTopVisible();
-    if (Platform.OS !== "web" || typeof window === "undefined") return undefined;
-
-    const onViewportChange = () => ensureTopVisible();
-    window.visualViewport?.addEventListener?.("resize", onViewportChange);
-    window.visualViewport?.addEventListener?.("scroll", onViewportChange);
-    window.addEventListener("pageshow", onViewportChange);
-    window.addEventListener("orientationchange", onViewportChange);
-
-    // Camera handoff settles across a few frames — keep correcting briefly.
-    const timers = [50, 150, 300, 600, 1000, 2000].map((ms) => setTimeout(ensureTopVisible, ms));
-
-    return () => {
-      window.visualViewport?.removeEventListener?.("resize", onViewportChange);
-      window.visualViewport?.removeEventListener?.("scroll", onViewportChange);
-      window.removeEventListener("pageshow", onViewportChange);
-      window.removeEventListener("orientationchange", onViewportChange);
-      timers.forEach(clearTimeout);
-    };
-  }, [ensureTopVisible, loading, showGuestActions, profileData]);
-
-  useFocusEffect(
-    useCallback(() => {
-      ensureTopVisible();
-    }, [ensureTopVisible]),
-  );
-
-  const scrollPadTop = Platform.OS === "web" ? Math.max(insets.top, 0) + webTopPad : 12;
 
   return (
-    // Skip bottom safe-area on web — mobile browser chrome already insets the visual
-    // viewport; a second bottom inset leaves a blank strip under the app.
     <SafeAreaView style={styles.safe} edges={Platform.OS === "web" ? ["left", "right"] : ["top", "left", "right", "bottom"]}>
       <ScrollView
-        ref={scrollRef}
         style={styles.scrollView}
-        contentContainerStyle={[styles.scroll, { paddingTop: scrollPadTop }]}
+        contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={false}
-        bounces={false}
-        overScrollMode='never'
       >
-        <View ref={topAnchorRef} nativeID='scan-landing-top' collapsable={false}>
-          <Text style={[styles.headline, compact && styles.headlineCompact]}>Connect on everyCircle</Text>
-          <Text style={[styles.sub, compact && styles.subCompact]}>
-            {showRedirecting ? "Taking you to your network…" : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
-          </Text>
-        </View>
+        <Text style={[styles.headline, compact && styles.headlineCompact]}>Connect on everyCircle</Text>
+        <Text style={[styles.sub, compact && styles.subCompact]}>
+          {showRedirecting ? "Taking you to your network…" : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+        </Text>
 
         {(loading || showRedirecting) && (
           <View style={styles.centerRow}>
@@ -423,17 +323,20 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
             <TouchableOpacity style={[styles.secondaryBtn, styles.loginBtn]} onPress={goToLogin} activeOpacity={0.85}>
               <Text style={styles.secondaryBtnText}>Log in</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.secondaryBtn} onPress={downloadVCard} activeOpacity={0.85}>
-              <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
-            </TouchableOpacity>
           </>
         )}
+      </ScrollView>
 
+      <View style={styles.footer}>
+        {!loading && !error && profileData && showGuestActions && (
+          <TouchableOpacity style={[styles.secondaryBtn, styles.footerBtn]} onPress={downloadVCard} activeOpacity={0.85}>
+            <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
+          </TouchableOpacity>
+        )}
         <Text style={styles.versionText}>
           PM {versionData.pm_version} · v{versionData.major}.{versionData.build} · {versionData.last_change}
         </Text>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -443,6 +346,7 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scroll: {
     paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 16,
     maxWidth: 480,
     width: "100%",
@@ -514,11 +418,26 @@ const styles = StyleSheet.create({
   },
   loginBtn: {
     marginTop: 2,
+    marginBottom: 0,
+  },
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === "web" ? 12 : 8,
+    maxWidth: 480,
+    width: "100%",
+    alignSelf: "center",
+    backgroundColor: "#f6f7fb",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#D0D4E4",
+  },
+  footerBtn: {
+    marginBottom: 8,
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
   versionText: {
-    marginTop: 12,
-    marginBottom: 4,
+    marginTop: 0,
+    marginBottom: 0,
     textAlign: "center",
     fontSize: 12,
     color: "#889",
