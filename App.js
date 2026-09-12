@@ -4,7 +4,7 @@ if (typeof document !== "undefined" && document.head) {
   require("./utils/injectBorderlessInputStyles");
 }
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { LogBox, Platform, useWindowDimensions, StyleSheet, Text, View, Alert, ActivityIndicator, TouchableOpacity, Image } from "react-native";
+import { LogBox, Platform, useWindowDimensions, StyleSheet, Text, View, Alert, ActivityIndicator, TouchableOpacity, Image, AppState } from "react-native";
 
 // Check if we're on web by checking for window object (works at module load time)
 // This must be defined before any code that uses it
@@ -94,6 +94,12 @@ import { fetchMiddleware as fetchCircle } from "./utils/httpMiddleware";
 import { appleCircleAuthPayload, fetchCircleAuthSocial, googleCircleAuthPayload, setOnAuthSessionExpired } from "./utils/authSession";
 import { isPendingDeletionAuthResponse, reactivateNavParamsFromAuthPayload } from "./utils/deletedProfile";
 import { resetSharedAblyClient } from "./utils/ablyClient";
+import {
+  enforceTempPasswordGraceOnLaunch,
+  getTempPasswordGraceRemainingMs,
+  forceLogoutForTempPasswordGrace,
+  subscribeTempPasswordGraceMarked,
+} from "./utils/tempPasswordGrace";
 
 const Stack = createNativeStackNavigator();
 
@@ -470,6 +476,56 @@ export default function App() {
     return () => setOnAuthSessionExpired(null);
   }, []);
 
+  // Kick out when the temp-password signup grace window ends while the app is open / resumed.
+  useEffect(() => {
+    let cancelled = false;
+    let timerId = null;
+
+    const clearTimer = () => {
+      if (timerId != null) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+    };
+
+    const scheduleOrEnforce = async () => {
+      if (cancelled) return;
+      clearTimer();
+      const uid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
+      if (!uid) return;
+
+      const remaining = await getTempPasswordGraceRemainingMs();
+      if (remaining == null) return;
+      if (remaining <= 0) {
+        console.log("App.js - Temp-password grace ended while app open; forcing logout");
+        await forceLogoutForTempPasswordGrace({ navigateHome: true });
+        resetSharedAblyClient();
+        reportLoggedIn(false);
+        return;
+      }
+      timerId = setTimeout(() => {
+        void scheduleOrEnforce();
+      }, Math.min(remaining + 50, 2147483647));
+    };
+
+    void scheduleOrEnforce();
+
+    const unsubGrace = subscribeTempPasswordGraceMarked(() => {
+      void scheduleOrEnforce();
+    });
+
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void scheduleOrEnforce();
+    });
+
+    return () => {
+      cancelled = true;
+      clearTimer();
+      unsubGrace();
+      sub.remove();
+    };
+  }, []);
+
   // const [showSpinner, setShowSpinner] = useState(false);
   // const [signInInProgress, setSignInInProgress] = useState(false);
   // const [showUserInfo, setShowUserInfo] = useState(false);
@@ -493,7 +549,17 @@ export default function App() {
         console.log("App.js - Checking if user in AsyncStorage...");
         const uid = await AsyncStorage.getItem("user_uid");
         console.log("App.js - User UID:", uid);
-        reportLoggedIn(!!uid);
+
+        let stillLoggedIn = !!uid;
+        if (uid) {
+          const grace = await enforceTempPasswordGraceOnLaunch();
+          stillLoggedIn = grace.loggedIn;
+          if (grace.forcedLogout) {
+            console.log("App.js - Temp-password grace expired; session cleared");
+            resetSharedAblyClient();
+          }
+        }
+        reportLoggedIn(stillLoggedIn);
 
         // Check terms acceptance status
         const termsStatus = await AsyncStorage.getItem("termsAccepted");
@@ -501,7 +567,7 @@ export default function App() {
         setTermsAccepted(termsAcceptedValue);
         console.log("App.js - Terms Accepted:", termsAcceptedValue);
 
-        if (uid) setInitialRoute("Profile");
+        if (stillLoggedIn) setInitialRoute("Profile");
 
         // Configure Google Sign-In (only on native platforms)
         if (!isWeb && GoogleSignin) {

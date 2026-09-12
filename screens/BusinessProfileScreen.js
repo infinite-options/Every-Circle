@@ -21,6 +21,7 @@ import {
   PROFILE_VIEWS_ENDPOINT,
 } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { enforceTempPasswordGraceFromUserRow } from "../utils/tempPasswordGrace";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
@@ -802,6 +803,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           return;
         }
         const row = Array.isArray(result?.result) ? result.result[0] : (result?.result ?? result?.data ?? result);
+        if (await enforceTempPasswordGraceFromUserRow(row)) return;
         if (!cancelled) setIsAdminViewer(row?.user_role === "ADMIN");
       } catch (_) {
         if (!cancelled) setIsAdminViewer(false);

@@ -28,6 +28,7 @@ import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { logoutCircleSession } from "../utils/authSession";
+import { enforceTempPasswordGraceFromUserRow } from "../utils/tempPasswordGrace";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { setAllowCookies as persistAllowCookies, subscribeAllowCookies, persistServerCookieConsentForCurrentUser, SHOW_COOKIE_CONSENT_UI } from "../utils/cookieConsent";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
@@ -297,6 +298,7 @@ export default function SettingsScreen() {
           return;
         }
         const row = Array.isArray(result?.result) ? result.result[0] : (result?.result ?? result?.data ?? result);
+        if (await enforceTempPasswordGraceFromUserRow(row)) return;
         if (!cancelled) setIsAdmin(row?.user_role === "ADMIN");
       } catch (_) {
         if (!cancelled) setIsAdmin(false);

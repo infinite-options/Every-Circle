@@ -17,6 +17,7 @@ import { refreshAllowCookies, subscribeCookieBannerHeight } from "../utils/cooki
 import { isPendingDeletionAuthResponse, isSoftDeletedRegisterConflict, reactivateNavParamsFromAuthPayload } from "../utils/deletedProfile";
 import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
+import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
 
 function authContinuationParams(route) {
   const p = route?.params || {};
@@ -539,6 +540,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           if (nested) await persistAuthTokens(nested);
         }
 
+        await markTempPasswordGracePeriod();
         await beginPostAccountFlow(preservedReferralUid);
         return;
       }

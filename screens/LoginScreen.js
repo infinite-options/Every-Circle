@@ -18,6 +18,7 @@ import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
 import { isAccountDeletedAuthMessage, isPendingDeletionAuthResponse, reactivateNavParamsFromAuthPayload } from "../utils/deletedProfile";
+import { clearTempPasswordGracePeriod, clearUserPasswordTempFlag } from "../utils/tempPasswordGrace";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 // import SignUpScreen from "./screens/SignUpScreen";
@@ -205,6 +206,10 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
         goToReactivate(circleAuth.data || {});
         return;
       }
+
+      // They entered a password (temp or permanent) — clear the one-time force-logout flag.
+      await clearUserPasswordTempFlag(user_uid);
+      await clearTempPasswordGracePeriod();
 
       const scanProfileUid = route?.params?.returnToScanLanding ? route?.params?.profile_uid : null;
       if (scanProfileUid) {

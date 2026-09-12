@@ -14,6 +14,7 @@ import { isSoftDeletedRegisterConflict, reactivateNavParamsFromAuthPayload } fro
 import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
 import versionData from "../version.json";
 
 function escapeVCardValue(value) {
@@ -274,6 +275,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
           return;
         }
 
+        await markTempPasswordGracePeriod();
         await finishSignupAfterReferral(navigation, {
           referralUid: preservedReferralUid,
           routeParams: { ...authParams, referralProfileUid: preservedReferralUid },
