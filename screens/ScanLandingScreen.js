@@ -19,6 +19,7 @@ import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import AppleSignIn from "../AppleSignIn";
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+import versionData from "../version.json";
 
 function escapeVCardValue(value) {
   if (!value) return "";
@@ -377,6 +378,10 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
             </TouchableOpacity>
           </>
         )}
+
+        <Text style={styles.versionText}>
+          PM {versionData.pm_version} · v{versionData.major}.{versionData.build} · {versionData.last_change}
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -465,4 +470,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
+  versionText: {
+    marginTop: 20,
+    marginBottom: 8,
+    textAlign: "center",
+    fontSize: 12,
+    color: "#889",
+  },
 });
