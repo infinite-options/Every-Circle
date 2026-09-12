@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     paddingHorizontal: 14,
-    paddingTop: 10,
+    paddingTop: 28,
     paddingBottom: 10,
     maxWidth: 480,
     width: "100%",
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 18,
     paddingHorizontal: 18,
-    paddingTop: 16,
+    paddingTop: 24,
     paddingBottom: 12,
     ...Platform.select({
       web: {
