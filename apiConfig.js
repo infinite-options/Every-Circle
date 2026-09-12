@@ -8,8 +8,8 @@
 import { EXPO_PUBLIC_API_STAGE } from "@env";
 
 const API_STAGE_URLS = {
-  // dev: "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev",
-  dev: "http://localhost:4090",
+  dev: "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev",
+  // dev: "http://localhost:4090",
   production: "https://ml7xmrvue6.execute-api.us-west-1.amazonaws.com/production",
 };
 
@@ -60,8 +60,7 @@ export const CREATE_ACCOUNT_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1
  * Email-only signup: BE generates an 8-char alphanumeric temp password, stores it, emails it,
  * and returns user_uid + session tokens when possible. See FE signup flow in SignUpScreen.
  */
-export const CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT =
-  "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccountTempPassword/EVERY-CIRCLE";
+export const CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccountTempPassword/EVERY-CIRCLE";
 export const LOGIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/Login/EVERY-CIRCLE";
 export const UPDATE_EMAIL_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UpdateEmailPassword/EVERY-CIRCLE";
 export const SET_TEMP_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/SetTempPassword/EVERY-CIRCLE";
