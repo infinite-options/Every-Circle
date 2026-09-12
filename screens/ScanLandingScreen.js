@@ -203,7 +203,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     navigation.navigate("Login", authParams);
   }, [navigation, authParams, persistReferral]);
 
-  /** Email-only signup on this page: temp password email + stub profile → referrer Profile (skip SignUp). */
+  /** Email-only signup on this page: temp password email + stub profile → Connect + reverse-contact notify. */
   const handleEmailContinue = useCallback(async () => {
     const trimmed = email.trim();
     if (!EMAIL_REGEX.test(trimmed)) {

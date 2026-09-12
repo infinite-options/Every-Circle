@@ -4,6 +4,7 @@ import { fetchMiddleware as fetch } from "./httpMiddleware";
 import { profileUidFromUserProfileResponse } from "./ensureSessionProfileUid";
 import { refreshCircleTokens } from "./authSession";
 import { getUserEmail } from "./emailStorage";
+import { goToNetworkForScanConnect } from "./goToNetworkForScanConnect";
 
 /**
  * Create a stub personal profile (skips UserInfo name/phone screen) and persist profile_uid.
@@ -60,7 +61,7 @@ export async function createMinimalSignupProfile({ userUid, referralUid, firstNa
 }
 
 /**
- * After account + referrer are known: stub profile, then QR → referrer Profile, else AccountType.
+ * After account + referrer are known: stub profile, then QR → Connect + reverse-contact notify, else AccountType.
  */
 export async function finishSignupAfterReferral(navigation, { referralUid, routeParams = {}, userUid, email, firstName = "", lastName = "" } = {}) {
   const uid = String(userUid || (await AsyncStorage.getItem("user_uid")) || "").trim();
@@ -80,10 +81,15 @@ export async function finishSignupAfterReferral(navigation, { referralUid, route
   });
 
   const qrOwnerUid = String(routeParams.profile_uid || routeParams.referralProfileUid || "").trim();
-  const fromQr = !!(routeParams.returnToScanLanding || routeParams.returnToNewConnection) && !!qrOwnerUid;
 
-  if (fromQr) {
-    navigation.navigate("Profile", { profile_uid: qrOwnerUid });
+  // Same path as UserInfo / Login after scan: open Connect modal and notify QR owner (Exchange Contact Info).
+  if (routeParams.returnToScanLanding && qrOwnerUid) {
+    await goToNetworkForScanConnect(navigation, qrOwnerUid);
+    return;
+  }
+
+  if (routeParams.returnToNewConnection && qrOwnerUid) {
+    navigation.navigate("NewConnection", { profile_uid: qrOwnerUid });
     return;
   }
 
