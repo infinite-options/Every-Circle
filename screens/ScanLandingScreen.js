@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, TextInput } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MiniCard from "../components/MiniCard";
@@ -259,6 +259,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
   const versionLabel = buildVersionLabel();
+  const insets = useSafeAreaInsets();
 
   // Web only (QR camera → Safari/Chrome): pin #root to the visible viewport so the
   // under-root yellow/white strip is covered. Restored when leaving this screen.
@@ -366,17 +367,20 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }, []),
   );
 
-  // ScanLanding only: keep green content-sized, push it to the BOTTOM of the red frame
-  // so leftover empty space sits above (more red on top, less on bottom).
+  // ScanLanding only: keep green content-sized, push it to the BOTTOM of a full-height
+  // frame so leftover empty space sits above (more red on top, less on bottom).
+  // IMPORTANT: frame must be position:absolute inset 0 — flex:1 alone collapses on
+  // mobile Safari web, so justifyContent:'flex-end' had no free space and the card
+  // stayed top-stuck while #root's red showed below.
   const FRAME_PAD_TOP = 12;
-  const FRAME_PAD_BOTTOM = 12;
+  const FRAME_PAD_BOTTOM = Math.max(12, insets.bottom);
   const panelMaxHeight =
     frameH > 0 ? Math.max(120, frameH - FRAME_PAD_TOP - FRAME_PAD_BOTTOM) : undefined;
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+    <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <View
-        style={styles.frame}
+        style={[styles.frame, { paddingBottom: FRAME_PAD_BOTTOM }]}
         onLayout={(e) => {
           const h = Math.round(e.nativeEvent.layout.height);
           if (h > 0 && h !== frameH) setFrameH(h);
@@ -476,14 +480,17 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 const styles = StyleSheet.create({
   // DEBUG COLORS — temporary (ScanLanding only)
   safe: { flex: 1, backgroundColor: "#0066FF" },
-  // Red frame fills the screen; justifyContent flex-end parks the green card at the bottom.
+  // Fill SafeArea/#root explicitly so flex-end has real free space on mobile Safari web.
   frame: {
-    flex: 1,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: "#EF4444",
     justifyContent: "flex-end",
     paddingHorizontal: 14,
     paddingTop: 12,
-    paddingBottom: 12,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
