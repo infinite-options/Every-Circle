@@ -1268,6 +1268,11 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 360,
     alignSelf: "stretch",
+    backgroundColor: "#f6f7fb",
+    ...Platform.select({
+      web: { height: "100%", minHeight: "100%" },
+      default: {},
+    }),
   },
   container: {
     flex: 1,

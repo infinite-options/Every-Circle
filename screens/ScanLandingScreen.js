@@ -1,16 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  ScrollView,
-  Platform,
-  Share,
-  TextInput,
-  useWindowDimensions,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, TextInput, useWindowDimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -306,8 +295,8 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const scrollRef = useRef(null);
   const topAnchorRef = useRef(null);
   // Camera → Chrome paints under the URL bar and often reports safe-area 0.
-  // Measurement can't see overlay chrome, so mobile web starts with a real top inset.
-  const [webTopPad, setWebTopPad] = useState(() => (isMobileWeb() ? 96 : Platform.OS === "web" ? 16 : 0));
+  // Keep this modest — oversized padding is what forced scrolling after the top fix.
+  const [webTopPad, setWebTopPad] = useState(() => (isMobileWeb() ? 40 : Platform.OS === "web" ? 12 : 0));
 
   const ensureTopVisible = useCallback(() => {
     scrollRef.current?.scrollTo?.({ y: 0, animated: false });
@@ -322,7 +311,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       // If the headline is still above the visible viewport (scrolled/clipped), push it down.
       if (rect.top < 8) {
         const needed = Math.ceil(8 - rect.top);
-        setWebTopPad((prev) => Math.min(180, prev + needed));
+        setWebTopPad((prev) => Math.min(96, prev + needed));
       }
     }
   }, []);
@@ -358,7 +347,9 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const scrollPadTop = Platform.OS === "web" ? Math.max(insets.top, 0) + webTopPad : 12;
 
   return (
-    <SafeAreaView style={styles.safe} edges={["left", "right", "bottom"]}>
+    // Skip bottom safe-area on web — mobile browser chrome already insets the visual
+    // viewport; a second bottom inset leaves a blank strip under the app.
+    <SafeAreaView style={styles.safe} edges={Platform.OS === "web" ? ["left", "right"] : ["top", "left", "right", "bottom"]}>
       <ScrollView
         ref={scrollRef}
         style={styles.scrollView}
@@ -371,9 +362,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
         <View ref={topAnchorRef} nativeID='scan-landing-top' collapsable={false}>
           <Text style={[styles.headline, compact && styles.headlineCompact]}>Connect on everyCircle</Text>
           <Text style={[styles.sub, compact && styles.subCompact]}>
-            {showRedirecting
-              ? "Taking you to your network…"
-              : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+            {showRedirecting ? "Taking you to your network…" : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
           </Text>
         </View>
 
@@ -453,30 +442,29 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f6f7fb" },
   scrollView: { flex: 1 },
   scroll: {
-    // Do not vertically center — Camera→browser handoff overstates height and clips the top.
     paddingHorizontal: 20,
-    paddingBottom: 32,
+    paddingBottom: 16,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
   },
-  headline: { fontSize: 24, fontWeight: "700", color: "#111", marginBottom: 8, textAlign: "center" },
-  headlineCompact: { fontSize: 22, marginBottom: 6 },
-  sub: { fontSize: 15, color: "#444", lineHeight: 21, marginBottom: 16, textAlign: "center" },
-  subCompact: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
-  centerRow: { alignItems: "center", paddingVertical: 24, gap: 12 },
+  headline: { fontSize: 22, fontWeight: "700", color: "#111", marginBottom: 6, textAlign: "center" },
+  headlineCompact: { fontSize: 20, marginBottom: 4 },
+  sub: { fontSize: 14, color: "#444", lineHeight: 19, marginBottom: 10, textAlign: "center" },
+  subCompact: { fontSize: 13, lineHeight: 18, marginBottom: 8 },
+  centerRow: { alignItems: "center", paddingVertical: 16, gap: 10 },
   muted: { fontSize: 14, color: "#666" },
   error: { color: "#b00020", textAlign: "center", fontSize: 15, marginTop: 16 },
-  cardWrap: { marginBottom: 16 },
-  cardWrapCompact: { marginBottom: 12 },
+  cardWrap: { marginBottom: 10 },
+  cardWrapCompact: { marginBottom: 8 },
   socialContainer: {
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: 0,
   },
   dividerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 12,
+    marginVertical: 8,
   },
   divider: {
     flex: 1,
@@ -486,13 +474,13 @@ const styles = StyleSheet.create({
   dividerText: {
     marginHorizontal: 10,
     color: "#666",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
   },
   emailInput: {
     backgroundColor: "#fff",
     borderRadius: 10,
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 14,
     fontSize: 16,
     borderWidth: 1,
@@ -508,29 +496,29 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     backgroundColor: "#2434C2",
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 10,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   primaryBtnDisabled: {
     backgroundColor: "#9AA3D9",
   },
   primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "600", textAlign: "center" },
   secondaryBtn: {
-    paddingVertical: 12,
+    paddingVertical: 11,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#2434C2",
     backgroundColor: "#fff",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   loginBtn: {
-    marginTop: 4,
+    marginTop: 2,
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
   versionText: {
-    marginTop: 20,
-    marginBottom: 8,
+    marginTop: 12,
+    marginBottom: 4,
     textAlign: "center",
     fontSize: 12,
     color: "#889",
