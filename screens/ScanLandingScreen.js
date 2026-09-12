@@ -259,6 +259,71 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
   const versionLabel = buildVersionLabel();
 
+  // Web / camera→Safari: force #root to cover the strip that sits under an undersized root
+  // (shows as white/yellow below the red ScrollView on mobile browsers).
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== "web" || typeof document === "undefined") return undefined;
+
+      const root = document.getElementById("root");
+      const html = document.documentElement;
+      const body = document.body;
+      const prev = {
+        rootHeight: root?.style.height,
+        rootMinHeight: root?.style.minHeight,
+        htmlHeight: html?.style.height,
+        htmlMinHeight: html?.style.minHeight,
+        bodyHeight: body?.style.height,
+        bodyMinHeight: body?.style.minHeight,
+      };
+
+      const fill = () => {
+        const vv = window.visualViewport?.height ?? 0;
+        const inner = window.innerHeight ?? 0;
+        const client = html?.clientHeight ?? 0;
+        const h = Math.max(1, Math.round(Math.max(vv, inner, client)));
+        const px = `${h}px`;
+        if (html) {
+          html.style.height = px;
+          html.style.minHeight = px;
+        }
+        if (body) {
+          body.style.height = px;
+          body.style.minHeight = px;
+        }
+        if (root) {
+          root.style.height = px;
+          root.style.minHeight = px;
+        }
+      };
+
+      fill();
+      window.visualViewport?.addEventListener?.("resize", fill);
+      window.visualViewport?.addEventListener?.("scroll", fill);
+      window.addEventListener("resize", fill);
+      const timers = [50, 200, 500, 1000, 2000].map((ms) => setTimeout(fill, ms));
+
+      return () => {
+        window.visualViewport?.removeEventListener?.("resize", fill);
+        window.visualViewport?.removeEventListener?.("scroll", fill);
+        window.removeEventListener("resize", fill);
+        timers.forEach(clearTimeout);
+        if (html) {
+          html.style.height = prev.htmlHeight || "";
+          html.style.minHeight = prev.htmlMinHeight || "";
+        }
+        if (body) {
+          body.style.height = prev.bodyHeight || "";
+          body.style.minHeight = prev.bodyMinHeight || "";
+        }
+        if (root) {
+          root.style.height = prev.rootHeight || "";
+          root.style.minHeight = prev.rootMinHeight || "";
+        }
+      };
+    }, []),
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
       <Text style={styles.debugLabel}>blue = SafeArea / page background</Text>

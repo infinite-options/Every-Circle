@@ -26,7 +26,8 @@ if (isWeb && typeof window !== "undefined" && typeof document !== "undefined") {
       margin: 0;
       padding: 0;
       width: 100%;
-      background-color: #f6f7fb;
+      /* DEBUG: yellow = gap under #root (browser canvas / undersized root) */
+      background-color: #FFD600 !important;
       overflow: hidden;
     }
     #root {
@@ -40,7 +41,12 @@ if (isWeb && typeof window !== "undefined" && typeof document !== "undefined") {
   document.head.appendChild(style);
 
   const syncVisualViewportHeight = () => {
-    const h = Math.max(1, Math.round(window.visualViewport?.height ?? window.innerHeight ?? 0));
+    // Prefer the larger of visualViewport vs innerHeight so we don't leave a white/yellow
+    // strip under #root when camera→Safari reports a short visualViewport.
+    const vv = window.visualViewport?.height ?? 0;
+    const inner = window.innerHeight ?? 0;
+    const client = document.documentElement?.clientHeight ?? 0;
+    const h = Math.max(1, Math.round(Math.max(vv, inner, client)));
     const px = `${h}px`;
     document.documentElement.style.height = px;
     document.documentElement.style.minHeight = px;
