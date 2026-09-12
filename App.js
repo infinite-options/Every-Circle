@@ -1268,6 +1268,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 360,
     alignSelf: "stretch",
+    backgroundColor: "#f6f7fb",
   },
   container: {
     flex: 1,

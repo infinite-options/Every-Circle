@@ -326,19 +326,19 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
             </TouchableOpacity>
           </>
         )}
+      </ScrollView>
 
-        <View style={styles.spacer} />
-
+      {/* Bottom of the screen (not a styled footer) — RN Web ignores flex spacers inside ScrollView. */}
+      <View style={styles.bottomActions}>
         {!loading && !error && profileData && showGuestActions && (
           <TouchableOpacity style={styles.secondaryBtn} onPress={downloadVCard} activeOpacity={0.85}>
             <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
           </TouchableOpacity>
         )}
-
         <Text style={styles.versionText}>
           PM {versionData.pm_version} · v{versionData.major}.{versionData.build} · {versionData.last_change}
         </Text>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -347,15 +347,21 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f6f7fb" },
   flex: { flex: 1 },
   column: {
-    flexGrow: 1,
     paddingHorizontal: 20,
     paddingTop: 56,
-    paddingBottom: 16,
+    paddingBottom: 12,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
   },
-  spacer: { flexGrow: 1, minHeight: 12 },
+  bottomActions: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    maxWidth: 480,
+    width: "100%",
+    alignSelf: "center",
+    backgroundColor: "#f6f7fb",
+  },
   headline: { fontSize: 22, fontWeight: "700", color: "#111", marginBottom: 6, textAlign: "center" },
   sub: { fontSize: 14, color: "#444", lineHeight: 19, marginBottom: 24, textAlign: "center" },
   centerRow: { alignItems: "center", paddingVertical: 16, gap: 10 },
@@ -400,7 +406,7 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
   versionText: {
-    marginTop: 4,
+    marginTop: 0,
     textAlign: "center",
     fontSize: 12,
     color: "#889",

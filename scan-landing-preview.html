@@ -37,9 +37,15 @@
         flex: 1;
         display: flex;
         flex-direction: column;
-        padding: 56px 20px 16px;
+        padding: 56px 20px 12px;
         overflow: auto;
         min-height: 0;
+        background: #f6f7fb;
+      }
+      .bottom-actions {
+        padding: 0 20px 12px;
+        background: #f6f7fb;
+        flex-shrink: 0;
       }
       h1 {
         margin: 0 0 6px;
@@ -169,16 +175,15 @@
           <a class="btn btn-primary" href="#">Continue with email</a>
           <div class="line"></div>
           <a class="btn btn-secondary" href="#">Log in</a>
-
-          <div class="spacer"></div>
-
+        </div>
+        <div class="bottom-actions">
           <a class="btn btn-secondary" href="#">No thanks — save contact in Phone</a>
           <div class="version">PM 1.0.150 · v1.24 · preview</div>
         </div>
         <div class="chrome-bottom">browser toolbar mock</div>
       </div>
       <p class="note">
-        Preview: more space under the intro text, a line between Continue and Log in, and <strong>No thanks</strong> at the bottom.
+        Preview: app fills the phone height (no white strip). <strong>No thanks</strong> sits at the bottom of the page content — no footer line.
       </p>
     </div>
   </body>
