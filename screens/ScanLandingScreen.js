@@ -264,12 +264,10 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator={false}>
         <View style={styles.panel}>
           <View style={styles.body}>
-            <View style={styles.section}>
-              <Text style={styles.headline}>Connect on everyCircle</Text>
-              <Text style={styles.sub}>
-                {showRedirecting ? "Taking you to your network…" : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
-              </Text>
-            </View>
+            <Text style={styles.headline}>Connect on everyCircle</Text>
+            <Text style={styles.sub}>
+              {showRedirecting ? "Taking you to your network…" : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+            </Text>
 
             {(loading || showRedirecting) && (
               <View style={styles.centerRow}>
@@ -282,62 +280,58 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
             {!loading && !error && profileData && showGuestActions && (
               <>
-                <View style={styles.section}>
+                <View style={styles.cardWrap}>
                   <MiniCard user={profileData} />
                 </View>
 
-                <View style={[styles.section, styles.socialContainer]}>
+                <View style={styles.socialContainer}>
                   <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
                   <AppleSignIn mode='signUp' onSignIn={handleAppleSignUp} onError={onError} disabled={signingIn} />
                 </View>
 
-                <View style={styles.section}>
-                  <View style={styles.dividerContainer}>
-                    <View style={styles.divider} />
-                    <Text style={styles.dividerText}>OR</Text>
-                    <View style={styles.divider} />
-                  </View>
-
-                  <TextInput
-                    style={styles.emailInput}
-                    placeholder='Email'
-                    placeholderTextColor='#888'
-                    value={email}
-                    onChangeText={(text) => {
-                      setEmail(text);
-                      if (emailError) setEmailError("");
-                    }}
-                    keyboardType='email-address'
-                    autoCapitalize='none'
-                    autoCorrect={false}
-                    accessibilityLabel='Email'
-                    accessibilityHint='Enter your email address to sign up'
-                    returnKeyType='go'
-                    onSubmitEditing={goToSignUpWithEmail}
-                  />
-                  {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
-
-                  <TouchableOpacity
-                    style={[styles.primaryBtn, !EMAIL_REGEX.test(email.trim()) && styles.primaryBtnDisabled]}
-                    onPress={goToSignUpWithEmail}
-                    activeOpacity={0.85}
-                    disabled={!EMAIL_REGEX.test(email.trim())}
-                  >
-                    <Text style={styles.primaryBtnText}>Continue with email</Text>
-                  </TouchableOpacity>
+                <View style={styles.dividerContainer}>
+                  <View style={styles.divider} />
+                  <Text style={styles.dividerText}>OR</Text>
+                  <View style={styles.divider} />
                 </View>
 
-                <View style={styles.section}>
-                  <View style={styles.sectionRule} />
+                <TextInput
+                  style={styles.emailInput}
+                  placeholder='Email'
+                  placeholderTextColor='#888'
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (emailError) setEmailError("");
+                  }}
+                  keyboardType='email-address'
+                  autoCapitalize='none'
+                  autoCorrect={false}
+                  accessibilityLabel='Email'
+                  accessibilityHint='Enter your email address to sign up'
+                  returnKeyType='go'
+                  onSubmitEditing={goToSignUpWithEmail}
+                />
+                {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
 
-                  <TouchableOpacity style={styles.secondaryBtn} onPress={goToLogin} activeOpacity={0.85}>
-                    <Text style={styles.secondaryBtnText}>Log in</Text>
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.primaryBtn, !EMAIL_REGEX.test(email.trim()) && styles.primaryBtnDisabled]}
+                  onPress={goToSignUpWithEmail}
+                  activeOpacity={0.85}
+                  disabled={!EMAIL_REGEX.test(email.trim())}
+                >
+                  <Text style={styles.primaryBtnText}>Continue with email</Text>
+                </TouchableOpacity>
 
-                  <TouchableOpacity style={[styles.secondaryBtn, styles.lastSecondaryBtn]} onPress={downloadVCard} activeOpacity={0.85}>
-                    <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
-                  </TouchableOpacity>
-                </View>
+                <View style={styles.sectionRule} />
+
+                <TouchableOpacity style={styles.secondaryBtn} onPress={goToLogin} activeOpacity={0.85}>
+                  <Text style={styles.secondaryBtnText}>Log in</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.secondaryBtn, styles.lastSecondaryBtn]} onPress={downloadVCard} activeOpacity={0.85}>
+                  <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
+                </TouchableOpacity>
               </>
             )}
           </View>
@@ -354,19 +348,18 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     paddingHorizontal: 14,
-    paddingTop: 58,
+    paddingTop: 10,
     paddingBottom: 10,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
   },
   panel: {
-    flexGrow: 1,
     backgroundColor: "#fff",
     borderRadius: 18,
     paddingHorizontal: 18,
-    paddingTop: 24,
-    paddingBottom: 12,
+    paddingTop: 20,
+    paddingBottom: 14,
     ...Platform.select({
       web: {
         boxShadow: "0 2px 12px rgba(20, 30, 70, 0.08)",
@@ -381,11 +374,6 @@ const styles = StyleSheet.create({
     }),
   },
   body: {
-    flexGrow: 1,
-    width: "100%",
-    justifyContent: "space-between",
-  },
-  section: {
     width: "100%",
   },
   headline: {
@@ -399,18 +387,22 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#555",
     lineHeight: 21,
+    marginBottom: 16,
     textAlign: "center",
   },
   centerRow: { alignItems: "center", paddingVertical: 24, gap: 12 },
   muted: { fontSize: 14, color: "#666" },
   error: { color: "#b00020", textAlign: "center", fontSize: 15, marginTop: 8, marginBottom: 8 },
+  cardWrap: { marginBottom: 14 },
   socialContainer: {
     alignItems: "center",
+    marginBottom: 2,
   },
   dividerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
+    marginTop: 4,
+    marginBottom: 12,
   },
   divider: {
     flex: 1,
@@ -444,6 +436,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#2434C2",
     paddingVertical: 13,
     borderRadius: 10,
+    marginBottom: 4,
   },
   primaryBtnDisabled: {
     backgroundColor: "#9AA3D9",
@@ -452,7 +445,8 @@ const styles = StyleSheet.create({
   sectionRule: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: "#C8CCD8",
-    marginBottom: 12,
+    marginTop: 14,
+    marginBottom: 14,
   },
   secondaryBtn: {
     paddingVertical: 12,
@@ -467,7 +461,7 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
   version: {
-    marginTop: 12,
+    marginTop: 18,
     textAlign: "center",
     fontSize: 12,
     color: "#9AA0B0",
