@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, TextInput } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MiniCard from "../components/MiniCard";
@@ -90,7 +90,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
-  const [frameH, setFrameH] = useState(0);
+  const [scrollViewportH, setScrollViewportH] = useState(0);
   const redirectStartedRef = useRef(false);
 
   const loadProfile = useCallback(async () => {
@@ -259,7 +259,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
   const versionLabel = buildVersionLabel();
-  const insets = useSafeAreaInsets();
 
   // Web only (QR camera → Safari/Chrome): pin #root to the visible viewport so the
   // under-root yellow/white strip is covered. Restored when leaving this screen.
@@ -295,7 +294,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
           min-height: 100% !important;
           min-height: 100dvh !important;
           min-height: -webkit-fill-available !important;
-          background-color: #EF4444 !important; /* match ScrollView while debugging */
+          background-color: #ECEEF5 !important;
           overflow: hidden !important;
         }
         html.ec-scan-landing #root {
@@ -311,7 +310,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
           min-height: -webkit-fill-available !important;
           max-height: none !important;
           overflow: hidden !important;
-          background-color: #EF4444 !important;
+          background-color: #ECEEF5 !important;
         }
       `;
       document.head.appendChild(styleEl);
@@ -321,13 +320,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
         // Also set inline sizes from the largest available metric (camera handoff settles late).
         const vv = window.visualViewport;
         const vvBottom = vv ? Math.round(vv.height + (vv.offsetTop || 0)) : 0;
-        const h = Math.max(
-          1,
-          Math.round(vv?.height || 0),
-          Math.round(window.innerHeight || 0),
-          Math.round(html.clientHeight || 0),
-          vvBottom,
-        );
+        const h = Math.max(1, Math.round(vv?.height || 0), Math.round(window.innerHeight || 0), Math.round(html.clientHeight || 0), vvBottom);
         const px = `${h}px`;
         html.style.height = px;
         html.style.minHeight = px;
@@ -367,142 +360,127 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }, []),
   );
 
-  // ScanLanding only: keep green content-sized, push it to the BOTTOM of a full-height
-  // frame so leftover empty space sits above (more red on top, less on bottom).
-  // IMPORTANT: frame must be position:absolute inset 0 — flex:1 alone collapses on
-  // mobile Safari web, so justifyContent:'flex-end' had no free space and the card
-  // stayed top-stuck while #root's red showed below.
-  const FRAME_PAD_TOP = 12;
-  const FRAME_PAD_BOTTOM = Math.max(12, insets.bottom);
-  const panelMaxHeight =
-    frameH > 0 ? Math.max(120, frameH - FRAME_PAD_TOP - FRAME_PAD_BOTTOM) : undefined;
+  // Scroll content padding (keep in sync with styles.scroll)
+  const SCROLL_PAD_TOP = 56;
+  const SCROLL_PAD_BOTTOM = 24;
+  // RN-web ScrollView often ignores flexGrow for children; minHeight fills short viewports.
+  // When content is taller than the viewport, the panel grows past minHeight and ScrollView scrolls.
+  const panelMinHeight = scrollViewportH > 0 ? Math.max(0, scrollViewportH - SCROLL_PAD_TOP - SCROLL_PAD_BOTTOM) : undefined;
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
-      <View
-        style={[styles.frame, { paddingBottom: FRAME_PAD_BOTTOM }]}
+    <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scroll, scrollViewportH > 0 && { minHeight: scrollViewportH }]}
+        keyboardShouldPersistTaps='handled'
+        showsVerticalScrollIndicator
+        bounces
         onLayout={(e) => {
           const h = Math.round(e.nativeEvent.layout.height);
-          if (h > 0 && h !== frameH) setFrameH(h);
+          if (h > 0 && h !== scrollViewportH) setScrollViewportH(h);
         }}
       >
-        <View style={[styles.panel, panelMaxHeight ? { maxHeight: panelMaxHeight } : null]}>
-          <ScrollView
-            style={styles.panelScroll}
-            contentContainerStyle={styles.panelScrollContent}
-            keyboardShouldPersistTaps='handled'
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
-            <View style={styles.body}>
-              <Text style={styles.headline}>Connect on everyCircle</Text>
-              <Text style={styles.sub}>
-                {showRedirecting
-                  ? "Taking you to your network…"
-                  : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
-              </Text>
+        <View style={[styles.panel, panelMinHeight ? { minHeight: panelMinHeight } : null]}>
+          <View style={styles.body}>
+            <Text style={styles.headline}>Connect on everyCircle</Text>
+            <Text style={styles.sub}>
+              {showRedirecting ? "Taking you to your network…" : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+            </Text>
 
-              {(loading || showRedirecting) && (
-                <View style={styles.centerRow}>
-                  <ActivityIndicator size='large' color='#2434C2' />
-                  <Text style={styles.muted}>{loading ? "Loading profile…" : "Opening connect…"}</Text>
+            {(loading || showRedirecting) && (
+              <View style={styles.centerRow}>
+                <ActivityIndicator size='large' color='#2434C2' />
+                <Text style={styles.muted}>{loading ? "Loading profile…" : "Opening connect…"}</Text>
+              </View>
+            )}
+
+            {!loading && error && <Text style={styles.error}>{error}</Text>}
+
+            {!loading && !error && profileData && showGuestActions && (
+              <>
+                <View style={styles.cardWrap}>
+                  <MiniCard user={profileData} />
                 </View>
-              )}
 
-              {!loading && error && <Text style={styles.error}>{error}</Text>}
+                <View style={styles.socialContainer}>
+                  <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
+                  <AppleSignIn mode='signUp' onSignIn={handleAppleSignUp} onError={onError} disabled={signingIn} />
+                </View>
 
-              {!loading && !error && profileData && showGuestActions && (
-                <>
-                  <View style={styles.cardWrap}>
-                    <MiniCard user={profileData} />
-                  </View>
+                <View style={styles.dividerContainer}>
+                  <View style={styles.divider} />
+                  <Text style={styles.dividerText}>OR</Text>
+                  <View style={styles.divider} />
+                </View>
 
-                  <View style={styles.socialContainer}>
-                    <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
-                    <AppleSignIn mode='signUp' onSignIn={handleAppleSignUp} onError={onError} disabled={signingIn} />
-                  </View>
+                <TextInput
+                  style={styles.emailInput}
+                  placeholder='Email'
+                  placeholderTextColor='#888'
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (emailError) setEmailError("");
+                  }}
+                  keyboardType='email-address'
+                  autoCapitalize='none'
+                  autoCorrect={false}
+                  accessibilityLabel='Email'
+                  accessibilityHint='Enter your email address to sign up'
+                  returnKeyType='go'
+                  onSubmitEditing={goToSignUpWithEmail}
+                />
+                {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
 
-                  <View style={styles.dividerContainer}>
-                    <View style={styles.divider} />
-                    <Text style={styles.dividerText}>OR</Text>
-                    <View style={styles.divider} />
-                  </View>
+                <TouchableOpacity
+                  style={[styles.primaryBtn, !EMAIL_REGEX.test(email.trim()) && styles.primaryBtnDisabled]}
+                  onPress={goToSignUpWithEmail}
+                  activeOpacity={0.85}
+                  disabled={!EMAIL_REGEX.test(email.trim())}
+                >
+                  <Text style={styles.primaryBtnText}>Continue with email</Text>
+                </TouchableOpacity>
 
-                  <TextInput
-                    style={styles.emailInput}
-                    placeholder='Email'
-                    placeholderTextColor='#888'
-                    value={email}
-                    onChangeText={(text) => {
-                      setEmail(text);
-                      if (emailError) setEmailError("");
-                    }}
-                    keyboardType='email-address'
-                    autoCapitalize='none'
-                    autoCorrect={false}
-                    accessibilityLabel='Email'
-                    accessibilityHint='Enter your email address to sign up'
-                    returnKeyType='go'
-                    onSubmitEditing={goToSignUpWithEmail}
-                  />
-                  {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
+                <View style={styles.sectionRule} />
 
-                  <TouchableOpacity
-                    style={[styles.primaryBtn, !EMAIL_REGEX.test(email.trim()) && styles.primaryBtnDisabled]}
-                    onPress={goToSignUpWithEmail}
-                    activeOpacity={0.85}
-                    disabled={!EMAIL_REGEX.test(email.trim())}
-                  >
-                    <Text style={styles.primaryBtnText}>Continue with email</Text>
-                  </TouchableOpacity>
+                <TouchableOpacity style={styles.secondaryBtn} onPress={goToLogin} activeOpacity={0.85}>
+                  <Text style={styles.secondaryBtnText}>Log in</Text>
+                </TouchableOpacity>
 
-                  <View style={styles.sectionRule} />
+                <TouchableOpacity style={[styles.secondaryBtn, styles.lastSecondaryBtn]} onPress={downloadVCard} activeOpacity={0.85}>
+                  <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
 
-                  <TouchableOpacity style={styles.secondaryBtn} onPress={goToLogin} activeOpacity={0.85}>
-                    <Text style={styles.secondaryBtnText}>Log in</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={[styles.secondaryBtn, styles.lastSecondaryBtn]} onPress={downloadVCard} activeOpacity={0.85}>
-                    <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-
-            <Text style={styles.version}>{versionLabel}</Text>
-          </ScrollView>
+          <Text style={styles.version}>{versionLabel}</Text>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  // DEBUG COLORS — temporary (ScanLanding only)
-  safe: { flex: 1, backgroundColor: "#0066FF" },
-  // Fill SafeArea/#root explicitly so flex-end has real free space on mobile Safari web.
-  frame: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "#EF4444",
-    justifyContent: "flex-end",
+  safe: { flex: 1, backgroundColor: "#ECEEF5" },
+  scrollView: {
+    flex: 1,
+    backgroundColor: "transparent",
+  },
+  scroll: {
     paddingHorizontal: 14,
-    paddingTop: 12,
+    paddingTop: 56,
+    paddingBottom: 24,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
   },
-  // Content-sized card (not stretched). maxHeight is set in JS so tall content can scroll.
   panel: {
-    width: "100%",
-    backgroundColor: "#22C55E",
+    backgroundColor: "#fff",
     borderRadius: 18,
     paddingHorizontal: 18,
-    paddingTop: 12,
-    overflow: "hidden",
+    paddingTop: 16,
+    paddingBottom: 14,
     ...Platform.select({
       web: {
         boxShadow: "0 2px 12px rgba(20, 30, 70, 0.08)",
@@ -516,12 +494,6 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  panelScroll: {
-    flexGrow: 0,
-  },
-  panelScrollContent: {
-    paddingBottom: 14,
-  },
   body: {
     width: "100%",
   },
@@ -534,7 +506,7 @@ const styles = StyleSheet.create({
   },
   sub: {
     fontSize: 14,
-    color: "#053B1A",
+    color: "#555",
     lineHeight: 20,
     marginBottom: 12,
     textAlign: "center",
@@ -610,9 +582,10 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
   version: {
-    marginTop: 14,
+    marginTop: "auto",
+    paddingTop: 14,
     textAlign: "center",
     fontSize: 12,
-    color: "#053B1A",
+    color: "#9AA0B0",
   },
 });

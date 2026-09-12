@@ -26,8 +26,7 @@ if (isWeb && typeof window !== "undefined" && typeof document !== "undefined") {
       margin: 0;
       padding: 0;
       width: 100%;
-      /* DEBUG: yellow = gap under #root (browser canvas / undersized root) */
-      background-color: #FFD600 !important;
+      background-color: #f6f7fb;
       overflow: hidden;
     }
     #root {
@@ -44,7 +43,7 @@ if (isWeb && typeof window !== "undefined" && typeof document !== "undefined") {
     // ScanLanding applies its own full-bleed fill for camera→Safari; don't fight it.
     if (window.__EC_SCAN_LANDING_VIEWPORT_FILL__) return;
 
-    // Prefer the larger of visualViewport vs innerHeight so we don't leave a white/yellow
+    // Prefer the larger of visualViewport vs innerHeight so we don't leave a blank
     // strip under #root when camera→Safari reports a short visualViewport.
     const vv = window.visualViewport?.height ?? 0;
     const inner = window.innerHeight ?? 0;
