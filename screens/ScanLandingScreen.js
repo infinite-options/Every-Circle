@@ -357,13 +357,11 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   panel: {
-    flexGrow: 1,
     backgroundColor: "#fff",
     borderRadius: 18,
     paddingHorizontal: 18,
     paddingTop: 20,
     paddingBottom: 14,
-    justifyContent: "space-between",
     ...Platform.select({
       web: {
         boxShadow: "0 2px 12px rgba(20, 30, 70, 0.08)",
