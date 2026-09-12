@@ -90,6 +90,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
+  const [frameH, setFrameH] = useState(0);
   const redirectStartedRef = useRef(false);
 
   const loadProfile = useCallback(async () => {
@@ -365,21 +366,29 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }, []),
   );
 
-  // Layout model (debug colors):
-  // - Red  = outer frame padding only (top/side/bottom gutters around the card)
-  // - Green = flex:1 panel that always fills the frame (scroll lives INSIDE the panel)
-  // Bottom red was large before because the panel sat inside ScrollView and only
-  // sized to its content — RN-web often ignores flexGrow there, so empty ScrollView showed red.
+  // ScanLanding only: keep green content-sized, push it to the BOTTOM of the red frame
+  // so leftover empty space sits above (more red on top, less on bottom).
+  const FRAME_PAD_TOP = 12;
+  const FRAME_PAD_BOTTOM = 12;
+  const panelMaxHeight =
+    frameH > 0 ? Math.max(120, frameH - FRAME_PAD_TOP - FRAME_PAD_BOTTOM) : undefined;
+
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
-      <View style={styles.frame}>
-        <View style={styles.panel}>
-          <Text style={styles.debugLabelDark}>green = flex:1 panel · red outside = frame padding only</Text>
+      <View
+        style={styles.frame}
+        onLayout={(e) => {
+          const h = Math.round(e.nativeEvent.layout.height);
+          if (h > 0 && h !== frameH) setFrameH(h);
+        }}
+      >
+        <View style={[styles.panel, panelMaxHeight ? { maxHeight: panelMaxHeight } : null]}>
           <ScrollView
             style={styles.panelScroll}
             contentContainerStyle={styles.panelScrollContent}
             keyboardShouldPersistTaps='handled'
             showsVerticalScrollIndicator={false}
+            bounces={false}
           >
             <View style={styles.body}>
               <Text style={styles.headline}>Connect on everyCircle</Text>
@@ -465,12 +474,13 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 }
 
 const styles = StyleSheet.create({
-  // DEBUG COLORS — temporary layout visualization
-  safe: { flex: 1, backgroundColor: "#0066FF" }, // blue = SafeArea insets only
-  // Red = ONLY the padding gutters around the green card (top / sides / bottom).
+  // DEBUG COLORS — temporary (ScanLanding only)
+  safe: { flex: 1, backgroundColor: "#0066FF" },
+  // Red frame fills the screen; justifyContent flex-end parks the green card at the bottom.
   frame: {
     flex: 1,
     backgroundColor: "#EF4444",
+    justifyContent: "flex-end",
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 12,
@@ -478,9 +488,9 @@ const styles = StyleSheet.create({
     width: "100%",
     alignSelf: "center",
   },
-  // Green fills all remaining space inside the frame (flex:1).
+  // Content-sized card (not stretched). maxHeight is set in JS so tall content can scroll.
   panel: {
-    flex: 1,
+    width: "100%",
     backgroundColor: "#22C55E",
     borderRadius: 18,
     paddingHorizontal: 18,
@@ -500,18 +510,10 @@ const styles = StyleSheet.create({
     }),
   },
   panelScroll: {
-    flex: 1,
+    flexGrow: 0,
   },
   panelScrollContent: {
-    flexGrow: 1,
     paddingBottom: 14,
-  },
-  debugLabelDark: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#053B1A",
-    textAlign: "center",
-    marginBottom: 8,
   },
   body: {
     width: "100%",
@@ -601,8 +603,7 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
   version: {
-    marginTop: "auto",
-    paddingTop: 14,
+    marginTop: 14,
     textAlign: "center",
     fontSize: 12,
     color: "#053B1A",
