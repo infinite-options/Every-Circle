@@ -262,11 +262,48 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
   const compact = windowHeight < 780;
+  const scrollRef = useRef(null);
+
+  // iOS Camera → Safari (QR open) often reports a taller layout viewport than what's
+  // visible. Vertical centering then clips the headline. Always pin to top on web.
+  const scrollToTop = useCallback(() => {
+    scrollRef.current?.scrollTo?.({ y: 0, animated: false });
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.scrollTo?.(0, 0);
+      document.documentElement?.scrollTo?.(0, 0);
+      document.body?.scrollTo?.(0, 0);
+    }
+  }, []);
+
+  useEffect(() => {
+    scrollToTop();
+    if (Platform.OS !== "web" || typeof window === "undefined") return undefined;
+
+    const onResize = () => scrollToTop();
+    window.visualViewport?.addEventListener?.("resize", onResize);
+    window.addEventListener("pageshow", onResize);
+    // Camera handoff can settle a tick late — nudge again after paint.
+    const t1 = setTimeout(scrollToTop, 50);
+    const t2 = setTimeout(scrollToTop, 300);
+    return () => {
+      window.visualViewport?.removeEventListener?.("resize", onResize);
+      window.removeEventListener("pageshow", onResize);
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [scrollToTop, loading, showGuestActions]);
+
+  useFocusEffect(
+    useCallback(() => {
+      scrollToTop();
+    }, [scrollToTop]),
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
       <ScrollView
-        contentContainerStyle={[styles.scroll, { flexGrow: 1, justifyContent: "center" }]}
+        ref={scrollRef}
+        contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={false}
       >
@@ -348,9 +385,14 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f6f7fb" },
   scroll: {
+    // Top-align on purpose: do not use flexGrow + justifyContent center.
+    // After a QR Camera → Safari open, iOS often overstates viewport height and
+    // centering pushes "Connect on everyCircle" above the visible area.
+    flexGrow: 1,
+    justifyContent: "flex-start",
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 24,
+    paddingTop: Platform.OS === "web" ? 8 : 12,
+    paddingBottom: 32,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
