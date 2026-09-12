@@ -446,10 +446,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
           <Text style={styles.version}>{versionLabel}</Text>
         </View>
-
-        <View style={styles.bottomHint}>
-          <Text style={styles.debugLabel}>red = ScrollView (empty area under content)</Text>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -463,18 +459,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#EF4444", // red = ScrollView viewport (shows below/around content)
   },
   scroll: {
+    flexGrow: 1,
     paddingHorizontal: 14,
-    paddingTop: 120,
+    paddingTop: 28,
     paddingBottom: 10,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
   },
   panel: {
+    flexGrow: 1,
     backgroundColor: "#22C55E", // green = panel / content card
     borderRadius: 18,
     paddingHorizontal: 18,
-    paddingTop: 20,
+    paddingTop: 16,
     paddingBottom: 14,
     ...Platform.select({
       web: {
@@ -488,11 +486,6 @@ const styles = StyleSheet.create({
         elevation: 2,
       },
     }),
-  },
-  bottomHint: {
-    marginTop: 12,
-    paddingVertical: 8,
-    alignItems: "center",
   },
   debugLabel: {
     fontSize: 11,
@@ -515,23 +508,23 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   headline: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "700",
     color: "#111",
-    marginBottom: 8,
+    marginBottom: 6,
     textAlign: "center",
   },
   sub: {
-    fontSize: 15,
-    color: "#555",
-    lineHeight: 21,
-    marginBottom: 16,
+    fontSize: 14,
+    color: "#053B1A",
+    lineHeight: 20,
+    marginBottom: 12,
     textAlign: "center",
   },
   centerRow: { alignItems: "center", paddingVertical: 24, gap: 12 },
   muted: { fontSize: 14, color: "#666" },
   error: { color: "#b00020", textAlign: "center", fontSize: 15, marginTop: 8, marginBottom: 8 },
-  cardWrap: { marginBottom: 14 },
+  cardWrap: { marginBottom: 10 },
   socialContainer: {
     alignItems: "center",
     marginBottom: 2,
@@ -539,8 +532,8 @@ const styles = StyleSheet.create({
   dividerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
-    marginBottom: 12,
+    marginTop: 2,
+    marginBottom: 10,
   },
   divider: {
     flex: 1,
@@ -556,12 +549,12 @@ const styles = StyleSheet.create({
   emailInput: {
     backgroundColor: "#fff",
     borderRadius: 10,
-    paddingVertical: 13,
+    paddingVertical: 12,
     paddingHorizontal: 14,
     fontSize: 16,
     borderWidth: 1,
     borderColor: "#CFD3DE",
-    marginBottom: 10,
+    marginBottom: 8,
     color: "#111",
   },
   emailError: {
@@ -572,7 +565,7 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     backgroundColor: "#2434C2",
-    paddingVertical: 13,
+    paddingVertical: 12,
     borderRadius: 10,
     marginBottom: 4,
   },
@@ -583,25 +576,26 @@ const styles = StyleSheet.create({
   sectionRule: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: "#C8CCD8",
-    marginTop: 14,
-    marginBottom: 14,
+    marginTop: 12,
+    marginBottom: 12,
   },
   secondaryBtn: {
-    paddingVertical: 12,
+    paddingVertical: 11,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#2434C2",
     backgroundColor: "#fff",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   lastSecondaryBtn: {
     marginBottom: 0,
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
   version: {
-    marginTop: 18,
+    marginTop: "auto",
+    paddingTop: 14,
     textAlign: "center",
     fontSize: 12,
-    color: "#9AA0B0",
+    color: "#053B1A",
   },
 });
