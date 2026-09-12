@@ -90,7 +90,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
-  const [scrollViewportH, setScrollViewportH] = useState(0);
   const redirectStartedRef = useRef(false);
 
   const loadProfile = useCallback(async () => {
@@ -366,129 +365,127 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }, []),
   );
 
-  // Scroll content padding (keep in sync with styles.scroll)
-  const SCROLL_PAD_TOP = 56;
-  const SCROLL_PAD_BOTTOM = 10;
-  // RN-web ScrollView often ignores flexGrow for children; force the green panel to
-  // fill the measured ScrollView height so the bottom red gap is covered.
-  const panelMinHeight =
-    scrollViewportH > 0 ? Math.max(0, scrollViewportH - SCROLL_PAD_TOP - SCROLL_PAD_BOTTOM) : undefined;
-
+  // Layout model (debug colors):
+  // - Red  = outer frame padding only (top/side/bottom gutters around the card)
+  // - Green = flex:1 panel that always fills the frame (scroll lives INSIDE the panel)
+  // Bottom red was large before because the panel sat inside ScrollView and only
+  // sized to its content — RN-web often ignores flexGrow there, so empty ScrollView showed red.
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[styles.scroll, scrollViewportH > 0 && { minHeight: scrollViewportH }]}
-        keyboardShouldPersistTaps='handled'
-        showsVerticalScrollIndicator={false}
-        onLayout={(e) => {
-          const h = Math.round(e.nativeEvent.layout.height);
-          if (h > 0 && h !== scrollViewportH) setScrollViewportH(h);
-        }}
-      >
-        <View style={[styles.panel, panelMinHeight ? { minHeight: panelMinHeight } : null]}>
-          <Text style={styles.debugLabelDark}>green = panel (minHeight fills red below)</Text>
-          <View style={styles.body}>
-            <Text style={styles.headline}>Connect on everyCircle</Text>
-            <Text style={styles.sub}>
-              {showRedirecting ? "Taking you to your network…" : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
-            </Text>
+      <View style={styles.frame}>
+        <View style={styles.panel}>
+          <Text style={styles.debugLabelDark}>green = flex:1 panel · red outside = frame padding only</Text>
+          <ScrollView
+            style={styles.panelScroll}
+            contentContainerStyle={styles.panelScrollContent}
+            keyboardShouldPersistTaps='handled'
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.body}>
+              <Text style={styles.headline}>Connect on everyCircle</Text>
+              <Text style={styles.sub}>
+                {showRedirecting
+                  ? "Taking you to your network…"
+                  : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+              </Text>
 
-            {(loading || showRedirecting) && (
-              <View style={styles.centerRow}>
-                <ActivityIndicator size='large' color='#2434C2' />
-                <Text style={styles.muted}>{loading ? "Loading profile…" : "Opening connect…"}</Text>
-              </View>
-            )}
-
-            {!loading && error && <Text style={styles.error}>{error}</Text>}
-
-            {!loading && !error && profileData && showGuestActions && (
-              <>
-                <View style={styles.cardWrap}>
-                  <MiniCard user={profileData} />
+              {(loading || showRedirecting) && (
+                <View style={styles.centerRow}>
+                  <ActivityIndicator size='large' color='#2434C2' />
+                  <Text style={styles.muted}>{loading ? "Loading profile…" : "Opening connect…"}</Text>
                 </View>
+              )}
 
-                <View style={styles.socialContainer}>
-                  <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
-                  <AppleSignIn mode='signUp' onSignIn={handleAppleSignUp} onError={onError} disabled={signingIn} />
-                </View>
+              {!loading && error && <Text style={styles.error}>{error}</Text>}
 
-                <View style={styles.dividerContainer}>
-                  <View style={styles.divider} />
-                  <Text style={styles.dividerText}>OR</Text>
-                  <View style={styles.divider} />
-                </View>
+              {!loading && !error && profileData && showGuestActions && (
+                <>
+                  <View style={styles.cardWrap}>
+                    <MiniCard user={profileData} />
+                  </View>
 
-                <TextInput
-                  style={styles.emailInput}
-                  placeholder='Email'
-                  placeholderTextColor='#888'
-                  value={email}
-                  onChangeText={(text) => {
-                    setEmail(text);
-                    if (emailError) setEmailError("");
-                  }}
-                  keyboardType='email-address'
-                  autoCapitalize='none'
-                  autoCorrect={false}
-                  accessibilityLabel='Email'
-                  accessibilityHint='Enter your email address to sign up'
-                  returnKeyType='go'
-                  onSubmitEditing={goToSignUpWithEmail}
-                />
-                {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
+                  <View style={styles.socialContainer}>
+                    <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
+                    <AppleSignIn mode='signUp' onSignIn={handleAppleSignUp} onError={onError} disabled={signingIn} />
+                  </View>
 
-                <TouchableOpacity
-                  style={[styles.primaryBtn, !EMAIL_REGEX.test(email.trim()) && styles.primaryBtnDisabled]}
-                  onPress={goToSignUpWithEmail}
-                  activeOpacity={0.85}
-                  disabled={!EMAIL_REGEX.test(email.trim())}
-                >
-                  <Text style={styles.primaryBtnText}>Continue with email</Text>
-                </TouchableOpacity>
+                  <View style={styles.dividerContainer}>
+                    <View style={styles.divider} />
+                    <Text style={styles.dividerText}>OR</Text>
+                    <View style={styles.divider} />
+                  </View>
 
-                <View style={styles.sectionRule} />
+                  <TextInput
+                    style={styles.emailInput}
+                    placeholder='Email'
+                    placeholderTextColor='#888'
+                    value={email}
+                    onChangeText={(text) => {
+                      setEmail(text);
+                      if (emailError) setEmailError("");
+                    }}
+                    keyboardType='email-address'
+                    autoCapitalize='none'
+                    autoCorrect={false}
+                    accessibilityLabel='Email'
+                    accessibilityHint='Enter your email address to sign up'
+                    returnKeyType='go'
+                    onSubmitEditing={goToSignUpWithEmail}
+                  />
+                  {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
 
-                <TouchableOpacity style={styles.secondaryBtn} onPress={goToLogin} activeOpacity={0.85}>
-                  <Text style={styles.secondaryBtnText}>Log in</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, !EMAIL_REGEX.test(email.trim()) && styles.primaryBtnDisabled]}
+                    onPress={goToSignUpWithEmail}
+                    activeOpacity={0.85}
+                    disabled={!EMAIL_REGEX.test(email.trim())}
+                  >
+                    <Text style={styles.primaryBtnText}>Continue with email</Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.secondaryBtn, styles.lastSecondaryBtn]} onPress={downloadVCard} activeOpacity={0.85}>
-                  <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+                  <View style={styles.sectionRule} />
 
-          <Text style={styles.version}>{versionLabel}</Text>
+                  <TouchableOpacity style={styles.secondaryBtn} onPress={goToLogin} activeOpacity={0.85}>
+                    <Text style={styles.secondaryBtnText}>Log in</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={[styles.secondaryBtn, styles.lastSecondaryBtn]} onPress={downloadVCard} activeOpacity={0.85}>
+                    <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+
+            <Text style={styles.version}>{versionLabel}</Text>
+          </ScrollView>
         </View>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   // DEBUG COLORS — temporary layout visualization
-  safe: { flex: 1, backgroundColor: "#0066FF" }, // blue = SafeArea / page
-  scrollView: {
+  safe: { flex: 1, backgroundColor: "#0066FF" }, // blue = SafeArea insets only
+  // Red = ONLY the padding gutters around the green card (top / sides / bottom).
+  frame: {
     flex: 1,
-    backgroundColor: "#EF4444", // red = ScrollView (only visible if panel fails to fill)
-  },
-  scroll: {
+    backgroundColor: "#EF4444",
     paddingHorizontal: 14,
-    paddingTop: 56,
-    paddingBottom: 10,
+    paddingTop: 12,
+    paddingBottom: 12,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
   },
+  // Green fills all remaining space inside the frame (flex:1).
   panel: {
-    backgroundColor: "#22C55E", // green = panel / content card
+    flex: 1,
+    backgroundColor: "#22C55E",
     borderRadius: 18,
     paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 14,
+    paddingTop: 12,
+    overflow: "hidden",
     ...Platform.select({
       web: {
         boxShadow: "0 2px 12px rgba(20, 30, 70, 0.08)",
@@ -501,6 +498,13 @@ const styles = StyleSheet.create({
         elevation: 2,
       },
     }),
+  },
+  panelScroll: {
+    flex: 1,
+  },
+  panelScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 14,
   },
   debugLabelDark: {
     fontSize: 11,
