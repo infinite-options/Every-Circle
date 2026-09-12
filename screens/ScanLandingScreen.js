@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, TextInput, useWindowDimensions } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -73,7 +73,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const route = useRoute();
   const navigation = useNavigation();
   const profileUid = resolveProfileUidFromRoute(route);
-  const { height: windowHeight } = useWindowDimensions();
 
   const [loading, setLoading] = useState(!!profileUid);
   const [error, setError] = useState(null);
@@ -136,7 +135,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     await goToNetworkForScanConnect(navigation, profileUid);
   }, [profileUid, navigation]);
 
-  // Already logged in, or returning after login/signup (openConnectModal)
   useEffect(() => {
     if (!profileUid || loading || checkingSession || redirectStartedRef.current) return;
 
@@ -171,7 +169,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
   const authParams = useMemo(() => (profileUid ? scanLandingAuthParams(profileUid) : {}), [profileUid]);
 
-  // Persist QR owner as referrer as soon as the scan link is opened (survives OAuth storage wipes if restored).
   useEffect(() => {
     if (!profileUid) return;
     AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
@@ -251,19 +248,20 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
   const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
-  const compact = windowHeight < 780;
 
   return (
-    <SafeAreaView style={styles.safe} edges={Platform.OS === "web" ? ["left", "right"] : ["top", "left", "right", "bottom"]}>
+    <SafeAreaView style={styles.safe}>
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scroll}
+        style={styles.flex}
+        contentContainerStyle={styles.column}
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.headline, compact && styles.headlineCompact]}>Connect on everyCircle</Text>
-        <Text style={[styles.sub, compact && styles.subCompact]}>
-          {showRedirecting ? "Taking you to your network…" : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+        <Text style={styles.headline}>Connect on everyCircle</Text>
+        <Text style={styles.sub}>
+          {showRedirecting
+            ? "Taking you to your network…"
+            : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
         </Text>
 
         {(loading || showRedirecting) && (
@@ -277,7 +275,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
         {!loading && !error && profileData && showGuestActions && (
           <>
-            <View style={[styles.cardWrap, compact && styles.cardWrapCompact]}>
+            <View style={styles.cardWrap}>
               <MiniCard user={profileData} />
             </View>
 
@@ -305,7 +303,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
               autoCapitalize='none'
               autoCorrect={false}
               accessibilityLabel='Email'
-              accessibilityHint='Enter your email address to sign up'
               returnKeyType='go'
               onSubmitEditing={goToSignUpWithEmail}
             />
@@ -320,67 +317,59 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
               <Text style={styles.primaryBtnText}>Continue with email</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.secondaryBtn, styles.loginBtn]} onPress={goToLogin} activeOpacity={0.85}>
+            <View style={styles.dividerContainer}>
+              <View style={styles.divider} />
+            </View>
+
+            <TouchableOpacity style={styles.secondaryBtn} onPress={goToLogin} activeOpacity={0.85}>
               <Text style={styles.secondaryBtnText}>Log in</Text>
             </TouchableOpacity>
           </>
         )}
-      </ScrollView>
 
-      <View style={styles.footer}>
+        <View style={styles.spacer} />
+
         {!loading && !error && profileData && showGuestActions && (
-          <TouchableOpacity style={[styles.secondaryBtn, styles.footerBtn]} onPress={downloadVCard} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.secondaryBtn} onPress={downloadVCard} activeOpacity={0.85}>
             <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
           </TouchableOpacity>
         )}
+
         <Text style={styles.versionText}>
           PM {versionData.pm_version} · v{versionData.major}.{versionData.build} · {versionData.last_change}
         </Text>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f6f7fb" },
-  scrollView: { flex: 1 },
-  scroll: {
+  flex: { flex: 1 },
+  column: {
+    flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 56,
     paddingBottom: 16,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
   },
+  spacer: { flexGrow: 1, minHeight: 12 },
   headline: { fontSize: 22, fontWeight: "700", color: "#111", marginBottom: 6, textAlign: "center" },
-  headlineCompact: { fontSize: 20, marginBottom: 4 },
-  sub: { fontSize: 14, color: "#444", lineHeight: 19, marginBottom: 10, textAlign: "center" },
-  subCompact: { fontSize: 13, lineHeight: 18, marginBottom: 8 },
+  sub: { fontSize: 14, color: "#444", lineHeight: 19, marginBottom: 24, textAlign: "center" },
   centerRow: { alignItems: "center", paddingVertical: 16, gap: 10 },
   muted: { fontSize: 14, color: "#666" },
   error: { color: "#b00020", textAlign: "center", fontSize: 15, marginTop: 16 },
-  cardWrap: { marginBottom: 10 },
-  cardWrapCompact: { marginBottom: 8 },
-  socialContainer: {
-    alignItems: "center",
-    marginBottom: 0,
-  },
+  cardWrap: { marginBottom: 12 },
+  socialContainer: { alignItems: "center" },
   dividerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 8,
+    marginVertical: 10,
   },
-  divider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#D0D4E4",
-  },
-  dividerText: {
-    marginHorizontal: 10,
-    color: "#666",
-    fontSize: 12,
-    fontWeight: "600",
-  },
+  divider: { flex: 1, height: 1, backgroundColor: "#D0D4E4" },
+  dividerText: { marginHorizontal: 10, color: "#666", fontSize: 12, fontWeight: "600" },
   emailInput: {
     backgroundColor: "#fff",
     borderRadius: 10,
@@ -392,21 +381,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     color: "#111",
   },
-  emailError: {
-    color: "#b00020",
-    fontSize: 13,
-    marginBottom: 8,
-    textAlign: "center",
-  },
+  emailError: { color: "#b00020", fontSize: 13, marginBottom: 8, textAlign: "center" },
   primaryBtn: {
     backgroundColor: "#2434C2",
     paddingVertical: 12,
     borderRadius: 10,
-    marginBottom: 8,
+    marginBottom: 0,
   },
-  primaryBtnDisabled: {
-    backgroundColor: "#9AA3D9",
-  },
+  primaryBtnDisabled: { backgroundColor: "#9AA3D9" },
   primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "600", textAlign: "center" },
   secondaryBtn: {
     paddingVertical: 11,
@@ -416,28 +398,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     marginBottom: 8,
   },
-  loginBtn: {
-    marginTop: 2,
-    marginBottom: 0,
-  },
-  footer: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: Platform.OS === "web" ? 12 : 8,
-    maxWidth: 480,
-    width: "100%",
-    alignSelf: "center",
-    backgroundColor: "#f6f7fb",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#D0D4E4",
-  },
-  footerBtn: {
-    marginBottom: 8,
-  },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
   versionText: {
-    marginTop: 0,
-    marginBottom: 0,
+    marginTop: 4,
     textAlign: "center",
     fontSize: 12,
     color: "#889",

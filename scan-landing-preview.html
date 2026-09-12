@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scan landing layout preview</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #ddd;
+        display: flex;
+        justify-content: center;
+        padding: 24px;
+      }
+      .phone {
+        width: 390px;
+        height: 760px;
+        background: #f6f7fb;
+        border: 1px solid #999;
+        border-radius: 16px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      }
+      .chrome-top, .chrome-bottom {
+        background: #e8e8e8;
+        color: #333;
+        font-size: 12px;
+        text-align: center;
+        padding: 10px;
+        flex-shrink: 0;
+      }
+      .screen {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 56px 20px 16px;
+        overflow: auto;
+        min-height: 0;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 22px;
+        text-align: center;
+      }
+      .sub {
+        margin: 0 0 24px;
+        font-size: 14px;
+        line-height: 19px;
+        color: #444;
+        text-align: center;
+      }
+      .card {
+        border: 1px solid #000;
+        border-radius: 10px;
+        background: #fff;
+        padding: 15px;
+        margin-bottom: 12px;
+      }
+      .card strong { display: block; margin-bottom: 8px; }
+      .avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 25px;
+        border: 1px solid #ccc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #888;
+        font-size: 22px;
+      }
+      .btn {
+        display: block;
+        width: 100%;
+        text-align: center;
+        padding: 12px;
+        border-radius: 10px;
+        margin-bottom: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .btn-google {
+        background: #fff;
+        border: 1px solid #747775;
+        color: #1f1f1f;
+      }
+      .btn-apple {
+        background: #000;
+        border: 1px solid #000;
+        color: #fff;
+      }
+      .or {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 10px 0;
+        color: #666;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .or::before, .or::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: #D0D4E4;
+      }
+      input {
+        width: 100%;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px solid #ccc;
+        font-size: 16px;
+        margin-bottom: 8px;
+      }
+      .btn-primary {
+        background: #2434C2;
+        border: none;
+        color: #fff;
+      }
+      .line {
+        height: 1px;
+        background: #D0D4E4;
+        margin: 10px 0;
+      }
+      .btn-secondary {
+        background: #fff;
+        border: 1px solid #2434C2;
+        color: #2434C2;
+      }
+      .spacer { flex-grow: 1; min-height: 12px; }
+      .version {
+        text-align: center;
+        font-size: 12px;
+        color: #889;
+        margin-top: 4px;
+      }
+      .note {
+        max-width: 390px;
+        margin: 16px auto 0;
+        font-size: 13px;
+        color: #333;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <div class="phone">
+        <div class="chrome-top">everycircle.com (browser chrome mock)</div>
+        <div class="screen">
+          <h1>Connect on everyCircle</h1>
+          <p class="sub">You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email.</p>
+
+          <div class="card">
+            <strong>Prashant Test18</strong>
+            <div class="avatar">👤</div>
+          </div>
+
+          <a class="btn btn-google" href="#">Sign up with Google</a>
+          <a class="btn btn-apple" href="#">Sign up with Apple</a>
+
+          <div class="or">OR</div>
+
+          <input type="email" placeholder="Email" />
+          <a class="btn btn-primary" href="#">Continue with email</a>
+          <div class="line"></div>
+          <a class="btn btn-secondary" href="#">Log in</a>
+
+          <div class="spacer"></div>
+
+          <a class="btn btn-secondary" href="#">No thanks — save contact in Phone</a>
+          <div class="version">PM 1.0.150 · v1.24 · preview</div>
+        </div>
+        <div class="chrome-bottom">browser toolbar mock</div>
+      </div>
+      <p class="note">
+        Preview: more space under the intro text, a line between Continue and Log in, and <strong>No thanks</strong> at the bottom.
+      </p>
+    </div>
+  </body>
+</html>

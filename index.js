@@ -15,53 +15,6 @@ if (isWeb) {
   }
 }
 
-// Camera → mobile Chrome/Safari often sizes the layout viewport shorter or taller than
-// what's actually visible, leaving a blank strip under #root. Pin html/body/#root to
-// the visualViewport height so the app fills the real screen.
-if (isWeb && typeof window !== "undefined" && typeof document !== "undefined") {
-  const style = document.createElement("style");
-  style.setAttribute("data-ec-viewport-fill", "1");
-  style.textContent = `
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      background-color: #f6f7fb;
-      overflow: hidden;
-    }
-    #root {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      background-color: #f6f7fb;
-      overflow: hidden;
-    }
-  `;
-  document.head.appendChild(style);
-
-  const syncVisualViewportHeight = () => {
-    const h = Math.max(1, Math.round(window.visualViewport?.height ?? window.innerHeight ?? 0));
-    const px = `${h}px`;
-    document.documentElement.style.height = px;
-    document.documentElement.style.minHeight = px;
-    document.body.style.height = px;
-    document.body.style.minHeight = px;
-    const root = document.getElementById("root");
-    if (root) {
-      root.style.height = px;
-      root.style.minHeight = px;
-    }
-  };
-
-  syncVisualViewportHeight();
-  window.visualViewport?.addEventListener?.("resize", syncVisualViewportHeight);
-  window.visualViewport?.addEventListener?.("scroll", syncVisualViewportHeight);
-  window.addEventListener("resize", syncVisualViewportHeight);
-  window.addEventListener("orientationchange", syncVisualViewportHeight);
-  // Camera handoff can settle after first paint.
-  [50, 200, 500, 1000].forEach((ms) => setTimeout(syncVisualViewportHeight, ms));
-}
-
 // Add global error handler for React Native Web text node errors
 if (isWeb && typeof window !== "undefined") {
   const originalError = console.error;
