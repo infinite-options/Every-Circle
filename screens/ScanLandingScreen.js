@@ -90,6 +90,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
+  const [scrollViewportH, setScrollViewportH] = useState(0);
   const redirectStartedRef = useRef(false);
 
   const loadProfile = useCallback(async () => {
@@ -365,12 +366,28 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }, []),
   );
 
+  // Scroll content padding (keep in sync with styles.scroll)
+  const SCROLL_PAD_TOP = 56;
+  const SCROLL_PAD_BOTTOM = 10;
+  // RN-web ScrollView often ignores flexGrow for children; force the green panel to
+  // fill the measured ScrollView height so the bottom red gap is covered.
+  const panelMinHeight =
+    scrollViewportH > 0 ? Math.max(0, scrollViewportH - SCROLL_PAD_TOP - SCROLL_PAD_BOTTOM) : undefined;
+
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
-      <Text style={styles.debugLabel}>blue = SafeArea / page background</Text>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator={false}>
-        <View style={styles.panel}>
-          <Text style={styles.debugLabelDark}>green = panel / content card</Text>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scroll, scrollViewportH > 0 && { minHeight: scrollViewportH }]}
+        keyboardShouldPersistTaps='handled'
+        showsVerticalScrollIndicator={false}
+        onLayout={(e) => {
+          const h = Math.round(e.nativeEvent.layout.height);
+          if (h > 0 && h !== scrollViewportH) setScrollViewportH(h);
+        }}
+      >
+        <View style={[styles.panel, panelMinHeight ? { minHeight: panelMinHeight } : null]}>
+          <Text style={styles.debugLabelDark}>green = panel (minHeight fills red below)</Text>
           <View style={styles.body}>
             <Text style={styles.headline}>Connect on everyCircle</Text>
             <Text style={styles.sub}>
@@ -456,19 +473,17 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#0066FF" }, // blue = SafeArea / page
   scrollView: {
     flex: 1,
-    backgroundColor: "#EF4444", // red = ScrollView viewport (shows below/around content)
+    backgroundColor: "#EF4444", // red = ScrollView (only visible if panel fails to fill)
   },
   scroll: {
-    flexGrow: 1,
     paddingHorizontal: 14,
-    paddingTop: 28,
+    paddingTop: 56,
     paddingBottom: 10,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
   },
   panel: {
-    flexGrow: 1,
     backgroundColor: "#22C55E", // green = panel / content card
     borderRadius: 18,
     paddingHorizontal: 18,
@@ -486,16 +501,6 @@ const styles = StyleSheet.create({
         elevation: 2,
       },
     }),
-  },
-  debugLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#fff",
-    textAlign: "center",
-    marginBottom: 6,
-    textShadowColor: "rgba(0,0,0,0.35)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
   debugLabelDark: {
     fontSize: 11,
