@@ -11,7 +11,7 @@ import {
   TextInput,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MiniCard from "../components/MiniCard";
@@ -20,6 +20,45 @@ import AppleSignIn from "../AppleSignIn";
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import versionData from "../version.json";
+
+/** Walk up from a DOM node and zero every scrollable ancestor (RN Web ScrollView included). */
+function resetDomScrollChain(startNode) {
+  if (!startNode || typeof startNode !== "object") return;
+  let node = startNode;
+  while (node) {
+    try {
+      if (typeof node.scrollTop === "number" && node.scrollTop !== 0) node.scrollTop = 0;
+      if (typeof node.scrollLeft === "number" && node.scrollLeft !== 0) node.scrollLeft = 0;
+    } catch (_) {
+      /* ignore */
+    }
+    node = node.parentElement;
+  }
+  if (typeof window !== "undefined") {
+    window.scrollTo?.(0, 0);
+    document.documentElement && (document.documentElement.scrollTop = 0);
+    document.body && (document.body.scrollTop = 0);
+    document.scrollingElement && (document.scrollingElement.scrollTop = 0);
+  }
+}
+
+function resolveWebNode(ref) {
+  const cur = ref?.current ?? ref;
+  if (!cur) {
+    return typeof document !== "undefined" ? document.getElementById("scan-landing-top") : null;
+  }
+  if (cur.nodeType === 1) return cur;
+  if (cur._nativeNode?.nodeType === 1) return cur._nativeNode;
+  if (typeof document !== "undefined") {
+    return document.getElementById("scan-landing-top");
+  }
+  return null;
+}
+
+function isMobileWeb() {
+  if (Platform.OS !== "web" || typeof navigator === "undefined") return false;
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "") || (typeof window !== "undefined" && window.innerWidth < 700);
+}
 
 function escapeVCardValue(value) {
   if (!value) return "";
@@ -263,57 +302,80 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
   const compact = windowHeight < 780;
+  const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
+  const topAnchorRef = useRef(null);
+  // Camera → Chrome paints under the URL bar and often reports safe-area 0.
+  // Measurement can't see overlay chrome, so mobile web starts with a real top inset.
+  const [webTopPad, setWebTopPad] = useState(() => (isMobileWeb() ? 96 : Platform.OS === "web" ? 16 : 0));
 
-  // iOS Camera → Safari (QR open) often reports a taller layout viewport than what's
-  // visible. Vertical centering then clips the headline. Always pin to top on web.
-  const scrollToTop = useCallback(() => {
+  const ensureTopVisible = useCallback(() => {
     scrollRef.current?.scrollTo?.({ y: 0, animated: false });
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      window.scrollTo?.(0, 0);
-      document.documentElement?.scrollTo?.(0, 0);
-      document.body?.scrollTo?.(0, 0);
+
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+
+    const node = resolveWebNode(topAnchorRef);
+    resetDomScrollChain(node);
+
+    if (node && typeof node.getBoundingClientRect === "function") {
+      const rect = node.getBoundingClientRect();
+      // If the headline is still above the visible viewport (scrolled/clipped), push it down.
+      if (rect.top < 8) {
+        const needed = Math.ceil(8 - rect.top);
+        setWebTopPad((prev) => Math.min(180, prev + needed));
+      }
     }
   }, []);
 
   useEffect(() => {
-    scrollToTop();
+    ensureTopVisible();
     if (Platform.OS !== "web" || typeof window === "undefined") return undefined;
 
-    const onResize = () => scrollToTop();
-    window.visualViewport?.addEventListener?.("resize", onResize);
-    window.addEventListener("pageshow", onResize);
-    // Camera handoff can settle a tick late — nudge again after paint.
-    const t1 = setTimeout(scrollToTop, 50);
-    const t2 = setTimeout(scrollToTop, 300);
+    const onViewportChange = () => ensureTopVisible();
+    window.visualViewport?.addEventListener?.("resize", onViewportChange);
+    window.visualViewport?.addEventListener?.("scroll", onViewportChange);
+    window.addEventListener("pageshow", onViewportChange);
+    window.addEventListener("orientationchange", onViewportChange);
+
+    // Camera handoff settles across a few frames — keep correcting briefly.
+    const timers = [50, 150, 300, 600, 1000, 2000].map((ms) => setTimeout(ensureTopVisible, ms));
+
     return () => {
-      window.visualViewport?.removeEventListener?.("resize", onResize);
-      window.removeEventListener("pageshow", onResize);
-      clearTimeout(t1);
-      clearTimeout(t2);
+      window.visualViewport?.removeEventListener?.("resize", onViewportChange);
+      window.visualViewport?.removeEventListener?.("scroll", onViewportChange);
+      window.removeEventListener("pageshow", onViewportChange);
+      window.removeEventListener("orientationchange", onViewportChange);
+      timers.forEach(clearTimeout);
     };
-  }, [scrollToTop, loading, showGuestActions]);
+  }, [ensureTopVisible, loading, showGuestActions, profileData]);
 
   useFocusEffect(
     useCallback(() => {
-      scrollToTop();
-    }, [scrollToTop]),
+      ensureTopVisible();
+    }, [ensureTopVisible]),
   );
 
+  const scrollPadTop = Platform.OS === "web" ? Math.max(insets.top, 0) + webTopPad : 12;
+
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+    <SafeAreaView style={styles.safe} edges={["left", "right", "bottom"]}>
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={styles.scroll}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scroll, { paddingTop: scrollPadTop }]}
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        overScrollMode='never'
       >
-        <Text style={[styles.headline, compact && styles.headlineCompact]}>Connect on everyCircle</Text>
-        <Text style={[styles.sub, compact && styles.subCompact]}>
-          {showRedirecting
-            ? "Taking you to your network…"
-            : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
-        </Text>
+        <View ref={topAnchorRef} nativeID='scan-landing-top' collapsable={false}>
+          <Text style={[styles.headline, compact && styles.headlineCompact]}>Connect on everyCircle</Text>
+          <Text style={[styles.sub, compact && styles.subCompact]}>
+            {showRedirecting
+              ? "Taking you to your network…"
+              : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+          </Text>
+        </View>
 
         {(loading || showRedirecting) && (
           <View style={styles.centerRow}>
@@ -389,14 +451,10 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f6f7fb" },
+  scrollView: { flex: 1 },
   scroll: {
-    // Top-align on purpose: do not use flexGrow + justifyContent center.
-    // After a QR Camera → Safari open, iOS often overstates viewport height and
-    // centering pushes "Connect on everyCircle" above the visible area.
-    flexGrow: 1,
-    justifyContent: "flex-start",
+    // Do not vertically center — Camera→browser handoff overstates height and clips the top.
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === "web" ? 8 : 12,
     paddingBottom: 32,
     maxWidth: 480,
     width: "100%",
