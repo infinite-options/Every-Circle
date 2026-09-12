@@ -1,11 +1,17 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, TextInput } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, TextInput, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MiniCard from "../components/MiniCard";
 import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import AppleSignIn from "../AppleSignIn";
+import { CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { persistAuthTokens } from "../utils/authSession";
+import { refreshAllowCookies } from "../utils/cookieConsent";
+import { isSoftDeletedRegisterConflict, reactivateNavParamsFromAuthPayload } from "../utils/deletedProfile";
+import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import versionData from "../version.json";
@@ -90,6 +96,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
+  const [submittingEmail, setSubmittingEmail] = useState(false);
   const [scrollViewportH, setScrollViewportH] = useState(0);
   const redirectStartedRef = useRef(false);
 
@@ -195,19 +202,103 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     navigation.navigate("Login", authParams);
   }, [navigation, authParams, persistReferral]);
 
-  const goToSignUpWithEmail = useCallback(() => {
+  /** Email-only signup on this page: temp password email + stub profile → referrer Profile (skip SignUp). */
+  const handleEmailContinue = useCallback(async () => {
     const trimmed = email.trim();
     if (!EMAIL_REGEX.test(trimmed)) {
       setEmailError("Enter a valid email address.");
       return;
     }
+    if (submittingEmail || signingIn) return;
+
     setEmailError("");
+    setSubmittingEmail(true);
     persistReferral();
-    navigation.navigate("SignUp", { ...authParams, email: trimmed });
-  }, [email, navigation, authParams, persistReferral]);
+
+    const preservedReferralUid = String(profileUid || authParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+
+    try {
+      let createAccountResponse;
+      let createAccountData = {};
+      try {
+        createAccountResponse = await fetch(CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: trimmed }),
+        });
+        createAccountData = await createAccountResponse.json().catch(() => ({}));
+      } catch (endpointErr) {
+        console.warn("ScanLanding - temp-password signup endpoint unavailable:", endpointErr);
+        Alert.alert("Error", "Could not create your account right now. Please try Google or Apple, or try again.");
+        return;
+      }
+
+      console.log("ScanLanding - Temp password signup response:", createAccountResponse?.status, createAccountData);
+
+      if (createAccountResponse.status === 404 || createAccountResponse.status === 501) {
+        Alert.alert("Error", "Sign up is temporarily unavailable. Please try Google or Apple.");
+        return;
+      }
+
+      if (isSoftDeletedRegisterConflict(createAccountData, createAccountResponse.status)) {
+        navigation.navigate("Reactivate", reactivateNavParamsFromAuthPayload(createAccountData, { email: trimmed, password: "" }));
+        return;
+      }
+
+      if (createAccountData.message === "User already exists") {
+        setEmailError("User already exists — please Log in");
+        return;
+      }
+
+      if (createAccountData.code === 281 && createAccountData.user_uid) {
+        await AsyncStorage.clear();
+        refreshAllowCookies();
+        await AsyncStorage.setItem("user_uid", String(createAccountData.user_uid));
+        await AsyncStorage.setItem("user_email_id", trimmed);
+        if (preservedReferralUid) {
+          await AsyncStorage.setItem("referral_uid", preservedReferralUid);
+        }
+
+        await persistAuthTokens(createAccountData);
+        if (!createAccountData.access_token && !createAccountData.refresh_token) {
+          const nested = createAccountData.result || createAccountData.data;
+          if (nested) await persistAuthTokens(nested);
+        }
+
+        if (createAccountData.email_sent === false) {
+          Alert.alert(
+            "Account created",
+            "We couldn't email a temporary password. Please Log in after setting a password, or try again.",
+            [{ text: "Log in", onPress: goToLogin }, { text: "OK" }],
+          );
+          return;
+        }
+
+        await finishSignupAfterReferral(navigation, {
+          referralUid: preservedReferralUid,
+          routeParams: { ...authParams, referralProfileUid: preservedReferralUid },
+          userUid: String(createAccountData.user_uid),
+          email: trimmed,
+        });
+        return;
+      }
+
+      if (!createAccountResponse.ok) {
+        Alert.alert("Error", createAccountData.message || "Failed to create account. Please try again.");
+        return;
+      }
+
+      throw new Error(createAccountData.message || "Failed to create account");
+    } catch (err) {
+      console.error("ScanLanding - email signup failed:", err);
+      Alert.alert("Error", err?.message || "Failed to create account. Please try again.");
+    } finally {
+      setSubmittingEmail(false);
+    }
+  }, [email, submittingEmail, signingIn, persistReferral, profileUid, authParams, navigation, goToLogin]);
 
   const handleGoogleSignUp = useCallback(async () => {
-    if (signingIn || !onGoogleSignUp) return;
+    if (signingIn || submittingEmail || !onGoogleSignUp) return;
     persistReferral();
     setSigningIn(true);
     try {
@@ -215,11 +306,11 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     } finally {
       setSigningIn(false);
     }
-  }, [signingIn, onGoogleSignUp, authParams, persistReferral]);
+  }, [signingIn, submittingEmail, onGoogleSignUp, authParams, persistReferral]);
 
   const handleAppleSignUp = useCallback(
     async (...args) => {
-      if (signingIn || !onAppleSignUp) return;
+      if (signingIn || submittingEmail || !onAppleSignUp) return;
       persistReferral();
       setSigningIn(true);
       try {
@@ -228,7 +319,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
         setSigningIn(false);
       }
     },
-    [signingIn, onAppleSignUp, persistReferral],
+    [signingIn, submittingEmail, onAppleSignUp, persistReferral],
   );
 
   const downloadVCard = useCallback(() => {
@@ -425,20 +516,25 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                   keyboardType='email-address'
                   autoCapitalize='none'
                   autoCorrect={false}
+                  editable={!submittingEmail && !signingIn}
                   accessibilityLabel='Email'
                   accessibilityHint='Enter your email address to sign up'
                   returnKeyType='go'
-                  onSubmitEditing={goToSignUpWithEmail}
+                  onSubmitEditing={handleEmailContinue}
                 />
                 {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
 
                 <TouchableOpacity
-                  style={[styles.primaryBtn, !EMAIL_REGEX.test(email.trim()) && styles.primaryBtnDisabled]}
-                  onPress={goToSignUpWithEmail}
+                  style={[styles.primaryBtn, (!EMAIL_REGEX.test(email.trim()) || submittingEmail) && styles.primaryBtnDisabled]}
+                  onPress={handleEmailContinue}
                   activeOpacity={0.85}
-                  disabled={!EMAIL_REGEX.test(email.trim())}
+                  disabled={!EMAIL_REGEX.test(email.trim()) || submittingEmail || signingIn}
                 >
-                  <Text style={styles.primaryBtnText}>Continue with email</Text>
+                  {submittingEmail ? (
+                    <ActivityIndicator color='#fff' />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Continue with email</Text>
+                  )}
                 </TouchableOpacity>
 
                 <View style={styles.sectionRule} />
