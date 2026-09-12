@@ -41,6 +41,9 @@ if (isWeb && typeof window !== "undefined" && typeof document !== "undefined") {
   document.head.appendChild(style);
 
   const syncVisualViewportHeight = () => {
+    // ScanLanding applies its own full-bleed fill for camera→Safari; don't fight it.
+    if (window.__EC_SCAN_LANDING_VIEWPORT_FILL__) return;
+
     // Prefer the larger of visualViewport vs innerHeight so we don't leave a white/yellow
     // strip under #root when camera→Safari reports a short visualViewport.
     const vv = window.visualViewport?.height ?? 0;

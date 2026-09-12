@@ -259,8 +259,8 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
   const versionLabel = buildVersionLabel();
 
-  // Web / camera→Safari: force #root to cover the strip that sits under an undersized root
-  // (shows as white/yellow below the red ScrollView on mobile browsers).
+  // Web only (QR camera → Safari/Chrome): pin #root to the visible viewport so the
+  // under-root yellow/white strip is covered. Restored when leaving this screen.
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "web" || typeof document === "undefined") return undefined;
@@ -268,58 +268,99 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       const root = document.getElementById("root");
       const html = document.documentElement;
       const body = document.body;
+      if (!root || !html || !body) return undefined;
+
+      window.__EC_SCAN_LANDING_VIEWPORT_FILL__ = true;
+
       const prev = {
-        rootHeight: root?.style.height,
-        rootMinHeight: root?.style.minHeight,
-        htmlHeight: html?.style.height,
-        htmlMinHeight: html?.style.minHeight,
-        bodyHeight: body?.style.height,
-        bodyMinHeight: body?.style.minHeight,
+        htmlClass: html.className,
+        htmlBg: html.style.backgroundColor,
+        htmlHeight: html.style.height,
+        htmlMinHeight: html.style.minHeight,
+        bodyBg: body.style.backgroundColor,
+        bodyHeight: body.style.height,
+        bodyMinHeight: body.style.minHeight,
+        bodyOverflow: body.style.overflow,
+        rootCssText: root.style.cssText,
       };
 
+      const styleEl = document.createElement("style");
+      styleEl.setAttribute("data-ec-scan-landing-fill", "1");
+      styleEl.textContent = `
+        html.ec-scan-landing,
+        html.ec-scan-landing body {
+          height: 100% !important;
+          min-height: 100% !important;
+          min-height: 100dvh !important;
+          min-height: -webkit-fill-available !important;
+          background-color: #EF4444 !important; /* match ScrollView while debugging */
+          overflow: hidden !important;
+        }
+        html.ec-scan-landing #root {
+          position: fixed !important;
+          top: 0 !important;
+          left: 0 !important;
+          right: 0 !important;
+          bottom: 0 !important;
+          width: 100% !important;
+          height: 100% !important;
+          min-height: 100% !important;
+          min-height: 100dvh !important;
+          min-height: -webkit-fill-available !important;
+          max-height: none !important;
+          overflow: hidden !important;
+          background-color: #EF4444 !important;
+        }
+      `;
+      document.head.appendChild(styleEl);
+      html.classList.add("ec-scan-landing");
+
       const fill = () => {
-        const vv = window.visualViewport?.height ?? 0;
-        const inner = window.innerHeight ?? 0;
-        const client = html?.clientHeight ?? 0;
-        const h = Math.max(1, Math.round(Math.max(vv, inner, client)));
+        // Also set inline sizes from the largest available metric (camera handoff settles late).
+        const vv = window.visualViewport;
+        const vvBottom = vv ? Math.round(vv.height + (vv.offsetTop || 0)) : 0;
+        const h = Math.max(
+          1,
+          Math.round(vv?.height || 0),
+          Math.round(window.innerHeight || 0),
+          Math.round(html.clientHeight || 0),
+          vvBottom,
+        );
         const px = `${h}px`;
-        if (html) {
-          html.style.height = px;
-          html.style.minHeight = px;
-        }
-        if (body) {
-          body.style.height = px;
-          body.style.minHeight = px;
-        }
-        if (root) {
-          root.style.height = px;
-          root.style.minHeight = px;
-        }
+        html.style.height = px;
+        html.style.minHeight = px;
+        body.style.height = px;
+        body.style.minHeight = px;
+        root.style.height = px;
+        root.style.minHeight = px;
+        root.style.top = "0px";
+        root.style.bottom = "0px";
       };
 
       fill();
       window.visualViewport?.addEventListener?.("resize", fill);
       window.visualViewport?.addEventListener?.("scroll", fill);
       window.addEventListener("resize", fill);
-      const timers = [50, 200, 500, 1000, 2000].map((ms) => setTimeout(fill, ms));
+      window.addEventListener("orientationchange", fill);
+      const timers = [50, 200, 500, 1000, 2000, 3000].map((ms) => setTimeout(fill, ms));
 
       return () => {
+        window.__EC_SCAN_LANDING_VIEWPORT_FILL__ = false;
         window.visualViewport?.removeEventListener?.("resize", fill);
         window.visualViewport?.removeEventListener?.("scroll", fill);
         window.removeEventListener("resize", fill);
+        window.removeEventListener("orientationchange", fill);
         timers.forEach(clearTimeout);
-        if (html) {
-          html.style.height = prev.htmlHeight || "";
-          html.style.minHeight = prev.htmlMinHeight || "";
-        }
-        if (body) {
-          body.style.height = prev.bodyHeight || "";
-          body.style.minHeight = prev.bodyMinHeight || "";
-        }
-        if (root) {
-          root.style.height = prev.rootHeight || "";
-          root.style.minHeight = prev.rootMinHeight || "";
-        }
+        styleEl.remove();
+        html.classList.remove("ec-scan-landing");
+        html.style.backgroundColor = prev.htmlBg;
+        html.style.height = prev.htmlHeight;
+        html.style.minHeight = prev.htmlMinHeight;
+        body.style.backgroundColor = prev.bodyBg;
+        body.style.height = prev.bodyHeight;
+        body.style.minHeight = prev.bodyMinHeight;
+        body.style.overflow = prev.bodyOverflow;
+        root.style.cssText = prev.rootCssText;
       };
     }, []),
   );
