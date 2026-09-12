@@ -267,9 +267,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
             <View style={styles.section}>
               <Text style={styles.headline}>Connect on everyCircle</Text>
               <Text style={styles.sub}>
-                {showRedirecting
-                  ? "Taking you to your network…"
-                  : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+                {showRedirecting ? "Taking you to your network…" : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
               </Text>
             </View>
 
@@ -356,7 +354,7 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     paddingHorizontal: 14,
-    paddingTop: 28,
+    paddingTop: 58,
     paddingBottom: 10,
     maxWidth: 480,
     width: "100%",
