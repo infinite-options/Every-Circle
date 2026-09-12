@@ -1232,6 +1232,8 @@ export default function App() {
                     <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
                     <Stack.Screen
                       name='ScanLanding'
+                      // DEBUG: magenta = React Navigation screen card (if you still see white, it's outside this screen)
+                      options={{ contentStyle: { backgroundColor: "#FF00FF" } }}
                       children={(props) => {
                         const scanParams = {
                           ...props.route?.params,

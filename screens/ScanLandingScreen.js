@@ -261,8 +261,10 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+      <Text style={styles.debugLabel}>blue = SafeArea / page background</Text>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator={false}>
         <View style={styles.panel}>
+          <Text style={styles.debugLabelDark}>green = panel / content card</Text>
           <View style={styles.body}>
             <Text style={styles.headline}>Connect on everyCircle</Text>
             <Text style={styles.sub}>
@@ -338,16 +340,21 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
           <Text style={styles.version}>{versionLabel}</Text>
         </View>
+
+        <View style={styles.bottomHint}>
+          <Text style={styles.debugLabel}>red = ScrollView (empty area under content)</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#ECEEF5" },
+  // DEBUG COLORS — temporary layout visualization
+  safe: { flex: 1, backgroundColor: "#0066FF" }, // blue = SafeArea / page
   scrollView: {
     flex: 1,
-    backgroundColor: "transparent",
+    backgroundColor: "#EF4444", // red = ScrollView viewport (shows below/around content)
   },
   scroll: {
     paddingHorizontal: 14,
@@ -358,7 +365,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   panel: {
-    backgroundColor: "#fff",
+    backgroundColor: "#22C55E", // green = panel / content card
     borderRadius: 18,
     paddingHorizontal: 18,
     paddingTop: 20,
@@ -375,6 +382,28 @@ const styles = StyleSheet.create({
         elevation: 2,
       },
     }),
+  },
+  bottomHint: {
+    marginTop: 12,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  debugLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#fff",
+    textAlign: "center",
+    marginBottom: 6,
+    textShadowColor: "rgba(0,0,0,0.35)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  debugLabelDark: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#053B1A",
+    textAlign: "center",
+    marginBottom: 8,
   },
   body: {
     width: "100%",
