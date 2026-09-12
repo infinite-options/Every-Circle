@@ -35,17 +35,9 @@
       }
       .screen {
         flex: 1;
-        display: flex;
-        flex-direction: column;
-        padding: 56px 20px 12px;
         overflow: auto;
-        min-height: 0;
+        padding: 96px 20px 24px;
         background: #f6f7fb;
-      }
-      .bottom-actions {
-        padding: 0 20px 12px;
-        background: #f6f7fb;
-        flex-shrink: 0;
       }
       h1 {
         margin: 0 0 6px;
@@ -126,6 +118,7 @@
         background: #2434C2;
         border: none;
         color: #fff;
+        margin-bottom: 0;
       }
       .line {
         height: 1px;
@@ -137,12 +130,11 @@
         border: 1px solid #2434C2;
         color: #2434C2;
       }
-      .spacer { flex-grow: 1; min-height: 12px; }
       .version {
         text-align: center;
         font-size: 12px;
         color: #889;
-        margin-top: 4px;
+        margin-top: 8px;
       }
       .note {
         max-width: 390px;
@@ -175,15 +167,13 @@
           <a class="btn btn-primary" href="#">Continue with email</a>
           <div class="line"></div>
           <a class="btn btn-secondary" href="#">Log in</a>
-        </div>
-        <div class="bottom-actions">
           <a class="btn btn-secondary" href="#">No thanks — save contact in Phone</a>
-          <div class="version">PM 1.0.150 · v1.24 · preview</div>
+          <div class="version">PM 1.0.152 · v1.24 · preview</div>
         </div>
         <div class="chrome-bottom">browser toolbar mock</div>
       </div>
       <p class="note">
-        Preview: app fills the phone height (no white strip). <strong>No thanks</strong> sits at the bottom of the page content — no footer line.
+        Simple layout: large top padding only. Everything in one flow — no pinned footer / reserved bottom region.
       </p>
     </div>
   </body>

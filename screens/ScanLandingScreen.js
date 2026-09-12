@@ -251,12 +251,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={styles.column}
-        keyboardShouldPersistTaps='handled'
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={styles.column} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator={false}>
         <Text style={styles.headline}>Connect on everyCircle</Text>
         <Text style={styles.sub}>
           {showRedirecting
@@ -324,43 +319,30 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
             <TouchableOpacity style={styles.secondaryBtn} onPress={goToLogin} activeOpacity={0.85}>
               <Text style={styles.secondaryBtnText}>Log in</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity style={styles.secondaryBtn} onPress={downloadVCard} activeOpacity={0.85}>
+              <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
+            </TouchableOpacity>
           </>
         )}
-      </ScrollView>
 
-      {/* Bottom of the screen (not a styled footer) — RN Web ignores flex spacers inside ScrollView. */}
-      <View style={styles.bottomActions}>
-        {!loading && !error && profileData && showGuestActions && (
-          <TouchableOpacity style={styles.secondaryBtn} onPress={downloadVCard} activeOpacity={0.85}>
-            <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
-          </TouchableOpacity>
-        )}
         <Text style={styles.versionText}>
           PM {versionData.pm_version} · v{versionData.major}.{versionData.build} · {versionData.last_change}
         </Text>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f6f7fb" },
-  flex: { flex: 1 },
   column: {
     paddingHorizontal: 20,
-    paddingTop: 56,
-    paddingBottom: 12,
+    paddingTop: 96,
+    paddingBottom: 24,
     maxWidth: 480,
     width: "100%",
     alignSelf: "center",
-  },
-  bottomActions: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    maxWidth: 480,
-    width: "100%",
-    alignSelf: "center",
-    backgroundColor: "#f6f7fb",
   },
   headline: { fontSize: 22, fontWeight: "700", color: "#111", marginBottom: 6, textAlign: "center" },
   sub: { fontSize: 14, color: "#444", lineHeight: 19, marginBottom: 24, textAlign: "center" },
@@ -406,7 +388,7 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
   versionText: {
-    marginTop: 0,
+    marginTop: 8,
     textAlign: "center",
     fontSize: 12,
     color: "#889",

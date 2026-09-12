@@ -15,53 +15,6 @@ if (isWeb) {
   }
 }
 
-// Camera → mobile Chrome often leaves a blank white strip under #root because the
-// layout viewport height doesn't match the visible area. Size the root to the
-// visualViewport and match the scan-page background so that strip disappears.
-if (isWeb && typeof window !== "undefined" && typeof document !== "undefined") {
-  const PAGE_BG = "#f6f7fb";
-  const style = document.createElement("style");
-  style.setAttribute("data-ec-viewport-fill", "1");
-  style.textContent = `
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      background-color: ${PAGE_BG};
-      overflow: hidden;
-    }
-    #root {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      background-color: ${PAGE_BG};
-      overflow: hidden;
-    }
-  `;
-  document.head.appendChild(style);
-
-  const syncVisualViewportHeight = () => {
-    const h = Math.max(1, Math.round(window.visualViewport?.height ?? window.innerHeight ?? 0));
-    const px = `${h}px`;
-    document.documentElement.style.height = px;
-    document.documentElement.style.minHeight = px;
-    document.body.style.height = px;
-    document.body.style.minHeight = px;
-    const root = document.getElementById("root");
-    if (root) {
-      root.style.height = px;
-      root.style.minHeight = px;
-    }
-  };
-
-  syncVisualViewportHeight();
-  window.visualViewport?.addEventListener?.("resize", syncVisualViewportHeight);
-  window.visualViewport?.addEventListener?.("scroll", syncVisualViewportHeight);
-  window.addEventListener("resize", syncVisualViewportHeight);
-  window.addEventListener("orientationchange", syncVisualViewportHeight);
-  [50, 200, 500, 1000].forEach((ms) => setTimeout(syncVisualViewportHeight, ms));
-}
-
 // Add global error handler for React Native Web text node errors
 if (isWeb && typeof window !== "undefined") {
   const originalError = console.error;
