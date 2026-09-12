@@ -261,7 +261,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator={false}>
         <View style={styles.panel}>
           <View style={styles.body}>
             <Text style={styles.headline}>Connect on everyCircle</Text>
@@ -345,10 +345,13 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#ECEEF5" },
+  scrollView: {
+    flex: 1,
+    backgroundColor: "transparent",
+  },
   scroll: {
-    flexGrow: 1,
     paddingHorizontal: 14,
-    paddingTop: 10,
+    paddingTop: 120,
     paddingBottom: 10,
     maxWidth: 480,
     width: "100%",
