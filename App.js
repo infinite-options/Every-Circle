@@ -1111,7 +1111,7 @@ export default function App() {
               <View style={styles.appRoot}>
                 <NavigationContainer
                   ref={navigationRef}
-                  linking={isWeb ? linking : undefined}
+                  linking={linking}
                   onReady={() => console.log("App.js - NavigationContainer ready")}
                   onStateChange={onNavigationStateChange}
                 >

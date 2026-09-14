@@ -27,15 +27,27 @@ export function buildSeekingReplyContext({ label, quote, profileWishUid, wishRes
   };
 }
 
+/** Reply context for recommending a business to a network connection. `draftText` prefills the composer. */
+export function buildBusinessReplyContext({ label, quote, businessUid, draftText }) {
+  const business_uid = String(businessUid || "").trim();
+  return {
+    type: "business",
+    label: String(label || "").trim(),
+    ...(quote ? { quote: String(quote).trim() } : {}),
+    ...(business_uid ? { business_uid } : {}),
+    ...(draftText ? { draftText: String(draftText) } : {}),
+  };
+}
+
 /** Strip empty contextual fields before spreading onto the chat POST body. */
 export function chatMessageContextFields(replyContext) {
   if (!replyContext || typeof replyContext !== "object") return {};
 
   const fields = {};
-  const contextType = replyContext.type === "offering" || replyContext.type === "seeking" ? replyContext.type : "";
+  const contextType = ["offering", "seeking", "business"].includes(replyContext.type) ? replyContext.type : "";
 
   const messageContextUid = String(
-    replyContext.profile_expertise_uid || replyContext.profile_wish_uid || "",
+    replyContext.profile_expertise_uid || replyContext.profile_wish_uid || replyContext.business_uid || "",
   ).trim();
   const messageContextResponseUid = String(
     replyContext.expertise_response_uid || replyContext.wish_response_uid || "",

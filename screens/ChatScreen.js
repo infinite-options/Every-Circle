@@ -117,7 +117,7 @@ export default function ChatScreen() {
   const [otherName, setOtherName] = useState(paramOtherName || "Chat");
   const [otherImage, setOtherImage] = useState(paramOtherImage || null);
   const [messages, setMessages] = useState([]);
-  const [inputText, setInputText] = useState("");
+  const [inputText, setInputText] = useState(reply_context?.draftText ? String(reply_context.draftText) : "");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
@@ -191,6 +191,7 @@ export default function ChatScreen() {
     setOtherName(paramOtherName || "Chat");
     setOtherImage(paramOtherImage || null);
     setPendingReplyContext(reply_context || null);
+    setInputText(reply_context?.draftText ? String(reply_context.draftText) : "");
     setMessages([]);
     setError(null);
     setLoading(true);
@@ -526,6 +527,31 @@ export default function ChatScreen() {
 
   // ─── render helpers ───────────────────────────────────────────────────────
 
+  /** Business-recommendation messages are tappable — jump to the business, crediting the sender as recommender. */
+  const openRecommendedBusiness = useCallback(
+    (item) => {
+      const businessUid = item.message_context_uid;
+      if (!businessUid) return;
+      const sender = item.message_sender_uid ?? item.sender_uid;
+      const senderIsMe = sender === myUid;
+      navigation.navigate("BusinessProfile", {
+        business_uid: businessUid,
+        // Only credit the sender as recommender when *I'm* the one following the link —
+        // not when the sender taps their own message (no self-referral bounty).
+        ...(senderIsMe ? {} : { recommended_by_uid: sender, recommended_by_name: otherName || "" }),
+        returnTo: "Chat",
+        chatParams: {
+          ...(convUid || initialConvUid ? { conversation_uid: convUid || initialConvUid } : {}),
+          other_uid,
+          other_name: otherName || "Chat",
+          other_image: otherImage ?? paramOtherImage ?? null,
+          ...(my_uid_override ? { my_uid_override } : {}),
+        },
+      });
+    },
+    [navigation, myUid, otherName, otherImage, paramOtherImage, other_uid, convUid, initialConvUid, my_uid_override],
+  );
+
   const renderMessage = ({ item, index }) => {
     const sender = item.message_sender_uid ?? item.sender_uid;
     const isMine = sender === myUid;
@@ -534,6 +560,7 @@ export default function ChatScreen() {
     const parsedBody = parseReplyBody(bodyText);
     const prevSent = index > 0 ? messages[index - 1].message_sent_at ?? messages[index - 1].sent_at : null;
     const showDayLabel = index === 0 || !sameDay(prevSent, sentAt);
+    const isBusinessRecommendation = parsedBody.isReply && item.message_context_type === "business" && !!item.message_context_uid;
 
     return (
       <>
@@ -545,11 +572,25 @@ export default function ChatScreen() {
         <View style={[styles.msgRow, isMine ? styles.msgRowMine : styles.msgRowTheirs]}>
           <View style={[styles.bubble, parsedBody.isReply && styles.bubbleReply, isMine ? styles.bubbleMine : [styles.bubbleTheirs, darkMode && styles.bubbleTheirsDark]]}>
             {parsedBody.isReply && parsedBody.contextLabel ? (
-              <View style={[styles.replyHeader, isMine ? styles.replyHeaderMine : styles.replyHeaderTheirs, !isMine && darkMode && styles.replyHeaderTheirsDark]}>
-                <Text style={[styles.replyHeaderText, isMine ? styles.replyHeaderTextMine : styles.replyHeaderTextTheirs, !isMine && darkMode && styles.replyHeaderTextTheirsDark]} numberOfLines={2}>
-                  {parsedBody.contextLabel}
-                </Text>
-              </View>
+              isBusinessRecommendation ? (
+                <TouchableOpacity
+                  style={[styles.replyHeader, isMine ? styles.replyHeaderMine : styles.replyHeaderTheirs, !isMine && darkMode && styles.replyHeaderTheirsDark]}
+                  onPress={() => openRecommendedBusiness(item)}
+                  accessibilityRole='button'
+                  accessibilityLabel={`View business: ${parsedBody.contextLabel}`}
+                >
+                  <Text style={[styles.replyHeaderText, isMine ? styles.replyHeaderTextMine : styles.replyHeaderTextTheirs, !isMine && darkMode && styles.replyHeaderTextTheirsDark]} numberOfLines={2}>
+                    {parsedBody.contextLabel}
+                  </Text>
+                  <Ionicons name='chevron-forward' size={14} color={isMine ? "#fff" : darkMode ? "#ccc" : "#666"} style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
+              ) : (
+                <View style={[styles.replyHeader, isMine ? styles.replyHeaderMine : styles.replyHeaderTheirs, !isMine && darkMode && styles.replyHeaderTheirsDark]}>
+                  <Text style={[styles.replyHeaderText, isMine ? styles.replyHeaderTextMine : styles.replyHeaderTextTheirs, !isMine && darkMode && styles.replyHeaderTextTheirsDark]} numberOfLines={2}>
+                    {parsedBody.contextLabel}
+                  </Text>
+                </View>
+              )
             ) : null}
             <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : darkMode && styles.bubbleTextDark]}>{parsedBody.text}</Text>
           </View>
@@ -794,6 +835,8 @@ const styles = StyleSheet.create({
   bubbleTextMine: { color: "#fff" },
   bubbleTextDark: { color: "#eee" },
   replyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 6,
     paddingBottom: 6,
     borderBottomWidth: 1,
@@ -801,7 +844,7 @@ const styles = StyleSheet.create({
   replyHeaderMine: { borderBottomColor: "rgba(255,255,255,0.35)" },
   replyHeaderTheirs: { borderBottomColor: "rgba(0,0,0,0.16)" },
   replyHeaderTheirsDark: { borderBottomColor: "rgba(255,255,255,0.18)" },
-  replyHeaderText: { fontSize: 11, fontWeight: "600" },
+  replyHeaderText: { fontSize: 11, fontWeight: "600", flexShrink: 1 },
   replyHeaderTextMine: { color: "#f6eefe" },
   replyHeaderTextTheirs: { color: "#4d2f63" },
   replyHeaderTextTheirsDark: { color: "#d9c4ea" },

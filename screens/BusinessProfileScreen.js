@@ -73,6 +73,8 @@ import {
   resolveBountyRecommenderProfileId,
 } from "../utils/bountyRecipientUtils";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
+import RecommendConnectionModal from "../components/RecommendConnectionModal";
+import { buildBusinessReplyContext } from "../utils/chatReplyContext";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -122,7 +124,7 @@ const resolveWebsiteLinkLabel = (websiteUrl, shortName) => {
 
 export default function BusinessProfileScreen({ route, navigation }) {
   const { darkMode } = useDarkMode();
-  const { business_uid, returnTo, searchState } = route.params || {};
+  const { business_uid, returnTo, searchState, recommended_by_uid, recommended_by_name } = route.params || {};
   const [business, setBusiness] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
@@ -184,6 +186,25 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
   const [showFlagBusinessModal, setShowFlagBusinessModal] = useState(false);
   const [isAdminViewer, setIsAdminViewer] = useState(false);
+  const [showRecommendModal, setShowRecommendModal] = useState(false);
+
+  const handleRecommendToConnection = useCallback(
+    (connection) => {
+      setShowRecommendModal(false);
+      const businessName = business?.business_name || "this business";
+      navigation.navigate("Chat", {
+        other_uid: connection.uid,
+        other_name: connection.name,
+        other_image: connection.image,
+        reply_context: buildBusinessReplyContext({
+          label: `Recommended: ${businessName}`,
+          businessUid: business_uid,
+          draftText: `Check out ${businessName} on Every Circle!`,
+        }),
+      });
+    },
+    [navigation, business, business_uid],
+  );
 
   // Handle viewport resize on web (for DevTools opening/closing)
   useEffect(() => {
@@ -325,6 +346,22 @@ export default function BusinessProfileScreen({ route, navigation }) {
       setAllReviews(otherReviews);
     }
   }, [currentUserProfileId, business, viewerProfilePath]);
+
+  // Arrived here via a "Recommend to a Connection" chat message — automatically credit
+  // whoever sent it as the bounty recommender (same field a manually-picked reviewer would
+  // fill via BountyRecipientPicker; see utils/bountyRecipientUtils.js resolveBountyRecommenderProfileId).
+  // Guarded so it seeds the recommender once per visit without clobbering a manual override.
+  useEffect(() => {
+    if (!recommended_by_uid || !currentUserProfileId) return;
+    if (recommended_by_uid === currentUserProfileId) return; // no self-referral bounty
+    setSelectedBountyRecipient((prev) =>
+      prev || {
+        rating_profile_id: recommended_by_uid,
+        profile_personal_first_name: recommended_by_name || "",
+        profile_personal_last_name: "",
+      },
+    );
+  }, [recommended_by_uid, recommended_by_name, currentUserProfileId]);
 
   const businessUserMatchesViewerLocal = (bu, userUid, profileUid) => businessUserMatchesViewer(bu, userUid, profileUid);
 
@@ -1620,6 +1657,17 @@ export default function BusinessProfileScreen({ route, navigation }) {
               </TouchableOpacity>
             ))}
 
+          {/* Shown when arriving via a "Recommend to a Connection" chat link — confirms the
+              recommender will automatically receive the bounty on any bounty-eligible purchase. */}
+          {selectedBountyRecipient?.rating_profile_id === recommended_by_uid && recommended_by_uid && recommended_by_uid !== currentUserProfileId && (
+            <View style={[styles.recommendedByBanner, darkMode && styles.recommendedByBannerDark]}>
+              <Ionicons name='gift-outline' size={16} color='#34A853' style={{ marginRight: 8 }} />
+              <Text style={[styles.recommendedByBannerText, darkMode && styles.recommendedByBannerTextDark]}>
+                {recommended_by_name ? `Recommended by ${recommended_by_name}` : "Recommended by a connection"} — they'll earn the bounty if you buy something here.
+              </Text>
+            </View>
+          )}
+
           {/* Chat with Business Button — visible to non-owners only */}
           {!isOwner && (
             <TouchableOpacity
@@ -1635,6 +1683,20 @@ export default function BusinessProfileScreen({ route, navigation }) {
             >
               <Ionicons name='chatbubble-ellipses-outline' size={18} color='#fff' style={{ marginRight: 8 }} />
               <Text style={styles.chatButtonText}>Message Business</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Recommend to a Connection Button — visible to non-owners only */}
+          {!isOwner && (
+            <TouchableOpacity
+              style={[styles.chatButton, { backgroundColor: "#34A853", marginTop: 10 }]}
+              onPress={() => setShowRecommendModal(true)}
+              activeOpacity={0.85}
+              accessibilityRole='button'
+              accessibilityLabel='Recommend this business to a connection'
+            >
+              <Ionicons name='share-social-outline' size={18} color='#fff' style={{ marginRight: 8 }} />
+              <Text style={styles.chatButtonText}>Recommend to a Connection</Text>
             </TouchableOpacity>
           )}
 
@@ -2153,6 +2215,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
       />
 
       <FlagBusinessModal visible={showFlagBusinessModal} onClose={() => setShowFlagBusinessModal(false)} targetUid={business_uid} businessName={business?.business_name || ""} />
+
+      <RecommendConnectionModal
+        visible={showRecommendModal}
+        onClose={() => setShowRecommendModal(false)}
+        onSelectConnection={handleRecommendToConnection}
+      />
 
       <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -2680,6 +2748,27 @@ const styles = StyleSheet.create({
     marginHorizontal: 0,
     marginTop: 12,
     marginBottom: 4,
+  },
+  recommendedByBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EAF7EE",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 12,
+  },
+  recommendedByBannerDark: {
+    backgroundColor: "#1d3324",
+  },
+  recommendedByBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#1e6b34",
+    lineHeight: 18,
+  },
+  recommendedByBannerTextDark: {
+    color: "#9fe0b4",
   },
   chatButtonDark: {
     backgroundColor: "#8B35C4",

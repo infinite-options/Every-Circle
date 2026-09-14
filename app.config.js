@@ -66,6 +66,13 @@ module.exports = ({ config: expoConfig }) => ({
       usesAppleSignIn: true,
       buildNumber: "2",
       deploymentTarget: "13.0",
+
+      // Universal Links — lets an https://everycircle.com/ link open this app directly
+      // when it's installed (falls back to Safari/the website otherwise). Only takes
+      // effect once everycircle.com hosts /.well-known/apple-app-site-association
+      // (Team ID 8V66NC2T37) AND a new native build/store submission goes out —
+      // this entitlement can't be delivered via a JS/OTA update.
+      associatedDomains: ["applinks:everycircle.com"],
     },
 
     android: {
@@ -83,6 +90,33 @@ module.exports = ({ config: expoConfig }) => ({
           apiKey: androidGoogleMapsApiKey(),
         },
       },
+
+      // App Links — Android counterpart to iOS associatedDomains above. autoVerify
+      // makes the OS check /.well-known/assetlinks.json on everycircle.com before
+      // trusting this app to own the link; without a verified match it silently falls
+      // back to opening the URL in the browser instead, so nothing looks "broken",
+      // it just behaves like it does today until that file is live and matches.
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "everycircle.com",
+              path: "/",
+            },
+            // Chat SMS deep links — must match the "paths" entry added for the
+            // same route in the apple-app-site-association file on everycircle.com.
+            {
+              scheme: "https",
+              host: "everycircle.com",
+              path: "/chat",
+            },
+          ],
+          category: ["BROWSABLE", "DEFAULT"],
+        },
+      ],
     },
 
     web: {
