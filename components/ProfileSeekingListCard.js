@@ -8,6 +8,7 @@ import ProfileItemEditIcon from "./ProfileItemEditIcon";
 import { SEEKING_FORM_ACCENT, SEEKING_FORM_ACCENT_DARK } from "../utils/profileItemCardFormStyles";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { pickSeekingListingCommerceFields } from "../utils/wishResubmission";
+import ConnectionVisibilityPicker from "./ConnectionVisibilityPicker";
 
 function toSeekingPreview(item) {
   return {
@@ -43,6 +44,7 @@ export default function ProfileSeekingListCard({
   onDelete,
   showActions = true,
   showModerationBanner = true,
+  onVisibilityChange,
 }) {
   const title = String(item?.helpNeeds || "").trim() || "Untitled seeking post";
   const description = String(item?.details || "").trim();
@@ -60,7 +62,9 @@ export default function ProfileSeekingListCard({
             <Text style={[styles.title, darkMode && styles.titleDark]} numberOfLines={2}>
               {title}
             </Text>
-            {item?.isPublic === false ? (
+            {onVisibilityChange ? (
+              <ConnectionVisibilityPicker value={item?.visibility} onChange={onVisibilityChange} darkMode={darkMode} allowCircleLevel />
+            ) : item?.isPublic === false ? (
               <View style={[styles.hiddenBadge, darkMode && styles.hiddenBadgeDark]}>
                 <Text style={styles.hiddenBadgeText}>Hidden</Text>
               </View>

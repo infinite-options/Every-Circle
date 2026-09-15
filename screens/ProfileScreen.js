@@ -59,6 +59,7 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import ReviewImageStrip from "../components/ReviewImageStrip";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
+import { resolveVisibilityLevel } from "../components/ConnectionVisibilityPicker";
 import { recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
 import { recordWishMessageResponse } from "../utils/wishMessageResponse";
 import { buildOfferingReplyContext, buildSeekingReplyContext } from "../utils/chatReplyContext";
@@ -831,6 +832,22 @@ const ProfileScreen = ({ route, navigation }) => {
         wishesIsPublic: apiUser.personal_info?.profile_personal_wishes_is_public === 1,
         businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
         socialLinksIsPublic: isSocialLinksSectionPublic(apiUser.personal_info, apiUser.links_info),
+        // Connection-level visibility (Everyone/1st-3rd degree/Only Me) for Edit Profile's
+        // per-field pickers - meaningless as viewer-facing gating, only used to preselect the
+        // owner's saved level when they reopen Edit Profile.
+        emailVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles"),
+        phoneVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_phone_number_visibility", "profile_personal_phone_number_is_public", "profile_personal_phone_number_visibility_circles"),
+        imageVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles"),
+        tagLineVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_tag_line_visibility", "profile_personal_tag_line_is_public", "profile_personal_tag_line_visibility_circles"),
+        cityVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles"),
+        stateVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles"),
+        shortBioVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_short_bio_visibility", "profile_personal_short_bio_is_public", "profile_personal_short_bio_visibility_circles"),
+        experienceVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_experience_visibility", "profile_personal_experience_is_public"),
+        educationVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_education_visibility", "profile_personal_education_is_public"),
+        expertiseVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_expertise_visibility", "profile_personal_expertise_is_public", "profile_personal_expertise_visibility_circles"),
+        wishesVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_wishes_visibility", "profile_personal_wishes_is_public", "profile_personal_wishes_visibility_circles"),
+        businessVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_business_visibility", "profile_personal_business_is_public"),
+        socialVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_social_visibility", "profile_personal_social_is_public"),
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
         profilePersonalPath: apiUser.personal_info?.profile_personal_path || null,
         profileModerationItem: buildProfileModerationItem(apiUser),
@@ -914,6 +931,7 @@ const ProfileScreen = ({ route, navigation }) => {
         ...pickSeekingListingCommerceFields(wish),
         profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
         isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
+        visibility: resolveVisibilityLevel(wish, "profile_wish_visibility", "profile_wish_is_public", "profile_wish_visibility_circles"),
         wish_responses: wish.wish_responses || 0,
         moderation: normalizeSeekingModeration(wish),
         profile_wish_moderated: wish.profile_wish_moderated,

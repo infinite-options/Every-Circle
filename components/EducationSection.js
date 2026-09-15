@@ -5,6 +5,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
+import ConnectionVisibilityPicker from "./ConnectionVisibilityPicker";
 import {
   parseMonthYear,
   formatMonthYear,
@@ -27,8 +28,8 @@ if (Platform.OS !== "web") {
 const EducationSection = ({
   education,
   setEducation,
-  toggleVisibility,
-  isPublic,
+  visibilityLevel,
+  onVisibilityChange,
   handleDelete,
   onInputFocus,
   profileUid = "",
@@ -275,12 +276,7 @@ const EducationSection = ({
           </TouchableOpacity>
         </View>
         <View style={styles.toggleContainer}>
-          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
-            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
-             <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
-          </TouchableOpacity>
+          <ConnectionVisibilityPicker value={visibilityLevel} onChange={onVisibilityChange} darkMode={darkMode} />
           </View>
       </View>
 

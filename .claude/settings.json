@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile user_profile_info.py profile_visibility.py)",
+      "Bash(node _checkparse.js screens/EditProfileScreen.js screens/ProfileScreen.js components/ConnectionVisibilityPicker.js components/ExperienceSection.js components/EducationSection.js components/ExpertiseSection.js components/SeekingSection.js components/BusinessSection.js)",
+      "Bash(rm -f _checkparse.js)"
+    ]
+  }
+}

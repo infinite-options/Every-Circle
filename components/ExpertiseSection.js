@@ -8,6 +8,7 @@ import { isTruthyTaxableFlag, isValidTaxRate, validateTaxableRate, TAX_RATE_VALI
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import { getAddressSuggestions, getPlaceAddressDetails, applyPlaceDetailsToAddressFields } from "../utils/googlePlaces";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
+import ConnectionVisibilityPicker from "./ConnectionVisibilityPicker";
 import {
   toDateTimeLocalValue,
   fromDateTimeLocalValue,
@@ -146,8 +147,8 @@ if (Platform.OS !== "web") {
 const ExpertiseSection = ({
   expertise,
   setExpertise,
-  toggleVisibility,
-  isPublic,
+  visibilityLevel,
+  onVisibilityChange,
   handleDelete,
   onInputFocus,
   profileUid = "",
@@ -293,6 +294,7 @@ const ExpertiseSection = ({
       profile_expertise_qty_unlimited: 1,
       profile_expertise_refund_policy: "",
       isPublic: true,
+      visibility: "everyone",
       _expNewImageUri: "",
       _expWebImageFile: null,
       _expOriginalImage: "",
@@ -784,9 +786,10 @@ const ExpertiseSection = ({
     setExpertise(updated);
   };
 
-  const toggleEntryVisibility = (index) => {
+  const handleEntryVisibilityChange = (index, level) => {
     const item = expertise[index];
-    if (!item.isPublic && isOfferingVisibilityBlocked(item)) {
+    const makingVisible = level !== "only_me";
+    if (makingVisible && !item.isPublic && isOfferingVisibilityBlocked(item)) {
       Alert.alert(
         "Unavailable",
         "This offering is under moderation and cannot be made public until an admin approves it."
@@ -794,7 +797,7 @@ const ExpertiseSection = ({
       return;
     }
     const updated = [...expertise];
-    updated[index].isPublic = !updated[index].isPublic;
+    updated[index] = { ...updated[index], visibility: level, isPublic: makingVisible };
     setExpertise(updated);
   };
 
@@ -908,12 +911,7 @@ const ExpertiseSection = ({
             ) : null}
           </View>
           <View style={styles.toggleContainer}>
-            <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
-              <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
-              <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
-            </TouchableOpacity>
+            <ConnectionVisibilityPicker value={visibilityLevel} onChange={onVisibilityChange} darkMode={darkMode} simple />
           </View>
         </View>
       ) : null}
@@ -943,6 +941,7 @@ const ExpertiseSection = ({
                 darkMode={darkMode}
                 onEdit={() => startEditOffering(index)}
                 onDelete={() => deleteExpertise(index)}
+                onVisibilityChange={hideItemVisibilityToggle ? undefined : (level) => handleEntryVisibilityChange(index, level)}
               />
               {isIncomplete ? (
                 <TouchableOpacity style={[styles.incompleteBanner, darkMode && styles.incompleteBannerDark]} onPress={() => startEditOffering(index)}>
@@ -969,12 +968,12 @@ const ExpertiseSection = ({
               <View style={styles.titleBarActions}>
                 {!hideItemVisibilityToggle ? (
                   <View style={styles.toggleContainer}>
-                    <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
-                      <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
-                      <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
-                    </TouchableOpacity>
+                    <ConnectionVisibilityPicker
+                      value={item.visibility}
+                      onChange={(level) => handleEntryVisibilityChange(index, level)}
+                      darkMode={darkMode}
+                      allowCircleLevel
+                    />
                   </View>
                 ) : null}
               </View>

@@ -8,6 +8,7 @@ import ProfileItemEditIcon from "./ProfileItemEditIcon";
 import { SEEKING_FORM_ACCENT, SEEKING_FORM_ACCENT_DARK } from "../utils/profileItemCardFormStyles";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { buildOfferingCardModel } from "../utils/offeringResubmission";
+import ConnectionVisibilityPicker from "./ConnectionVisibilityPicker";
 
 function resolveDisplayUri(item, profileUid) {
   const pending = item?._expNewImageUri;
@@ -24,6 +25,7 @@ export default function ProfileOfferingListCard({
   onDelete,
   showActions = true,
   showModerationBanner = true,
+  onVisibilityChange,
 }) {
   const title = String(item?.name || "").trim() || "Untitled offering";
   const description = String(item?.description || "").trim();
@@ -41,7 +43,9 @@ export default function ProfileOfferingListCard({
             <Text style={[styles.title, darkMode && styles.titleDark]} numberOfLines={2}>
               {title}
             </Text>
-            {item?.isPublic === false ? (
+            {onVisibilityChange ? (
+              <ConnectionVisibilityPicker value={item?.visibility} onChange={onVisibilityChange} darkMode={darkMode} allowCircleLevel />
+            ) : item?.isPublic === false ? (
               <View style={[styles.hiddenBadge, darkMode && styles.hiddenBadgeDark]}>
                 <Text style={styles.hiddenBadgeText}>Hidden</Text>
               </View>

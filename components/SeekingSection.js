@@ -8,6 +8,7 @@ import * as FileSystem from "expo-file-system";
 import { formatCostValue } from "../utils/priceUtils";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
+import ConnectionVisibilityPicker from "./ConnectionVisibilityPicker";
 import {
   toDateTimeLocalValue,
   fromDateTimeLocalValue,
@@ -113,7 +114,7 @@ export const getSeekingMissingRequirements = (item) => {
   return missing;
 };
 
-const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", profileDefaultAddress = null, darkMode = false }) => {
+const SeekingSection = ({ wishes: wishesProp = [], setWishes, visibilityLevel, onVisibilityChange, handleDelete, onInputFocus, profileUid = "", profileDefaultAddress = null, darkMode = false }) => {
   const wishes = Array.isArray(wishesProp) ? wishesProp : [];
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
@@ -232,6 +233,7 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
       profile_wish_buyer_pays_shipping: 0,
       profile_wish_shipping_cost_type: "",
       isPublic: true,
+      visibility: "everyone",
       _wishNewImageUri: "",
       _wishWebImageFile: null,
       _wishOriginalImage: "",
@@ -787,9 +789,10 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
     setWishes(updated);
   };
 
-  const toggleEntryVisibility = (index) => {
+  const handleEntryVisibilityChange = (index, level) => {
     const item = wishes[index];
-    if (!item.isPublic && isSeekingVisibilityBlocked(item)) {
+    const makingVisible = level !== "only_me";
+    if (makingVisible && !item.isPublic && isSeekingVisibilityBlocked(item)) {
       Alert.alert(
         "Unavailable",
         "This seeking post is under moderation and cannot be made public until an admin approves it."
@@ -797,7 +800,7 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
       return;
     }
     const updated = [...wishes];
-    updated[index].isPublic = !updated[index].isPublic;
+    updated[index] = { ...updated[index], visibility: level, isPublic: makingVisible };
     setWishes(updated);
   };
 
@@ -879,12 +882,7 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
           ) : null}
         </View>
         <View style={styles.toggleContainer}>
-          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
-            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
-            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
-          </TouchableOpacity>
+          <ConnectionVisibilityPicker value={visibilityLevel} onChange={onVisibilityChange} darkMode={darkMode} simple />
         </View>
       </View>
 
@@ -913,6 +911,7 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
                 darkMode={darkMode}
                 onEdit={() => startEditSeeking(index)}
                 onDelete={() => deleteWish(index)}
+                onVisibilityChange={(level) => handleEntryVisibilityChange(index, level)}
               />
               {isIncomplete ? (
                 <TouchableOpacity style={[styles.incompleteBanner, darkMode && styles.incompleteBannerDark]} onPress={() => startEditSeeking(index)}>
@@ -937,12 +936,12 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, toggleVisibility, 
             </Text>
             <View style={styles.titleBarActions}>
               <View style={styles.toggleContainer}>
-                <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
-                  <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
-                  <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
-                </TouchableOpacity>
+                <ConnectionVisibilityPicker
+                  value={item.visibility}
+                  onChange={(level) => handleEntryVisibilityChange(index, level)}
+                  darkMode={darkMode}
+                  allowCircleLevel
+                />
               </View>
             </View>
           </View>

@@ -28,9 +28,30 @@ import { buildProfileModerationItem, isProfileOwnerRestricted } from "../utils/p
 import { mapOfferingFormToPayload, mapProfileOfferingToFormItem } from "../utils/offeringResubmission";
 import { mapProfileWishToFormItem, mapWishFormToPayload } from "../utils/wishResubmission";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
+import ConnectionVisibilityPicker, { resolveVisibilityLevel, parseVisibilityValue, visibilityBadgeLabel } from "../components/ConnectionVisibilityPicker";
 
 function isPublicFlag(value) {
   return value === 1 || value === "1" || value === true;
+}
+
+/** Whether a connection-visibility level shows the field at all in the MiniCard/MicroCard live
+ * preview - true for anything but Only Me. The preview can't simulate one specific viewer, so it
+ * shows every field that's visible to *someone*, and (via visibilityBadgeLabel, imported below)
+ * labels non-Everyone fields with the exact level chosen, so the preview still visibly changes
+ * as the owner switches between Everyone/1st-3rd Degree/Specific Circles. */
+function isVisibleInPreview(level) {
+  return level !== "only_me";
+}
+
+/** Append a personal-info visibility field to a multipart payload, splitting a picker's
+ * possibly-composite "specific:friend,family" value into `<visibilityKey>` (the plain level)
+ * and `<visibilityKey>_circles` (the CSV, only meaningful/sent when level is "specific"). */
+function appendVisibility(payload, visibilityKey, value) {
+  const { level, circleTypes } = parseVisibilityValue(value);
+  payload.append(visibilityKey, level);
+  if (level === "specific") {
+    payload.append(`${visibilityKey}_circles`, circleTypes.join(","));
+  }
 }
 
 function businessEntryVisibilityFromApi(biz) {
@@ -110,18 +131,19 @@ function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
     shortBio: pi.profile_personal_short_bio || "",
     homeAddress: pi.profile_personal_home_address || "",
     personal_info: pi,
-    locationIsPublic: pi.profile_personal_location_is_public === 1,
-    emailIsPublic: pi.profile_personal_email_is_public === 1,
-    phoneIsPublic: pi.profile_personal_phone_number_is_public === 1,
-    tagLineIsPublic: pi.profile_personal_tag_line_is_public === 1,
-    shortBioIsPublic: pi.profile_personal_short_bio_is_public === 1,
-    experienceIsPublic: pi.profile_personal_experience_is_public === 1,
-    educationIsPublic: pi.profile_personal_education_is_public === 1,
-    expertiseIsPublic: pi.profile_personal_expertise_is_public === 1,
-    wishesIsPublic: pi.profile_personal_wishes_is_public === 1,
-    businessIsPublic: pi.profile_personal_business_is_public === 1,
-    socialLinksIsPublic: pi.profile_personal_social_links_is_public === 1,
-    imageIsPublic: pi.profile_personal_image_is_public === 1,
+    cityVisibility: resolveVisibilityLevel(pi, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles"),
+    stateVisibility: resolveVisibilityLevel(pi, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles"),
+    emailVisibility: resolveVisibilityLevel(pi, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles"),
+    phoneVisibility: resolveVisibilityLevel(pi, "profile_personal_phone_number_visibility", "profile_personal_phone_number_is_public", "profile_personal_phone_number_visibility_circles"),
+    tagLineVisibility: resolveVisibilityLevel(pi, "profile_personal_tag_line_visibility", "profile_personal_tag_line_is_public", "profile_personal_tag_line_visibility_circles"),
+    shortBioVisibility: resolveVisibilityLevel(pi, "profile_personal_short_bio_visibility", "profile_personal_short_bio_is_public", "profile_personal_short_bio_visibility_circles"),
+    experienceVisibility: resolveVisibilityLevel(pi, "profile_personal_experience_visibility", "profile_personal_experience_is_public"),
+    educationVisibility: resolveVisibilityLevel(pi, "profile_personal_education_visibility", "profile_personal_education_is_public"),
+    expertiseVisibility: resolveVisibilityLevel(pi, "profile_personal_expertise_visibility", "profile_personal_expertise_is_public", "profile_personal_expertise_visibility_circles"),
+    wishesVisibility: resolveVisibilityLevel(pi, "profile_personal_wishes_visibility", "profile_personal_wishes_is_public", "profile_personal_wishes_visibility_circles"),
+    businessVisibility: resolveVisibilityLevel(pi, "profile_personal_business_visibility", "profile_personal_business_is_public"),
+    socialVisibility: resolveVisibilityLevel(pi, "profile_personal_social_visibility", "profile_personal_social_is_public"),
+    imageVisibility: resolveVisibilityLevel(pi, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles"),
     profileImage: image,
     profile_personal_image: image,
     experience: parseProfileJsonArray(json?.experience_info),
@@ -241,25 +263,26 @@ const EditProfileScreen = ({ route, navigation }) => {
     state: user?.state || "",
     homeLatitude: initialHomeLatLng.lat,
     homeLongitude: initialHomeLatLng.lng,
-    locationIsPublic: user?.locationIsPublic || false,
-    emailIsPublic: user?.emailIsPublic || false,
-    phoneIsPublic: user?.phoneIsPublic || false,
-    tagLineIsPublic: user?.tagLineIsPublic || false,
-    shortBioIsPublic: user?.shortBioIsPublic || false,
-    experienceIsPublic: user?.experienceIsPublic || false,
-    educationIsPublic: user?.educationIsPublic || false,
-    expertiseIsPublic: user?.expertiseIsPublic || false,
-    wishesIsPublic: user?.wishesIsPublic || false,
-    businessIsPublic: user?.businessIsPublic || false,
+    cityVisibility: user?.cityVisibility || "only_me",
+    stateVisibility: user?.stateVisibility || "only_me",
+    emailVisibility: user?.emailVisibility || "only_me",
+    phoneVisibility: user?.phoneVisibility || "only_me",
+    tagLineVisibility: user?.tagLineVisibility || "only_me",
+    shortBioVisibility: user?.shortBioVisibility || "only_me",
+    experienceVisibility: user?.experienceVisibility || "only_me",
+    educationVisibility: user?.educationVisibility || "only_me",
+    expertiseVisibility: user?.expertiseVisibility || "only_me",
+    wishesVisibility: user?.wishesVisibility || "only_me",
+    businessVisibility: user?.businessVisibility || "only_me",
     // Section-level social defaults to Hidden. Legacy profiles often have the flag saved as
     // public from an old UI default — keep Hidden until the user has at least one link URL
     // and has the section marked public.
-    socialLinksIsPublic: (() => {
+    socialVisibility: (() => {
       const hasSocialUrl = (user?.links_info || []).some((row) => String(row?.social_link_url || "").trim());
-      if (!hasSocialUrl) return false;
-      return user?.socialLinksIsPublic === true;
+      if (!hasSocialUrl) return "only_me";
+      return user?.socialVisibility || "only_me";
     })(),
-    imageIsPublic: user?.imageIsPublic || false,
+    imageVisibility: user?.imageVisibility || "only_me",
     businesses: Array.isArray(user?.businesses)
       ? user.businesses.map(mapBusinessEntryForEdit)
       : [{ name: "", role: "", isPublic: true, individualIsPublic: true, isApproved: 0, isNew: false }],
@@ -410,19 +433,10 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [addressSearchLoading, setAddressSearchLoading] = useState(false);
   const addressDebounceRef = useRef(null);
 
-  const toggleVisibility = (fieldName) => {
-    setFormData((prev) => {
-      const newValue = !prev[fieldName];
-      const updated = { ...prev, [fieldName]: newValue };
-
-      // Update all items in the section when the section toggle is changed
-      // Removed: Section-level toggles should not change individual entry visibility
-      // Individual entries maintain their own isPublic values
-      // The section-level toggle (experienceIsPublic, educationIsPublic, etc.) only controls
-      // whether the section itself is visible, not the individual entries within it
-
-      return updated;
-    });
+  // Section-level visibility (experienceVisibility, educationVisibility, etc.) only controls who
+  // can see the section itself - it does not change any individual entry's own visibility.
+  const setVisibilityLevel = (fieldName, level) => {
+    setFormData((prev) => ({ ...prev, [fieldName]: level }));
   };
 
   // Update all field changes to set isChanged to true
@@ -515,10 +529,10 @@ const EditProfileScreen = ({ route, navigation }) => {
     );
   };
 
-  // Update all toggles to set isChanged to true
-  const handleToggleVisibility = (fieldName) => {
+  // Update all visibility pickers to set isChanged to true
+  const handleVisibilityChange = (fieldName, level) => {
     setIsChanged(true);
-    toggleVisibility(fieldName);
+    setVisibilityLevel(fieldName, level);
   };
 
   // Web-specific image picker handler
@@ -853,20 +867,23 @@ const EditProfileScreen = ({ route, navigation }) => {
         payload.append("profile_personal_latitude", "");
         payload.append("profile_personal_longitude", "");
       }
-      payload.append("profile_personal_location_is_public", formData.locationIsPublic ? 1 : 0);
-      payload.append("profile_personal_phone_number_is_public", formData.phoneIsPublic ? 1 : 0);
-      payload.append("profile_personal_email_is_public", formData.emailIsPublic ? 1 : 0);
-      payload.append("profile_personal_tag_line_is_public", formData.tagLineIsPublic ? 1 : 0);
-      payload.append("profile_personal_short_bio_is_public", formData.shortBioIsPublic ? 1 : 0);
-      payload.append("profile_personal_experience_is_public", formData.experienceIsPublic ? 1 : 0);
-      payload.append("profile_personal_education_is_public", formData.educationIsPublic ? 1 : 0);
-      payload.append("profile_personal_expertise_is_public", formData.expertiseIsPublic ? 1 : 0);
-      payload.append("profile_personal_wishes_is_public", formData.wishesIsPublic ? 1 : 0);
-      payload.append("profile_personal_business_is_public", formData.businessIsPublic ? 1 : 0);
-      payload.append("profile_personal_social_is_public", formData.socialLinksIsPublic ? 1 : 0);
-      console.log("EditProfileScreen - Sending businessIsPublic:", formData.businessIsPublic);
-      console.log("EditProfileScreen - As value:", formData.businessIsPublic ? 1 : 0);
-      payload.append("profile_personal_image_is_public", formData.imageIsPublic ? 1 : 0);
+      // Personal-info fields can carry a "specific:friend,family" composite value (Specific
+      // Circles); split it into the two fields the backend expects. Section fields (below)
+      // never compose - they're always a plain level string.
+      appendVisibility(payload, "profile_personal_city_visibility", formData.cityVisibility);
+      appendVisibility(payload, "profile_personal_state_visibility", formData.stateVisibility);
+      appendVisibility(payload, "profile_personal_phone_number_visibility", formData.phoneVisibility);
+      appendVisibility(payload, "profile_personal_email_visibility", formData.emailVisibility);
+      appendVisibility(payload, "profile_personal_tag_line_visibility", formData.tagLineVisibility);
+      appendVisibility(payload, "profile_personal_short_bio_visibility", formData.shortBioVisibility);
+      appendVisibility(payload, "profile_personal_image_visibility", formData.imageVisibility);
+      payload.append("profile_personal_experience_visibility", formData.experienceVisibility);
+      payload.append("profile_personal_education_visibility", formData.educationVisibility);
+      appendVisibility(payload, "profile_personal_expertise_visibility", formData.expertiseVisibility);
+      appendVisibility(payload, "profile_personal_wishes_visibility", formData.wishesVisibility);
+      payload.append("profile_personal_business_visibility", formData.businessVisibility);
+      payload.append("profile_personal_social_visibility", formData.socialVisibility);
+      console.log("EditProfileScreen - Sending businessVisibility:", formData.businessVisibility);
 
       const moderatedWishUids = new Set(
         (moderatedWishesRef.current || []).map((w) => w.profile_wish_uid).filter(Boolean)
@@ -1252,7 +1269,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         console.log("    -> (web) file name:", Platform.OS === "web" && webImageFile ? webImageFile.name : "N/A");
       }
       console.log("  delete_profile_image (URL):", deleteProfileImage || "(not sent)");
-      console.log("  profile_personal_image_is_public:", formData.imageIsPublic ? "1" : "0");
+      console.log("  profile_personal_image_visibility:", formData.imageVisibility);
       console.log("--------------------------------------------");
       console.log("============================================");
 
@@ -1309,7 +1326,12 @@ const EditProfileScreen = ({ route, navigation }) => {
                 profile_personal_home_address: homeAddress,
                 profile_personal_latitude: homeLat,
                 profile_personal_longitude: homeLng,
-                profile_personal_location_is_public: formData.locationIsPublic ? 1 : 0,
+                profile_personal_location_is_public:
+                  parseVisibilityValue(formData.cityVisibility).level === "only_me" && parseVisibilityValue(formData.stateVisibility).level === "only_me" ? 0 : 1,
+                profile_personal_city_visibility: parseVisibilityValue(formData.cityVisibility).level,
+                profile_personal_city_visibility_circles: parseVisibilityValue(formData.cityVisibility).circleTypes.join(","),
+                profile_personal_state_visibility: parseVisibilityValue(formData.stateVisibility).level,
+                profile_personal_state_visibility_circles: parseVisibilityValue(formData.stateVisibility).circleTypes.join(","),
               },
             },
           });
@@ -1330,19 +1352,19 @@ const EditProfileScreen = ({ route, navigation }) => {
     }
   };
 
-  const renderField = (label, value, isPublic, fieldName, visibilityFieldName, editable = true) => (
+  const renderField = (label, value, visibilityLevel, fieldName, visibilityFieldName, editable = true) => (
     <View style={styles.fieldContainer}>
-      {/* Row: Label and Toggle */}
+      {/* Row: Label and connection-level picker (name fields have no picker - always public) */}
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}</Text>
-        <View style={styles.toggleContainer}>
-          <TouchableOpacity onPress={() => handleToggleVisibility(visibilityFieldName)} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
-            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleToggleVisibility(visibilityFieldName)} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
-            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
-          </TouchableOpacity>
-        </View>
+        {visibilityFieldName ? (
+          <ConnectionVisibilityPicker
+            value={visibilityLevel}
+            onChange={(level) => handleVisibilityChange(visibilityFieldName, level)}
+            darkMode={darkMode}
+            allowCircleLevel
+          />
+        ) : null}
       </View>
       <TextInput
         style={[
@@ -1367,14 +1389,12 @@ const EditProfileScreen = ({ route, navigation }) => {
       {/* Row: Label and Toggle */}
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>Bio (max 500 characters)</Text>
-        <View style={styles.toggleContainer}>
-          <TouchableOpacity onPress={() => handleToggleVisibility("shortBioIsPublic")} style={[styles.togglePill, formData.shortBioIsPublic && styles.togglePillActiveGreen]}>
-            <Text style={[styles.togglePillText, formData.shortBioIsPublic && styles.togglePillTextActive]}>{formData.shortBioIsPublic ? "Visible" : "Show"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleToggleVisibility("shortBioIsPublic")} style={[styles.togglePill, !formData.shortBioIsPublic && styles.togglePillActiveRed]}>
-            <Text style={[styles.togglePillText, !formData.shortBioIsPublic && styles.togglePillTextActive]}>{!formData.shortBioIsPublic ? "Hidden" : "Hide"}</Text>
-          </TouchableOpacity>
-        </View>
+        <ConnectionVisibilityPicker
+          value={formData.shortBioVisibility}
+          onChange={(level) => handleVisibilityChange("shortBioVisibility", level)}
+          darkMode={darkMode}
+          simple
+        />
       </View>
       <TextInput
         style={[styles.input, styles.textarea, { height: Math.max(40, shortBioHeight) }, darkMode && styles.darkInput]}
@@ -1400,27 +1420,34 @@ const EditProfileScreen = ({ route, navigation }) => {
     tagLine: formData.tagLine,
     city: formData.city,
     state: formData.state,
-    locationIsPublic: formData.locationIsPublic,
-    // Include visibility flags
-    emailIsPublic: formData.emailIsPublic,
-    phoneIsPublic: formData.phoneIsPublic,
-    tagLineIsPublic: formData.tagLineIsPublic,
-    shortBioIsPublic: formData.shortBioIsPublic,
-    experienceIsPublic: formData.experienceIsPublic,
-    educationIsPublic: formData.educationIsPublic,
-    expertiseIsPublic: formData.expertiseIsPublic,
-    wishesIsPublic: formData.wishesIsPublic,
-    businessIsPublic: formData.businessIsPublic,
-    imageIsPublic: formData.imageIsPublic,
+    locationIsPublic: isVisibleInPreview(formData.cityVisibility) || isVisibleInPreview(formData.stateVisibility),
+    emailIsPublic: isVisibleInPreview(formData.emailVisibility),
+    phoneIsPublic: isVisibleInPreview(formData.phoneVisibility),
+    tagLineIsPublic: isVisibleInPreview(formData.tagLineVisibility),
+    shortBioIsPublic: isVisibleInPreview(formData.shortBioVisibility),
+    experienceIsPublic: isVisibleInPreview(formData.experienceVisibility),
+    educationIsPublic: isVisibleInPreview(formData.educationVisibility),
+    expertiseIsPublic: isVisibleInPreview(formData.expertiseVisibility),
+    wishesIsPublic: isVisibleInPreview(formData.wishesVisibility),
+    businessIsPublic: isVisibleInPreview(formData.businessVisibility),
+    imageIsPublic: isVisibleInPreview(formData.imageVisibility),
+    // "Who sees this" badges MiniCard renders next to each shown field - null (no badge) for
+    // Everyone, so the preview visibly reflects/changes with the exact level chosen (degree or
+    // Specific Circles) instead of collapsing them all into one "visible" state. City/state share
+    // one combined line on the card, so the city's badge takes priority when both are set.
+    phoneVisibilityLabel: visibilityBadgeLabel(formData.phoneVisibility),
+    emailVisibilityLabel: visibilityBadgeLabel(formData.emailVisibility),
+    tagLineVisibilityLabel: visibilityBadgeLabel(formData.tagLineVisibility),
+    locationVisibilityLabel: visibilityBadgeLabel(formData.cityVisibility) || visibilityBadgeLabel(formData.stateVisibility),
     // Include the profile image - MiniCard will check imageIsPublic to decide whether to show it
     profileImage: profileImageUri || "",
   };
 
-  // Profile Image Public/Private Toggle Handler
-  const toggleProfileImageVisibility = () => {
+  // Profile Image Visibility Handler
+  const setProfileImageVisibility = (level) => {
     setFormData((prev) => ({
       ...prev,
-      imageIsPublic: !prev.imageIsPublic,
+      imageVisibility: level,
     }));
     setIsChanged(true);
   };
@@ -1672,14 +1699,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             onError={handleImageError}
           />
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-            <View style={styles.toggleContainer}>
-              <TouchableOpacity onPress={toggleProfileImageVisibility} style={[styles.togglePill, !formData.imageIsPublic && styles.togglePillActiveRed]}>
-                <Text style={[styles.togglePillText, !formData.imageIsPublic && styles.togglePillTextActive]}>{!formData.imageIsPublic ? "Hidden" : "Hide"}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={toggleProfileImageVisibility} style={[styles.togglePill, formData.imageIsPublic && styles.togglePillActiveGreen]}>
-                <Text style={[styles.togglePillText, formData.imageIsPublic && styles.togglePillTextActive]}>{formData.imageIsPublic ? "Visible" : "Show"}</Text>
-              </TouchableOpacity>
-            </View>
+            <ConnectionVisibilityPicker value={formData.imageVisibility} onChange={setProfileImageVisibility} darkMode={darkMode} allowCircleLevel />
           </View>
           <TouchableOpacity onPress={handlePickImage}>
             <Text style={[styles.uploadLink, darkMode && styles.darkUploadLink]}>Upload Image</Text>
@@ -1712,13 +1732,13 @@ const EditProfileScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         {showProfile && (
           <>
-            {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
-            {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
-            {renderField("Phone Number", formData.phoneNumber, formData.phoneIsPublic, "phoneNumber", "phoneIsPublic")}
-            {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
+            {renderField("First Name (Public)", formData.firstName, undefined, "firstName", null)}
+            {renderField("Last Name (Public)", formData.lastName, undefined, "lastName", null)}
+            {renderField("Phone Number", formData.phoneNumber, formData.phoneVisibility, "phoneNumber", "phoneVisibility")}
+            {renderField("Email", formData.email, formData.emailVisibility, "email", "emailVisibility")}
             {renderHomeAddressField()}
-            {renderField("City", formData.city, formData.locationIsPublic, "city", "locationIsPublic")}
-            {renderField("State", formData.state, formData.locationIsPublic, "state", "locationIsPublic")}
+            {renderField("City", formData.city, formData.cityVisibility, "city", "cityVisibility")}
+            {renderField("State", formData.state, formData.stateVisibility, "state", "stateVisibility")}
           </>
         )}
 
@@ -1729,7 +1749,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         {showBio && (
           <>
-            {renderField("Tagline", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
+            {renderField("Tagline", formData.tagLine, formData.tagLineVisibility, "tagLine", "tagLineVisibility")}
             {renderShortBioField()}
           </>
         )}
@@ -1766,8 +1786,8 @@ const EditProfileScreen = ({ route, navigation }) => {
                 setFormData((prev) => ({ ...prev, expertise: e }));
                 setIsChanged(true);
               }}
-              toggleVisibility={() => handleToggleVisibility("expertiseIsPublic")}
-              isPublic={formData.expertiseIsPublic}
+              visibilityLevel={formData.expertiseVisibility}
+              onVisibilityChange={(level) => handleVisibilityChange("expertiseVisibility", level)}
               handleDelete={handleDeleteExpertise}
               profileUid={profileUID.trim()}
               profileDefaultAddress={{
@@ -1815,8 +1835,8 @@ const EditProfileScreen = ({ route, navigation }) => {
               setFormData((prev) => ({ ...prev, wishes: e }));
               setIsChanged(true);
             }}
-            toggleVisibility={() => handleToggleVisibility("wishesIsPublic")}
-            isPublic={formData.wishesIsPublic}
+            visibilityLevel={formData.wishesVisibility}
+            onVisibilityChange={(level) => handleVisibilityChange("wishesVisibility", level)}
             handleDelete={handleDeleteWish}
             profileUid={profileUID.trim()}
             profileDefaultAddress={{
@@ -1843,12 +1863,11 @@ const EditProfileScreen = ({ route, navigation }) => {
             <View style={[styles.labelRow, { marginBottom: 12 }]}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Social Media</Text>
               <View style={styles.toggleContainer}>
-                <TouchableOpacity onPress={() => handleToggleVisibility("socialLinksIsPublic")} style={[styles.togglePill, formData.socialLinksIsPublic && styles.togglePillActiveGreen]}>
-                  <Text style={[styles.togglePillText, formData.socialLinksIsPublic && styles.togglePillTextActive]}>{formData.socialLinksIsPublic ? "Visible" : "Show"}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleToggleVisibility("socialLinksIsPublic")} style={[styles.togglePill, !formData.socialLinksIsPublic && styles.togglePillActiveRed]}>
-                  <Text style={[styles.togglePillText, !formData.socialLinksIsPublic && styles.togglePillTextActive]}>{!formData.socialLinksIsPublic ? "Hidden" : "Hide"}</Text>
-                </TouchableOpacity>
+                <ConnectionVisibilityPicker
+                  value={formData.socialVisibility}
+                  onChange={(level) => handleVisibilityChange("socialVisibility", level)}
+                  darkMode={darkMode}
+                />
               </View>
             </View>
             {(formData.socialLinks || []).map((link, idx) => (
@@ -1962,8 +1981,8 @@ const EditProfileScreen = ({ route, navigation }) => {
               setFormData((prev) => ({ ...prev, experience: e }));
               setIsChanged(true);
             }}
-            toggleVisibility={() => handleToggleVisibility("experienceIsPublic")}
-            isPublic={formData.experienceIsPublic}
+            visibilityLevel={formData.experienceVisibility}
+            onVisibilityChange={(level) => handleVisibilityChange("experienceVisibility", level)}
             handleDelete={handleDeleteExperience}
             profileUid={profileUID.trim()}
             darkMode={darkMode}
@@ -1986,8 +2005,8 @@ const EditProfileScreen = ({ route, navigation }) => {
               setFormData((prev) => ({ ...prev, education: e }));
               setIsChanged(true);
             }}
-            toggleVisibility={() => handleToggleVisibility("educationIsPublic")}
-            isPublic={formData.educationIsPublic}
+            visibilityLevel={formData.educationVisibility}
+            onVisibilityChange={(level) => handleVisibilityChange("educationVisibility", level)}
             handleDelete={handleDeleteEducation}
             profileUid={profileUID.trim()}
             darkMode={darkMode}
@@ -2010,8 +2029,8 @@ const EditProfileScreen = ({ route, navigation }) => {
               setFormData((prev) => ({ ...prev, businesses: e }));
               setIsChanged(true);
             }}
-            toggleVisibility={() => handleToggleVisibility("businessIsPublic")}
-            isPublic={formData.businessIsPublic}
+            visibilityLevel={formData.businessVisibility}
+            onVisibilityChange={(level) => handleVisibilityChange("businessVisibility", level)}
             handleDelete={handleDeleteBusiness}
             onDeleteOwnedBusiness={handleDeleteOwnedBusiness}
             navigation={navigation}

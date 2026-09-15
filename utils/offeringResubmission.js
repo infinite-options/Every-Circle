@@ -1,6 +1,7 @@
 import { isOfferingVisibilityBlocked } from "./offeringModeration";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "./resolveProfileItemImageUri";
 import { applyOfferingQuantityFromApi, applyOfferingShippingFromApi, buildOfferingShippingForApi, isOfferingQtyUnlimited } from "./profileOfferingShipping";
+import { resolveVisibilityLevel, parseVisibilityValue } from "../components/ConnectionVisibilityPicker";
 
 export function mapProfileOfferingToFormItem(exp, profileUid) {
   const rawImg = exp.profile_expertise_image || "";
@@ -49,6 +50,10 @@ export function mapProfileOfferingToFormItem(exp, profileUid) {
     profile_expertise_moderated: exp.profile_expertise_moderated,
     moderation: exp.moderation,
     isPublic: exp.isPublic !== undefined ? exp.isPublic : exp.profile_expertise_is_public === 1,
+    // exp.visibility first: this can run twice (ProfileScreen's buildOfferingCardModel, then again
+    // when EditProfileScreen re-maps an already-form-shaped item from route params) - on the second
+    // pass the raw profile_expertise_visibility column is gone, only the previous result remains.
+    visibility: exp.visibility || resolveVisibilityLevel(exp, "profile_expertise_visibility", "profile_expertise_is_public", "profile_expertise_visibility_circles"),
     _expNewImageUri: "",
     _expWebImageFile: null,
     _expOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
@@ -112,9 +117,12 @@ function buildOfferingConditionForApi(e) {
 }
 
 export function mapOfferingFormToPayload(e) {
-  const wantsPublic = !!e.isPublic;
   const publicBlocked = isOfferingVisibilityBlocked(e);
-  const isPublicValue = publicBlocked && wantsPublic ? 0 : wantsPublic ? 1 : 0;
+  // A moderated item can never be set visible, regardless of what level the owner picked -
+  // force it back to Only Me, mirroring the previous isPublic-only enforcement.
+  const { level: pickedLevel, circleTypes } = parseVisibilityValue(e.visibility);
+  const visibilityLevel = publicBlocked ? "only_me" : pickedLevel;
+  const isPublicValue = visibilityLevel === "only_me" ? 0 : 1;
   const unlimited = isOfferingQtyUnlimited(e);
   const shippingFields = buildOfferingShippingForApi(e);
   const normalizedCost = normalizeOfferingCostForSubmit(e.cost);
@@ -127,6 +135,8 @@ export function mapOfferingFormToPayload(e) {
     profile_expertise_cost: normalizedCost,
     profile_expertise_bounty: e.bounty || "",
     profile_expertise_is_public: isPublicValue,
+    profile_expertise_visibility: visibilityLevel,
+    profile_expertise_visibility_circles: visibilityLevel === "specific" ? circleTypes.join(",") : "",
     profile_expertise_image: e.profile_expertise_image || "",
     profile_expertise_image_is_public: e.profile_expertise_image_is_public === 0 || e.profile_expertise_image_is_public === "0" ? 0 : 1,
     profile_expertise_start: e.profile_expertise_start || "",

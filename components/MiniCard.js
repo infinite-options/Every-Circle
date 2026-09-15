@@ -17,6 +17,19 @@ try {
   PROFILE_IMAGE_SOURCE = null;
 }
 
+/** Small "who sees this" badge next to a field, e.g. "2nd Degree" or "Friends + Family" - only
+ * rendered when the caller passes a label (the Edit Profile live preview does, via
+ * previewUser.<field>VisibilityLabel; every other MiniCard usage in the app doesn't set these,
+ * so this is a no-op change for them). */
+function VisibilityBadge({ label, darkMode }) {
+  if (!label) return null;
+  return (
+    <View style={[styles.visibilityBadge, darkMode && styles.darkVisibilityBadge]}>
+      <Text style={[styles.visibilityBadgeText, darkMode && styles.darkVisibilityBadgeText]}>{label}</Text>
+    </View>
+  );
+}
+
 /** Returns a source suitable for Image component when no custom image or Display is off. Works on web and mobile. */
 function getDefaultProfileImageSource() {
   if (PROFILE_IMAGE_SOURCE) return PROFILE_IMAGE_SOURCE;
@@ -235,7 +248,12 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
         {(() => {
           if (deleted) return null;
           if (tagLineIsPublic && isSafeForConditional(tagLine) && tagLine !== "." && tagLine.trim() !== "") {
-            return <Text style={[styles.tagline, darkMode && styles.darkText]}>{tagLine}</Text>;
+            return (
+              <View style={styles.fieldRow}>
+                <Text style={[styles.tagline, darkMode && styles.darkText]}>{tagLine}</Text>
+                <VisibilityBadge label={user?.tagLineVisibilityLabel} darkMode={darkMode} />
+              </View>
+            );
           }
           return null;
         })()}
@@ -264,7 +282,12 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
           {(() => {
             if (deleted) return null;
             if (phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "") {
-              return <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>;
+              return (
+                <View style={styles.fieldRow}>
+                  <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>
+                  <VisibilityBadge label={user?.phoneVisibilityLabel} darkMode={darkMode} />
+                </View>
+              );
             }
             return null;
           })()}
@@ -273,7 +296,12 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
           {(() => {
             if (deleted) return null;
             if (emailIsPublic && isSafeForConditional(email) && email !== "." && email.trim() !== "") {
-              return <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>;
+              return (
+                <View style={styles.fieldRow}>
+                  <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>
+                  <VisibilityBadge label={user?.emailVisibilityLabel} darkMode={darkMode} />
+                </View>
+              );
             }
             return null;
           })()}
@@ -289,7 +317,12 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
               const locationText = locationParts.join(", ");
 
               if (locationText && locationText.trim() !== "") {
-                return <Text style={[styles.city, darkMode && styles.darkText]}>{locationText}</Text>;
+                return (
+                  <View style={styles.fieldRow}>
+                    <Text style={[styles.city, darkMode && styles.darkText]}>{locationText}</Text>
+                    <VisibilityBadge label={user?.locationVisibilityLabel} darkMode={darkMode} />
+                  </View>
+                );
               }
             }
             return null;
@@ -343,6 +376,29 @@ const styles = StyleSheet.create({
   inlineSeparator: {
     fontSize: 14,
     color: "#666",
+  },
+  fieldRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  visibilityBadge: {
+    marginLeft: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+    backgroundColor: "#eee",
+  },
+  darkVisibilityBadge: {
+    backgroundColor: "#444",
+  },
+  visibilityBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#555",
+  },
+  darkVisibilityBadgeText: {
+    color: "#ccc",
   },
   name: {
     fontSize: 16,

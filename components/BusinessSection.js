@@ -6,6 +6,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { getBusinessMembershipRole } from "../utils/businessOwnership";
+import ConnectionVisibilityPicker from "./ConnectionVisibilityPicker";
 
 /** Ensure businesses list is always a real array (API / route params may send a JSON string or object). */
 function asBusinessArray(value) {
@@ -23,7 +24,7 @@ function asBusinessArray(value) {
   return [];
 }
 
-const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, onDeleteOwnedBusiness, preFetchedBusinessesData, onInputFocus }) => {
+const BusinessSection = ({ businesses, setBusinesses, visibilityLevel, onVisibilityChange, navigation, handleDelete, onDeleteOwnedBusiness, preFetchedBusinessesData, onInputFocus }) => {
   const { darkMode } = useDarkMode();
   const [deletingBusinessUid, setDeletingBusinessUid] = useState(null);
   // Stores each rendered card's ref by index so parent can scroll to the new one.
@@ -304,12 +305,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
           </TouchableOpacity>
         </View>
         <View style={styles.toggleContainer}>
-          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
-            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
-            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
-          </TouchableOpacity>
+          <ConnectionVisibilityPicker value={visibilityLevel} onChange={onVisibilityChange} darkMode={darkMode} />
         </View>
       </View>
 
