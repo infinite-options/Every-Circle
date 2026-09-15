@@ -147,6 +147,14 @@ export function normalizeBusinessServiceFromApi(service) {
         ? 1
         : 0;
     })(),
+    bs_new_customers_only:
+      service.bs_new_customers_only === 1 ||
+      service.bs_new_customers_only === "1" ||
+      service.bs_new_customers_only === true
+        ? 1
+        : 0,
+    bs_is_gift_card:
+      service.bs_is_gift_card === 1 || service.bs_is_gift_card === "1" || service.bs_is_gift_card === true ? 1 : 0,
     // CC fee payer is business-level only; strip legacy per-product values for UI.
     bs_cc_fee_payer: "",
     bs_qty_unlimited,

@@ -681,22 +681,31 @@ export default function App() {
         return;
       }
 
-      // Use OAuth 2.0 flow with popup
+      // One Tap can dismiss/skip without ever calling the credential callback — settle exactly once.
+      let settled = false;
+      const settleResolve = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const settleReject = (err) => {
+        if (settled) return;
+        settled = true;
+        reject(err instanceof Error ? err : new Error(String(err || "Google Sign-In cancelled")));
+      };
+
       const handleCredentialResponse = async (response) => {
         try {
           console.log("App.js - Google Sign-In callback received");
 
-          // Decode the credential (JWT token)
           const credential = response.credential;
           console.log("App.js - Credential received (first 50 chars):", credential?.substring(0, 50));
 
-          // Decode JWT to get user info (payload is base64url encoded)
           const parts = credential.split(".");
           if (parts.length !== 3) {
             throw new Error("Invalid credential format");
           }
 
-          // Decode the payload (second part)
           const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
           console.log("App.js - Decoded payload:", {
             email: payload.email,
@@ -704,10 +713,9 @@ export default function App() {
             picture: payload.picture,
           });
 
-          const userEmail = payload.email;
           const userInfo = {
             user: {
-              email: userEmail,
+              email: payload.email,
               name: payload.name,
               givenName: payload.given_name,
               familyName: payload.family_name,
@@ -724,21 +732,20 @@ export default function App() {
               clearStorage: mode === "signUp",
               authRouteParams,
             });
-            resolve();
+            settleResolve();
           } catch (socialErr) {
             console.error("App.js - Web Google social auth error:", socialErr);
             const title = mode === "signUp" ? "Sign Up Failed" : "Sign In Failed";
             Alert.alert(title, socialErr.message || "Please try again.");
-            reject(socialErr);
+            settleReject(socialErr);
           }
         } catch (error) {
           console.error("App.js - Error processing Google Sign-In:", error);
           Alert.alert("Sign In Failed", error.message || "Please try again.");
-          reject(error);
+          settleReject(error);
         }
       };
 
-      // Initialize Google Identity Services
       // use_fedcm_for_prompt: false — avoids Chrome FedCM when user/site disabled it (otherwise
       // console: "FedCM was disabled..." / GSI_LOGGER NetworkError retrieving a token).
       window.google.accounts.id.initialize({
@@ -749,19 +756,23 @@ export default function App() {
         use_fedcm_for_prompt: false,
       });
 
-      // Trigger the Google Sign-In prompt (One Tap or popup)
       console.log("App.js - Triggering Google Sign-In");
       window.google.accounts.id.prompt((notification) => {
         console.log("App.js - Prompt notification:", notification);
         if (notification.isNotDisplayed()) {
-          const reason = notification.getNotDisplayedReason();
+          const reason = notification.getNotDisplayedReason?.() || "unknown";
           console.log("App.js - Prompt not displayed, reason:", reason);
-          // If One Tap doesn't work, we can show a fallback message
-          // The user can still use the button which will trigger the flow
+          settleReject(new Error(`Google Sign-In unavailable (${reason}). Try email instead.`));
         } else if (notification.isSkippedMoment()) {
-          console.log("App.js - Prompt skipped, reason:", notification.getSkippedReason());
+          const reason = notification.getSkippedReason?.() || "unknown";
+          console.log("App.js - Prompt skipped, reason:", reason);
+          settleReject(new Error(`Google Sign-In skipped (${reason}). Try email instead.`));
         } else if (notification.isDismissedMoment()) {
-          console.log("App.js - Prompt dismissed, reason:", notification.getDismissedReason());
+          const reason = notification.getDismissedReason?.() || "unknown";
+          console.log("App.js - Prompt dismissed, reason:", reason);
+          // credential_returned: callback will settle the Promise — do not reject here.
+          if (reason === "credential_returned") return;
+          settleReject(new Error("Google Sign-In was dismissed. Try email instead."));
         }
       });
     } catch (error) {

@@ -2,6 +2,7 @@ import React from "react";
 import { Text, View } from "react-native";
 import { parsePrice } from "../utils/priceUtils";
 import { formatChoiceLineText, getItemizedChoiceLines } from "../utils/selectedChoiceItems";
+import { formatGiftCardCodeLabel } from "../utils/giftCard";
 
 export function formatProductBaseLine(description, baseCost, currency = "USD") {
   const desc = String(description || "").trim();
@@ -23,6 +24,7 @@ export function resolveProductSummaryDescription(item) {
  *   Description  $base
  *   Group: Option (+$extra)
  *   Note: ...
+ *   Gift Card Code: ABC123
  */
 export default function ProductOrderSummaryLines({
   description,
@@ -30,13 +32,16 @@ export default function ProductOrderSummaryLines({
   currency = "USD",
   choiceSource,
   specialInstructions = "",
+  giftCardCodeLabel = null,
   baseTextStyle,
   choiceTextStyle,
   noteTextStyle,
+  giftCardTextStyle,
   containerStyle,
 }) {
   const choiceLines = getItemizedChoiceLines(choiceSource || {});
   const note = String(specialInstructions || "").trim();
+  const giftCardLabel = giftCardCodeLabel || formatGiftCardCodeLabel(choiceSource);
 
   return (
     <View style={containerStyle}>
@@ -47,6 +52,7 @@ export default function ProductOrderSummaryLines({
         </Text>
       ))}
       {note ? <Text style={noteTextStyle}>Note: {note}</Text> : null}
+      {giftCardLabel ? <Text style={giftCardTextStyle || noteTextStyle}>{giftCardLabel}</Text> : null}
     </View>
   );
 }

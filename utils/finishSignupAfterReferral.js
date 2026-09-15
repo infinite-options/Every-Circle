@@ -1,16 +1,126 @@
+import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "./httpMiddleware";
 import { profileUidFromUserProfileResponse } from "./ensureSessionProfileUid";
 import { refreshCircleTokens } from "./authSession";
 import { getUserEmail } from "./emailStorage";
 import { goToNetworkForScanConnect } from "./goToNetworkForScanConnect";
+import { refreshSessionProfileFromNetwork, saveSessionProfilePayload } from "./sessionProfile";
+
+/**
+ * Hydrate session profile cache so Connect MiniCard shows OAuth names/photo immediately
+ * (without waiting for the user to open Profile).
+ */
+async function hydrateSessionAfterSignup(profileUid, apiPayload) {
+  const uid = String(profileUid || "").trim();
+  if (!uid) return;
+  try {
+    if (apiPayload?.personal_info) {
+      const saved = await saveSessionProfilePayload(apiPayload);
+      if (saved) return;
+    }
+  } catch (_) {
+    /* fall through to network refresh */
+  }
+  try {
+    await refreshSessionProfileFromNetwork(uid);
+  } catch (e) {
+    console.warn("createMinimalSignupProfile: session hydrate failed", e?.message || e);
+  }
+}
+
+/**
+ * Download a remote OAuth profile photo and append it as multipart `profile_image`
+ * (same field EditProfile uses). Returns true if a file was appended.
+ */
+async function appendOAuthProfileImage(formData, photoUrl) {
+  const url = String(photoUrl || "").trim();
+  if (!url || !/^https?:\/\//i.test(url)) return false;
+
+  try {
+    if (Platform.OS === "web") {
+      // Use global fetch — not API middleware — for the Google CDN URL.
+      const res = await globalThis.fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const type = blob.type || "image/jpeg";
+      const ext = (type.split("/")[1] || "jpg").replace("jpeg", "jpg");
+      formData.append("profile_image", new File([blob], `profile.${ext}`, { type }));
+      return true;
+    }
+
+    const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+    if (!baseDir) return false;
+    const tempUri = `${baseDir}oauth_profile_${Date.now()}.jpg`;
+    const downloaded = await FileSystem.downloadAsync(url, tempUri);
+    if (downloaded.status !== 200) throw new Error(`Download ${downloaded.status}`);
+    formData.append("profile_image", {
+      uri: downloaded.uri,
+      name: "profile.jpg",
+      type: "image/jpeg",
+    });
+    return true;
+  } catch (e) {
+    console.warn("appendOAuthProfileImage failed:", e?.message || e);
+    return false;
+  }
+}
+
+async function attachOAuthPhotoFields(formData, profilePicture) {
+  const attached = await appendOAuthProfileImage(formData, profilePicture);
+  if (attached) {
+    // MiniCard only shows the photo when Display is on.
+    formData.append("profile_personal_image_is_public", "1");
+  }
+  return attached;
+}
+
+function existingProfileHasImage(existing) {
+  const img = existing?.personal_info?.profile_personal_image;
+  return Boolean(img && String(img).trim());
+}
+
+/**
+ * Best-effort: upload OAuth photo onto an existing profile_uid. Never throws.
+ */
+async function uploadOAuthPhotoIfPresent(profileUid, userUid, profilePicture) {
+  const uid = String(profileUid || "").trim();
+  const photo = String(profilePicture || "").trim();
+  if (!uid || !photo) return null;
+
+  try {
+    const putData = new FormData();
+    putData.append("profile_uid", uid);
+    if (userUid) putData.append("user_uid", String(userUid));
+    const attached = await attachOAuthPhotoFields(putData, photo);
+    if (!attached) return null;
+    const putRes = await fetch(USER_PROFILE_INFO_ENDPOINT, { method: "PUT", body: putData });
+    if (!putRes.ok) {
+      console.warn("uploadOAuthPhotoIfPresent: PUT failed", putRes.status);
+      return null;
+    }
+    return await putRes.json().catch(() => null);
+  } catch (e) {
+    console.warn("uploadOAuthPhotoIfPresent failed:", e?.message || e);
+    return null;
+  }
+}
 
 /**
  * Create a stub personal profile (skips UserInfo name/phone screen) and persist profile_uid.
  * Name/phone may be empty — BE should accept stubs so users can complete profile later.
+ * When profilePicture (e.g. Google photo URL) is present, upload it as the profile image.
  */
-export async function createMinimalSignupProfile({ userUid, referralUid, firstName = "", lastName = "", phoneNumber = "" }) {
+export async function createMinimalSignupProfile({
+  userUid,
+  referralUid,
+  firstName = "",
+  lastName = "",
+  phoneNumber = "",
+  profilePicture = "",
+} = {}) {
   const uid = String(userUid || "").trim();
   if (!uid) throw new Error("User UID not found");
 
@@ -24,6 +134,14 @@ export async function createMinimalSignupProfile({ userUid, referralUid, firstNa
       const existingUid = profileUidFromUserProfileResponse(existing);
       if (existingUid) {
         await AsyncStorage.setItem("profile_uid", existingUid);
+
+        let payload = existing;
+        if (profilePicture && !existingProfileHasImage(existing)) {
+          const updated = await uploadOAuthPhotoIfPresent(existingUid, uid, profilePicture);
+          if (updated) payload = null; // force GET so session gets S3 image URL
+        }
+
+        await hydrateSessionAfterSignup(existingUid, payload);
         return existingUid;
       }
     }
@@ -57,13 +175,26 @@ export async function createMinimalSignupProfile({ userUid, referralUid, firstNa
   } catch (_) {
     /* optional */
   }
+
+  // Photo upload is separate so a CDN/download failure cannot block signup.
+  let hydratePayload = body;
+  if (profileUid && profilePicture) {
+    const updated = await uploadOAuthPhotoIfPresent(profileUid, uid, profilePicture);
+    if (updated) hydratePayload = null; // force GET so session gets S3 image URL
+  }
+
+  // Connect reads names/photo from session cache (not live API); hydrate before navigating.
+  await hydrateSessionAfterSignup(profileUid, hydratePayload);
   return profileUid;
 }
 
 /**
  * After account + referrer are known: stub profile, then QR → Connect + reverse-contact notify, else AccountType.
  */
-export async function finishSignupAfterReferral(navigation, { referralUid, routeParams = {}, userUid, email, firstName = "", lastName = "" } = {}) {
+export async function finishSignupAfterReferral(
+  navigation,
+  { referralUid, routeParams = {}, userUid, email, firstName = "", lastName = "", profilePicture = "" } = {},
+) {
   const uid = String(userUid || (await AsyncStorage.getItem("user_uid")) || "").trim();
   const mail = String(email || (await getUserEmail()) || "").trim();
   if (!uid) throw new Error("User UID not found");
@@ -78,6 +209,7 @@ export async function finishSignupAfterReferral(navigation, { referralUid, route
     referralUid: ref,
     firstName,
     lastName,
+    profilePicture,
   });
 
   const qrOwnerUid = String(routeParams.profile_uid || routeParams.referralProfileUid || "").trim();

@@ -36,6 +36,7 @@ import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { parsePrice } from "../utils/priceUtils";
 import { formatChoiceLineText, getItemizedChoiceLines } from "../utils/selectedChoiceItems";
 import ProductOrderSummaryLines from "../components/ProductOrderSummaryLines";
+import { formatGiftCardCodeLabel, resolveGiftCardCodes } from "../utils/giftCard";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import {
   formatLocalMonthDayFromKey,
@@ -5095,6 +5096,7 @@ function OrderDetailLinesTable({
       returnKind,
       choiceLines,
       specialInstructions,
+      giftCardCodeLabel: formatGiftCardCodeLabel(line),
       unitCost: displayUnitCost,
       qty: displayQty,
       qtyNote,
@@ -5243,6 +5245,11 @@ function OrderDetailLinesTable({
                 {row.specialInstructions ? (
                   <Text style={{ fontSize: 11, color: noteTextColor, marginTop: 2, fontStyle: "italic", lineHeight: 15 }} numberOfLines={2}>
                     Note: {row.specialInstructions}
+                  </Text>
+                ) : null}
+                {row.giftCardCodeLabel ? (
+                  <Text style={{ fontSize: 11, color: darkMode ? "#81C784" : "#2E7D32", marginTop: 4, fontWeight: "600", lineHeight: 15 }} numberOfLines={3}>
+                    {row.giftCardCodeLabel}
                   </Text>
                 ) : null}
               </View>
@@ -7791,12 +7798,14 @@ function enrichProductSummaryTableRow(mappedRow) {
   const isReturn = !!mappedRow?.isReturn;
   const v3Money = resolveAccountScreenRowMoney(raw);
   const money = v3Money.totalKnown ? { total: v3Money.total, totalKnown: true } : { total: null, totalKnown: false };
+  const giftCardCodes = isReturn ? [] : resolveGiftCardCodes(raw);
   return {
     ...mappedRow,
     lineQty: isReturn ? resolveProductSummaryReturnShippedQty(raw) : resolveProductSummaryPurchasedQty(raw),
     cancelledQty: isReturn ? resolveProductSummaryReturnCancelQty(raw) : 0,
     total: money.total,
     totalKnown: money.totalKnown,
+    giftCardCodeLabel: giftCardCodes.length ? formatGiftCardCodeLabel({ gift_card_codes: giftCardCodes }) : null,
   };
 }
 
@@ -7897,49 +7906,66 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
     const cancelledLabel = row.cancelledQty > 0 ? String(row.cancelledQty) : "—";
 
     return (
-      <View key={row.key} style={[styles.productSummaryLineRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailDataRowDark]}>
-        <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate, darkMode && { color: "#ccc" }]} numberOfLines={1}>
-          {row.dateLabel || "—"}
-        </Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColType, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}>
-          {row.rowLabel || "Order"}
-        </Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty, darkMode && { color: "#ccc" }]}>{row.lineQty > 0 ? row.lineQty : "—"}</Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColCancelled, darkMode && { color: "#ccc" }]}>{cancelledLabel}</Text>
-        <Text
-          style={[styles.productSalesDetailCell, styles.productSummaryColTotal, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}
-          numberOfLines={1}
-        >
-          {formatSignedOrderMoneyOrNa(row.total, row.totalKnown !== false)}
-        </Text>
-        <View style={[styles.productSummaryColStatus, styles.productSalesDetailStatusCell]}>
-          {isReturnRow && onReturnPress ? (
-            <TouchableOpacity onPress={openReturn} activeOpacity={0.7}>
-              {renderStatusBadge("delivered", row.delivered, row.attentionLevel === "purple" ? "purple" : null)}
-            </TouchableOpacity>
-          ) : onOrderPress && !isReturnRow && isShipActionDeliveredLabel(row.delivered) ? (
-            <TouchableOpacity onPress={openOrder} activeOpacity={0.7}>
-              {renderStatusBadge("delivered", row.delivered, row.attentionLevel === "red" ? "red" : null)}
-            </TouchableOpacity>
-          ) : (
-            renderStatusBadge("delivered", row.delivered, row.attentionLevel === "red" ? "red" : null)
-          )}
+      <View key={row.key}>
+        <View style={[styles.productSummaryLineRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailDataRowDark]}>
+          <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate, darkMode && { color: "#ccc" }]} numberOfLines={1}>
+            {row.dateLabel || "—"}
+          </Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColType, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}>
+            {row.rowLabel || "Order"}
+          </Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty, darkMode && { color: "#ccc" }]}>{row.lineQty > 0 ? row.lineQty : "—"}</Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColCancelled, darkMode && { color: "#ccc" }]}>{cancelledLabel}</Text>
+          <Text
+            style={[styles.productSalesDetailCell, styles.productSummaryColTotal, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}
+            numberOfLines={1}
+          >
+            {formatSignedOrderMoneyOrNa(row.total, row.totalKnown !== false)}
+          </Text>
+          <View style={[styles.productSummaryColStatus, styles.productSalesDetailStatusCell]}>
+            {isReturnRow && onReturnPress ? (
+              <TouchableOpacity onPress={openReturn} activeOpacity={0.7}>
+                {renderStatusBadge("delivered", row.delivered, row.attentionLevel === "purple" ? "purple" : null)}
+              </TouchableOpacity>
+            ) : onOrderPress && !isReturnRow && isShipActionDeliveredLabel(row.delivered) ? (
+              <TouchableOpacity onPress={openOrder} activeOpacity={0.7}>
+                {renderStatusBadge("delivered", row.delivered, row.attentionLevel === "red" ? "red" : null)}
+              </TouchableOpacity>
+            ) : (
+              renderStatusBadge("delivered", row.delivered, row.attentionLevel === "red" ? "red" : null)
+            )}
+          </View>
+          <View style={[styles.productSummaryColStatus, styles.productSalesDetailStatusCell]}>
+            {isReturnRow && onReturnPress ? (
+              <TouchableOpacity onPress={openReturn} activeOpacity={0.7}>
+                {renderStatusBadge("received", row.received, row.attentionLevel === "purple" ? "purple" : null)}
+              </TouchableOpacity>
+            ) : (
+              renderStatusBadge("received", row.received, row.attentionLevel)
+            )}
+          </View>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColDaysOpen, darkMode && { color: "#ccc" }]} numberOfLines={1}>
+            {row.daysOpen}
+          </Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColReturnWindow, darkMode && { color: "#ccc" }]} numberOfLines={2}>
+            {row.returnWindowCloses ?? ACCOUNT_SCREEN_DISPLAY_NA}
+          </Text>
         </View>
-        <View style={[styles.productSummaryColStatus, styles.productSalesDetailStatusCell]}>
-          {isReturnRow && onReturnPress ? (
-            <TouchableOpacity onPress={openReturn} activeOpacity={0.7}>
-              {renderStatusBadge("received", row.received, row.attentionLevel === "purple" ? "purple" : null)}
-            </TouchableOpacity>
-          ) : (
-            renderStatusBadge("received", row.received, row.attentionLevel)
-          )}
-        </View>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColDaysOpen, darkMode && { color: "#ccc" }]} numberOfLines={1}>
-          {row.daysOpen}
-        </Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColReturnWindow, darkMode && { color: "#ccc" }]} numberOfLines={2}>
-          {row.returnWindowCloses ?? ACCOUNT_SCREEN_DISPLAY_NA}
-        </Text>
+        {row.giftCardCodeLabel ? (
+          <Text
+            style={{
+              fontSize: 11,
+              color: darkMode ? "#81C784" : "#2E7D32",
+              fontWeight: "600",
+              paddingLeft: 64,
+              paddingBottom: 6,
+              lineHeight: 15,
+            }}
+            numberOfLines={2}
+          >
+            {row.giftCardCodeLabel}
+          </Text>
+        ) : null}
       </View>
     );
   };
@@ -12946,6 +12972,13 @@ export default function AccountScreen({ navigation, route }) {
                                   fontSize: 10,
                                   color: darkMode ? "#aaa" : "#888",
                                   fontStyle: "italic",
+                                  lineHeight: 14,
+                                  marginTop: 2,
+                                }}
+                                giftCardTextStyle={{
+                                  fontSize: 10,
+                                  color: darkMode ? "#81C784" : "#2E7D32",
+                                  fontWeight: "600",
                                   lineHeight: 14,
                                   marginTop: 2,
                                 }}

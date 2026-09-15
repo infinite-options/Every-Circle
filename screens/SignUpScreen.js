@@ -88,6 +88,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       pendingGoogleUserInfo?.firstName || pendingAppleUserInfo?.firstName || route.params?.googleUserInfo?.firstName || route.params?.appleUserInfo?.firstName || "";
     const oauthLast =
       pendingGoogleUserInfo?.lastName || pendingAppleUserInfo?.lastName || route.params?.googleUserInfo?.lastName || route.params?.appleUserInfo?.lastName || "";
+    const oauthPhoto =
+      pendingGoogleUserInfo?.profilePicture || route.params?.googleUserInfo?.profilePicture || "";
 
     try {
       await finishSignupAfterReferral(navigation, {
@@ -96,6 +98,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         email: email || pendingGoogleUserInfo?.email || pendingAppleUserInfo?.email || "",
         firstName: oauthFirst,
         lastName: oauthLast,
+        profilePicture: oauthPhoto,
       });
     } catch (err) {
       console.error("SignUpScreen - finishSignupAfterReferral failed:", err);

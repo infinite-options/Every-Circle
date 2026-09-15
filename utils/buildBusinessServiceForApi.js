@@ -71,6 +71,7 @@ export function buildBusinessServiceForApi(service, idx = 0) {
   const norm01 = (v) => (v === 1 || v === "1" || v === true ? 1 : 0);
   const returnable = normServiceReturnable(service);
   const returnWindowDays = normServiceReturnWindowDays(service);
+  const newCustomersOnly = bountyNone ? 0 : norm01(service.bs_new_customers_only);
 
   const baseSchema = {
     bs_service_name: service.bs_service_name || "",
@@ -80,6 +81,8 @@ export function buildBusinessServiceForApi(service, idx = 0) {
     bs_bounty: bountyOut,
     bs_bounty_currency: service.bs_bounty_currency || "USD",
     bs_bounty_type: bountyTypeOut,
+    bs_new_customers_only: newCustomersOnly,
+    bs_is_gift_card: norm01(service.bs_is_gift_card),
     bs_is_taxable: (() => {
       if (isTruthyTaxableFlag(service.bs_is_taxable) && isValidTaxRate(service.bs_tax_rate)) return 1;
       if (service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) return 0;

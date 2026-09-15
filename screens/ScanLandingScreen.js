@@ -1,21 +1,51 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, TextInput, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, TextInput, Alert, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
 import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import AppleSignIn from "../AppleSignIn";
-import { CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
+import { CREATE_ACCOUNT_ENDPOINT, CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT, UPDATE_EMAIL_PASSWORD_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
-import { persistAuthTokens } from "../utils/authSession";
+import { issueCircleTokensFromPassword, persistAuthTokens } from "../utils/authSession";
 import { refreshAllowCookies } from "../utils/cookieConsent";
+import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { isSoftDeletedRegisterConflict, reactivateNavParamsFromAuthPayload } from "../utils/deletedProfile";
 import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
 import versionData from "../version.json";
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const OAUTH_TIMEOUT_MS = 30000;
+const CREATE_ACCOUNT_TIMEOUT_MS = 30000;
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
+async function fetchWithTimeout(url, options = {}, ms = CREATE_ACCOUNT_TIMEOUT_MS) {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = setTimeout(() => controller?.abort(), ms);
+  try {
+    return await fetch(url, { ...options, signal: controller?.signal });
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error("Request timed out. Please try again or set a password.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function escapeVCardValue(value) {
   if (!value) return "";
@@ -74,8 +104,6 @@ export function scanLandingAuthParams(profileUid) {
   };
 }
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 function buildVersionLabel() {
   const pm = versionData?.pm_version || "";
   const major = versionData?.major ?? "";
@@ -98,8 +126,22 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [emailError, setEmailError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [submittingEmail, setSubmittingEmail] = useState(false);
+  const [showPasswordFallbackModal, setShowPasswordFallbackModal] = useState(false);
+  const [pendingTempSignupUserUid, setPendingTempSignupUserUid] = useState(null);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
+  const [passwordFallbackError, setPasswordFallbackError] = useState("");
+  const [submittingPassword, setSubmittingPassword] = useState(false);
+  const [emailFallbackHint, setEmailFallbackHint] = useState("");
   const [scrollViewportH, setScrollViewportH] = useState(0);
   const redirectStartedRef = useRef(false);
+  const emailInputRef = useRef(null);
+  const oauthWatchdogRef = useRef(null);
+  const appleAuthInFlightRef = useRef(false);
+  const fallbackPromptedRef = useRef(false);
+  const oauthAbandonedRef = useRef(false);
 
   const loadProfile = useCallback(async () => {
     if (!profileUid) {
@@ -203,6 +245,158 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     navigation.navigate("Login", authParams);
   }, [navigation, authParams, persistReferral]);
 
+  const clearOauthWatchdog = useCallback(() => {
+    if (oauthWatchdogRef.current) {
+      clearTimeout(oauthWatchdogRef.current);
+      oauthWatchdogRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearOauthWatchdog(), [clearOauthWatchdog]);
+
+  const promptEmailFallback = useCallback((message) => {
+    clearOauthWatchdog();
+    setSigningIn(false);
+    appleAuthInFlightRef.current = false;
+    oauthAbandonedRef.current = true;
+    if (fallbackPromptedRef.current) return;
+    fallbackPromptedRef.current = true;
+    const hint =
+      message ||
+      "Google or Apple didn’t finish in time. Enter your email below to continue.";
+    setEmailFallbackHint(hint);
+    setTimeout(() => emailInputRef.current?.focus?.(), 100);
+  }, [clearOauthWatchdog]);
+
+  const openPasswordFallbackModal = useCallback((userUid) => {
+    setPendingTempSignupUserUid(userUid ? String(userUid) : null);
+    setPassword("");
+    setConfirmPassword("");
+    setPasswordFallbackError("");
+    setIsPasswordVisible(false);
+    setIsConfirmPasswordVisible(false);
+    setShowPasswordFallbackModal(true);
+  }, []);
+
+  const finishAfterPasswordSet = useCallback(
+    async (userUid, trimmed, preservedReferralUid, passwordValue) => {
+      await AsyncStorage.setItem("user_uid", String(userUid));
+      await AsyncStorage.setItem("user_email_id", trimmed);
+      if (preservedReferralUid) {
+        await AsyncStorage.setItem("referral_uid", preservedReferralUid);
+      }
+
+      const circleAuth = await issueCircleTokensFromPassword(trimmed, passwordValue, fetch);
+      if (circleAuth?.pendingDeletion) {
+        setShowPasswordFallbackModal(false);
+        await clearSessionAsyncStorage();
+        await clearUserProfileCacheStorage();
+        navigation.navigate(
+          "Reactivate",
+          reactivateNavParamsFromAuthPayload(circleAuth.data || {}, { email: trimmed, password: passwordValue }),
+        );
+        return;
+      }
+
+      setShowPasswordFallbackModal(false);
+      setPendingTempSignupUserUid(null);
+      await finishSignupAfterReferral(navigation, {
+        referralUid: preservedReferralUid,
+        routeParams: { ...authParams, referralProfileUid: preservedReferralUid },
+        userUid: String(userUid),
+        email: trimmed,
+      });
+    },
+    [authParams, navigation],
+  );
+
+  const handlePasswordFallbackSubmit = useCallback(async () => {
+    setPasswordFallbackError("");
+    if (password.length < 6) {
+      setPasswordFallbackError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setPasswordFallbackError("Passwords do not match.");
+      return;
+    }
+
+    setSubmittingPassword(true);
+    try {
+      const trimmed = email.trim();
+      if (!EMAIL_REGEX.test(trimmed)) {
+        setPasswordFallbackError("Enter a valid email address first.");
+        return;
+      }
+      const preservedReferralUid =
+        String(profileUid || authParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+
+      if (pendingTempSignupUserUid) {
+        const userUid = String(pendingTempSignupUserUid);
+        const updateResponse = await fetch(UPDATE_EMAIL_PASSWORD_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: trimmed,
+            user_uid: userUid,
+            password,
+          }),
+        });
+        const updateData = await updateResponse.json().catch(() => ({}));
+        const updated =
+          updateResponse.ok &&
+          String(updateData.message || "")
+            .toLowerCase()
+            .includes("updated successfully");
+        if (!updated && updateResponse.status >= 400) {
+          setPasswordFallbackError(updateData.message || "Could not save password. Please try again.");
+          return;
+        }
+        await finishAfterPasswordSet(userUid, trimmed, preservedReferralUid, password);
+        return;
+      }
+
+      // No user_uid yet (create-account timed out / never returned) → create with password.
+      const createAccountResponse = await fetch(CREATE_ACCOUNT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed, password }),
+      });
+      const createAccountData = await createAccountResponse.json().catch(() => ({}));
+      if (isSoftDeletedRegisterConflict(createAccountData, createAccountResponse.status)) {
+        setShowPasswordFallbackModal(false);
+        navigation.navigate("Reactivate", reactivateNavParamsFromAuthPayload(createAccountData, { email: trimmed, password }));
+        return;
+      }
+      if (createAccountData.message === "User already exists") {
+        setPasswordFallbackError("User already exists. Please log in instead.");
+        return;
+      }
+      if (!(createAccountData.code === 281 && createAccountData.user_uid)) {
+        setPasswordFallbackError(createAccountData.message || "Failed to create account.");
+        return;
+      }
+      await AsyncStorage.clear();
+      refreshAllowCookies();
+      if (preservedReferralUid) await AsyncStorage.setItem("referral_uid", preservedReferralUid);
+      await finishAfterPasswordSet(createAccountData.user_uid, trimmed, preservedReferralUid, password);
+    } catch (err) {
+      console.error("ScanLanding - password fallback failed:", err);
+      setPasswordFallbackError(err?.message || "Something went wrong. Please try again.");
+    } finally {
+      setSubmittingPassword(false);
+    }
+  }, [
+    password,
+    confirmPassword,
+    pendingTempSignupUserUid,
+    email,
+    profileUid,
+    authParams,
+    navigation,
+    finishAfterPasswordSet,
+  ]);
+
   /** Email-only signup on this page: temp password email + stub profile → Connect + reverse-contact notify. */
   const handleEmailContinue = useCallback(async () => {
     const trimmed = email.trim();
@@ -213,6 +407,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     if (submittingEmail || signingIn) return;
 
     setEmailError("");
+    setEmailFallbackHint("");
     setSubmittingEmail(true);
     persistReferral();
 
@@ -222,22 +417,31 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       let createAccountResponse;
       let createAccountData = {};
       try {
-        createAccountResponse = await fetch(CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: trimmed }),
-        });
+        createAccountResponse = await fetchWithTimeout(
+          CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: trimmed }),
+          },
+          CREATE_ACCOUNT_TIMEOUT_MS,
+        );
         createAccountData = await createAccountResponse.json().catch(() => ({}));
       } catch (endpointErr) {
-        console.warn("ScanLanding - temp-password signup endpoint unavailable:", endpointErr);
-        Alert.alert("Error", "Could not create your account right now. Please try Google or Apple, or try again.");
+        console.warn("ScanLanding - temp-password signup unavailable/timeout:", endpointErr);
+        // Timed out or network failure after possible create — ask user to set a password.
+        openPasswordFallbackModal(null);
+        Alert.alert(
+          "Continue with a password",
+          "We couldn’t confirm a temporary password email in time. Please set a password to finish signing up.",
+        );
         return;
       }
 
       console.log("ScanLanding - Temp password signup response:", createAccountResponse?.status, createAccountData);
 
       if (createAccountResponse.status === 404 || createAccountResponse.status === 501) {
-        Alert.alert("Error", "Sign up is temporarily unavailable. Please try Google or Apple.");
+        openPasswordFallbackModal(null);
         return;
       }
 
@@ -267,11 +471,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
         }
 
         if (createAccountData.email_sent === false) {
-          Alert.alert(
-            "Account created",
-            "We couldn't email a temporary password. Please Log in after setting a password, or try again.",
-            [{ text: "Log in", onPress: goToLogin }, { text: "OK" }],
-          );
+          openPasswordFallbackModal(createAccountData.user_uid);
           return;
         }
 
@@ -286,42 +486,98 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       }
 
       if (!createAccountResponse.ok) {
-        Alert.alert("Error", createAccountData.message || "Failed to create account. Please try again.");
+        openPasswordFallbackModal(createAccountData.user_uid ? String(createAccountData.user_uid) : null);
         return;
       }
 
       throw new Error(createAccountData.message || "Failed to create account");
     } catch (err) {
       console.error("ScanLanding - email signup failed:", err);
-      Alert.alert("Error", err?.message || "Failed to create account. Please try again.");
+      openPasswordFallbackModal(null);
     } finally {
       setSubmittingEmail(false);
     }
-  }, [email, submittingEmail, signingIn, persistReferral, profileUid, authParams, navigation, goToLogin]);
+  }, [email, submittingEmail, signingIn, persistReferral, profileUid, authParams, navigation, openPasswordFallbackModal]);
 
   const handleGoogleSignUp = useCallback(async () => {
     if (signingIn || submittingEmail || !onGoogleSignUp) return;
     persistReferral();
+    fallbackPromptedRef.current = false;
+    setEmailFallbackHint("");
     setSigningIn(true);
+    clearOauthWatchdog();
+    oauthAbandonedRef.current = false;
     try {
-      await onGoogleSignUp(authParams);
+      await withTimeout(
+        Promise.resolve(onGoogleSignUp(authParams)),
+        OAUTH_TIMEOUT_MS,
+        "Google Sign-Up timed out. Enter your email below to continue.",
+      );
+      if (oauthAbandonedRef.current) return;
+    } catch (err) {
+      console.warn("ScanLanding - Google signup failed/timeout:", err);
+      promptEmailFallback(err?.message || "Google Sign-Up didn’t finish. Enter your email below to continue.");
+      return;
     } finally {
+      clearOauthWatchdog();
       setSigningIn(false);
     }
-  }, [signingIn, submittingEmail, onGoogleSignUp, authParams, persistReferral]);
+  }, [signingIn, submittingEmail, onGoogleSignUp, authParams, persistReferral, clearOauthWatchdog, promptEmailFallback]);
+
+  const handleAppleAuthStart = useCallback(() => {
+    if (signingIn || submittingEmail) return;
+    persistReferral();
+    fallbackPromptedRef.current = false;
+    setEmailFallbackHint("");
+    appleAuthInFlightRef.current = true;
+    oauthAbandonedRef.current = false;
+    setSigningIn(true);
+    clearOauthWatchdog();
+    oauthWatchdogRef.current = setTimeout(() => {
+      if (!appleAuthInFlightRef.current) return;
+      promptEmailFallback("Apple Sign-Up timed out. Enter your email below to continue.");
+    }, OAUTH_TIMEOUT_MS);
+  }, [signingIn, submittingEmail, persistReferral, clearOauthWatchdog, promptEmailFallback]);
 
   const handleAppleSignUp = useCallback(
     async (...args) => {
-      if (signingIn || submittingEmail || !onAppleSignUp) return;
-      persistReferral();
-      setSigningIn(true);
+      if (oauthAbandonedRef.current) return;
       try {
-        await onAppleSignUp(...args);
-      } finally {
-        setSigningIn(false);
+        if (!onAppleSignUp) return;
+        await withTimeout(
+          Promise.resolve(onAppleSignUp(...args)),
+          OAUTH_TIMEOUT_MS,
+          "Apple Sign-Up timed out. Enter your email below to continue.",
+        );
+      } catch (err) {
+        console.warn("ScanLanding - Apple signup failed/timeout:", err);
+        promptEmailFallback(err?.message || "Apple Sign-Up didn’t finish. Enter your email below to continue.");
+        throw err;
       }
     },
-    [signingIn, submittingEmail, onAppleSignUp, persistReferral],
+    [onAppleSignUp, promptEmailFallback],
+  );
+
+  const handleAppleAuthEnd = useCallback(
+    (result) => {
+      appleAuthInFlightRef.current = false;
+      clearOauthWatchdog();
+      setSigningIn(false);
+      if (result?.status === "cancelled") {
+        promptEmailFallback("Apple Sign-Up was cancelled. Enter your email below to continue, or try again.");
+      } else if (result?.status === "error") {
+        promptEmailFallback("Apple Sign-Up failed. Enter your email below to continue, or try again.");
+      }
+    },
+    [clearOauthWatchdog, promptEmailFallback],
+  );
+
+  const handleAppleError = useCallback(
+    (message) => {
+      onError?.(message);
+      promptEmailFallback(typeof message === "string" && message ? message : "Apple Sign-Up failed. Enter your email below to continue.");
+    },
+    [onError, promptEmailFallback],
   );
 
   const downloadVCard = useCallback(() => {
@@ -497,7 +753,14 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
                 <View style={styles.socialContainer}>
                   <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
-                  <AppleSignIn mode='signUp' onSignIn={handleAppleSignUp} onError={onError} disabled={signingIn} />
+                  <AppleSignIn
+                    mode='signUp'
+                    onSignIn={handleAppleSignUp}
+                    onError={handleAppleError}
+                    onAuthSessionStart={handleAppleAuthStart}
+                    onAuthSessionEnd={handleAppleAuthEnd}
+                    disabled={signingIn}
+                  />
                 </View>
 
                 <View style={styles.dividerContainer}>
@@ -506,7 +769,10 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                   <View style={styles.divider} />
                 </View>
 
+                {!!emailFallbackHint && <Text style={styles.emailFallbackHint}>{emailFallbackHint}</Text>}
+
                 <TextInput
+                  ref={emailInputRef}
                   style={styles.emailInput}
                   placeholder='Email'
                   placeholderTextColor='#888'
@@ -514,6 +780,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                   onChangeText={(text) => {
                     setEmail(text);
                     if (emailError) setEmailError("");
+                    if (emailFallbackHint) setEmailFallbackHint("");
                   }}
                   keyboardType='email-address'
                   autoCapitalize='none'
@@ -555,6 +822,77 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
           <Text style={styles.version}>{versionLabel}</Text>
         </View>
       </ScrollView>
+
+      <Modal visible={showPasswordFallbackModal} transparent animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Set a password</Text>
+            <Text style={styles.modalSubtitle}>
+              We couldn't email a temporary password. Please create a password to finish signing up.
+            </Text>
+            <View style={styles.passwordInputContainer}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder='Password'
+                placeholderTextColor='#888'
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!isPasswordVisible}
+                autoCapitalize='none'
+                editable={!submittingPassword}
+              />
+              <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
+                <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.passwordInputContainer, { marginTop: 12 }]}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder='Confirm Password'
+                placeholderTextColor='#888'
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!isConfirmPasswordVisible}
+                autoCapitalize='none'
+                editable={!submittingPassword}
+              />
+              <TouchableOpacity
+                style={styles.passwordVisibilityToggle}
+                onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}
+              >
+                <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+              </TouchableOpacity>
+            </View>
+            {!!passwordFallbackError && <Text style={styles.passwordFallbackError}>{passwordFallbackError}</Text>}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnSecondary]}
+                onPress={() => {
+                  setShowPasswordFallbackModal(false);
+                  setPendingTempSignupUserUid(null);
+                  setPasswordFallbackError("");
+                }}
+                disabled={submittingPassword}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.modalBtnSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnPrimary]}
+                onPress={handlePasswordFallbackSubmit}
+                disabled={submittingPassword}
+                activeOpacity={0.85}
+              >
+                {submittingPassword ? (
+                  <ActivityIndicator color='#fff' />
+                ) : (
+                  <Text style={styles.modalBtnPrimaryText}>Continue</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -651,6 +989,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textAlign: "center",
   },
+  emailFallbackHint: {
+    color: "#8A5A00",
+    backgroundColor: "#FFF6E5",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 10,
+    textAlign: "center",
+  },
   primaryBtn: {
     backgroundColor: "#2434C2",
     paddingVertical: 12,
@@ -685,5 +1034,85 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 12,
     color: "#9AA0B0",
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalCard: {
+    backgroundColor: "#fff",
+    padding: 24,
+    borderRadius: 12,
+    width: "90%",
+    maxWidth: 500,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 8,
+    color: "#111",
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  passwordInputContainer: {
+    position: "relative",
+    justifyContent: "center",
+  },
+  passwordInput: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingRight: 48,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: "#CFD3DE",
+    color: "#111",
+  },
+  passwordVisibilityToggle: {
+    position: "absolute",
+    right: 12,
+    height: "100%",
+    justifyContent: "center",
+  },
+  passwordFallbackError: {
+    color: "#b00020",
+    fontSize: 13,
+    marginTop: 10,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 16,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+  },
+  modalBtnSecondary: {
+    backgroundColor: "#F0F1F5",
+  },
+  modalBtnSecondaryText: {
+    color: "#444",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  modalBtnPrimary: {
+    backgroundColor: "#2434C2",
+  },
+  modalBtnPrimaryText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
