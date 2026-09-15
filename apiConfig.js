@@ -8,8 +8,8 @@
 import { EXPO_PUBLIC_API_STAGE } from "@env";
 
 const API_STAGE_URLS = {
-  // dev: "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev",
-  dev: "http://localhost:4090",
+  dev: "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev",
+  // dev: "http://localhost:4090",
   production: "https://ml7xmrvue6.execute-api.us-west-1.amazonaws.com/production",
 };
 
