@@ -9,23 +9,42 @@ import { getUserEmail } from "./emailStorage";
 import { goToNetworkForScanConnect } from "./goToNetworkForScanConnect";
 import { refreshSessionProfileFromNetwork, saveSessionProfilePayload } from "./sessionProfile";
 
+function withOAuthPhotoFallback(apiPayload, profilePicture) {
+  const photo = String(profilePicture || "").trim();
+  if (!photo || !apiPayload || typeof apiPayload !== "object") return apiPayload;
+  if (existingProfileHasImage(apiPayload)) return apiPayload;
+  const personalInfo = apiPayload.personal_info && typeof apiPayload.personal_info === "object" ? apiPayload.personal_info : {};
+  return {
+    ...apiPayload,
+    personal_info: {
+      ...personalInfo,
+      profile_personal_image: photo,
+      profile_personal_image_is_public: 1,
+    },
+  };
+}
+
 /**
  * Hydrate session profile cache so Connect MiniCard shows OAuth names/photo immediately
  * (without waiting for the user to open Profile).
  */
-async function hydrateSessionAfterSignup(profileUid, apiPayload) {
+async function hydrateSessionAfterSignup(profileUid, apiPayload, profilePicture = "") {
   const uid = String(profileUid || "").trim();
   if (!uid) return;
   try {
     if (apiPayload?.personal_info) {
-      const saved = await saveSessionProfilePayload(apiPayload);
+      const saved = await saveSessionProfilePayload(withOAuthPhotoFallback(apiPayload, profilePicture));
       if (saved) return;
     }
   } catch (_) {
     /* fall through to network refresh */
   }
   try {
-    await refreshSessionProfileFromNetwork(uid);
+    const session = await refreshSessionProfileFromNetwork(uid);
+    const raw = session?.rawProfile;
+    if (profilePicture && raw && !existingProfileHasImage(raw)) {
+      await saveSessionProfilePayload(withOAuthPhotoFallback(raw, profilePicture));
+    }
   } catch (e) {
     console.warn("createMinimalSignupProfile: session hydrate failed", e?.message || e);
   }
@@ -33,7 +52,8 @@ async function hydrateSessionAfterSignup(profileUid, apiPayload) {
 
 /**
  * Download a remote OAuth profile photo and append it as multipart `profile_image`
- * (same field EditProfile uses). Returns true if a file was appended.
+ * (same field EditProfile uses). On web CORS failure, send the URL for the backend to pull.
+ * Returns true if photo fields were appended.
  */
 async function appendOAuthProfileImage(formData, photoUrl) {
   const url = String(photoUrl || "").trim();
@@ -41,14 +61,21 @@ async function appendOAuthProfileImage(formData, photoUrl) {
 
   try {
     if (Platform.OS === "web") {
-      // Use global fetch — not API middleware — for the Google CDN URL.
-      const res = await globalThis.fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const type = blob.type || "image/jpeg";
-      const ext = (type.split("/")[1] || "jpg").replace("jpeg", "jpg");
-      formData.append("profile_image", new File([blob], `profile.${ext}`, { type }));
-      return true;
+      try {
+        // Use global fetch — not API middleware — for the Google CDN URL.
+        const res = await globalThis.fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const type = blob.type || "image/jpeg";
+        const ext = (type.split("/")[1] || "jpg").replace("jpeg", "jpg");
+        formData.append("profile_image", new File([blob], `profile.${ext}`, { type }));
+        return true;
+      } catch (blobErr) {
+        // Browser cannot fetch Google photo bytes (CORS). Send URL so BE can store/display it.
+        console.warn("appendOAuthProfileImage: web blob fetch failed, sending URL", blobErr?.message || blobErr);
+        formData.append("profile_personal_image", url);
+        return true;
+      }
     }
 
     const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
@@ -141,7 +168,7 @@ export async function createMinimalSignupProfile({
           if (updated) payload = null; // force GET so session gets S3 image URL
         }
 
-        await hydrateSessionAfterSignup(existingUid, payload);
+        await hydrateSessionAfterSignup(existingUid, payload, profilePicture);
         return existingUid;
       }
     }
@@ -184,7 +211,7 @@ export async function createMinimalSignupProfile({
   }
 
   // Connect reads names/photo from session cache (not live API); hydrate before navigating.
-  await hydrateSessionAfterSignup(profileUid, hydratePayload);
+  await hydrateSessionAfterSignup(profileUid, hydratePayload, profilePicture);
   return profileUid;
 }
 

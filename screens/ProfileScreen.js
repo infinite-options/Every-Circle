@@ -53,6 +53,7 @@ import { saveSessionProfilePayload, clearUserProfileCacheStorage, getSessionProf
 import { profileBusinessHasRealOwnership } from "../utils/businessOwnership";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { sanitizeText } from "../utils/textSanitizer";
+import { isApiPublicFlag } from "../utils/apiPublicFlag";
 import { upsertReferralNetworkRelationship } from "../utils/searchReferralProfiles";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceAddressDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
@@ -816,17 +817,17 @@ const ProfileScreen = ({ route, navigation }) => {
           return `${la}, ${lo}`;
         })(),
         shortBio: apiUser.personal_info?.profile_personal_short_bio || "",
-        emailIsPublic: apiUser.personal_info?.profile_personal_email_is_public === 1,
-        phoneIsPublic: apiUser.personal_info?.profile_personal_phone_number_is_public === 1,
-        imageIsPublic: apiUser.personal_info?.profile_personal_image_is_public === 1,
-        tagLineIsPublic: apiUser.personal_info?.profile_personal_tag_line_is_public === 1,
-        locationIsPublic: apiUser.personal_info?.profile_personal_location_is_public === 1,
-        shortBioIsPublic: apiUser.personal_info?.profile_personal_short_bio_is_public === 1,
-        experienceIsPublic: apiUser.personal_info?.profile_personal_experience_is_public === 1,
-        educationIsPublic: apiUser.personal_info?.profile_personal_education_is_public === 1,
-        expertiseIsPublic: apiUser.personal_info?.profile_personal_expertise_is_public === 1,
-        wishesIsPublic: apiUser.personal_info?.profile_personal_wishes_is_public === 1,
-        businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
+        emailIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_email_is_public),
+        phoneIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_phone_number_is_public),
+        imageIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_image_is_public),
+        tagLineIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_tag_line_is_public),
+        locationIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_location_is_public),
+        shortBioIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_short_bio_is_public),
+        experienceIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_experience_is_public),
+        educationIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_education_is_public),
+        expertiseIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_expertise_is_public),
+        wishesIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_wishes_is_public),
+        businessIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_business_is_public),
         socialLinksIsPublic: isSocialLinksSectionPublic(apiUser.personal_info, apiUser.links_info),
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
         profilePersonalPath: apiUser.personal_info?.profile_personal_path || null,

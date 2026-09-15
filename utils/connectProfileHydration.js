@@ -1,4 +1,5 @@
 import { sanitizeText } from "./textSanitizer";
+import { isApiPublicFlag } from "./apiPublicFlag";
 
 /** MiniCard + QR fields for Connect tab, from shared session profile (no network). */
 export function miniCardUserFromSession(session, profileUidOptional, userUidOptional = "") {
@@ -20,11 +21,11 @@ export function miniCardUserFromSession(session, profileUidOptional, userUidOpti
     city: sanitizeText(p.profile_personal_city || ""),
     state: sanitizeText(p.profile_personal_state || ""),
     profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-    emailIsPublic: p.profile_personal_email_is_public === 1,
-    phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-    tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-    locationIsPublic: p.profile_personal_location_is_public === 1,
-    imageIsPublic: p.profile_personal_image_is_public === 1,
+    emailIsPublic: isApiPublicFlag(p.profile_personal_email_is_public),
+    phoneIsPublic: isApiPublicFlag(p.profile_personal_phone_number_is_public),
+    tagLineIsPublic: isApiPublicFlag(p.profile_personal_tag_line_is_public) || isApiPublicFlag(p.profile_personal_tagline_is_public),
+    locationIsPublic: isApiPublicFlag(p.profile_personal_location_is_public),
+    imageIsPublic: isApiPublicFlag(p.profile_personal_image_is_public),
   };
 }
 

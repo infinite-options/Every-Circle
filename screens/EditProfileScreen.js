@@ -12,6 +12,7 @@ import { getHeaderColors } from "../config/headerColors";
 import { useFocusEffect } from "@react-navigation/native";
 import PhoneOtpVerifyModal from "../components/PhoneOtpVerifyModal";
 import PhoneVerifiedBadge from "../components/PhoneVerifiedBadge";
+import { isApiPublicFlag } from "../utils/apiPublicFlag";
 import {
   digitsForPhoneApi,
   fetchAuthMe,
@@ -120,18 +121,18 @@ function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
     shortBio: pi.profile_personal_short_bio || "",
     homeAddress: pi.profile_personal_home_address || "",
     personal_info: pi,
-    locationIsPublic: pi.profile_personal_location_is_public === 1,
-    emailIsPublic: pi.profile_personal_email_is_public === 1,
-    phoneIsPublic: pi.profile_personal_phone_number_is_public === 1,
-    tagLineIsPublic: pi.profile_personal_tag_line_is_public === 1,
-    shortBioIsPublic: pi.profile_personal_short_bio_is_public === 1,
-    experienceIsPublic: pi.profile_personal_experience_is_public === 1,
-    educationIsPublic: pi.profile_personal_education_is_public === 1,
-    expertiseIsPublic: pi.profile_personal_expertise_is_public === 1,
-    wishesIsPublic: pi.profile_personal_wishes_is_public === 1,
-    businessIsPublic: pi.profile_personal_business_is_public === 1,
-    socialLinksIsPublic: pi.profile_personal_social_links_is_public === 1,
-    imageIsPublic: pi.profile_personal_image_is_public === 1,
+    locationIsPublic: isApiPublicFlag(pi.profile_personal_location_is_public),
+    emailIsPublic: isApiPublicFlag(pi.profile_personal_email_is_public),
+    phoneIsPublic: isApiPublicFlag(pi.profile_personal_phone_number_is_public),
+    tagLineIsPublic: isApiPublicFlag(pi.profile_personal_tag_line_is_public),
+    shortBioIsPublic: isApiPublicFlag(pi.profile_personal_short_bio_is_public),
+    experienceIsPublic: isApiPublicFlag(pi.profile_personal_experience_is_public),
+    educationIsPublic: isApiPublicFlag(pi.profile_personal_education_is_public),
+    expertiseIsPublic: isApiPublicFlag(pi.profile_personal_expertise_is_public),
+    wishesIsPublic: isApiPublicFlag(pi.profile_personal_wishes_is_public),
+    businessIsPublic: isApiPublicFlag(pi.profile_personal_business_is_public),
+    socialLinksIsPublic: isApiPublicFlag(pi.profile_personal_social_links_is_public),
+    imageIsPublic: isApiPublicFlag(pi.profile_personal_image_is_public),
     profileImage: image,
     profile_personal_image: image,
     experience: parseProfileJsonArray(json?.experience_info),
