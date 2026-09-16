@@ -1560,11 +1560,12 @@ const ConnectScreen = ({ navigation }) => {
     try {
       if (!scannedProfileData?.profile_uid) return;
 
-      const result = await addScannedCircleConnection(scannedProfileData.profile_uid, connectionData);
-      if (result.ok) {
-        const connectedProfileUid = scannedProfileData.profile_uid;
-        const { source, scannerIsNewSignup } = connectPopupContextRef.current || {};
+      // Capture before await — modal close / remount must not change the routing decision.
+      const connectedProfileUid = scannedProfileData.profile_uid;
+      const { source, scannerIsNewSignup } = connectPopupContextRef.current || {};
 
+      const result = await addScannedCircleConnection(connectedProfileUid, connectionData);
+      if (result.ok) {
         const currentProfileUID = await AsyncStorage.getItem("profile_uid");
         const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
         if (currentProfileUID) {
@@ -1578,7 +1579,16 @@ const ConnectScreen = ({ navigation }) => {
         // QR owner → scanner's Profile if scanner is an existing member; stay on Connect if scanner is mid-signup.
         const shouldOpenProfile = source === "scan" || (source === "ably" && !scannerIsNewSignup);
         if (shouldOpenProfile && connectedProfileUid) {
-          navigation.navigate("Profile", { profile_uid: connectedProfileUid, returnTo: "Connect" });
+          // Profile is often already in the stack as the QR owner's own profile. A plain
+          // navigate() can pop to that screen and keep empty/stale params — merge: false
+          // replaces params so the other member's profile loads (same pattern as BottomNavBar).
+          InteractionManager.runAfterInteractions(() => {
+            navigation.navigate({
+              name: "Profile",
+              params: { profile_uid: connectedProfileUid, returnTo: "Connect" },
+              merge: false,
+            });
+          });
         }
       } else if (result.error && result.error !== "not_logged_in" && result.error !== "self") {
         console.error("Error adding scanned connection:", result.error);

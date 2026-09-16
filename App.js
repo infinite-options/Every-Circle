@@ -66,7 +66,6 @@ import ChangePasswordScreen from "./screens/ChangePasswordScreen";
 import VerifyPhoneScreen from "./screens/VerifyPhoneScreen";
 import DeleteAccountScreen from "./screens/DeleteAccountScreen";
 import ReactivateScreen from "./screens/ReactivateScreen";
-import FilterScreen from "./screens/FilterScreen-DNU";
 import TermsAndConditionsScreen from "./screens/TermsAndConditionsScreen";
 import PrivacyPolicyScreen from "./screens/PrivacyPolicyScreen";
 import ChildSafetyScreen from "./screens/ChildSafetyScreen";
@@ -1286,7 +1285,6 @@ export default function App() {
                     <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
                     <Stack.Screen name='ContactUs' component={ContactUsScreen} />
                     <Stack.Screen name='UserInfo' component={UserInfoScreen} />
-                    {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
                     <Stack.Screen name='AccountType' component={AccountTypeScreen} />
                     <Stack.Screen name='Profile' component={ProfileScreen} />
                     <Stack.Screen name='ProfileModeration' component={ProfileModerationScreen} options={{ headerShown: false }} />
@@ -1302,7 +1300,6 @@ export default function App() {
                     <Stack.Screen name='VerifyPhone' component={VerifyPhoneScreen} />
                     <Stack.Screen name='DeleteAccount' component={DeleteAccountScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='Reactivate' component={ReactivateScreen} options={{ headerShown: false }} />
-                    <Stack.Screen name='Filters' component={FilterScreen} />
                     <Stack.Screen name='SearchTab' component={SearchTab} />
 
                     <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />

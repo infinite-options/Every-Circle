@@ -254,19 +254,20 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
   useEffect(() => () => clearOauthWatchdog(), [clearOauthWatchdog]);
 
-  const promptEmailFallback = useCallback((message) => {
-    clearOauthWatchdog();
-    setSigningIn(false);
-    appleAuthInFlightRef.current = false;
-    oauthAbandonedRef.current = true;
-    if (fallbackPromptedRef.current) return;
-    fallbackPromptedRef.current = true;
-    const hint =
-      message ||
-      "Google or Apple didn’t finish in time. Enter your email below to continue.";
-    setEmailFallbackHint(hint);
-    setTimeout(() => emailInputRef.current?.focus?.(), 100);
-  }, [clearOauthWatchdog]);
+  const promptEmailFallback = useCallback(
+    (message) => {
+      clearOauthWatchdog();
+      setSigningIn(false);
+      appleAuthInFlightRef.current = false;
+      oauthAbandonedRef.current = true;
+      if (fallbackPromptedRef.current) return;
+      fallbackPromptedRef.current = true;
+      const hint = message || "Google or Apple didn’t finish in time. Enter your email below to continue.";
+      setEmailFallbackHint(hint);
+      setTimeout(() => emailInputRef.current?.focus?.(), 100);
+    },
+    [clearOauthWatchdog],
+  );
 
   const openPasswordFallbackModal = useCallback((userUid) => {
     setPendingTempSignupUserUid(userUid ? String(userUid) : null);
@@ -291,10 +292,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
         setShowPasswordFallbackModal(false);
         await clearSessionAsyncStorage();
         await clearUserProfileCacheStorage();
-        navigation.navigate(
-          "Reactivate",
-          reactivateNavParamsFromAuthPayload(circleAuth.data || {}, { email: trimmed, password: passwordValue }),
-        );
+        navigation.navigate("Reactivate", reactivateNavParamsFromAuthPayload(circleAuth.data || {}, { email: trimmed, password: passwordValue }));
         return;
       }
 
@@ -328,8 +326,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
         setPasswordFallbackError("Enter a valid email address first.");
         return;
       }
-      const preservedReferralUid =
-        String(profileUid || authParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+      const preservedReferralUid = String(profileUid || authParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
 
       if (pendingTempSignupUserUid) {
         const userUid = String(pendingTempSignupUserUid);
@@ -386,16 +383,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     } finally {
       setSubmittingPassword(false);
     }
-  }, [
-    password,
-    confirmPassword,
-    pendingTempSignupUserUid,
-    email,
-    profileUid,
-    authParams,
-    navigation,
-    finishAfterPasswordSet,
-  ]);
+  }, [password, confirmPassword, pendingTempSignupUserUid, email, profileUid, authParams, navigation, finishAfterPasswordSet]);
 
   /** Email-only signup on this page: temp password email + stub profile → Connect + reverse-contact notify. */
   const handleEmailContinue = useCallback(async () => {
@@ -431,10 +419,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
         console.warn("ScanLanding - temp-password signup unavailable/timeout:", endpointErr);
         // Timed out or network failure after possible create — ask user to set a password.
         openPasswordFallbackModal(null);
-        Alert.alert(
-          "Continue with a password",
-          "We couldn’t confirm a temporary password email in time. Please set a password to finish signing up.",
-        );
+        Alert.alert("Continue with a password", "We couldn’t confirm a temporary password email in time. Please set a password to finish signing up.");
         return;
       }
 
@@ -508,11 +493,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     clearOauthWatchdog();
     oauthAbandonedRef.current = false;
     try {
-      await withTimeout(
-        Promise.resolve(onGoogleSignUp(authParams)),
-        OAUTH_TIMEOUT_MS,
-        "Google Sign-Up timed out. Enter your email below to continue.",
-      );
+      await withTimeout(Promise.resolve(onGoogleSignUp(authParams)), OAUTH_TIMEOUT_MS, "Google Sign-Up timed out. Enter your email below to continue.");
       if (oauthAbandonedRef.current) return;
     } catch (err) {
       console.warn("ScanLanding - Google signup failed/timeout:", err);
@@ -544,11 +525,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       if (oauthAbandonedRef.current) return;
       try {
         if (!onAppleSignUp) return;
-        await withTimeout(
-          Promise.resolve(onAppleSignUp(...args)),
-          OAUTH_TIMEOUT_MS,
-          "Apple Sign-Up timed out. Enter your email below to continue.",
-        );
+        await withTimeout(Promise.resolve(onAppleSignUp(...args)), OAUTH_TIMEOUT_MS, "Apple Sign-Up timed out. Enter your email below to continue.");
       } catch (err) {
         console.warn("ScanLanding - Apple signup failed/timeout:", err);
         promptEmailFallback(err?.message || "Apple Sign-Up didn’t finish. Enter your email below to continue.");
@@ -733,7 +710,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
           <View style={styles.body}>
             <Text style={styles.headline}>Connect on everyCircle</Text>
             <Text style={styles.sub}>
-              {showRedirecting ? "Taking you to your network…" : "You're one click from the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+              {showRedirecting ? "Taking you to your network…" : "You're one click from joining the most trusted network on the planet. Join with Google or Apple, or enter your email."}
             </Text>
 
             {(loading || showRedirecting) && (
@@ -799,11 +776,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                   activeOpacity={0.85}
                   disabled={!EMAIL_REGEX.test(email.trim()) || submittingEmail || signingIn}
                 >
-                  {submittingEmail ? (
-                    <ActivityIndicator color='#fff' />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>Continue with email</Text>
-                  )}
+                  {submittingEmail ? <ActivityIndicator color='#fff' /> : <Text style={styles.primaryBtnText}>Continue with email</Text>}
                 </TouchableOpacity>
 
                 <View style={styles.sectionRule} />
@@ -827,9 +800,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Set a password</Text>
-            <Text style={styles.modalSubtitle}>
-              We couldn't email a temporary password. Please create a password to finish signing up.
-            </Text>
+            <Text style={styles.modalSubtitle}>We couldn't email a temporary password. Please create a password to finish signing up.</Text>
             <View style={styles.passwordInputContainer}>
               <TextInput
                 style={styles.passwordInput}
@@ -856,10 +827,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                 autoCapitalize='none'
                 editable={!submittingPassword}
               />
-              <TouchableOpacity
-                style={styles.passwordVisibilityToggle}
-                onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}
-              >
+              <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}>
                 <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
               </TouchableOpacity>
             </View>
@@ -877,17 +845,8 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
               >
                 <Text style={styles.modalBtnSecondaryText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnPrimary]}
-                onPress={handlePasswordFallbackSubmit}
-                disabled={submittingPassword}
-                activeOpacity={0.85}
-              >
-                {submittingPassword ? (
-                  <ActivityIndicator color='#fff' />
-                ) : (
-                  <Text style={styles.modalBtnPrimaryText}>Continue</Text>
-                )}
+              <TouchableOpacity style={[styles.modalBtn, styles.modalBtnPrimary]} onPress={handlePasswordFallbackSubmit} disabled={submittingPassword} activeOpacity={0.85}>
+                {submittingPassword ? <ActivityIndicator color='#fff' /> : <Text style={styles.modalBtnPrimaryText}>Continue</Text>}
               </TouchableOpacity>
             </View>
           </View>
