@@ -9,8 +9,9 @@ import { getUserEmail } from "./emailStorage";
 import { goToNetworkForScanConnect } from "./goToNetworkForScanConnect";
 import { refreshSessionProfileFromNetwork, saveSessionProfilePayload } from "./sessionProfile";
 import {
-  setOauthPendingProfileImage,
-  withOauthPhotoOnPayload,
+  setOauthPendingProfileIdentity,
+  setOauthProfileSetupStatus,
+  withOauthIdentityOnPayload,
   mergePendingOauthPhotoIntoPayload,
 } from "./oauthPendingProfileImage";
 
@@ -18,18 +19,20 @@ import {
  * Hydrate session profile cache so Connect MiniCard shows OAuth names/photo immediately
  * (without waiting for the user to open Profile).
  */
-async function hydrateSessionAfterSignup(profileUid, apiPayload, profilePicture = "") {
+async function hydrateSessionAfterSignup(profileUid, apiPayload, { profilePicture = "", firstName = "", lastName = "" } = {}) {
   const uid = String(profileUid || "").trim();
   if (!uid) return;
   try {
     if (apiPayload?.personal_info) {
-      const withPhoto = withOauthPhotoOnPayload(apiPayload, profilePicture);
-      const saved = await saveSessionProfilePayload(withPhoto);
+      const withIdentity = withOauthIdentityOnPayload(apiPayload, { firstName, lastName, profilePicture });
+      const saved = await saveSessionProfilePayload(withIdentity);
       if (saved) {
-        console.log(
-          "[GooglePhoto] session hydrated with image =",
-          saved?.personalInfo?.profile_personal_image || withPhoto?.personal_info?.profile_personal_image,
-        );
+        console.log("[GooglePhoto] session hydrated", {
+          firstName: saved?.personalInfo?.profile_personal_first_name || withIdentity?.personal_info?.profile_personal_first_name,
+          lastName: saved?.personalInfo?.profile_personal_last_name || withIdentity?.personal_info?.profile_personal_last_name,
+          image: saved?.personalInfo?.profile_personal_image || withIdentity?.personal_info?.profile_personal_image,
+          imageIsPublic: saved?.personalInfo?.profile_personal_image_is_public || withIdentity?.personal_info?.profile_personal_image_is_public,
+        });
         return;
       }
     }
@@ -40,10 +43,8 @@ async function hydrateSessionAfterSignup(profileUid, apiPayload, profilePicture 
     const session = await refreshSessionProfileFromNetwork(uid);
     const raw = session?.rawProfile;
     if (raw) {
-      const merged = withOauthPhotoOnPayload(raw, profilePicture);
-      if (merged !== raw) {
-        await saveSessionProfilePayload(merged);
-      }
+      const merged = withOauthIdentityOnPayload(raw, { firstName, lastName, profilePicture });
+      await saveSessionProfilePayload(merged);
       console.log(
         "[GooglePhoto] session after network hydrate image =",
         (await mergePendingOauthPhotoIntoPayload(merged))?.personal_info?.profile_personal_image,
@@ -117,20 +118,27 @@ function existingProfileHasImage(existing) {
 }
 
 /**
- * Best-effort: upload OAuth photo onto an existing profile_uid. Never throws.
+ * Best-effort: upload OAuth photo (+ names when provided) onto an existing profile_uid. Never throws.
  */
-async function uploadOAuthPhotoIfPresent(profileUid, userUid, profilePicture) {
+async function uploadOAuthPhotoIfPresent(profileUid, userUid, profilePicture, { firstName = "", lastName = "" } = {}) {
   const uid = String(profileUid || "").trim();
   const photo = String(profilePicture || "").trim();
-  if (!uid || !photo) return null;
+  const first = String(firstName || "").trim();
+  const last = String(lastName || "").trim();
+  if (!uid || (!photo && !first && !last)) return null;
 
   try {
     const putData = new FormData();
     putData.append("profile_uid", uid);
     if (userUid) putData.append("user_uid", String(userUid));
-    const attached = await attachOAuthPhotoFields(putData, photo);
-    if (!attached) return null;
-    console.log("[GooglePhoto] PUT userprofileinfo with OAuth photo for", uid);
+    if (first) putData.append("profile_personal_first_name", first);
+    if (last) putData.append("profile_personal_last_name", last);
+    let attached = false;
+    if (photo) {
+      attached = await attachOAuthPhotoFields(putData, photo);
+    }
+    if (!attached && !first && !last) return null;
+    console.log("[GooglePhoto] PUT userprofileinfo with OAuth identity for", uid, { photo: !!photo, first, last });
     const putRes = await fetch(USER_PROFILE_INFO_ENDPOINT, { method: "PUT", body: putData });
     const putBody = await putRes.json().catch(() => null);
     if (!putRes.ok) {
@@ -161,13 +169,20 @@ export async function createMinimalSignupProfile({
   phoneNumber = "",
   profilePicture = "",
 } = {}) {
-  console.log("[GooglePhoto] createMinimalSignupProfile profilePicture =", profilePicture);
+  console.log("[GooglePhoto] createMinimalSignupProfile profilePicture =", profilePicture, "name =", firstName, lastName);
   const uid = String(userUid || "").trim();
   if (!uid) throw new Error("User UID not found");
 
   const photo = String(profilePicture || "").trim();
-  if (photo) {
-    await setOauthPendingProfileImage(photo);
+  const first = String(firstName || "").trim();
+  const last = String(lastName || "").trim();
+  const identityOpts = { profilePicture: photo, firstName: first, lastName: last };
+
+  await setOauthPendingProfileIdentity(identityOpts);
+  if (photo || first || last) {
+    await setOauthProfileSetupStatus("pending");
+  } else {
+    await setOauthProfileSetupStatus("done");
   }
 
   let referredBy = String(referralUid || "").trim() || "100-000001";
@@ -181,14 +196,21 @@ export async function createMinimalSignupProfile({
       if (existingUid) {
         await AsyncStorage.setItem("profile_uid", existingUid);
 
-        // Show Google photo on MiniCard immediately (before PUT).
-        await hydrateSessionAfterSignup(existingUid, existing, photo);
+        // Show Google name/photo on MiniCard immediately (before PUT).
+        await hydrateSessionAfterSignup(existingUid, existing, identityOpts);
 
         let payload = existing;
-        if (photo && !existingProfileHasImage(existing)) {
-          const updated = await uploadOAuthPhotoIfPresent(existingUid, uid, photo);
+        const existingPi = existing?.personal_info || {};
+        const needsName =
+          (first && !String(existingPi.profile_personal_first_name || "").trim()) ||
+          (last && !String(existingPi.profile_personal_last_name || "").trim());
+        if ((photo && !existingProfileHasImage(existing)) || needsName) {
+          const updated = await uploadOAuthPhotoIfPresent(existingUid, uid, photo, { firstName: first, lastName: last });
           if (updated) payload = null; // force GET so session prefers BE/S3 URL when present
-          await hydrateSessionAfterSignup(existingUid, payload, photo);
+          await hydrateSessionAfterSignup(existingUid, payload, identityOpts);
+          await setOauthProfileSetupStatus(updated ? "done" : "failed");
+        } else {
+          await setOauthProfileSetupStatus("done");
         }
 
         return existingUid;
@@ -199,8 +221,8 @@ export async function createMinimalSignupProfile({
   }
 
   const formData = new FormData();
-  formData.append("profile_personal_first_name", firstName || "");
-  formData.append("profile_personal_last_name", lastName || "");
+  formData.append("profile_personal_first_name", first);
+  formData.append("profile_personal_last_name", last);
   formData.append("profile_personal_phone_number", phoneNumber || "");
   formData.append("profile_personal_referred_by", referredBy);
   formData.append("user_uid", uid);
@@ -217,6 +239,7 @@ export async function createMinimalSignupProfile({
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (photo) await setOauthProfileSetupStatus("failed");
     const msg = body.message || body.error || `Profile create failed (${response.status})`;
     throw new Error(msg);
   }
@@ -231,15 +254,18 @@ export async function createMinimalSignupProfile({
     /* optional */
   }
 
-  // Immediate MiniCard display from Google URL (do not wait on PUT).
-  await hydrateSessionAfterSignup(profileUid, withOauthPhotoOnPayload(body, photo), photo);
+  // Immediate MiniCard display from Google name/photo (do not wait on PUT).
+  await hydrateSessionAfterSignup(profileUid, withOauthIdentityOnPayload(body, identityOpts), identityOpts);
 
   // Best-effort PUT (native file / web URL) so DB has the image even if POST ignored the URL field.
-  let hydratePayload = withOauthPhotoOnPayload(body, photo);
-  if (profileUid && photo && !existingProfileHasImage(body)) {
-    const updated = await uploadOAuthPhotoIfPresent(profileUid, uid, photo);
+  let hydratePayload = withOauthIdentityOnPayload(body, identityOpts);
+  if (profileUid && (photo || first || last) && (!existingProfileHasImage(body) || first || last)) {
+    const updated = await uploadOAuthPhotoIfPresent(profileUid, uid, photo, { firstName: first, lastName: last });
     if (updated) hydratePayload = null;
-    await hydrateSessionAfterSignup(profileUid, hydratePayload, photo);
+    await hydrateSessionAfterSignup(profileUid, hydratePayload, identityOpts);
+    await setOauthProfileSetupStatus(updated ? "done" : "failed");
+  } else {
+    await setOauthProfileSetupStatus("done");
   }
 
   return profileUid;
@@ -262,13 +288,18 @@ export async function finishSignupAfterReferral(
     await AsyncStorage.setItem("referral_uid", ref);
   }
 
-  await createMinimalSignupProfile({
-    userUid: uid,
-    referralUid: ref,
-    firstName,
-    lastName,
-    profilePicture,
-  });
+  try {
+    await createMinimalSignupProfile({
+      userUid: uid,
+      referralUid: ref,
+      firstName,
+      lastName,
+      profilePicture,
+    });
+  } catch (err) {
+    await setOauthProfileSetupStatus("failed");
+    throw err;
+  }
 
   const qrOwnerUid = String(routeParams.profile_uid || routeParams.referralProfileUid || "").trim();
 
@@ -286,5 +317,6 @@ export async function finishSignupAfterReferral(
   navigation.navigate("AccountType", {
     user_uid: uid,
     email: mail,
+    awaitingProfileSetup: Boolean(String(profilePicture || "").trim()),
   });
 }

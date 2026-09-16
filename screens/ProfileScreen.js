@@ -54,7 +54,7 @@ import { profileBusinessHasRealOwnership } from "../utils/businessOwnership";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { sanitizeText } from "../utils/textSanitizer";
 import { isApiPublicFlag } from "../utils/apiPublicFlag";
-import { mergePendingOauthPhotoIntoPayload } from "../utils/oauthPendingProfileImage";
+import { mergePendingOauthIdentityIntoPayload } from "../utils/oauthPendingProfileImage";
 import { upsertReferralNetworkRelationship } from "../utils/searchReferralProfiles";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceAddressDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
@@ -787,7 +787,7 @@ const ProfileScreen = ({ route, navigation }) => {
       const bizListChanged = await persistMyBusinessUidsFromProfile(apiUser);
       if (bizListChanged) reinitializeUnreadFromOutside().catch(() => {});
       try {
-        const mergedForSession = await mergePendingOauthPhotoIntoPayload(apiUser);
+        const mergedForSession = await mergePendingOauthIdentityIntoPayload(apiUser);
         await saveSessionProfilePayload(mergedForSession);
         const session = await getSessionProfile({ forceRefresh: true });
         const path = session?.personalInfo?.profile_personal_path ?? session?.rawProfile?.personal_info?.profile_personal_path;
@@ -798,7 +798,7 @@ const ProfileScreen = ({ route, navigation }) => {
     }
 
     try {
-      const mergedApiUser = await mergePendingOauthPhotoIntoPayload(apiUser);
+      const mergedApiUser = await mergePendingOauthIdentityIntoPayload(apiUser);
       const personal = mergedApiUser?.personal_info || {};
       const userData = {
         profile_uid: profileUID,

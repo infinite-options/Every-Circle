@@ -29,7 +29,7 @@ import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened"
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { addScannedCircleConnection } from "../utils/addScannedCircleConnection";
 import { getSessionProfile, patchSessionPersonalInfoField, saveSessionProfilePayload, subscribeSessionProfile } from "../utils/sessionProfile";
-import { mergePendingOauthPhotoIntoPayload } from "../utils/oauthPendingProfileImage";
+import { mergePendingOauthIdentityIntoPayload } from "../utils/oauthPendingProfileImage";
 import { miniCardUserFromSession, messagesOffFromSession } from "../utils/connectProfileHydration";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
@@ -1150,23 +1150,55 @@ const ConnectScreen = ({ navigation }) => {
       const profileId = String(session?.profileUid || profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
       if (!profileId) return;
 
-      // If session has no image yet, re-apply pending Google photo so MiniCard shows immediately.
-      const raw = session?.rawProfile;
-      if (raw && !(raw?.personal_info?.profile_personal_image && String(raw.personal_info.profile_personal_image).trim())) {
-        const merged = await mergePendingOauthPhotoIntoPayload(raw);
-        if (merged?.personal_info?.profile_personal_image) {
-          session = (await saveSessionProfilePayload(merged)) || session;
-        }
-      }
-
       let userUid = "";
       try {
         userUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
       } catch (_) {}
 
+      // Always merge pending OAuth name + photo so Connect with Me shows identity after signup.
+      let raw = session?.rawProfile;
+      if (!raw || typeof raw !== "object") {
+        raw = {
+          personal_info: { profile_personal_uid: profileId },
+          user_email: session?.userEmail || "",
+        };
+      }
+      let merged = await mergePendingOauthIdentityIntoPayload(raw);
+      const pi = merged?.personal_info || {};
+      const hasName = Boolean(String(pi.profile_personal_first_name || "").trim() || String(pi.profile_personal_last_name || "").trim());
+      const hasPublicImage =
+        Boolean(pi.profile_personal_image && String(pi.profile_personal_image).trim()) &&
+        (pi.profile_personal_image_is_public === 1 || pi.profile_personal_image_is_public === "1" || pi.profile_personal_image_is_public === true);
+
+      // If session is still incomplete, refresh from API once and merge OAuth identity again.
+      if (!hasName || !hasPublicImage) {
+        try {
+          const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+          if (res.ok) {
+            const apiUser = await res.json();
+            merged = await mergePendingOauthIdentityIntoPayload(apiUser);
+          }
+        } catch (e) {
+          console.warn("ConnectScreen - live profile refresh for MiniCard failed:", e?.message || e);
+        }
+      }
+
+      if (merged?.personal_info) {
+        session = (await saveSessionProfilePayload(merged)) || session;
+      }
+
       const userData = miniCardUserFromSession(session, profileId, userUid);
       if (userData) {
-        console.log("[GooglePhoto] Connect MiniCard profileImage =", userData.profileImage, "imageIsPublic =", userData.imageIsPublic);
+        // Own Connect with Me card: if we have an image URL, always show it to the owner.
+        if (userData.profileImage && String(userData.profileImage).trim()) {
+          userData.imageIsPublic = true;
+        }
+        console.log("[GooglePhoto] Connect MiniCard", {
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          profileImage: userData.profileImage,
+          imageIsPublic: userData.imageIsPublic,
+        });
         setUserProfileData(userData);
       }
       setMessagesOff(messagesOffFromSession(session));

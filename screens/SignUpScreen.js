@@ -58,6 +58,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   useEffect(() => subscribeCookieBannerHeight(setCookieBannerHeight), []);
   /** Account exists but referrer not chosen — hide signup form until referral step completes. */
   const [blockingOAuthReferral, setBlockingOAuthReferral] = useState(false);
+  /** Blocks UI while profile stub + Google photo are being saved. */
+  const [isFinishingSignup, setIsFinishingSignup] = useState(false);
   /** User must pick a referrer (or "I was not referred") before finishing signup; no default is persisted. */
   const [pendingReferralCompletion, setPendingReferralCompletion] = useState(false);
   const oauthReferralHandledRef = useRef(false);
@@ -83,6 +85,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     await AsyncStorage.setItem("referral_uid", selectedReferralUid);
     setShowReferralModal(false);
     setReferralError("");
+    setIsFinishingSignup(true);
 
     const oauthFirst =
       pendingGoogleUserInfo?.firstName || pendingAppleUserInfo?.firstName || route.params?.googleUserInfo?.firstName || route.params?.appleUserInfo?.firstName || "";
@@ -105,6 +108,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       });
     } catch (err) {
       console.error("SignUpScreen - finishSignupAfterReferral failed:", err);
+      setIsFinishingSignup(false);
       Alert.alert("Error", err?.message || "Could not finish sign up. Please try again.");
       return;
     }
@@ -114,6 +118,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     setPendingRegularSignup(false);
     setPendingReferralCompletion(false);
     setBlockingOAuthReferral(false);
+    // Navigation already happened; keep spinner until unmount if still visible.
   };
 
   const promptReferralBeforeUserInfo = async () => {
@@ -769,6 +774,13 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           </Modal>
         </ScrollView>
       </SafeAreaView>
+      {isFinishingSignup ? (
+        <View style={styles.finishingOverlay} pointerEvents='auto'>
+          <ActivityIndicator size='large' color='#fff' />
+          <Text style={styles.finishingText}>Finishing your profile…</Text>
+          <Text style={styles.finishingSubText}>Saving your Google photo</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -777,6 +789,28 @@ const styles = StyleSheet.create({
   pageContainer: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  finishingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 100,
+    elevation: 100,
+    paddingHorizontal: 24,
+  },
+  finishingText: {
+    marginTop: 16,
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  finishingSubText: {
+    marginTop: 8,
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 14,
+    textAlign: "center",
   },
   safeArea: {
     flex: 1,
