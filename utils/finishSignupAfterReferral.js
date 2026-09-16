@@ -348,7 +348,7 @@ export async function finishSignupAfterReferral(
 
   // Same path as UserInfo / Login after scan: open Connect modal and notify QR owner (Exchange Contact Info).
   if (routeParams.returnToScanLanding && qrOwnerUid) {
-    await goToNetworkForScanConnect(navigation, qrOwnerUid);
+    await goToNetworkForScanConnect(navigation, qrOwnerUid, { scannerIsNewSignup: true });
     return;
   }
 

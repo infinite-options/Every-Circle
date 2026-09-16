@@ -649,6 +649,8 @@ const ConnectScreen = ({ navigation }) => {
   const [scannedProfileData, setScannedProfileData] = useState(null);
   const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
   const showScannedProfileModalRef = useRef(null);
+  // 'scan' = current user scanned someone; 'ably' = QR owner received scanner notification
+  const connectPopupContextRef = useRef({ source: "scan", scannerIsNewSignup: false });
   const [showViewMyNetwork, setShowViewMyNetwork] = useState(true);
   /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
   const [focusTick, setFocusTick] = useState(0);
@@ -1416,8 +1418,12 @@ const ConnectScreen = ({ navigation }) => {
           // Exchange Contact Info: show same connect modal as the scanner (stay on Network)
           if (formSwitchEnabledRef.current && message.data.scanner_profile_uid) {
             const scannerProfileUid = message.data.scanner_profile_uid;
+            const scannerIsNewSignup = Boolean(message.data.scanner_is_new_signup);
             InteractionManager.runAfterInteractions(() => {
-              showScannedProfileModalRef.current?.(scannerProfileUid);
+              showScannedProfileModalRef.current?.(scannerProfileUid, {
+                source: "ably",
+                scannerIsNewSignup,
+              });
             });
           } else {
             console.log("🔵 ConnectScreen - Form Switch is OFF or no scanner_profile_uid, not opening connect modal");
@@ -1481,9 +1487,13 @@ const ConnectScreen = ({ navigation }) => {
     return () => clearInterval(id);
   }, [ablyListeningChannel]);
 
-  const showScannedProfileModal = useCallback(async (profileUid) => {
+  const showScannedProfileModal = useCallback(async (profileUid, options = {}) => {
     if (!profileUid) return;
     try {
+      connectPopupContextRef.current = {
+        source: options.source === "ably" ? "ably" : "scan",
+        scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
+      };
       const profileInfo = await fetchPublicProfileCard(profileUid);
       setScannedProfileData(profileInfo);
       setShowScannedProfilePopup(true);
@@ -1504,7 +1514,7 @@ const ConnectScreen = ({ navigation }) => {
       const key = `${uid}:${scanConnectToken ?? ""}`;
       if (lastHandledScanConnectKeyRef.current === key) return;
       lastHandledScanConnectKeyRef.current = key;
-      showScannedProfileModal(uid);
+      showScannedProfileModal(uid, { source: "scan" });
       navigation.setParams({ scannedProfileUid: undefined, scanConnectToken: undefined });
     },
     [showScannedProfileModal, navigation],
@@ -1532,7 +1542,7 @@ const ConnectScreen = ({ navigation }) => {
         return;
       }
 
-      await showScannedProfileModal(scanData.profile_uid);
+      await showScannedProfileModal(scanData.profile_uid, { source: "scan" });
 
       // Notify QR owner (Exchange Contact Info)
       publishNewConnectionOpened(scanData.profile_uid, { message: "QR Code Scanned" }).then((result) => {
@@ -1552,6 +1562,9 @@ const ConnectScreen = ({ navigation }) => {
 
       const result = await addScannedCircleConnection(scannedProfileData.profile_uid, connectionData);
       if (result.ok) {
+        const connectedProfileUid = scannedProfileData.profile_uid;
+        const { source, scannerIsNewSignup } = connectPopupContextRef.current || {};
+
         const currentProfileUID = await AsyncStorage.getItem("profile_uid");
         const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
         if (currentProfileUID) {
@@ -1559,6 +1572,14 @@ const ConnectScreen = ({ navigation }) => {
         }
         setShowScannedProfilePopup(false);
         setScannedProfileData(null);
+        lastHandledScanConnectKeyRef.current = null;
+
+        // Scanner → scanned user's Profile.
+        // QR owner → scanner's Profile if scanner is an existing member; stay on Connect if scanner is mid-signup.
+        const shouldOpenProfile = source === "scan" || (source === "ably" && !scannerIsNewSignup);
+        if (shouldOpenProfile && connectedProfileUid) {
+          navigation.navigate("Profile", { profile_uid: connectedProfileUid, returnTo: "Connect" });
+        }
       } else if (result.error && result.error !== "not_logged_in" && result.error !== "self") {
         console.error("Error adding scanned connection:", result.error);
       }
@@ -4010,6 +4031,7 @@ const ConnectScreen = ({ navigation }) => {
           setShowScannedProfilePopup(false);
           setScannedProfileData(null);
           lastHandledScanConnectKeyRef.current = null;
+          connectPopupContextRef.current = { source: "scan", scannerIsNewSignup: false };
         }}
         onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
       />

@@ -15,8 +15,9 @@ export function networkScanConnectParams(scannedProfileUid) {
  * Navigate to Connect for a scan connect flow and notify the QR owner (Exchange Contact Info).
  * @param {import("@react-navigation/native").NavigationProp<any>} navigation
  * @param {string} scannedProfileUid - profile_uid of the QR owner to connect with
+ * @param {{ scannerIsNewSignup?: boolean }} [options] - when true, QR owner stays on Connect with Me after Add to Network
  */
-export async function goToNetworkForScanConnect(navigation, scannedProfileUid) {
+export async function goToNetworkForScanConnect(navigation, scannedProfileUid, options = {}) {
   if (!scannedProfileUid) return;
 
   const scannerProfileUid = await resolveScannerProfileUid();
@@ -33,6 +34,7 @@ export async function goToNetworkForScanConnect(navigation, scannedProfileUid) {
     await publishNewConnectionOpened(scannedProfileUid, {
       message: "QR Code Scanned",
       scannerProfileUid,
+      scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
     });
   }
 }

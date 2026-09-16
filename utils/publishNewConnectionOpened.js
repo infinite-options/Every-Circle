@@ -57,7 +57,7 @@ function waitForChannelAttached(channel, timeoutMs = 5000) {
  * Publishes to `/{qrOwnerProfileUid}` with event `new-connection-opened`.
  *
  * @param {string} qrOwnerProfileUid - profile_uid of the person whose QR was scanned
- * @param {{ message?: string }} [options]
+ * @param {{ message?: string, scannerProfileUid?: string, scannerIsNewSignup?: boolean }} [options]
  * @returns {Promise<{ ok: boolean, channel?: string, messageData?: object, error?: string }>}
  */
 export async function publishNewConnectionOpened(qrOwnerProfileUid, options = {}) {
@@ -88,6 +88,8 @@ export async function publishNewConnectionOpened(qrOwnerProfileUid, options = {}
       timestamp: new Date().toISOString(),
       profile_uid: qrOwnerProfileUid,
       scanner_profile_uid: scannerProfileUid,
+      // When true, QR owner should stay on Connect with Me after Add to Network (scanner still mid-signup).
+      scanner_is_new_signup: Boolean(options.scannerIsNewSignup),
     };
 
     await channel.publish("new-connection-opened", messageData);
