@@ -28,7 +28,8 @@ import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTok
 import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened";
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { addScannedCircleConnection } from "../utils/addScannedCircleConnection";
-import { getSessionProfile, patchSessionPersonalInfoField, subscribeSessionProfile } from "../utils/sessionProfile";
+import { getSessionProfile, patchSessionPersonalInfoField, saveSessionProfilePayload, subscribeSessionProfile } from "../utils/sessionProfile";
+import { mergePendingOauthPhotoIntoPayload } from "../utils/oauthPendingProfileImage";
 import { miniCardUserFromSession, messagesOffFromSession } from "../utils/connectProfileHydration";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
@@ -1145,9 +1146,18 @@ const ConnectScreen = ({ navigation }) => {
 
   const hydrateMyProfileFromSession = useCallback(async () => {
     try {
-      const session = await refreshFromSession({ forceRefresh: true });
+      let session = await refreshFromSession({ forceRefresh: true });
       const profileId = String(session?.profileUid || profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
       if (!profileId) return;
+
+      // If session has no image yet, re-apply pending Google photo so MiniCard shows immediately.
+      const raw = session?.rawProfile;
+      if (raw && !(raw?.personal_info?.profile_personal_image && String(raw.personal_info.profile_personal_image).trim())) {
+        const merged = await mergePendingOauthPhotoIntoPayload(raw);
+        if (merged?.personal_info?.profile_personal_image) {
+          session = (await saveSessionProfilePayload(merged)) || session;
+        }
+      }
 
       let userUid = "";
       try {
@@ -1155,7 +1165,10 @@ const ConnectScreen = ({ navigation }) => {
       } catch (_) {}
 
       const userData = miniCardUserFromSession(session, profileId, userUid);
-      if (userData) setUserProfileData(userData);
+      if (userData) {
+        console.log("[GooglePhoto] Connect MiniCard profileImage =", userData.profileImage, "imageIsPublic =", userData.imageIsPublic);
+        setUserProfileData(userData);
+      }
       setMessagesOff(messagesOffFromSession(session));
       applyQrFromProfile(profileId);
       initializeAblyChannel(profileId);

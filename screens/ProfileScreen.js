@@ -54,6 +54,7 @@ import { profileBusinessHasRealOwnership } from "../utils/businessOwnership";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { sanitizeText } from "../utils/textSanitizer";
 import { isApiPublicFlag } from "../utils/apiPublicFlag";
+import { mergePendingOauthPhotoIntoPayload } from "../utils/oauthPendingProfileImage";
 import { upsertReferralNetworkRelationship } from "../utils/searchReferralProfiles";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceAddressDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
@@ -786,7 +787,8 @@ const ProfileScreen = ({ route, navigation }) => {
       const bizListChanged = await persistMyBusinessUidsFromProfile(apiUser);
       if (bizListChanged) reinitializeUnreadFromOutside().catch(() => {});
       try {
-        await saveSessionProfilePayload(apiUser);
+        const mergedForSession = await mergePendingOauthPhotoIntoPayload(apiUser);
+        await saveSessionProfilePayload(mergedForSession);
         const session = await getSessionProfile({ forceRefresh: true });
         const path = session?.personalInfo?.profile_personal_path ?? session?.rawProfile?.personal_info?.profile_personal_path;
         console.log("[ProfileScreen] profile_personal_path:", path ?? "(not in cache)");
@@ -796,40 +798,42 @@ const ProfileScreen = ({ route, navigation }) => {
     }
 
     try {
+      const mergedApiUser = await mergePendingOauthPhotoIntoPayload(apiUser);
+      const personal = mergedApiUser?.personal_info || {};
       const userData = {
         profile_uid: profileUID,
-        email: apiUser?.user_email || "",
-        firstName: apiUser.personal_info?.profile_personal_first_name || "",
-        lastName: apiUser.personal_info?.profile_personal_last_name || "",
-        phoneNumber: apiUser.personal_info?.profile_personal_phone_number || "",
-        phoneVerified: apiUser.personal_info?.phone_verified === true || apiUser.personal_info?.phone_verified === 1,
-        tagLine: apiUser.personal_info?.profile_personal_tag_line || "",
-        city: apiUser.personal_info?.profile_personal_city || "",
-        state: apiUser.personal_info?.profile_personal_state || "",
-        homeAddress: apiUser.personal_info?.profile_personal_home_address || "",
+        email: mergedApiUser?.user_email || apiUser?.user_email || "",
+        firstName: personal.profile_personal_first_name || "",
+        lastName: personal.profile_personal_last_name || "",
+        phoneNumber: personal.profile_personal_phone_number || "",
+        phoneVerified: personal.phone_verified === true || personal.phone_verified === 1,
+        tagLine: personal.profile_personal_tag_line || "",
+        city: personal.profile_personal_city || "",
+        state: personal.profile_personal_state || "",
+        homeAddress: personal.profile_personal_home_address || "",
         homeCoordinates: (() => {
-          const lat = apiUser.personal_info?.profile_personal_latitude;
-          const lng = apiUser.personal_info?.profile_personal_longitude;
+          const lat = personal.profile_personal_latitude;
+          const lng = personal.profile_personal_longitude;
           if (lat == null || lat === "" || lng == null || lng === "") return "";
           const la = parseFloat(lat);
           const lo = parseFloat(lng);
           if (!Number.isFinite(la) || !Number.isFinite(lo)) return "";
           return `${la}, ${lo}`;
         })(),
-        shortBio: apiUser.personal_info?.profile_personal_short_bio || "",
-        emailIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_email_is_public),
-        phoneIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_phone_number_is_public),
-        imageIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_image_is_public),
-        tagLineIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_tag_line_is_public),
-        locationIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_location_is_public),
-        shortBioIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_short_bio_is_public),
-        experienceIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_experience_is_public),
-        educationIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_education_is_public),
-        expertiseIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_expertise_is_public),
-        wishesIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_wishes_is_public),
-        businessIsPublic: isApiPublicFlag(apiUser.personal_info?.profile_personal_business_is_public),
-        socialLinksIsPublic: isSocialLinksSectionPublic(apiUser.personal_info, apiUser.links_info),
-        profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
+        shortBio: personal.profile_personal_short_bio || "",
+        emailIsPublic: isApiPublicFlag(personal.profile_personal_email_is_public),
+        phoneIsPublic: isApiPublicFlag(personal.profile_personal_phone_number_is_public),
+        imageIsPublic: isApiPublicFlag(personal.profile_personal_image_is_public),
+        tagLineIsPublic: isApiPublicFlag(personal.profile_personal_tag_line_is_public),
+        locationIsPublic: isApiPublicFlag(personal.profile_personal_location_is_public),
+        shortBioIsPublic: isApiPublicFlag(personal.profile_personal_short_bio_is_public),
+        experienceIsPublic: isApiPublicFlag(personal.profile_personal_experience_is_public),
+        educationIsPublic: isApiPublicFlag(personal.profile_personal_education_is_public),
+        expertiseIsPublic: isApiPublicFlag(personal.profile_personal_expertise_is_public),
+        wishesIsPublic: isApiPublicFlag(personal.profile_personal_wishes_is_public),
+        businessIsPublic: isApiPublicFlag(personal.profile_personal_business_is_public),
+        socialLinksIsPublic: isSocialLinksSectionPublic(personal, mergedApiUser.links_info || apiUser.links_info),
+        profileImage: personal.profile_personal_image ? String(personal.profile_personal_image) : "",
         profilePersonalPath: apiUser.personal_info?.profile_personal_path || null,
         profileModerationItem: buildProfileModerationItem(apiUser),
         moderation: normalizeProfileModeration(buildProfileModerationItem(apiUser)),

@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getUserEmail } from "../utils/emailStorage";
 import { axiosMiddleware as axios } from "../utils/httpMiddleware";
 import { REFERRAL_API_ENDPOINT } from "../apiConfig";
+import { mergePendingOauthPhotoIntoPayload } from "../utils/oauthPendingProfileImage";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 import { useUnread } from "../contexts/UnreadContext";
@@ -60,11 +61,15 @@ const AccountTypeScreen = ({ navigation, route }) => {
 
       const response = await axios.get(url);
 
-      console.log("Profile API Response:", response.data);
-
       // Check if we have valid profile data (personal_info exists)
-      // Even if status is 500, the data might still be valid
-      const profileData = response.data;
+      // Even if status is 500, the data might still be valid.
+      // Merge pending Google photo so MiniCard shows it if the API has no image yet.
+      const profileData = await mergePendingOauthPhotoIntoPayload(response.data);
+      console.log("Profile API Response:", profileData);
+      console.log(
+        "[GooglePhoto] AccountType profile_personal_image =",
+        profileData?.personal_info?.profile_personal_image || "(none)",
+      );
 
       if (profileData && profileData.personal_info) {
         // Store profile_uid in AsyncStorage for consistency with other screens
@@ -85,7 +90,7 @@ const AccountTypeScreen = ({ navigation, route }) => {
       console.error("Error fetching profile:", error.response?.data || error.message);
 
       // Check if error response contains valid data despite the error
-      const errorData = error.response?.data;
+      const errorData = await mergePendingOauthPhotoIntoPayload(error.response?.data);
       if (errorData && errorData.personal_info) {
         console.log("Found valid profile data in error response, proceeding...");
 

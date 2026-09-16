@@ -90,6 +90,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       pendingGoogleUserInfo?.lastName || pendingAppleUserInfo?.lastName || route.params?.googleUserInfo?.lastName || route.params?.appleUserInfo?.lastName || "";
     const oauthPhoto =
       pendingGoogleUserInfo?.profilePicture || route.params?.googleUserInfo?.profilePicture || "";
+    console.log("[GooglePhoto] SignUpScreen oauthPhoto =", oauthPhoto);
+    console.log("[GooglePhoto] pendingGoogleUserInfo?.profilePicture =", pendingGoogleUserInfo?.profilePicture);
+    console.log("[GooglePhoto] route.params?.googleUserInfo?.profilePicture =", route.params?.googleUserInfo?.profilePicture);
 
     try {
       await finishSignupAfterReferral(navigation, {
@@ -140,6 +143,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     console.log("SignUpScreen - Rendering after Sign Up Button Press");
     if (route.params?.googleUserInfo) {
       console.log("SignUpScreen - Received Google user info:", route.params.googleUserInfo);
+      console.log("[GooglePhoto] SignUp route.params.googleUserInfo.profilePicture =", route.params.googleUserInfo.profilePicture);
       const { email: googleEmail, firstName, lastName } = route.params.googleUserInfo;
       setEmail(googleEmail);
       setIsGoogleSignUp(true);

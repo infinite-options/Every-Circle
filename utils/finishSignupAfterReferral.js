@@ -8,21 +8,11 @@ import { refreshCircleTokens } from "./authSession";
 import { getUserEmail } from "./emailStorage";
 import { goToNetworkForScanConnect } from "./goToNetworkForScanConnect";
 import { refreshSessionProfileFromNetwork, saveSessionProfilePayload } from "./sessionProfile";
-
-function withOAuthPhotoFallback(apiPayload, profilePicture) {
-  const photo = String(profilePicture || "").trim();
-  if (!photo || !apiPayload || typeof apiPayload !== "object") return apiPayload;
-  if (existingProfileHasImage(apiPayload)) return apiPayload;
-  const personalInfo = apiPayload.personal_info && typeof apiPayload.personal_info === "object" ? apiPayload.personal_info : {};
-  return {
-    ...apiPayload,
-    personal_info: {
-      ...personalInfo,
-      profile_personal_image: photo,
-      profile_personal_image_is_public: 1,
-    },
-  };
-}
+import {
+  setOauthPendingProfileImage,
+  withOauthPhotoOnPayload,
+  mergePendingOauthPhotoIntoPayload,
+} from "./oauthPendingProfileImage";
 
 /**
  * Hydrate session profile cache so Connect MiniCard shows OAuth names/photo immediately
@@ -33,8 +23,15 @@ async function hydrateSessionAfterSignup(profileUid, apiPayload, profilePicture 
   if (!uid) return;
   try {
     if (apiPayload?.personal_info) {
-      const saved = await saveSessionProfilePayload(withOAuthPhotoFallback(apiPayload, profilePicture));
-      if (saved) return;
+      const withPhoto = withOauthPhotoOnPayload(apiPayload, profilePicture);
+      const saved = await saveSessionProfilePayload(withPhoto);
+      if (saved) {
+        console.log(
+          "[GooglePhoto] session hydrated with image =",
+          saved?.personalInfo?.profile_personal_image || withPhoto?.personal_info?.profile_personal_image,
+        );
+        return;
+      }
     }
   } catch (_) {
     /* fall through to network refresh */
@@ -42,8 +39,15 @@ async function hydrateSessionAfterSignup(profileUid, apiPayload, profilePicture 
   try {
     const session = await refreshSessionProfileFromNetwork(uid);
     const raw = session?.rawProfile;
-    if (profilePicture && raw && !existingProfileHasImage(raw)) {
-      await saveSessionProfilePayload(withOAuthPhotoFallback(raw, profilePicture));
+    if (raw) {
+      const merged = withOauthPhotoOnPayload(raw, profilePicture);
+      if (merged !== raw) {
+        await saveSessionProfilePayload(merged);
+      }
+      console.log(
+        "[GooglePhoto] session after network hydrate image =",
+        (await mergePendingOauthPhotoIntoPayload(merged))?.personal_info?.profile_personal_image,
+      );
     }
   } catch (e) {
     console.warn("createMinimalSignupProfile: session hydrate failed", e?.message || e);
@@ -51,35 +55,33 @@ async function hydrateSessionAfterSignup(profileUid, apiPayload, profilePicture 
 }
 
 /**
- * Download a remote OAuth profile photo and append it as multipart `profile_image`
- * (same field EditProfile uses). On web CORS failure, send the URL for the backend to pull.
- * Returns true if photo fields were appended.
+ * Attach OAuth photo for profile PUT/POST.
+ * Native: download bytes into multipart `profile_image` (same as EditProfile).
+ * Web: skip browser fetch (Google CDN CORS) and send the URL as `profile_personal_image`
+ * so the BE can store it (or MiniCard can still use the session URL immediately).
  */
 async function appendOAuthProfileImage(formData, photoUrl) {
   const url = String(photoUrl || "").trim();
-  if (!url || !/^https?:\/\//i.test(url)) return false;
+  console.log("[GooglePhoto] appendOAuthProfileImage photoUrl =", url);
+  if (!url || !/^https?:\/\//i.test(url)) {
+    console.log("[GooglePhoto] appendOAuthProfileImage skipped — empty or non-http URL");
+    return false;
+  }
 
   try {
     if (Platform.OS === "web") {
-      try {
-        // Use global fetch — not API middleware — for the Google CDN URL.
-        const res = await globalThis.fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
-        const type = blob.type || "image/jpeg";
-        const ext = (type.split("/")[1] || "jpg").replace("jpeg", "jpg");
-        formData.append("profile_image", new File([blob], `profile.${ext}`, { type }));
-        return true;
-      } catch (blobErr) {
-        // Browser cannot fetch Google photo bytes (CORS). Send URL so BE can store/display it.
-        console.warn("appendOAuthProfileImage: web blob fetch failed, sending URL", blobErr?.message || blobErr);
-        formData.append("profile_personal_image", url);
-        return true;
-      }
+      // Do not fetch googleusercontent in the browser — CORS blocks reading bytes.
+      // Persist the URL into profile_personal_image; Image can display it directly.
+      formData.append("profile_personal_image", url);
+      console.log("[GooglePhoto] web: appending profile_personal_image URL (no blob fetch)");
+      return true;
     }
 
     const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
-    if (!baseDir) return false;
+    if (!baseDir) {
+      formData.append("profile_personal_image", url);
+      return true;
+    }
     const tempUri = `${baseDir}oauth_profile_${Date.now()}.jpg`;
     const downloaded = await FileSystem.downloadAsync(url, tempUri);
     if (downloaded.status !== 200) throw new Error(`Download ${downloaded.status}`);
@@ -88,17 +90,22 @@ async function appendOAuthProfileImage(formData, photoUrl) {
       name: "profile.jpg",
       type: "image/jpeg",
     });
+    console.log("[GooglePhoto] native: appended profile_image file");
     return true;
   } catch (e) {
-    console.warn("appendOAuthProfileImage failed:", e?.message || e);
-    return false;
+    console.warn("[GooglePhoto] appendOAuthProfileImage failed, falling back to URL:", e?.message || e);
+    try {
+      formData.append("profile_personal_image", url);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 }
 
 async function attachOAuthPhotoFields(formData, profilePicture) {
   const attached = await appendOAuthProfileImage(formData, profilePicture);
   if (attached) {
-    // MiniCard only shows the photo when Display is on.
     formData.append("profile_personal_image_is_public", "1");
   }
   return attached;
@@ -123,22 +130,28 @@ async function uploadOAuthPhotoIfPresent(profileUid, userUid, profilePicture) {
     if (userUid) putData.append("user_uid", String(userUid));
     const attached = await attachOAuthPhotoFields(putData, photo);
     if (!attached) return null;
+    console.log("[GooglePhoto] PUT userprofileinfo with OAuth photo for", uid);
     const putRes = await fetch(USER_PROFILE_INFO_ENDPOINT, { method: "PUT", body: putData });
+    const putBody = await putRes.json().catch(() => null);
     if (!putRes.ok) {
-      console.warn("uploadOAuthPhotoIfPresent: PUT failed", putRes.status);
+      console.warn("[GooglePhoto] uploadOAuthPhotoIfPresent: PUT failed", putRes.status, putBody);
       return null;
     }
-    return await putRes.json().catch(() => null);
+    console.log(
+      "[GooglePhoto] PUT response image =",
+      putBody?.personal_info?.profile_personal_image || putBody?.profile_personal_image || "(none in body)",
+    );
+    return putBody;
   } catch (e) {
-    console.warn("uploadOAuthPhotoIfPresent failed:", e?.message || e);
+    console.warn("[GooglePhoto] uploadOAuthPhotoIfPresent failed:", e?.message || e);
     return null;
   }
 }
 
 /**
  * Create a stub personal profile (skips UserInfo name/phone screen) and persist profile_uid.
- * Name/phone may be empty — BE should accept stubs so users can complete profile later.
- * When profilePicture (e.g. Google photo URL) is present, upload it as the profile image.
+ * When profilePicture (e.g. Google photo URL) is present, store it for MiniCard immediately
+ * and best-effort persist to profile_personal_image.
  */
 export async function createMinimalSignupProfile({
   userUid,
@@ -148,8 +161,14 @@ export async function createMinimalSignupProfile({
   phoneNumber = "",
   profilePicture = "",
 } = {}) {
+  console.log("[GooglePhoto] createMinimalSignupProfile profilePicture =", profilePicture);
   const uid = String(userUid || "").trim();
   if (!uid) throw new Error("User UID not found");
+
+  const photo = String(profilePicture || "").trim();
+  if (photo) {
+    await setOauthPendingProfileImage(photo);
+  }
 
   let referredBy = String(referralUid || "").trim() || "100-000001";
   if (referredBy === uid) referredBy = "100-000001";
@@ -162,13 +181,16 @@ export async function createMinimalSignupProfile({
       if (existingUid) {
         await AsyncStorage.setItem("profile_uid", existingUid);
 
+        // Show Google photo on MiniCard immediately (before PUT).
+        await hydrateSessionAfterSignup(existingUid, existing, photo);
+
         let payload = existing;
-        if (profilePicture && !existingProfileHasImage(existing)) {
-          const updated = await uploadOAuthPhotoIfPresent(existingUid, uid, profilePicture);
-          if (updated) payload = null; // force GET so session gets S3 image URL
+        if (photo && !existingProfileHasImage(existing)) {
+          const updated = await uploadOAuthPhotoIfPresent(existingUid, uid, photo);
+          if (updated) payload = null; // force GET so session prefers BE/S3 URL when present
+          await hydrateSessionAfterSignup(existingUid, payload, photo);
         }
 
-        await hydrateSessionAfterSignup(existingUid, payload, profilePicture);
         return existingUid;
       }
     }
@@ -182,6 +204,12 @@ export async function createMinimalSignupProfile({
   formData.append("profile_personal_phone_number", phoneNumber || "");
   formData.append("profile_personal_referred_by", referredBy);
   formData.append("user_uid", uid);
+  // Persist Google URL on create so profile_personal_image is set without a client blob fetch.
+  if (photo) {
+    formData.append("profile_personal_image", photo);
+    formData.append("profile_personal_image_is_public", "1");
+    console.log("[GooglePhoto] POST create includes profile_personal_image URL");
+  }
 
   const response = await fetch(USER_PROFILE_INFO_ENDPOINT, {
     method: "POST",
@@ -203,15 +231,17 @@ export async function createMinimalSignupProfile({
     /* optional */
   }
 
-  // Photo upload is separate so a CDN/download failure cannot block signup.
-  let hydratePayload = body;
-  if (profileUid && profilePicture) {
-    const updated = await uploadOAuthPhotoIfPresent(profileUid, uid, profilePicture);
-    if (updated) hydratePayload = null; // force GET so session gets S3 image URL
+  // Immediate MiniCard display from Google URL (do not wait on PUT).
+  await hydrateSessionAfterSignup(profileUid, withOauthPhotoOnPayload(body, photo), photo);
+
+  // Best-effort PUT (native file / web URL) so DB has the image even if POST ignored the URL field.
+  let hydratePayload = withOauthPhotoOnPayload(body, photo);
+  if (profileUid && photo && !existingProfileHasImage(body)) {
+    const updated = await uploadOAuthPhotoIfPresent(profileUid, uid, photo);
+    if (updated) hydratePayload = null;
+    await hydrateSessionAfterSignup(profileUid, hydratePayload, photo);
   }
 
-  // Connect reads names/photo from session cache (not live API); hydrate before navigating.
-  await hydrateSessionAfterSignup(profileUid, hydratePayload, profilePicture);
   return profileUid;
 }
 
@@ -222,6 +252,7 @@ export async function finishSignupAfterReferral(
   navigation,
   { referralUid, routeParams = {}, userUid, email, firstName = "", lastName = "", profilePicture = "" } = {},
 ) {
+  console.log("[GooglePhoto] finishSignupAfterReferral profilePicture =", profilePicture);
   const uid = String(userUid || (await AsyncStorage.getItem("user_uid")) || "").trim();
   const mail = String(email || (await getUserEmail()) || "").trim();
   if (!uid) throw new Error("User UID not found");

@@ -325,6 +325,8 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     await AsyncStorage.clear();
   }
 
+  console.log("[GooglePhoto] completeGoogleSocialAuth input userInfo.user.photo =", userInfo?.user?.photo);
+
   const payload = {
     email: userInfo.user.email,
     password: "GOOGLE_LOGIN",
@@ -334,6 +336,7 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     last_name: userInfo.user.familyName || "",
     profile_picture: userInfo.user.photo || "",
   };
+  console.log("[GooglePhoto] social auth POST profile_picture =", payload.profile_picture);
   console.log("App.js - Google social auth POST:", GOOGLE_SOCIAL_AUTH_ENDPOINT, payload);
 
   const response = await fetch(GOOGLE_SOCIAL_AUTH_ENDPOINT, {
@@ -407,6 +410,7 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     googleId: userInfo.user.id,
     accessToken: googleAuthToken,
   };
+  console.log("[GooglePhoto] googleUserInfo.profilePicture =", googleUserInfo.profilePicture);
 
   if (existingAccount) {
     navigation.navigate("Profile", {
@@ -707,11 +711,12 @@ export default function App() {
           }
 
           const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-          console.log("App.js - Decoded payload:", {
+          console.log("App.js - Decoded Google JWT payload:", {
             email: payload.email,
             name: payload.name,
             picture: payload.picture,
           });
+          console.log("[GooglePhoto] JWT payload.picture =", payload.picture);
 
           const userInfo = {
             user: {
@@ -726,6 +731,7 @@ export default function App() {
           };
 
           console.log("App.js - User info extracted:", userInfo);
+          console.log("[GooglePhoto] userInfo.user.photo =", userInfo.user.photo);
 
           try {
             await completeGoogleSocialAuth(navigation, userInfo, credential, {
@@ -818,6 +824,7 @@ export default function App() {
         // Start new sign in process
         const userInfo = await GoogleSignin.signIn();
         console.log("App.js - Google Sign In successful:", userInfo);
+        console.log("[GooglePhoto] native SignIn userInfo.user.photo =", userInfo?.user?.photo);
 
         const tokens = await GoogleSignin.getTokens();
         await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, {
@@ -868,6 +875,8 @@ export default function App() {
         }
         await GoogleSignin.hasPlayServices();
         const userInfo = await GoogleSignin.signIn();
+        console.log("App.js - Google Sign Up successful:", userInfo);
+        console.log("[GooglePhoto] native SignUp userInfo.user.photo =", userInfo?.user?.photo);
         const tokens = await GoogleSignin.getTokens();
         await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, {
           clearStorage: true,
