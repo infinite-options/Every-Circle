@@ -18,9 +18,9 @@ import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
+import { isValidEmail } from "../utils/emailValidation";
 import versionData from "../version.json";
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OAUTH_TIMEOUT_MS = 30000;
 const CREATE_ACCOUNT_TIMEOUT_MS = 30000;
 
@@ -322,7 +322,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     setSubmittingPassword(true);
     try {
       const trimmed = email.trim();
-      if (!EMAIL_REGEX.test(trimmed)) {
+      if (!isValidEmail(trimmed)) {
         setPasswordFallbackError("Enter a valid email address first.");
         return;
       }
@@ -388,7 +388,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   /** Email-only signup on this page: temp password email + stub profile → Connect + reverse-contact notify. */
   const handleEmailContinue = useCallback(async () => {
     const trimmed = email.trim();
-    if (!EMAIL_REGEX.test(trimmed)) {
+    if (!isValidEmail(trimmed)) {
       setEmailError("Enter a valid email address.");
       return;
     }
@@ -771,10 +771,10 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                 {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
 
                 <TouchableOpacity
-                  style={[styles.primaryBtn, (!EMAIL_REGEX.test(email.trim()) || submittingEmail) && styles.primaryBtnDisabled]}
+                  style={[styles.primaryBtn, (!isValidEmail(email.trim()) || submittingEmail) && styles.primaryBtnDisabled]}
                   onPress={handleEmailContinue}
                   activeOpacity={0.85}
-                  disabled={!EMAIL_REGEX.test(email.trim()) || submittingEmail || signingIn}
+                  disabled={!isValidEmail(email.trim()) || submittingEmail || signingIn}
                 >
                   {submittingEmail ? <ActivityIndicator color='#fff' /> : <Text style={styles.primaryBtnText}>Continue with email</Text>}
                 </TouchableOpacity>

@@ -21,6 +21,7 @@ import { isAccountDeletedAuthMessage, isPendingDeletionAuthResponse, reactivateN
 import { clearTempPasswordGracePeriod, clearUserPasswordTempFlag } from "../utils/tempPasswordGrace";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
+import { isValidEmail } from "../utils/emailValidation";
 // import SignUpScreen from "./screens/SignUpScreen";
 
 // Accept navigation from props
@@ -42,8 +43,7 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
     navigation.navigate("Reactivate", reactivateNavParamsFromAuthPayload(payload, { email, password }));
   };
   const validateInputs = (email, password) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{3,}$/;
-    const isEmailValid = email.trim() !== "" && emailRegex.test(email);
+    const isEmailValid = email.trim() !== "" && isValidEmail(email);
     const isPasswordValid = password.length >= 6;
     setIsValid(isEmailValid && isPasswordValid);
   };
@@ -66,8 +66,7 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
 
   const handleContinue = async () => {
     console.log("LoginScreen - Continue Button Pressed");
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{3,}$/;
-    if (!emailRegex.test(email)) {
+    if (!isValidEmail(email)) {
       setEmailError("Email is not valid. Please sign up first.");
       return;
     }

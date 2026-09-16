@@ -1,14 +1,17 @@
 // components/ReferralSearch.js
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { View, Text, TextInput, TouchableOpacity, Modal, FlatList, ActivityIndicator, StyleSheet, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Modal, FlatList, ActivityIndicator, StyleSheet, Platform, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { searchReferralProfiles } from "../utils/searchReferralProfiles";
-import MiniCard from "./MiniCard";
+import MicroCard from "./MicroCard";
 
 const SEARCH_DEBOUNCE_MS = 350;
 const MIN_QUERY_LENGTH = 2;
+/** Fixed results panel height so the popup does not resize when matches appear. */
+const RESULTS_AREA_HEIGHT = Math.min(320, Math.round(Dimensions.get("window").height * 0.42));
+const MODAL_HEIGHT = Math.min(560, Math.round(Dimensions.get("window").height * 0.88));
 
-function referralProfileToMiniCardUser(item) {
+function referralProfileToMicroCardUser(item, relationship) {
   const imageUrl = item.profile_personal_image ? String(item.profile_personal_image).trim() : "";
   const imageIsPublic =
     item.profile_personal_image_is_public === true ||
@@ -25,26 +28,9 @@ function referralProfileToMiniCardUser(item) {
       item.profile_personal_tag_line_is_public === 1 ||
       item.profile_personal_tag_line_is_public === "1" ||
       Boolean(item.profile_personal_tag_line || item.profile_personal_tagline),
-    email: item.profile_email_id || item.user_email_id || "",
-    emailIsPublic:
-      item.profile_personal_email_is_public === true ||
-      item.profile_personal_email_is_public === 1 ||
-      item.profile_personal_email_is_public === "1" ||
-      Boolean(item.profile_email_id || item.user_email_id),
-    phoneNumber: item.profile_personal_phone_number || "",
-    phoneIsPublic:
-      item.profile_personal_phone_number_is_public === true ||
-      item.profile_personal_phone_number_is_public === 1 ||
-      item.profile_personal_phone_number_is_public === "1",
-    city: item.profile_personal_city || "",
-    state: item.profile_personal_state || "",
-    locationIsPublic:
-      item.profile_personal_location_is_public === true ||
-      item.profile_personal_location_is_public === 1 ||
-      item.profile_personal_location_is_public === "1" ||
-      Boolean(item.profile_personal_city || item.profile_personal_state),
     profileImage: imageUrl,
     imageIsPublic,
+    circle_relationship: relationship || null,
   };
 }
 
@@ -161,10 +147,7 @@ const ReferralSearch = ({
     const existingConnection = networkData.find((n) => n.network_profile_personal_uid === item.profile_personal_uid);
     const relationship = existingConnection?.circle_relationship;
     const degree = existingConnection?.degree;
-    const metaParts = [
-      relationship ? relationship.charAt(0).toUpperCase() + relationship.slice(1) : null,
-      degree ? `Level ${degree}` : null,
-    ].filter(Boolean);
+    const hasNetworkMeta = Boolean(relationship || degree);
 
     return (
       <TouchableOpacity
@@ -173,11 +156,15 @@ const ReferralSearch = ({
         accessibilityRole='button'
         accessibilityLabel={`Select ${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim()}
       >
-        <View style={styles.miniCardWrap}>
-          <MiniCard user={referralProfileToMiniCardUser(item)} embedded />
-          {metaParts.length > 0 ? <Text style={styles.connectionMeta}>{metaParts.join(" · ")}</Text> : null}
+        <View style={styles.cardWrap}>
+          <MicroCard
+            user={referralProfileToMicroCardUser(item, relationship)}
+            embedded
+            showRelationship={Boolean(relationship)}
+            relationshipMeta={degree ? `Level ${degree}` : null}
+          />
         </View>
-        <Ionicons name='chevron-forward' size={20} color='#666' />
+        {!hasNetworkMeta ? <Ionicons name='chevron-forward' size={18} color='#999' /> : null}
       </TouchableOpacity>
     );
   };
@@ -221,7 +208,7 @@ const ReferralSearch = ({
   );
 
   const resultsBlock = (
-    <View style={[styles.resultsContainer, { minHeight: hideEmptyState && !hasSearched && searchResults.length === 0 ? 0 : 150 }]}>
+    <View style={[styles.resultsContainer, hideEmptyState && !hasSearched && searchResults.length === 0 ? styles.resultsContainerCollapsed : null]}>
       {isSearching ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size='large' color={searchButtonColor || "#007AFF"} />
@@ -229,7 +216,7 @@ const ReferralSearch = ({
         </View>
       ) : hasSearched && searchResults.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Ionicons name='search' size={48} color='#ccc' />
+          <Ionicons name='search' size={40} color='#ccc' />
           <Text style={styles.noResultsText}>No users found</Text>
           <Text style={styles.noResultsSubtext}>{noResultsSubtext}</Text>
         </View>
@@ -243,7 +230,7 @@ const ReferralSearch = ({
         />
       ) : hideEmptyState ? null : (
         <View style={styles.centerContainer}>
-          <Ionicons name='people' size={48} color='#ccc' />
+          <Ionicons name='people' size={40} color='#ccc' />
           <Text style={styles.instructionText}>{instructionText}</Text>
           <Text style={styles.instructionHint}>Matches appear after you type at least {MIN_QUERY_LENGTH} characters.</Text>
         </View>
@@ -260,11 +247,11 @@ const ReferralSearch = ({
 
   if (embedded) {
     return (
-      <>
+      <View style={styles.embeddedRoot}>
         {searchField}
         {resultsBlock}
         {newUserButton}
-      </>
+      </View>
     );
   }
 
@@ -311,15 +298,17 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     width: "100%",
     maxWidth: 720,
-    maxHeight: "92%",
-    minHeight: 420,
+    height: MODAL_HEIGHT,
     padding: 20,
+  },
+  embeddedRoot: {
+    width: "100%",
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 20,
+    marginBottom: 16,
   },
   headerTextContainer: {
     flex: 1,
@@ -360,7 +349,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F5F5",
     borderRadius: 10,
     paddingHorizontal: 12,
-    marginBottom: 16,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: "#E8E8E8",
   },
@@ -380,13 +369,16 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   resultsContainer: {
-    flex: 1,
-    minHeight: 280,
+    height: RESULTS_AREA_HEIGHT,
     backgroundColor: "#fff",
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#e8e8e8",
     overflow: "hidden",
+  },
+  resultsContainerCollapsed: {
+    height: 0,
+    borderWidth: 0,
   },
   resultsList: {
     flex: 1,
@@ -395,23 +387,16 @@ const styles = StyleSheet.create({
   userItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
     backgroundColor: "#fff",
   },
-  miniCardWrap: {
+  cardWrap: {
     flex: 1,
     minWidth: 0,
-    marginRight: 8,
-  },
-  connectionMeta: {
-    marginTop: 4,
-    marginLeft: 2,
-    fontSize: 13,
-    color: "#888",
-    fontStyle: "italic",
+    marginRight: 4,
   },
   centerContainer: {
     flex: 1,
@@ -453,7 +438,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 10,
     alignItems: "center",
-    marginTop: 16,
+    marginTop: 12,
   },
   newUserButtonText: {
     color: "#fff",

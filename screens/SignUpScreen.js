@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Platform, Modal, ActivityIndicator, ScrollView } from "react-native";
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Platform, Modal, ActivityIndicator, ScrollView, Dimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import AppleSignIn from "../AppleSignIn";
@@ -18,6 +18,7 @@ import { isPendingDeletionAuthResponse, isSoftDeletedRegisterConflict, reactivat
 import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
 import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
+import { isValidEmail } from "../utils/emailValidation";
 
 function authContinuationParams(route) {
   const p = route?.params || {};
@@ -220,8 +221,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
   const validateInputs = useCallback(
     (email, password, confirmPassword) => {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const isEmailValid = emailRegex.test(email);
+      const isEmailValid = isValidEmail(email);
       // Main signup is email-only (or Google complete). Password fields are fallback-modal only.
       if (isGoogleSignUp) {
         setIsValid(isEmailValid);
@@ -663,12 +663,11 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   borderRadius: 12,
                   width: "100%",
                   maxWidth: 560,
-                  maxHeight: "88%",
-                  minHeight: 420,
+                  height: Math.min(560, Math.round(Dimensions.get("window").height * 0.88)),
                 }}
               >
                 <Text style={{ fontSize: 20, fontWeight: "bold", color: "#333", marginBottom: 6 }}>Who referred you to everyCircle?</Text>
-                <Text style={{ fontSize: 14, lineHeight: 20, color: "#666", marginBottom: 16 }}>
+                <Text style={{ fontSize: 14, lineHeight: 20, color: "#666", marginBottom: 12 }}>
                   Type a name, email, or location — matching people appear as you type.
                 </Text>
 
