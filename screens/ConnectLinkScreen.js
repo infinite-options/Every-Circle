@@ -9,8 +9,7 @@ import { USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
 import { sanitizeText } from "../utils/textSanitizer";
-import { isApiPublicFlag } from "../utils/apiPublicFlag";
-import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
+import { isApiPublicFlag, isSharedProfileImagePublic } from "../utils/apiPublicFlag";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 
@@ -67,7 +66,7 @@ const ConnectLinkScreen = () => {
         phoneIsPublic: isApiPublicFlag(p.profile_personal_phone_number_is_public),
         tagLineIsPublic: isApiPublicFlag(p.profile_personal_tag_line_is_public) || isApiPublicFlag(p.profile_personal_tagline_is_public),
         locationIsPublic: isApiPublicFlag(p.profile_personal_location_is_public),
-        imageIsPublic: isApiPublicFlag(p.profile_personal_image_is_public),
+        imageIsPublic: Boolean(p.profile_personal_image && String(p.profile_personal_image).trim()) && isSharedProfileImagePublic(p.profile_personal_image_is_public),
       });
     } catch (e) {
       console.warn("ConnectLinkScreen - Failed to fetch my data:", e);
@@ -77,7 +76,31 @@ const ConnectLinkScreen = () => {
   const fetchProfileData = async () => {
     try {
       setLoading(true);
-      const profileInfo = await fetchPublicProfileCard(profileUid);
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
+      if (!response.ok) {
+        throw new Error("Profile not found");
+      }
+      const apiUser = await response.json();
+
+      const p = apiUser?.personal_info || {};
+      const profileInfo = {
+        profile_uid: profileUid,
+        firstName: sanitizeText(p.profile_personal_first_name || ""),
+        lastName: sanitizeText(p.profile_personal_last_name || ""),
+        tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
+        city: sanitizeText(p.profile_personal_city || ""),
+        state: sanitizeText(p.profile_personal_state || ""),
+        email: sanitizeText(apiUser?.user_email || ""),
+        phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+        phoneVerified: p.phone_verified === true || p.phone_verified === 1 || apiUser.phoneVerified === true,
+        profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+        emailIsPublic: isApiPublicFlag(p.profile_personal_email_is_public),
+        phoneIsPublic: isApiPublicFlag(p.profile_personal_phone_number_is_public),
+        tagLineIsPublic: isApiPublicFlag(p.profile_personal_tag_line_is_public) || isApiPublicFlag(p.profile_personal_tagline_is_public),
+        locationIsPublic: isApiPublicFlag(p.profile_personal_location_is_public),
+        imageIsPublic: Boolean(p.profile_personal_image && String(p.profile_personal_image).trim()) && isSharedProfileImagePublic(p.profile_personal_image_is_public),
+      };
+
       setProfileData(profileInfo);
     } catch (err) {
       console.error("Error fetching profile:", err);

@@ -56,10 +56,44 @@ async function hydrateSessionAfterSignup(profileUid, apiPayload, { profilePictur
 }
 
 /**
+ * Fetch remote image bytes for multipart upload.
+ * Direct Google CDN fetch often fails CORS on web; fall back to images.weserv.nl proxy.
+ */
+async function fetchRemoteImageBlob(photoUrl) {
+  const url = String(photoUrl || "").trim();
+  if (!url) return null;
+
+  const tryFetch = async (fetchUrl, label) => {
+    const res = await globalThis.fetch(fetchUrl);
+    if (!res.ok) throw new Error(`${label} HTTP ${res.status}`);
+    const blob = await res.blob();
+    if (!blob || blob.size < 32) throw new Error(`${label} empty blob`);
+    return blob;
+  };
+
+  try {
+    return await tryFetch(url, "direct");
+  } catch (directErr) {
+    console.warn("[GooglePhoto] direct image fetch failed:", directErr?.message || directErr);
+  }
+
+  try {
+    // weserv expects host/path without protocol in `url`
+    const stripped = url.replace(/^https?:\/\//i, "");
+    const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(stripped)}&output=jpg`;
+    const blob = await tryFetch(proxyUrl, "proxy");
+    console.log("[GooglePhoto] web: got image bytes via proxy, size=", blob.size);
+    return blob;
+  } catch (proxyErr) {
+    console.warn("[GooglePhoto] proxy image fetch failed:", proxyErr?.message || proxyErr);
+    return null;
+  }
+}
+
+/**
  * Attach OAuth photo for profile PUT/POST.
- * Native: download bytes into multipart `profile_image` (same as EditProfile).
- * Web: skip browser fetch (Google CDN CORS) and send the URL as `profile_personal_image`
- * so the BE can store it (or MiniCard can still use the session URL immediately).
+ * Prefers multipart `profile_image` file (same as EditProfile → S3).
+ * Always also sends `profile_personal_image` URL so scanners can show it if BE stores the URL.
  */
 async function appendOAuthProfileImage(formData, photoUrl) {
   const url = String(photoUrl || "").trim();
@@ -71,10 +105,17 @@ async function appendOAuthProfileImage(formData, photoUrl) {
 
   try {
     if (Platform.OS === "web") {
-      // Do not fetch googleusercontent in the browser — CORS blocks reading bytes.
-      // Persist the URL into profile_personal_image; Image can display it directly.
+      const blob = await fetchRemoteImageBlob(url);
+      if (blob) {
+        const type = blob.type && String(blob.type).startsWith("image/") ? blob.type : "image/jpeg";
+        const ext = (type.split("/")[1] || "jpg").replace("jpeg", "jpg");
+        formData.append("profile_image", new File([blob], `profile.${ext}`, { type }));
+        console.log("[GooglePhoto] web: appended profile_image file, bytes≈", blob.size);
+      } else {
+        console.warn("[GooglePhoto] web: no blob — sending URL only");
+      }
+      // Always send URL so BE can persist even if file upload is ignored.
       formData.append("profile_personal_image", url);
-      console.log("[GooglePhoto] web: appending profile_personal_image URL (no blob fetch)");
       return true;
     }
 
@@ -91,6 +132,7 @@ async function appendOAuthProfileImage(formData, photoUrl) {
       name: "profile.jpg",
       type: "image/jpeg",
     });
+    formData.append("profile_personal_image", url);
     console.log("[GooglePhoto] native: appended profile_image file");
     return true;
   } catch (e) {
@@ -107,6 +149,7 @@ async function appendOAuthProfileImage(formData, photoUrl) {
 async function attachOAuthPhotoFields(formData, profilePicture) {
   const attached = await appendOAuthProfileImage(formData, profilePicture);
   if (attached) {
+    // Send both forms — some BE paths expect string, others number.
     formData.append("profile_personal_image_is_public", "1");
   }
   return attached;
