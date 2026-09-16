@@ -1189,10 +1189,6 @@ const ConnectScreen = ({ navigation }) => {
 
       const userData = miniCardUserFromSession(session, profileId, userUid);
       if (userData) {
-        // Own Connect with Me card: if we have an image URL, always show it to the owner.
-        if (userData.profileImage && String(userData.profileImage).trim()) {
-          userData.imageIsPublic = true;
-        }
         console.log("[GooglePhoto] Connect MiniCard", {
           firstName: userData.firstName,
           lastName: userData.lastName,

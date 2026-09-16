@@ -112,22 +112,20 @@ function profileHasName(apiPayload) {
 }
 
 /**
- * Inject OAuth photo URL and force Display=on so MiniCard can show it immediately.
- * Also forces public when an image URL already exists but the public flag is off.
+ * Inject OAuth photo URL when the profile has no image yet, and mark Display=on for that new photo.
+ * Does NOT override an existing image that the user (or API) has set to Display=off.
  */
 export function withOauthPhotoOnPayload(apiPayload, photoUrl) {
   const photo = String(photoUrl || "").trim();
   if (!apiPayload || typeof apiPayload !== "object") return apiPayload;
+  if (profileHasImage(apiPayload)) return apiPayload;
+  if (!photo) return apiPayload;
   const personalInfo = apiPayload.personal_info && typeof apiPayload.personal_info === "object" ? apiPayload.personal_info : {};
-  const hasImage = profileHasImage(apiPayload);
-  const isPublic = isApiPublicFlag(personalInfo.profile_personal_image_is_public);
-  if (hasImage && isPublic) return apiPayload;
-  if (!hasImage && !photo) return apiPayload;
   return {
     ...apiPayload,
     personal_info: {
       ...personalInfo,
-      profile_personal_image: hasImage ? String(personalInfo.profile_personal_image) : photo,
+      profile_personal_image: photo,
       profile_personal_image_is_public: 1,
     },
   };
@@ -159,18 +157,15 @@ export function withOauthIdentityOnPayload(apiPayload, { firstName = "", lastNam
   return next;
 }
 
-/** Merge pending OAuth photo into a profile API payload when the BE has no image yet (or public is off). */
+/** Merge pending OAuth photo into a profile API payload when the BE has no image yet. */
 export async function mergePendingOauthPhotoIntoPayload(apiPayload) {
   if (!apiPayload) return apiPayload;
-  const pending = await getOauthPendingProfileImage();
-  const merged = withOauthPhotoOnPayload(apiPayload, pending);
-  if (profileHasImage(merged) && isApiPublicFlag(merged?.personal_info?.profile_personal_image_is_public) && !pending) {
-    /* already complete */
-  }
-  if (profileHasImage(apiPayload) && isApiPublicFlag(apiPayload?.personal_info?.profile_personal_image_is_public)) {
+  if (profileHasImage(apiPayload)) {
     await clearOauthPendingProfileImage();
+    return apiPayload;
   }
-  return merged;
+  const pending = await getOauthPendingProfileImage();
+  return withOauthPhotoOnPayload(apiPayload, pending);
 }
 
 /** Merge pending OAuth name + photo so Connect MiniCard shows identity right after signup. */

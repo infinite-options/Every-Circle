@@ -1811,7 +1811,7 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={styles.profileHeaderContainer}>
               <Image
                 source={
-                  user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && user.profileImage !== "" && String(user.profileImage).trim() !== ""
+                  user.profileImage && user.imageIsPublic && user.profileImage !== "" && String(user.profileImage).trim() !== ""
                     ? { uri: String(user.profileImage) }
                     : require("../assets/profile.png")
                 }
@@ -1934,7 +1934,7 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={{ width: 200, height: 200, borderRadius: 100, overflow: "hidden" }}>
               <Image
                 source={
-                  user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && String(user.profileImage).trim() !== "" ? { uri: String(user.profileImage) } : require("../assets/profile.png")
+                  user.profileImage && user.imageIsPublic && String(user.profileImage).trim() !== "" ? { uri: String(user.profileImage) } : require("../assets/profile.png")
                 }
                 style={{ width: 200, height: 200 }}
                 resizeMode='cover'
@@ -1950,7 +1950,7 @@ const ProfileScreen = ({ route, navigation }) => {
                 ...user,
                 relationship: relationshipType || existingRelationship?.circle_relationship || null,
                 imageIsPublic: user.imageIsPublic,
-                profileImage: isCurrentUserProfile || user.imageIsPublic ? user.profileImage : "",
+                profileImage: user.imageIsPublic ? user.profileImage : "",
               }}
             />
             {shortBioBelowCard ? <Text style={[styles.shortBioBelowCard, darkMode && styles.darkShortBioBelowCard]}>{shortBioBelowCard}</Text> : null}
