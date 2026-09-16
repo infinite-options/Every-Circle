@@ -54,14 +54,21 @@ function isVisibleInPreview(level) {
 }
 
 /** Append a personal-info visibility field to a multipart payload, splitting a picker's
- * possibly-composite "specific:friend,family" value into `<visibilityKey>` (the plain level)
- * and `<visibilityKey>_circles` (the CSV, only meaningful/sent when level is "specific"). */
+ * composite value into three: `<visibilityKey>` (a legacy-compatible enum placeholder),
+ * `<visibilityKey>_degrees` (the exact degree-number CSV, the real source of truth wherever the
+ * backend has a column for it), and `<visibilityKey>_circles` (the circle-type CSV). Both CSVs
+ * AND onto whichever base level is set; an empty string is a real value - it clears a
+ * previously-saved filter. */
 function appendVisibility(payload, visibilityKey, value) {
-  const { level, circleTypes } = parseVisibilityValue(value);
-  payload.append(visibilityKey, level);
-  if (level === "specific") {
-    payload.append(`${visibilityKey}_circles`, circleTypes.join(","));
-  }
+  const { level, degrees, circleTypes } = parseVisibilityValue(value);
+  // The DB enum only knows everyone/degree1/degree2/degree3/only_me - any picked degrees map to
+  // the highest one as a legacy-compatible placeholder (or "everyone" when no degree is picked,
+  // circles-only included); the degrees CSV below is what actually governs an exact-set field's
+  // gating.
+  const enumLevel = level === "only_me" ? "only_me" : degrees.length > 0 ? `degree${Math.max(...degrees)}` : "everyone";
+  payload.append(visibilityKey, enumLevel);
+  payload.append(`${visibilityKey}_degrees`, degrees.join(","));
+  payload.append(`${visibilityKey}_circles`, circleTypes.join(","));
 }
 
 function businessEntryVisibilityFromApi(biz) {
@@ -142,10 +149,10 @@ function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
     shortBio: pi.profile_personal_short_bio || "",
     homeAddress: pi.profile_personal_home_address || "",
     personal_info: pi,
-    cityVisibility: resolveVisibilityLevel(pi, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles"),
-    stateVisibility: resolveVisibilityLevel(pi, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles"),
-    emailVisibility: resolveVisibilityLevel(pi, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles"),
-    phoneVisibility: resolveVisibilityLevel(pi, "profile_personal_phone_number_visibility", "profile_personal_phone_number_is_public", "profile_personal_phone_number_visibility_circles"),
+    cityVisibility: resolveVisibilityLevel(pi, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles", "profile_personal_city_visibility_degrees"),
+    stateVisibility: resolveVisibilityLevel(pi, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles", "profile_personal_state_visibility_degrees"),
+    emailVisibility: resolveVisibilityLevel(pi, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles", "profile_personal_email_visibility_degrees"),
+    phoneVisibility: resolveVisibilityLevel(pi, "profile_personal_phone_number_visibility", "profile_personal_phone_number_is_public", "profile_personal_phone_number_visibility_circles", "profile_personal_phone_number_visibility_degrees"),
     tagLineVisibility: resolveVisibilityLevel(pi, "profile_personal_tag_line_visibility", "profile_personal_tag_line_is_public", "profile_personal_tag_line_visibility_circles"),
     shortBioVisibility: resolveVisibilityLevel(pi, "profile_personal_short_bio_visibility", "profile_personal_short_bio_is_public", "profile_personal_short_bio_visibility_circles"),
     experienceVisibility: resolveVisibilityLevel(pi, "profile_personal_experience_visibility", "profile_personal_experience_is_public"),
@@ -154,7 +161,7 @@ function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
     wishesVisibility: resolveVisibilityLevel(pi, "profile_personal_wishes_visibility", "profile_personal_wishes_is_public", "profile_personal_wishes_visibility_circles"),
     businessVisibility: resolveVisibilityLevel(pi, "profile_personal_business_visibility", "profile_personal_business_is_public"),
     socialVisibility: resolveVisibilityLevel(pi, "profile_personal_social_visibility", "profile_personal_social_is_public"),
-    imageVisibility: resolveVisibilityLevel(pi, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles"),
+    imageVisibility: resolveVisibilityLevel(pi, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles", "profile_personal_image_visibility_degrees"),
     locationIsPublic: isApiPublicFlag(pi.profile_personal_location_is_public),
     emailIsPublic: isApiPublicFlag(pi.profile_personal_email_is_public),
     phoneIsPublic: isApiPublicFlag(pi.profile_personal_phone_number_is_public),
@@ -1421,9 +1428,17 @@ const EditProfileScreen = ({ route, navigation }) => {
                 profile_personal_longitude: homeLng,
                 profile_personal_location_is_public:
                   parseVisibilityValue(formData.cityVisibility).level === "only_me" && parseVisibilityValue(formData.stateVisibility).level === "only_me" ? 0 : 1,
-                profile_personal_city_visibility: parseVisibilityValue(formData.cityVisibility).level,
+                profile_personal_city_visibility: (() => {
+                  const { level, degrees } = parseVisibilityValue(formData.cityVisibility);
+                  return level === "only_me" ? "only_me" : degrees.length > 0 ? `degree${Math.max(...degrees)}` : "everyone";
+                })(),
+                profile_personal_city_visibility_degrees: parseVisibilityValue(formData.cityVisibility).degrees.join(","),
                 profile_personal_city_visibility_circles: parseVisibilityValue(formData.cityVisibility).circleTypes.join(","),
-                profile_personal_state_visibility: parseVisibilityValue(formData.stateVisibility).level,
+                profile_personal_state_visibility: (() => {
+                  const { level, degrees } = parseVisibilityValue(formData.stateVisibility);
+                  return level === "only_me" ? "only_me" : degrees.length > 0 ? `degree${Math.max(...degrees)}` : "everyone";
+                })(),
+                profile_personal_state_visibility_degrees: parseVisibilityValue(formData.stateVisibility).degrees.join(","),
                 profile_personal_state_visibility_circles: parseVisibilityValue(formData.stateVisibility).circleTypes.join(","),
               },
             },
@@ -1445,7 +1460,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     }
   };
 
-  const renderField = (label, value, visibilityLevel, fieldName, visibilityFieldName, editable = true) => (
+  const renderField = (label, value, visibilityLevel, fieldName, visibilityFieldName, editable = true, pickerProps = { allowCircleLevel: true }) => (
     <View style={styles.fieldContainer}>
       {/* Row: Label and connection-level picker (name fields have no picker - always public) */}
       <View style={styles.labelRow}>
@@ -1455,7 +1470,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             value={visibilityLevel}
             onChange={(level) => handleVisibilityChange(visibilityFieldName, level)}
             darkMode={darkMode}
-            allowCircleLevel
+            {...pickerProps}
           />
         ) : null}
       </View>
@@ -1900,7 +1915,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         {showBio && (
           <>
-            {renderField("Tagline", formData.tagLine, formData.tagLineVisibility, "tagLine", "tagLineVisibility")}
+            {renderField("Tagline", formData.tagLine, formData.tagLineVisibility, "tagLine", "tagLineVisibility", true, { simple: true })}
             {renderShortBioField()}
           </>
         )}
@@ -2018,6 +2033,7 @@ const EditProfileScreen = ({ route, navigation }) => {
                   value={formData.socialVisibility}
                   onChange={(level) => handleVisibilityChange("socialVisibility", level)}
                   darkMode={darkMode}
+                  simple
                 />
               </View>
             </View>

@@ -837,12 +837,12 @@ const ProfileScreen = ({ route, navigation }) => {
         // Connection-level visibility (Everyone/1st-3rd degree/Only Me) for Edit Profile's
         // per-field pickers - meaningless as viewer-facing gating, only used to preselect the
         // owner's saved level when they reopen Edit Profile.
-        emailVisibility: resolveVisibilityLevel(personal, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles"),
-        phoneVisibility: resolveVisibilityLevel(personal, "profile_personal_phone_number_visibility", "profile_personal_phone_number_is_public", "profile_personal_phone_number_visibility_circles"),
-        imageVisibility: resolveVisibilityLevel(personal, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles"),
+        emailVisibility: resolveVisibilityLevel(personal, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles", "profile_personal_email_visibility_degrees"),
+        phoneVisibility: resolveVisibilityLevel(personal, "profile_personal_phone_number_visibility", "profile_personal_phone_number_is_public", "profile_personal_phone_number_visibility_circles", "profile_personal_phone_number_visibility_degrees"),
+        imageVisibility: resolveVisibilityLevel(personal, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles", "profile_personal_image_visibility_degrees"),
         tagLineVisibility: resolveVisibilityLevel(personal, "profile_personal_tag_line_visibility", "profile_personal_tag_line_is_public", "profile_personal_tag_line_visibility_circles"),
-        cityVisibility: resolveVisibilityLevel(personal, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles"),
-        stateVisibility: resolveVisibilityLevel(personal, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles"),
+        cityVisibility: resolveVisibilityLevel(personal, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles", "profile_personal_city_visibility_degrees"),
+        stateVisibility: resolveVisibilityLevel(personal, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles", "profile_personal_state_visibility_degrees"),
         shortBioVisibility: resolveVisibilityLevel(personal, "profile_personal_short_bio_visibility", "profile_personal_short_bio_is_public", "profile_personal_short_bio_visibility_circles"),
         experienceVisibility: resolveVisibilityLevel(personal, "profile_personal_experience_visibility", "profile_personal_experience_is_public"),
         educationVisibility: resolveVisibilityLevel(personal, "profile_personal_education_visibility", "profile_personal_education_is_public"),
@@ -933,7 +933,7 @@ const ProfileScreen = ({ route, navigation }) => {
         ...pickSeekingListingCommerceFields(wish),
         profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
         isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
-        visibility: resolveVisibilityLevel(wish, "profile_wish_visibility", "profile_wish_is_public", "profile_wish_visibility_circles"),
+        visibility: resolveVisibilityLevel(wish, "profile_wish_visibility", "profile_wish_is_public", "profile_wish_visibility_circles", "profile_wish_visibility_degrees"),
         wish_responses: wish.wish_responses || 0,
         moderation: normalizeSeekingModeration(wish),
         profile_wish_moderated: wish.profile_wish_moderated,

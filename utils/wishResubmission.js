@@ -68,7 +68,8 @@ export function mapProfileWishToFormItem(wish, profileUid) {
     // wish.visibility first: ProfileScreen's own wish mapping (not built via this function) already
     // sets it from the raw columns; re-mapping an already-form-shaped item (e.g. EditProfileScreen
     // re-mapping route-param data) must prefer that over now-absent raw profile_wish_* columns.
-    visibility: wish.visibility || resolveVisibilityLevel(wish, "profile_wish_visibility", "profile_wish_is_public", "profile_wish_visibility_circles"),
+    visibility:
+      wish.visibility || resolveVisibilityLevel(wish, "profile_wish_visibility", "profile_wish_is_public", "profile_wish_visibility_circles", "profile_wish_visibility_degrees"),
     _wishNewImageUri: "",
     _wishWebImageFile: null,
     _wishOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
@@ -79,9 +80,15 @@ export function mapProfileWishToFormItem(wish, profileUid) {
 
 export function mapWishFormToPayload(w) {
   const publicBlocked = isSeekingVisibilityBlocked(w);
-  const { level: pickedLevel, circleTypes } = parseVisibilityValue(w.visibility);
-  const visibilityLevel = publicBlocked ? "only_me" : pickedLevel;
-  const isPublicValue = visibilityLevel === "only_me" ? 0 : 1;
+  // A moderated post can never be set visible, regardless of what level/degrees/circles the owner
+  // picked - force it back to Only Me, mirroring the previous isPublic-only enforcement.
+  const parsed = parseVisibilityValue(w.visibility);
+  const scope = publicBlocked ? "only_me" : parsed.level;
+  const degrees = publicBlocked ? [] : parsed.degrees;
+  const circleTypes = publicBlocked ? [] : parsed.circleTypes;
+  const isPublicValue = scope === "only_me" ? 0 : 1;
+  const visibilityLevel = scope === "only_me" ? "only_me" : degrees.length > 0 ? `degree${Math.max(...degrees)}` : "everyone";
+  const visibilityDegreesCsv = degrees.join(",");
   const shippingFields = buildSeekingShippingForApi(w);
   return {
     profile_wish_uid: w.profile_wish_uid || "",
@@ -93,7 +100,10 @@ export function mapWishFormToPayload(w) {
     profile_wish_bounty_type: w.profile_wish_bounty_type || "none",
     profile_wish_is_public: isPublicValue,
     profile_wish_visibility: visibilityLevel,
-    profile_wish_visibility_circles: visibilityLevel === "specific" ? circleTypes.join(",") : "",
+    // Both AND onto whichever base level was picked - always send the current selection (an
+    // empty string clears a previously-saved filter).
+    profile_wish_visibility_degrees: visibilityDegreesCsv,
+    profile_wish_visibility_circles: circleTypes.join(","),
     profile_wish_image: w.profile_wish_image || "",
     profile_wish_image_is_public: w.profile_wish_image_is_public === 0 || w.profile_wish_image_is_public === "0" ? 0 : 1,
     profile_wish_start: w.profile_wish_start || "",

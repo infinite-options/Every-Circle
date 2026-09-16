@@ -276,7 +276,7 @@ const EducationSection = ({
           </TouchableOpacity>
         </View>
         <View style={styles.toggleContainer}>
-          <ConnectionVisibilityPicker value={visibilityLevel} onChange={onVisibilityChange} darkMode={darkMode} />
+          <ConnectionVisibilityPicker value={visibilityLevel} onChange={onVisibilityChange} darkMode={darkMode} simple />
           </View>
       </View>
 

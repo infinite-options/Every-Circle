@@ -285,7 +285,7 @@ const ExperienceSection = ({
 
         {/* Who can see this section */}
         <View style={styles.toggleContainer}>
-          <ConnectionVisibilityPicker value={visibilityLevel} onChange={onVisibilityChange} darkMode={darkMode} />
+          <ConnectionVisibilityPicker value={visibilityLevel} onChange={onVisibilityChange} darkMode={darkMode} simple />
         </View>
       </View>
 
