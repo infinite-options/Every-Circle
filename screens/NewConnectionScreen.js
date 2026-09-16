@@ -9,6 +9,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import { USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { sanitizeText } from "../utils/textSanitizer";
+import { isApiPublicFlag, isSharedProfileImagePublic } from "../utils/apiPublicFlag";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import WebTextInput from "../components/WebTextInput";
 import * as Location from "expo-location";
@@ -482,12 +483,13 @@ const NewConnectionScreen = () => {
         state: sanitizeText(p.profile_personal_state || ""),
         email: sanitizeText(apiUser?.user_email || ""),
         phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+        phoneVerified: p.phone_verified === true || p.phone_verified === 1 || apiUser.phoneVerified === true,
         profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-        emailIsPublic: p.profile_personal_email_is_public === 1,
-        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-        locationIsPublic: p.profile_personal_location_is_public === 1,
-        imageIsPublic: p.profile_personal_image_is_public === 1,
+        emailIsPublic: isApiPublicFlag(p.profile_personal_email_is_public),
+        phoneIsPublic: isApiPublicFlag(p.profile_personal_phone_number_is_public),
+        tagLineIsPublic: isApiPublicFlag(p.profile_personal_tag_line_is_public) || isApiPublicFlag(p.profile_personal_tagline_is_public),
+        locationIsPublic: isApiPublicFlag(p.profile_personal_location_is_public),
+        imageIsPublic: Boolean(p.profile_personal_image && String(p.profile_personal_image).trim()) && isSharedProfileImagePublic(p.profile_personal_image_is_public),
       };
 
       setProfileData(profileInfo);
@@ -559,14 +561,32 @@ const NewConnectionScreen = () => {
 
                     <TouchableOpacity
                       style={[styles.authButton, styles.loginButton, darkMode && styles.darkLoginButton]}
-                      onPress={() => navigation.navigate("Login", { returnToNewConnection: true, profile_uid: profileUid })}
+                      onPress={() => {
+                        if (profileUid) {
+                          AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
+                        }
+                        navigation.navigate("Login", {
+                          returnToNewConnection: true,
+                          profile_uid: profileUid,
+                          referralProfileUid: profileUid,
+                        });
+                      }}
                     >
                       <Text style={styles.authButtonText}>Login</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={[styles.authButton, styles.signupButton, darkMode && styles.darkSignupButton]}
-                      onPress={() => navigation.navigate("SignUp", { referralProfileUid: profileUid, returnToNewConnection: true, profile_uid: profileUid })}
+                      onPress={() => {
+                        if (profileUid) {
+                          AsyncStorage.setItem("referral_uid", profileUid).catch(() => {});
+                        }
+                        navigation.navigate("SignUp", {
+                          referralProfileUid: profileUid,
+                          returnToNewConnection: true,
+                          profile_uid: profileUid,
+                        });
+                      }}
                     >
                       <Text style={styles.authButtonText}>Sign Up</Text>
                     </TouchableOpacity>

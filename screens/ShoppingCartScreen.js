@@ -1410,7 +1410,17 @@ const ShoppingCartScreenContent = ({
     (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
     null;
-  const checkoutDisabled = loading;
+  const shippingAddressComplete = isShippingAddressComplete({
+    enabled: cartHasShipFulfillmentLines,
+    firstName: shippingFirstName,
+    lastName: shippingLastName,
+    streetLine1: shippingStreetLine1,
+    city: shippingCity,
+    state: shippingState,
+    zip: shippingZip,
+  });
+  const checkoutBlockedByShipping = cartHasShipFulfillmentLines && !shippingAddressComplete;
+  const checkoutDisabled = loading || checkoutBlockedByShipping;
   const groupCartBySeller = checkoutSellerGroups.length > 1 || business_uid === "all";
   const cartDisplayGroups = groupCartBySeller
     ? checkoutSellerGroups.map((group) => ({
@@ -1726,6 +1736,9 @@ const ShoppingCartScreenContent = ({
             >
               <Text style={[styles.checkoutButtonText, checkoutDisabled && styles.checkoutButtonTextDisabled]}>{loading ? "Processing..." : "Proceed to Checkout"}</Text>
             </TouchableOpacity>
+            {checkoutBlockedByShipping ? (
+              <Text style={styles.checkoutBlockedHint}>Enter a complete delivery address to continue.</Text>
+            ) : null}
             <TouchableOpacity style={styles.returnButton} onPress={handleReturnPress} disabled={loading}>
               <Text style={styles.returnButtonText}>{returnButtonLabel}</Text>
             </TouchableOpacity>
@@ -2054,6 +2067,13 @@ const styles = StyleSheet.create({
   },
   checkoutButtonTextDisabled: {
     color: "#F5F5F5",
+  },
+  checkoutBlockedHint: {
+    color: "#666",
+    fontSize: 13,
+    textAlign: "center",
+    marginBottom: 10,
+    marginTop: -4,
   },
   returnButton: {
     backgroundColor: "#F5F5F5",

@@ -56,6 +56,11 @@ export const APPLE_AUTH_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.ama
 // Account Management Endpoints
 export const ACCOUNT_SALT_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AccountSalt/EVERY-CIRCLE";
 export const CREATE_ACCOUNT_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccount/EVERY-CIRCLE";
+/**
+ * Email-only signup: BE generates an 8-char alphanumeric temp password, stores it, emails it,
+ * and returns user_uid + session tokens when possible. See FE signup flow in SignUpScreen.
+ */
+export const CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccountTempPassword/EVERY-CIRCLE";
 export const LOGIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/Login/EVERY-CIRCLE";
 export const UPDATE_EMAIL_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UpdateEmailPassword/EVERY-CIRCLE";
 export const SET_TEMP_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/SetTempPassword/EVERY-CIRCLE";
@@ -83,6 +88,10 @@ export const AUTH_REFRESH_ENDPOINT = `${API_BASE_URL}/api/v1/auth/refresh`;
 export const AUTH_SOCIAL_ENDPOINT = `${API_BASE_URL}/api/v1/auth/social`;
 export const AUTH_LOGOUT_ENDPOINT = `${API_BASE_URL}/api/v1/auth/logout`;
 export const AUTH_ME_ENDPOINT = `${API_BASE_URL}/api/v1/auth/me`;
+/** POST JSON `{ phone_number }` — SMS OTP for settings verify/change phone (Bearer access token). */
+export const AUTH_PHONE_SEND_OTP_ENDPOINT = `${API_BASE_URL}/api/v1/auth/phone/send-otp`;
+/** POST JSON `{ phone_number, otp }` — verify SMS OTP; returns identity with phone_verified (Bearer). */
+export const AUTH_PHONE_VERIFY_OTP_ENDPOINT = `${API_BASE_URL}/api/v1/auth/phone/verify-otp`;
 /** DELETE JSON `{ confirm_deletion: true }` — schedules soft-delete (30-day grace); permanent purge after grace. */
 export const DELETE_ACCOUNT_ENDPOINT = `${API_BASE_URL}/api/v1/account`;
 /** POST JSON `{ email, password, confirm_reactivation: true }` — restore soft-deleted account during grace (no JWT). */
@@ -159,6 +168,14 @@ export const ACCOUNT_SCREEN_BUSINESS_ENDPOINT = `${API_BASE_URL}/api/v1/account-
  * (including return/cancel clawbacks — BE must populate signed labels, not "—" when balance moves).
  */
 export const WALLET_LEDGER_ENDPOINT = `${API_BASE_URL}/api/v1/wallet_ledger`;
+/**
+ * GET /:profile_id — tax owed liability ledger (sales tax collected / reversed / remitted).
+ * POST /:profile_id/remit — body `{ amount, note?, idempotency_key? }` records tax already paid
+ * (reduces tax_owed balance; does not charge wallet). Requires auth (actor or admin).
+ * Personal or business seller profile id (same id rules as wallet_ledger).
+ * Needs a backend that includes TaxLedgerRemit (localhost:4090 or deployed branch).
+ */
+export const TAX_LEDGER_ENDPOINT = `${API_BASE_URL}/api/v1/tax_ledger`;
 /** GET /:profile_id — rebuild wallet row from bounty ledger + seller proceeds (actor or admin). */
 export const WALLET_RECONCILE_ENDPOINT = `${API_BASE_URL}/api/v1/wallet_reconcile`;
 /** GET /:orderUid?profile_id= | ?business_uid= — combined sale + returns order detail */

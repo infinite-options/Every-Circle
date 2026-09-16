@@ -8,6 +8,7 @@ import {
   ACCOUNT_SCREEN_PERSONAL_ENDPOINT,
   ACCOUNT_SCREEN_BUSINESS_ENDPOINT,
   WALLET_LEDGER_ENDPOINT,
+  TAX_LEDGER_ENDPOINT,
   ORDERS_ENDPOINT,
   API_BASE_URL,
   TRANSACTION_RECEIPT_ENDPOINT,
@@ -35,6 +36,7 @@ import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { parsePrice } from "../utils/priceUtils";
 import { formatChoiceLineText, getItemizedChoiceLines } from "../utils/selectedChoiceItems";
 import ProductOrderSummaryLines from "../components/ProductOrderSummaryLines";
+import { formatGiftCardCodeLabel, resolveGiftCardCodes } from "../utils/giftCard";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import {
   formatLocalMonthDayFromKey,
@@ -258,6 +260,28 @@ function normalizeAccountScreenWallet(wallet) {
     };
   }
   return wallet;
+}
+
+/** Tax owed block from account-screen or GET /tax_ledger tax_owed object. */
+function normalizeTaxOwed(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const balance = payload.balance ?? payload.tax_owed_balance;
+  const lifetimeCollected = payload.lifetime_collected ?? payload.tax_owed_lifetime_collected;
+  const lifetimeReversed = payload.lifetime_reversed ?? payload.tax_owed_lifetime_reversed;
+  const lifetimeRemitted = payload.lifetime_remitted ?? payload.tax_owed_lifetime_remitted;
+  if (balance == null && lifetimeCollected == null && lifetimeReversed == null) return null;
+  return {
+    balance: balance != null ? Number(balance) || 0 : 0,
+    lifetimeCollected: lifetimeCollected != null ? Number(lifetimeCollected) || 0 : 0,
+    lifetimeReversed: lifetimeReversed != null ? Number(lifetimeReversed) || 0 : 0,
+    lifetimeRemitted: lifetimeRemitted != null ? Number(lifetimeRemitted) || 0 : 0,
+    currency: payload.currency || "USD",
+  };
+}
+
+function mapTaxLedgerEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries.filter((e) => e && typeof e === "object");
 }
 
 /** Authoritative customer total/credit from account-screen v3 row.money. */
@@ -1202,9 +1226,11 @@ function mapAccountScreenPersonalResponse(json, options = {}) {
   const profile = root.profile ?? payload.profile ?? payload.user_profile ?? payload.personal_profile ?? null;
   const earnings = root.earnings ?? payload.earnings ?? null;
   const walletLedger = root.wallet_ledger ?? payload.wallet_ledger ?? null;
+  const taxOwed = normalizeTaxOwed(root.tax_owed ?? payload.tax_owed);
+  const taxLedger = root.tax_ledger ?? payload.tax_ledger ?? null;
   const salesOfferings = Array.isArray(root.sales?.offerings ?? payload.sales?.offerings) ? (root.sales.offerings ?? payload.sales.offerings) : [];
 
-  return { transactions, bounty, sellerTransactions, profile, wallet, schemaVersion, earnings, walletLedger, salesOfferings };
+  return { transactions, bounty, sellerTransactions, profile, wallet, schemaVersion, earnings, walletLedger, taxOwed, taxLedger, salesOfferings };
 }
 
 /**
@@ -3092,7 +3118,9 @@ function resolveReturnWindowClosesLabel(row, { isReturnRow = false } = {}) {
   }
 
   const policy = { ...pickReturnPolicyFields(row), ...pickReturnPolicyFields(row?.line ?? row?.sale_line ?? null) };
-  const returnable = parseOptionalBoolean(policy.returnable ?? policy.is_returnable ?? policy.bs_is_returnable ?? policy.ti_bs_is_returnable ?? policy.profile_expertise_is_returnable);
+  const returnable = parseOptionalBoolean(
+    policy.returnable ?? policy.is_returnable ?? policy.bs_is_returnable ?? policy.ti_bs_is_returnable ?? policy.profile_expertise_is_returnable,
+  );
   const windowDaysRaw = policy.return_window_days ?? policy.bs_return_window_days ?? policy.ti_bs_return_window_days ?? policy.profile_expertise_return_window_days;
   const windowDays = windowDaysRaw == null || String(windowDaysRaw).trim() === "" ? null : parseInt(windowDaysRaw, 10);
 
@@ -5068,6 +5096,7 @@ function OrderDetailLinesTable({
       returnKind,
       choiceLines,
       specialInstructions,
+      giftCardCodeLabel: formatGiftCardCodeLabel(line),
       unitCost: displayUnitCost,
       qty: displayQty,
       qtyNote,
@@ -5216,6 +5245,11 @@ function OrderDetailLinesTable({
                 {row.specialInstructions ? (
                   <Text style={{ fontSize: 11, color: noteTextColor, marginTop: 2, fontStyle: "italic", lineHeight: 15 }} numberOfLines={2}>
                     Note: {row.specialInstructions}
+                  </Text>
+                ) : null}
+                {row.giftCardCodeLabel ? (
+                  <Text style={{ fontSize: 11, color: darkMode ? "#81C784" : "#2E7D32", marginTop: 4, fontWeight: "600", lineHeight: 15 }} numberOfLines={3}>
+                    {row.giftCardCodeLabel}
                   </Text>
                 ) : null}
               </View>
@@ -7764,12 +7798,14 @@ function enrichProductSummaryTableRow(mappedRow) {
   const isReturn = !!mappedRow?.isReturn;
   const v3Money = resolveAccountScreenRowMoney(raw);
   const money = v3Money.totalKnown ? { total: v3Money.total, totalKnown: true } : { total: null, totalKnown: false };
+  const giftCardCodes = isReturn ? [] : resolveGiftCardCodes(raw);
   return {
     ...mappedRow,
     lineQty: isReturn ? resolveProductSummaryReturnShippedQty(raw) : resolveProductSummaryPurchasedQty(raw),
     cancelledQty: isReturn ? resolveProductSummaryReturnCancelQty(raw) : 0,
     total: money.total,
     totalKnown: money.totalKnown,
+    giftCardCodeLabel: giftCardCodes.length ? formatGiftCardCodeLabel({ gift_card_codes: giftCardCodes }) : null,
   };
 }
 
@@ -7870,49 +7906,66 @@ function ProductSummaryOrdersTable({ rows, darkMode, maxBodyHeight = 360, onOrde
     const cancelledLabel = row.cancelledQty > 0 ? String(row.cancelledQty) : "—";
 
     return (
-      <View key={row.key} style={[styles.productSummaryLineRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailDataRowDark]}>
-        <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate, darkMode && { color: "#ccc" }]} numberOfLines={1}>
-          {row.dateLabel || "—"}
-        </Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColType, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}>
-          {row.rowLabel || "Order"}
-        </Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty, darkMode && { color: "#ccc" }]}>{row.lineQty > 0 ? row.lineQty : "—"}</Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColCancelled, darkMode && { color: "#ccc" }]}>{cancelledLabel}</Text>
-        <Text
-          style={[styles.productSalesDetailCell, styles.productSummaryColTotal, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}
-          numberOfLines={1}
-        >
-          {formatSignedOrderMoneyOrNa(row.total, row.totalKnown !== false)}
-        </Text>
-        <View style={[styles.productSummaryColStatus, styles.productSalesDetailStatusCell]}>
-          {isReturnRow && onReturnPress ? (
-            <TouchableOpacity onPress={openReturn} activeOpacity={0.7}>
-              {renderStatusBadge("delivered", row.delivered, row.attentionLevel === "purple" ? "purple" : null)}
-            </TouchableOpacity>
-          ) : onOrderPress && !isReturnRow && isShipActionDeliveredLabel(row.delivered) ? (
-            <TouchableOpacity onPress={openOrder} activeOpacity={0.7}>
-              {renderStatusBadge("delivered", row.delivered, row.attentionLevel === "red" ? "red" : null)}
-            </TouchableOpacity>
-          ) : (
-            renderStatusBadge("delivered", row.delivered, row.attentionLevel === "red" ? "red" : null)
-          )}
+      <View key={row.key}>
+        <View style={[styles.productSummaryLineRow, styles.productSummaryTableRow, darkMode && styles.productSalesDetailDataRowDark]}>
+          <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate, darkMode && { color: "#ccc" }]} numberOfLines={1}>
+            {row.dateLabel || "—"}
+          </Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColType, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}>
+            {row.rowLabel || "Order"}
+          </Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColQty, darkMode && { color: "#ccc" }]}>{row.lineQty > 0 ? row.lineQty : "—"}</Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColCancelled, darkMode && { color: "#ccc" }]}>{cancelledLabel}</Text>
+          <Text
+            style={[styles.productSalesDetailCell, styles.productSummaryColTotal, isReturnRow && { color: "#B71C1C", fontWeight: "600" }, darkMode && !isReturnRow && { color: "#ccc" }]}
+            numberOfLines={1}
+          >
+            {formatSignedOrderMoneyOrNa(row.total, row.totalKnown !== false)}
+          </Text>
+          <View style={[styles.productSummaryColStatus, styles.productSalesDetailStatusCell]}>
+            {isReturnRow && onReturnPress ? (
+              <TouchableOpacity onPress={openReturn} activeOpacity={0.7}>
+                {renderStatusBadge("delivered", row.delivered, row.attentionLevel === "purple" ? "purple" : null)}
+              </TouchableOpacity>
+            ) : onOrderPress && !isReturnRow && isShipActionDeliveredLabel(row.delivered) ? (
+              <TouchableOpacity onPress={openOrder} activeOpacity={0.7}>
+                {renderStatusBadge("delivered", row.delivered, row.attentionLevel === "red" ? "red" : null)}
+              </TouchableOpacity>
+            ) : (
+              renderStatusBadge("delivered", row.delivered, row.attentionLevel === "red" ? "red" : null)
+            )}
+          </View>
+          <View style={[styles.productSummaryColStatus, styles.productSalesDetailStatusCell]}>
+            {isReturnRow && onReturnPress ? (
+              <TouchableOpacity onPress={openReturn} activeOpacity={0.7}>
+                {renderStatusBadge("received", row.received, row.attentionLevel === "purple" ? "purple" : null)}
+              </TouchableOpacity>
+            ) : (
+              renderStatusBadge("received", row.received, row.attentionLevel)
+            )}
+          </View>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColDaysOpen, darkMode && { color: "#ccc" }]} numberOfLines={1}>
+            {row.daysOpen}
+          </Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSummaryColReturnWindow, darkMode && { color: "#ccc" }]} numberOfLines={2}>
+            {row.returnWindowCloses ?? ACCOUNT_SCREEN_DISPLAY_NA}
+          </Text>
         </View>
-        <View style={[styles.productSummaryColStatus, styles.productSalesDetailStatusCell]}>
-          {isReturnRow && onReturnPress ? (
-            <TouchableOpacity onPress={openReturn} activeOpacity={0.7}>
-              {renderStatusBadge("received", row.received, row.attentionLevel === "purple" ? "purple" : null)}
-            </TouchableOpacity>
-          ) : (
-            renderStatusBadge("received", row.received, row.attentionLevel)
-          )}
-        </View>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColDaysOpen, darkMode && { color: "#ccc" }]} numberOfLines={1}>
-          {row.daysOpen}
-        </Text>
-        <Text style={[styles.productSalesDetailCell, styles.productSummaryColReturnWindow, darkMode && { color: "#ccc" }]} numberOfLines={2}>
-          {row.returnWindowCloses ?? ACCOUNT_SCREEN_DISPLAY_NA}
-        </Text>
+        {row.giftCardCodeLabel ? (
+          <Text
+            style={{
+              fontSize: 11,
+              color: darkMode ? "#81C784" : "#2E7D32",
+              fontWeight: "600",
+              paddingLeft: 64,
+              paddingBottom: 6,
+              lineHeight: 15,
+            }}
+            numberOfLines={2}
+          >
+            {row.giftCardCodeLabel}
+          </Text>
+        ) : null}
       </View>
     );
   };
@@ -8301,6 +8354,8 @@ function mapAccountScreenBusinessResponse(json) {
 
   const wallet = normalizeAccountScreenWallet(root.wallet ?? payload.wallet);
   const walletLedger = root.wallet_ledger ?? payload.wallet_ledger ?? null;
+  const taxOwed = normalizeTaxOwed(root.tax_owed ?? payload.tax_owed);
+  const taxLedger = root.tax_ledger ?? payload.tax_ledger ?? null;
 
   return {
     bountyResult,
@@ -8311,6 +8366,8 @@ function mapAccountScreenBusinessResponse(json) {
     salesProducts: mapAccountScreenSalesProducts(payload, root),
     wallet,
     walletLedger,
+    taxOwed,
+    taxLedger,
   };
 }
 
@@ -8773,6 +8830,14 @@ export default function AccountScreen({ navigation, route }) {
   const [walletLedgerTotalEntries, setWalletLedgerTotalEntries] = useState(0);
   const [walletLedgerLoading, setWalletLedgerLoading] = useState(true);
   const [walletLedgerError, setWalletLedgerError] = useState(null);
+  const [personalTaxOwed, setPersonalTaxOwed] = useState(null);
+  const [taxLedgerRows, setTaxLedgerRows] = useState([]);
+  const [taxLedgerTotalEntries, setTaxLedgerTotalEntries] = useState(0);
+  const [taxLedgerLoading, setTaxLedgerLoading] = useState(true);
+  const [taxLedgerError, setTaxLedgerError] = useState(null);
+  const [showTaxRemitModal, setShowTaxRemitModal] = useState(false);
+  const [taxRemitAmount, setTaxRemitAmount] = useState("");
+  const [taxRemitSubmitting, setTaxRemitSubmitting] = useState(false);
   const [transactionData, setTransactionData] = useState([]);
   const [transactionLoading, setTransactionLoading] = useState(true);
   const [expertiseData, setExpertiseData] = useState([]);
@@ -8837,6 +8902,11 @@ export default function AccountScreen({ navigation, route }) {
   const [businessWalletLedgerTotalEntries, setBusinessWalletLedgerTotalEntries] = useState(0);
   const [businessWalletLedgerLoading, setBusinessWalletLedgerLoading] = useState(true);
   const [businessWalletLedgerError, setBusinessWalletLedgerError] = useState(null);
+  const [businessTaxOwed, setBusinessTaxOwed] = useState(null);
+  const [businessTaxLedgerRows, setBusinessTaxLedgerRows] = useState([]);
+  const [businessTaxLedgerTotalEntries, setBusinessTaxLedgerTotalEntries] = useState(0);
+  const [businessTaxLedgerLoading, setBusinessTaxLedgerLoading] = useState(true);
+  const [businessTaxLedgerError, setBusinessTaxLedgerError] = useState(null);
   const [businessServices, setBusinessServices] = useState([]);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState("personal"); // 'personal' or business UID
@@ -8857,6 +8927,8 @@ export default function AccountScreen({ navigation, route }) {
   const [showProductInventory, setShowProductInventory] = useState(true);
   const [showWallet, setShowWallet] = useState(true);
   const [showWalletLedger, setShowWalletLedger] = useState(false);
+  const [showTaxOwed, setShowTaxOwed] = useState(true);
+  const [showTaxLedger, setShowTaxLedger] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [showReceiveItemModal, setShowReceiveItemModal] = useState(false);
@@ -8956,6 +9028,11 @@ export default function AccountScreen({ navigation, route }) {
     setWalletLedgerTotalEntries(0);
     setWalletLedgerError(null);
     setWalletLedgerLoading(true);
+    setPersonalTaxOwed(null);
+    setTaxLedgerRows([]);
+    setTaxLedgerTotalEntries(0);
+    setTaxLedgerError(null);
+    setTaxLedgerLoading(true);
     setTransactionLoading(true);
     setBountyLoading(true);
     setExpertiseLoading(true);
@@ -8970,6 +9047,11 @@ export default function AccountScreen({ navigation, route }) {
     setBusinessWalletLedgerTotalEntries(0);
     setBusinessWalletLedgerError(null);
     setBusinessWalletLedgerLoading(true);
+    setBusinessTaxOwed(null);
+    setBusinessTaxLedgerRows([]);
+    setBusinessTaxLedgerTotalEntries(0);
+    setBusinessTaxLedgerError(null);
+    setBusinessTaxLedgerLoading(true);
     setBusinessServices([]);
     setBusinessReceiptCache({});
     businessReceiptFetchedRef.current = new Set();
@@ -9636,6 +9718,7 @@ export default function AccountScreen({ navigation, route }) {
           lastName: result.personal_info.profile_personal_last_name || "",
           email: result.user_email || "",
           phoneNumber: result.personal_info.profile_personal_phone_number || "",
+          phoneVerified: result.personal_info.phone_verified === true || result.personal_info.phone_verified === 1,
           tagLine: result.personal_info.profile_personal_tag_line || "",
           city: result.personal_info.profile_personal_city || "",
           state: result.personal_info.profile_personal_state || "",
@@ -9775,6 +9858,19 @@ export default function AccountScreen({ navigation, route }) {
           setWalletLedgerLoading(false);
         }
 
+        setPersonalTaxOwed(mapped.taxOwed ?? null);
+        if (mapped.taxLedger) {
+          const taxEntries = mapTaxLedgerEntries(mapped.taxLedger.entries);
+          setTaxLedgerRows(taxEntries);
+          setTaxLedgerTotalEntries(Number(mapped.taxLedger.total_entries) || taxEntries.length);
+          setTaxLedgerError(null);
+          setTaxLedgerLoading(false);
+        } else {
+          setTaxLedgerRows([]);
+          setTaxLedgerTotalEntries(0);
+          setTaxLedgerLoading(false);
+        }
+
         if (mapped.profile?.personal_info) {
           const result = mapped.profile;
           setPersonalProfileData({
@@ -9782,6 +9878,7 @@ export default function AccountScreen({ navigation, route }) {
             lastName: result.personal_info.profile_personal_last_name || "",
             email: result.user_email || "",
             phoneNumber: result.personal_info.profile_personal_phone_number || "",
+            phoneVerified: result.personal_info.phone_verified === true || result.personal_info.phone_verified === 1,
             tagLine: result.personal_info.profile_personal_tag_line || "",
             city: result.personal_info.profile_personal_city || "",
             state: result.personal_info.profile_personal_state || "",
@@ -10581,11 +10678,16 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessWalletLedgerRows([]);
         setBusinessWalletLedgerTotalEntries(0);
         setBusinessWalletLedgerError(null);
+        setBusinessTaxOwed(null);
+        setBusinessTaxLedgerRows([]);
+        setBusinessTaxLedgerTotalEntries(0);
+        setBusinessTaxLedgerError(null);
         setBusinessSellerTransactionList([]);
         setBusinessServices([]);
         setBusinessTransactionLoading(true);
         setBusinessBountyLoading(true);
         setBusinessWalletLedgerLoading(true);
+        setBusinessTaxLedgerLoading(true);
 
         if (!targetBusinessUID) {
           console.log("No business UID available");
@@ -10614,6 +10716,11 @@ export default function AccountScreen({ navigation, route }) {
           setBusinessWalletLedgerTotalEntries(0);
           setBusinessWalletLedgerError(null);
           setBusinessWalletLedgerLoading(false);
+          setBusinessTaxOwed(null);
+          setBusinessTaxLedgerRows([]);
+          setBusinessTaxLedgerTotalEntries(0);
+          setBusinessTaxLedgerError(null);
+          setBusinessTaxLedgerLoading(false);
           setBusinessServices([]);
           setBusinessReceiptCache({});
           businessReceiptFetchedRef.current = new Set();
@@ -10632,6 +10739,11 @@ export default function AccountScreen({ navigation, route }) {
           setBusinessWalletLedgerTotalEntries(0);
           setBusinessWalletLedgerError(null);
           setBusinessWalletLedgerLoading(false);
+          setBusinessTaxOwed(null);
+          setBusinessTaxLedgerRows([]);
+          setBusinessTaxLedgerTotalEntries(0);
+          setBusinessTaxLedgerError(null);
+          setBusinessTaxLedgerLoading(false);
           setBusinessServices([]);
           businessReceiptFetchedRef.current = new Set();
           const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
@@ -10652,6 +10764,8 @@ export default function AccountScreen({ navigation, route }) {
           salesProducts,
           wallet: walletFromPayload,
           walletLedger,
+          taxOwed: taxOwedFromPayload,
+          taxLedger,
         } = mapAccountScreenBusinessResponse(json);
         setBusinessServices(Array.isArray(servicesFromPayload) ? servicesFromPayload : []);
         setBusinessSalesProducts(Array.isArray(salesProducts) ? salesProducts : []);
@@ -10666,6 +10780,17 @@ export default function AccountScreen({ navigation, route }) {
           setBusinessWalletLedgerTotalEntries(0);
         }
         setBusinessWalletLedgerLoading(false);
+        setBusinessTaxOwed(taxOwedFromPayload ?? null);
+        if (taxLedger) {
+          const taxEntries = mapTaxLedgerEntries(taxLedger.entries);
+          setBusinessTaxLedgerRows(taxEntries);
+          setBusinessTaxLedgerTotalEntries(Number(taxLedger.total_entries) || taxEntries.length);
+          setBusinessTaxLedgerError(null);
+        } else {
+          setBusinessTaxLedgerRows([]);
+          setBusinessTaxLedgerTotalEntries(0);
+        }
+        setBusinessTaxLedgerLoading(false);
         if (Array.isArray(offeringsFromPayload) && offeringsFromPayload.length) {
           setExpertiseCatalog(offeringsFromPayload);
         }
@@ -10772,6 +10897,10 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessWalletLedgerRows([]);
         setBusinessWalletLedgerTotalEntries(0);
         setBusinessWalletLedgerError(error?.message || "Unable to load wallet ledger.");
+        setBusinessTaxOwed(null);
+        setBusinessTaxLedgerRows([]);
+        setBusinessTaxLedgerTotalEntries(0);
+        setBusinessTaxLedgerError(error?.message || "Unable to load tax ledger.");
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
         const row = businessesRef.current.find((b) => resolveBusinessUid(b) === targetBusinessUID);
@@ -10781,6 +10910,7 @@ export default function AccountScreen({ navigation, route }) {
         setBusinessTransactionLoading(false);
         setBusinessBountyLoading(false);
         setBusinessWalletLedgerLoading(false);
+        setBusinessTaxLedgerLoading(false);
       }
     })();
 
@@ -10791,6 +10921,74 @@ export default function AccountScreen({ navigation, route }) {
       }
     });
     return task;
+  };
+
+  const openTaxRemitModal = () => {
+    const taxOwed = selectedAccountRef.current === "personal" || !selectedAccountRef.current ? personalTaxOwed : businessTaxOwed;
+    const balance = Number(taxOwed?.balance) || 0;
+    if (balance <= 0) {
+      Alert.alert("No tax owed", "There is no outstanding tax to record as paid.");
+      return;
+    }
+    setTaxRemitAmount(balance.toFixed(2));
+    setShowTaxRemitModal(true);
+  };
+
+  const submitTaxRemit = async () => {
+    const isPersonal = selectedAccountRef.current === "personal" || !selectedAccountRef.current;
+    let profileId = null;
+    if (isPersonal) {
+      profileId = (await getSessionProfile())?.profileUid || (await AsyncStorage.getItem("profile_uid"));
+    } else {
+      profileId = selectedAccountRef.current;
+    }
+    if (!profileId) {
+      Alert.alert("Error", "Missing profile for tax remittance.");
+      return;
+    }
+    const parsed = Number(String(taxRemitAmount || "").replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      Alert.alert("Invalid amount", "Enter a tax amount greater than zero.");
+      return;
+    }
+    const maxOwed = Number((isPersonal ? personalTaxOwed : businessTaxOwed)?.balance) || 0;
+    if (maxOwed <= 0) {
+      Alert.alert("No tax owed", "There is no outstanding tax to record as paid.");
+      return;
+    }
+    const amount = Math.min(parsed, maxOwed);
+    setTaxRemitSubmitting(true);
+    try {
+      const response = await fetch(`${TAX_LEDGER_ENDPOINT}/${encodeURIComponent(profileId)}/remit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || (json.code && json.code !== 200)) {
+        throw new Error(json.message || `HTTP ${response.status}`);
+      }
+      const updated = normalizeTaxOwed(json.tax_owed);
+      if (isPersonal) {
+        if (updated) setPersonalTaxOwed(updated);
+        try {
+          markAccountScreenPersonalDirty();
+          await refreshAccountScreenPersonal({ force: true });
+        } catch (_) {}
+      } else {
+        if (updated) setBusinessTaxOwed(updated);
+        try {
+          await refreshAccountScreenBusiness();
+        } catch (_) {}
+      }
+      setShowTaxRemitModal(false);
+      setTaxRemitAmount("");
+      Alert.alert("Tax recorded", `Recorded ${formatWalletUsd(json.remitted ?? amount)} as paid. Taxes owed was reduced.`);
+    } catch (error) {
+      Alert.alert("Could not record tax paid", error?.message || "Please try again.");
+    } finally {
+      setTaxRemitSubmitting(false);
+    }
   };
 
   const reloadAccountScreen = useCallback(() => {
@@ -11760,9 +11958,15 @@ export default function AccountScreen({ navigation, route }) {
                     <Text style={styles.errorText}>Unable to load earnings.</Text>
                   ) : (
                     <View style={styles.balanceSectionBody}>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>
+                          {personalEarnings?.bounty_total_earned != null ? `$${Number(personalEarnings.bounty_total_earned).toFixed(2)}` : ACCOUNT_SCREEN_DISPLAY_NA}
+                        </Text>
+                      </View>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to Spend</Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Useable</Text>
                           <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on purchases</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>
@@ -11786,12 +11990,6 @@ export default function AccountScreen({ navigation, route }) {
                           <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{ACCOUNT_SCREEN_DISPLAY_NA}</Text>
                         </View>
                       ) : null}
-                      <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total Bounties Earned</Text>
-                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>
-                          {personalEarnings?.bounty_total_earned != null ? `$${Number(personalEarnings.bounty_total_earned).toFixed(2)}` : ACCOUNT_SCREEN_DISPLAY_NA}
-                        </Text>
-                      </View>
                     </View>
                   )}
                   <NetEarningChart />
@@ -11815,7 +12013,7 @@ export default function AccountScreen({ navigation, route }) {
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to Spend</Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to spend</Text>
                           <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on purchases</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(personalWallet.wallet_useable_balance)}</Text>
@@ -11829,7 +12027,7 @@ export default function AccountScreen({ navigation, route }) {
                       </View>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total Balance</Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total on hand</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(personalWallet.wallet_actual_balance)}</Text>
                       </View>
@@ -11988,6 +12186,123 @@ export default function AccountScreen({ navigation, route }) {
                 </>
               )}
             </View>
+
+            {/* Taxes Owed */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowTaxOwed(!showTaxOwed)}>
+                <Text style={styles.sectionHeaderText}>TAXES OWED</Text>
+                <Ionicons name={showTaxOwed ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showTaxOwed && (
+                <>
+                  {taxLedgerLoading && !personalTaxOwed ? (
+                    <Text style={styles.loadingText}>Loading taxes owed...</Text>
+                  ) : personalTaxOwed ? (
+                    <View style={styles.balanceSectionBody}>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Taxes owed</Text>
+                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Sales tax collected and still outstanding for remittance</Text>
+                        </View>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{formatWalletUsd(personalTaxOwed.balance)}</Text>
+                      </View>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Lifetime collected</Text>
+                        </View>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(personalTaxOwed.lifetimeCollected)}</Text>
+                      </View>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Lifetime reversed</Text>
+                        </View>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(personalTaxOwed.lifetimeReversed)}</Text>
+                      </View>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Already paid</Text>
+                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Sales tax you recorded as remitted</Text>
+                        </View>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(personalTaxOwed.lifetimeRemitted)}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.taxRemitButton, (Number(personalTaxOwed.balance) || 0) <= 0 && styles.taxRemitButtonDisabled]}
+                        disabled={(Number(personalTaxOwed.balance) || 0) <= 0}
+                        onPress={openTaxRemitModal}
+                      >
+                        <Text style={styles.taxRemitButtonText}>Record tax paid</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <Text style={styles.noDataText}>No tax owed data available.</Text>
+                  )}
+                </>
+              )}
+            </View>
+
+            {/* Tax Ledger */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowTaxLedger(!showTaxLedger)}>
+                <Text style={styles.sectionHeaderText}>TAX LEDGER</Text>
+                <Ionicons name={showTaxLedger ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showTaxLedger && (
+                <>
+                  {taxLedgerLoading ? (
+                    <Text style={styles.loadingText}>Loading tax ledger...</Text>
+                  ) : taxLedgerError ? (
+                    <Text style={styles.errorText}>{taxLedgerError}</Text>
+                  ) : taxLedgerRows.length > 0 ? (
+                    <View>
+                      {taxLedgerTotalEntries > taxLedgerRows.length ? (
+                        <Text style={styles.bountyTotalText}>
+                          Showing {taxLedgerRows.length} of {taxLedgerTotalEntries} entries
+                        </Text>
+                      ) : null}
+                      <View style={styles.transactionsContainer}>
+                        <View style={styles.transactionHeaderRow}>
+                          <Text style={styles.transactionHeaderDate}>Date</Text>
+                          <Text style={styles.transactionHeaderId}>Order</Text>
+                          <Text style={[styles.transactionHeaderBusiness, { flex: 1 }]}>Type</Text>
+                          <Text style={[styles.transactionHeaderPurchasedItem, { flex: 1.4 }]}>Description</Text>
+                          <Text style={[styles.transactionHeaderAmount, { flex: 0.85 }]}>Amount</Text>
+                          <Text style={[styles.transactionHeaderAmount, { flex: 0.95 }]}>Balance</Text>
+                        </View>
+                        {taxLedgerRows.map((entry, index) => {
+                          const amountLabel = entry.display?.amount_label || formatWalletUsd(entry.amount);
+                          const amountColor = ledgerDisplayLabelColor(amountLabel, darkMode);
+                          const ledgerOrderUid = entry.order_uid || entry.transaction_uid || null;
+                          const openTaxEntry = () => {
+                            if (!ledgerOrderUid) return;
+                            openOrderDetail({ orderUid: ledgerOrderUid }, { isSellerView: true, ledgerEntry: entry });
+                          };
+                          const TaxRowWrapper = ledgerOrderUid ? TouchableOpacity : View;
+                          const taxRowProps = ledgerOrderUid ? { onPress: openTaxEntry, activeOpacity: 0.7 } : {};
+                          return (
+                            <TaxRowWrapper key={entry.ledger_entry_uid || entry.entry_id || `tax-ledger-${index}`} style={styles.transactionRow} {...taxRowProps}>
+                              <Text style={styles.transactionDate}>{entry.display?.date_label || formatLedgerEntryDate(entry)}</Text>
+                              <Text style={[styles.transactionId, ledgerOrderUid && styles.receiptLink]} numberOfLines={1}>
+                                {ledgerOrderUid || "—"}
+                              </Text>
+                              <Text style={[styles.transactionBusiness, { flex: 1 }]} numberOfLines={2}>
+                                {entry.entry_type_label || entry.entry_type || "—"}
+                              </Text>
+                              <Text style={[styles.transactionPurchasedItem, { flex: 1.4 }, ledgerOrderUid && styles.receiptLink]} numberOfLines={3}>
+                                {entry.description || entry.counterparty_name || "—"}
+                              </Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.85 }, amountColor ? { color: amountColor } : null]}>{amountLabel}</Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.95 }]}>{formatWalletUsd(entry.balance_after)}</Text>
+                            </TaxRowWrapper>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={styles.noDataText}>No tax ledger entries.</Text>
+                  )}
+                </>
+              )}
+            </View>
           </>
         ) : (
           <>
@@ -12060,7 +12375,7 @@ export default function AccountScreen({ navigation, route }) {
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to Spend</Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Available to spend</Text>
                           <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Ready to use on business purchases</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(businessWallet.wallet_useable_balance)}</Text>
@@ -12074,7 +12389,7 @@ export default function AccountScreen({ navigation, route }) {
                       </View>
                       <View style={styles.walletBalanceRow}>
                         <View style={styles.walletBalanceLabelCol}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total Balance </Text>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total on hand</Text>
                         </View>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(businessWallet.wallet_actual_balance)}</Text>
                       </View>
@@ -12161,6 +12476,123 @@ export default function AccountScreen({ navigation, route }) {
                     </View>
                   ) : (
                     <Text style={styles.noDataText}>No wallet ledger entries.</Text>
+                  )}
+                </>
+              )}
+            </View>
+
+            {/* Taxes Owed (business) */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowTaxOwed(!showTaxOwed)}>
+                <Text style={styles.sectionHeaderText}>TAXES OWED</Text>
+                <Ionicons name={showTaxOwed ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showTaxOwed && (
+                <>
+                  {businessTaxLedgerLoading && !businessTaxOwed ? (
+                    <Text style={styles.loadingText}>Loading taxes owed...</Text>
+                  ) : businessTaxOwed ? (
+                    <View style={styles.balanceSectionBody}>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Taxes owed</Text>
+                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Sales tax collected on business sales and still outstanding for remittance</Text>
+                        </View>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{formatWalletUsd(businessTaxOwed.balance)}</Text>
+                      </View>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Lifetime collected</Text>
+                        </View>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(businessTaxOwed.lifetimeCollected)}</Text>
+                      </View>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Lifetime reversed</Text>
+                        </View>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(businessTaxOwed.lifetimeReversed)}</Text>
+                      </View>
+                      <View style={styles.walletBalanceRow}>
+                        <View style={styles.walletBalanceLabelCol}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Already paid</Text>
+                          <Text style={[styles.walletBalanceHint, darkMode && { color: "#aaa" }]}>Sales tax you recorded as remitted</Text>
+                        </View>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(businessTaxOwed.lifetimeRemitted)}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.taxRemitButton, (Number(businessTaxOwed.balance) || 0) <= 0 && styles.taxRemitButtonDisabled]}
+                        disabled={(Number(businessTaxOwed.balance) || 0) <= 0}
+                        onPress={openTaxRemitModal}
+                      >
+                        <Text style={styles.taxRemitButtonText}>Record tax paid</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <Text style={styles.noDataText}>No tax owed data available.</Text>
+                  )}
+                </>
+              )}
+            </View>
+
+            {/* Tax Ledger (business) */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowTaxLedger(!showTaxLedger)}>
+                <Text style={styles.sectionHeaderText}>TAX LEDGER</Text>
+                <Ionicons name={showTaxLedger ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showTaxLedger && (
+                <>
+                  {businessTaxLedgerLoading ? (
+                    <Text style={styles.loadingText}>Loading tax ledger...</Text>
+                  ) : businessTaxLedgerError ? (
+                    <Text style={styles.errorText}>{businessTaxLedgerError}</Text>
+                  ) : businessTaxLedgerRows.length > 0 ? (
+                    <View>
+                      {businessTaxLedgerTotalEntries > businessTaxLedgerRows.length ? (
+                        <Text style={styles.bountyTotalText}>
+                          Showing {businessTaxLedgerRows.length} of {businessTaxLedgerTotalEntries} entries
+                        </Text>
+                      ) : null}
+                      <View style={styles.transactionsContainer}>
+                        <View style={styles.transactionHeaderRow}>
+                          <Text style={styles.transactionHeaderDate}>Date</Text>
+                          <Text style={styles.transactionHeaderId}>Order</Text>
+                          <Text style={[styles.transactionHeaderBusiness, { flex: 1 }]}>Type</Text>
+                          <Text style={[styles.transactionHeaderPurchasedItem, { flex: 1.4 }]}>Description</Text>
+                          <Text style={[styles.transactionHeaderAmount, { flex: 0.85 }]}>Amount</Text>
+                          <Text style={[styles.transactionHeaderAmount, { flex: 0.95 }]}>Balance</Text>
+                        </View>
+                        {businessTaxLedgerRows.map((entry, index) => {
+                          const amountLabel = entry.display?.amount_label || formatWalletUsd(entry.amount);
+                          const amountColor = ledgerDisplayLabelColor(amountLabel, darkMode);
+                          const ledgerOrderUid = entry.order_uid || entry.transaction_uid || null;
+                          const openTaxEntry = () => {
+                            if (!ledgerOrderUid) return;
+                            openOrderDetail({ orderUid: ledgerOrderUid }, { isSellerView: true, ledgerEntry: entry });
+                          };
+                          const TaxRowWrapper = ledgerOrderUid ? TouchableOpacity : View;
+                          const taxRowProps = ledgerOrderUid ? { onPress: openTaxEntry, activeOpacity: 0.7 } : {};
+                          return (
+                            <TaxRowWrapper key={entry.ledger_entry_uid || entry.entry_id || `biz-tax-ledger-${index}`} style={styles.transactionRow} {...taxRowProps}>
+                              <Text style={styles.transactionDate}>{entry.display?.date_label || formatLedgerEntryDate(entry)}</Text>
+                              <Text style={[styles.transactionId, ledgerOrderUid && styles.receiptLink]} numberOfLines={1}>
+                                {ledgerOrderUid || "—"}
+                              </Text>
+                              <Text style={[styles.transactionBusiness, { flex: 1 }]} numberOfLines={2}>
+                                {entry.entry_type_label || entry.entry_type || "—"}
+                              </Text>
+                              <Text style={[styles.transactionPurchasedItem, { flex: 1.4 }, ledgerOrderUid && styles.receiptLink]} numberOfLines={3}>
+                                {entry.description || entry.counterparty_name || entry.purchaser_name || "—"}
+                              </Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.85 }, amountColor ? { color: amountColor } : null]}>{amountLabel}</Text>
+                              <Text style={[styles.transactionAmount, { flex: 0.95 }]}>{formatWalletUsd(entry.balance_after)}</Text>
+                            </TaxRowWrapper>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={styles.noDataText}>No tax ledger entries.</Text>
                   )}
                 </>
               )}
@@ -12540,6 +12972,13 @@ export default function AccountScreen({ navigation, route }) {
                                   fontSize: 10,
                                   color: darkMode ? "#aaa" : "#888",
                                   fontStyle: "italic",
+                                  lineHeight: 14,
+                                  marginTop: 2,
+                                }}
+                                giftCardTextStyle={{
+                                  fontSize: 10,
+                                  color: darkMode ? "#81C784" : "#2E7D32",
+                                  fontWeight: "600",
                                   lineHeight: 14,
                                   marginTop: 2,
                                 }}
@@ -13016,7 +13455,55 @@ export default function AccountScreen({ navigation, route }) {
         </View>
       </Modal>
 
-      {/* Decline Note Modal */}
+      {/* Record tax paid (remittance) modal */}
+      <Modal animationType='fade' transparent={true} visible={showTaxRemitModal} onRequestClose={() => !taxRemitSubmitting && setShowTaxRemitModal(false)}>
+        <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
+          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
+            <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle]}>Record tax paid</Text>
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
+              Enter how much sales tax you already remitted. This reduces taxes owed (does not charge your wallet).
+            </Text>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: "#ddd",
+                borderRadius: 8,
+                padding: 12,
+                fontSize: 16,
+                backgroundColor: darkMode ? "#3a3a3a" : "#f9f9f9",
+                color: darkMode ? "#fff" : "#333",
+                marginBottom: 16,
+              }}
+              placeholder='0.00'
+              placeholderTextColor={darkMode ? "#888" : "#aaa"}
+              keyboardType='decimal-pad'
+              value={taxRemitAmount}
+              onChangeText={setTaxRemitAmount}
+              editable={!taxRemitSubmitting}
+            />
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity
+                style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                disabled={taxRemitSubmitting}
+                onPress={() => {
+                  setShowTaxRemitModal(false);
+                  setTaxRemitAmount("");
+                }}
+              >
+                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.receiveItemModalButton, styles.taxRemitConfirmButton, taxRemitSubmitting && styles.taxRemitButtonDisabled]}
+                disabled={taxRemitSubmitting}
+                onPress={submitTaxRemit}
+              >
+                {taxRemitSubmitting ? <ActivityIndicator color='#fff' /> : <Text style={styles.taxRemitButtonText}>Confirm</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal animationType='fade' transparent={true} visible={showDeclineNoteModal} onRequestClose={() => setShowDeclineNoteModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
@@ -13632,6 +14119,30 @@ const styles = StyleSheet.create({
   balanceSectionBody: {
     paddingVertical: 8,
     paddingHorizontal: 4,
+  },
+  taxRemitButton: {
+    marginTop: 8,
+    backgroundColor: "#18884A",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  taxRemitConfirmButton: {
+    flex: 1,
+    backgroundColor: "#18884A",
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  taxRemitButtonDisabled: {
+    opacity: 0.45,
+  },
+  taxRemitButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
   },
   sectionContainer: { marginBottom: 24 },
   sectionTitle: { fontSize: 16, fontWeight: "600", marginBottom: 8 },

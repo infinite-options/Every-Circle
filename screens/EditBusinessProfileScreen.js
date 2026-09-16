@@ -2726,6 +2726,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             businessUser.profile_personal_phone_number_is_public === 1 ||
             businessUser.profile_personal_phone_number_is_public === "1",
           phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
+          phoneVerified:
+            businessUser.phone_verified === true ||
+            businessUser.phone_verified === 1 ||
+            businessUser.phoneVerified === true ||
+            businessUser.personal_info?.phone_verified === true ||
+            businessUser.personal_info?.phone_verified === 1,
           tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
           tagLineIsPublic: businessUser.profile_personal_tag_line_is_public === 1 || businessUser.profile_personal_tag_line_is_public === "1" || false,
           city: businessUser.city || businessUser.profile_personal_city || "",
@@ -3229,6 +3235,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_bounty: "",
     bs_bounty_currency: "USD",
     bs_bounty_type: "none",
+    bs_new_customers_only: 0,
+    bs_is_gift_card: 0,
     bs_is_taxable: 0,
     bs_tax_rate: "0",
     bs_discount_allowed: 1,
@@ -3396,6 +3404,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
     const bountyTypeForList = formSource.bs_bounty_type === "none" ? "per_item" : formSource.bs_bounty_type === "total" ? "total" : "per_item";
     const bountyAmtForList = formSource.bs_bounty_type === "none" ? "" : formSource.bs_bounty || "";
+    const newCustomersOnlyForList =
+      formSource.bs_bounty_type === "none"
+        ? 0
+        : formSource.bs_new_customers_only === 1 || formSource.bs_new_customers_only === "1" || formSource.bs_new_customers_only === true
+          ? 1
+          : 0;
 
     const condForm = formSource.bs_condition_type;
     const condLow = condForm == null ? "" : String(condForm).trim().toLowerCase();
@@ -3410,6 +3424,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_available_quantity: isUnlimited ? "" : String(formSource.bs_available_quantity || "").trim(),
       bs_bounty_type: bountyTypeForList,
       bs_bounty: bountyAmtForList,
+      bs_new_customers_only: newCustomersOnlyForList,
+      bs_is_gift_card:
+        formSource.bs_is_gift_card === 1 || formSource.bs_is_gift_card === "1" || formSource.bs_is_gift_card === true ? 1 : 0,
       bs_condition_type: conditionTypeForList,
       bs_condition_detail: conditionDetailForList,
       bs_condition: "",
@@ -3576,6 +3593,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         return "per_item";
       })(),
       bs_bounty: service.bs_bounty == null || String(service.bs_bounty).trim() === "" || parsePrice(service.bs_bounty) === 0 ? "" : String(service.bs_bounty),
+      bs_new_customers_only:
+        service.bs_new_customers_only === 1 || service.bs_new_customers_only === "1" || service.bs_new_customers_only === true
+          ? 1
+          : 0,
+      bs_is_gift_card:
+        service.bs_is_gift_card === 1 || service.bs_is_gift_card === "1" || service.bs_is_gift_card === true ? 1 : 0,
       bs_shipping: (() => {
         const shipping = parseBsShipping(service);
         return shipping === "Buyer" ? BS_SHIPPING_BUYER_ACTUAL : shipping;
@@ -4294,7 +4317,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                     value={serviceForm.bs_bounty_type || "none"}
                     onChange={(item) => {
                       if (item.value === "none") {
-                        setServiceForm((prev) => ({ ...prev, bs_bounty_type: "none", bs_bounty: "" }));
+                        setServiceForm((prev) => ({
+                          ...prev,
+                          bs_bounty_type: "none",
+                          bs_bounty: "",
+                          bs_new_customers_only: 0,
+                        }));
                       } else {
                         setServiceForm((prev) => ({ ...prev, bs_bounty_type: item.value }));
                       }
@@ -4330,6 +4358,40 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 Warning: Bounty is greater than the item cost. You may pay referrers more than you charge per item.
               </Text>
             ) : null}
+            {serviceForm.bs_bounty_type !== "none" ? (
+              <TouchableOpacity
+                style={styles.serviceCheckboxRow}
+                onPress={() => {
+                  const checked = serviceForm.bs_new_customers_only === 1 || serviceForm.bs_new_customers_only === "1";
+                  handleServiceChange("bs_new_customers_only", checked ? 0 : 1);
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={serviceForm.bs_new_customers_only === 1 || serviceForm.bs_new_customers_only === "1" ? "checkbox" : "square-outline"}
+                  size={20}
+                  color={serviceForm.bs_new_customers_only === 1 || serviceForm.bs_new_customers_only === "1" ? "#111" : darkMode ? "#aaa" : "#666"}
+                />
+                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>
+                  Bounty only available to New Customers
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              style={styles.serviceCheckboxRow}
+              onPress={() => {
+                const checked = serviceForm.bs_is_gift_card === 1 || serviceForm.bs_is_gift_card === "1";
+                handleServiceChange("bs_is_gift_card", checked ? 0 : 1);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={serviceForm.bs_is_gift_card === 1 || serviceForm.bs_is_gift_card === "1" ? "checkbox" : "square-outline"}
+                size={20}
+                color={serviceForm.bs_is_gift_card === 1 || serviceForm.bs_is_gift_card === "1" ? "#111" : darkMode ? "#aaa" : "#666"}
+              />
+              <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>This product is a Gift Card</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={[styles.serviceFormSectionDivider, darkMode && styles.darkServiceFormSectionDivider]} />

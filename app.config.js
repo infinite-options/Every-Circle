@@ -148,6 +148,18 @@ module.exports = ({ config: expoConfig }) => ({
             buildToolsVersion: "35.0.0",
             minSdkVersion: 24,
             ndkVersion: "25.1.8937393",
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+            extraProguardRules: `
+              -keep class com.facebook.react.** { *; }
+              -keep class com.swmansion.reanimated.** { *; }
+              -keep class com.swmansion.gesturehandler.** { *; }
+              -keep class com.stripe.** { *; }
+              -keep class com.google.android.gms.** { *; }
+              -keep class com.horcrux.svg.** { *; }
+              -dontwarn com.stripe.android.pushProvisioning.**
+              -keep class com.stripe.android.pushProvisioning.** { *; }
+            `,
           },
 
           gradleProperties: {

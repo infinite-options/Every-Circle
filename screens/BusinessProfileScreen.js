@@ -21,6 +21,7 @@ import {
   PROFILE_VIEWS_ENDPOINT,
 } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { enforceTempPasswordGraceFromUserRow } from "../utils/tempPasswordGrace";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
@@ -839,6 +840,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           return;
         }
         const row = Array.isArray(result?.result) ? result.result[0] : (result?.result ?? result?.data ?? result);
+        if (await enforceTempPasswordGraceFromUserRow(row)) return;
         if (!cancelled) setIsAdminViewer(row?.user_role === "ADMIN");
       } catch (_) {
         if (!cancelled) setIsAdminViewer(false);
@@ -1525,6 +1527,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
                         businessUser.profile_personal_phone_number_is_public === 1 ||
                         businessUser.profile_personal_phone_number_is_public === "1",
                       phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
+                      phoneVerified:
+                        businessUser.phone_verified === true ||
+                        businessUser.phone_verified === 1 ||
+                        businessUser.phoneVerified === true ||
+                        businessUser.personal_info?.phone_verified === true ||
+                        businessUser.personal_info?.phone_verified === 1,
                       tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
                       tagLineIsPublic: businessUser.profile_personal_tag_line_is_public === 1 || businessUser.profile_personal_tag_line_is_public === "1" || false,
                       city: businessUser.city || businessUser.profile_personal_city || "",

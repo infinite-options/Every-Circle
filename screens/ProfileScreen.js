@@ -44,6 +44,7 @@ import {
   // BUSINESS_TAG_SEARCH_ENDPOINT, // disabled for testing without businesstagsearch
 } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { enforceTempPasswordGraceFromUserRow } from "../utils/tempPasswordGrace";
 import config from "../config";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { reinitializeUnreadFromOutside } from "../contexts/UnreadContext";
@@ -52,6 +53,8 @@ import { saveSessionProfilePayload, clearUserProfileCacheStorage, getSessionProf
 import { profileBusinessHasRealOwnership } from "../utils/businessOwnership";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { sanitizeText } from "../utils/textSanitizer";
+import { isApiPublicFlag } from "../utils/apiPublicFlag";
+import { mergePendingOauthIdentityIntoPayload } from "../utils/oauthPendingProfileImage";
 import { upsertReferralNetworkRelationship } from "../utils/searchReferralProfiles";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceAddressDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
@@ -90,12 +93,7 @@ import {
   normalizeProfileModeration,
   MODERATED_TAKEN_DOWN as PROFILE_MODERATED_TAKEN_DOWN,
 } from "../utils/profileModeration";
-import {
-  getBusinessModeratedState,
-  isBusinessModeratedBlocked,
-  normalizeBusinessModeration,
-  MODERATED_ACKNOWLEDGED as BUSINESS_MODERATED_ACKNOWLEDGED,
-} from "../utils/businessModeration";
+import { getBusinessModeratedState, isBusinessModeratedBlocked, normalizeBusinessModeration, MODERATED_ACKNOWLEDGED as BUSINESS_MODERATED_ACKNOWLEDGED } from "../utils/businessModeration";
 import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -505,86 +503,88 @@ const ProfileScreen = ({ route, navigation }) => {
 
   const reloadProfileScreen = React.useCallback(() => {
     async function loadProfile() {
-        // console.log("ProfileScreen - useFocusEffect triggered, reloading profile data");
-        setLoading(true);
+      // console.log("ProfileScreen - useFocusEffect triggered, reloading profile data");
+      setLoading(true);
 
-        // Check if a specific profile_uid was passed via route params (for viewing other users' profiles)
-        const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
-        if (loggedInProfileUID) setViewerProfileUid(loggedInProfileUID);
+      // Check if a specific profile_uid was passed via route params (for viewing other users' profiles)
+      const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+      if (loggedInProfileUID) setViewerProfileUid(loggedInProfileUID);
 
-        if (routeProfileUID) {
-          // console.log("ProfileScreen - Loading profile from route params:", routeProfileUID);
-          // console.log("ProfileScreen - Logged in profile UID:", loggedInProfileUID);
-          setProfileUID(routeProfileUID);
-          // Check if the profile being viewed matches the logged-in user's profile
-          setIsCurrentUserProfile(routeProfileUID === loggedInProfileUID);
-          await fetchUserData(routeProfileUID);
-          // Fetch relationship if viewing another user's profile
-          if (loggedInProfileUID && routeProfileUID !== loggedInProfileUID) {
-            await fetchRelationship(loggedInProfileUID, routeProfileUID);
-            // Record that the logged-in user viewed this profile
-            recordProfileView(routeProfileUID, loggedInProfileUID);
-          }
-          return;
+      if (routeProfileUID) {
+        // console.log("ProfileScreen - Loading profile from route params:", routeProfileUID);
+        // console.log("ProfileScreen - Logged in profile UID:", loggedInProfileUID);
+        setProfileUID(routeProfileUID);
+        // Check if the profile being viewed matches the logged-in user's profile
+        setIsCurrentUserProfile(routeProfileUID === loggedInProfileUID);
+        await fetchUserData(routeProfileUID);
+        // Fetch relationship if viewing another user's profile
+        if (loggedInProfileUID && routeProfileUID !== loggedInProfileUID) {
+          await fetchRelationship(loggedInProfileUID, routeProfileUID);
+          // Record that the logged-in user viewed this profile
+          recordProfileView(routeProfileUID, loggedInProfileUID);
         }
-
-        let profileId = loggedInProfileUID;
-        // console.log("ProfileScreen - profileId from AsyncStorage:", profileId);
-        if (profileId) {
-          setProfileUID(profileId);
-          // console.log("ProfileScreen - Setting profileUID state to:", profileId);
-          // This is the logged-in user's own profile
-          setIsCurrentUserProfile(true);
-          await fetchUserData(profileId);
-          return;
-        }
-
-        // If no profile_uid, try to get user_uid and fetch profile
-        const userId = await AsyncStorage.getItem("user_uid");
-        // console.log("ProfileScreen - userId:", userId);
-        if (userId) {
-          try {
-            console.log("ProfileScreen - Profile Endpoint call loadProfile: ", `${ProfileScreenAPI}/${userId}`);
-            const response = await fetch(`${ProfileScreenAPI}/${userId}`);
-            const apiUser = normalizeUserProfileInfoResponse(await response.json());
-
-            // Handle case where profile is not found (404 error)
-            if ((!response.ok && response.status === 404) || apiUser.message === "Profile not found for this user" || (apiUser.code === 404 && apiUser.message === "Profile not found for this user")) {
-              // console.log("ProfileScreen - Profile not found for current user, routing to UserInfo");
-              setLoading(false);
-              // Clear any existing profile data but keep user credentials
-              await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number", "referral_uid", "referral_email"]);
-              await clearUserProfileCacheStorage();
-              reinitializeUnreadFromOutside().catch(() => {});
-              navigation.navigate("SignUp", {
-                requireReferralCompletion: true,
-                ...getOauthUserInfoNavigateParams(),
-              });
-              return;
-            }
-
-            const resolvedProfileUid = getProfilePersonalUid(apiUser);
-            if (apiUser && resolvedProfileUid) {
-              profileId = resolvedProfileUid;
-              setProfileUID(profileId);
-              // This is the logged-in user's own profile (fetched via user_uid)
-              setIsCurrentUserProfile(true);
-              await AsyncStorage.setItem("profile_uid", profileId);
-              reinitializeUnreadFromOutside().catch(() => {});
-              // Same payload as GET by profile id — hydrate from this response (avoid duplicate GET)
-              await processProfileApiUser(apiUser, profileId, response);
-              return;
-            }
-          } catch (err) {
-            console.error("Error fetching profile by user_uid:", err);
-          }
-        }
-
-        // // If still not found, show error
-        setLoading(false);
-        Alert.alert("Error", "Failed to load profile data. Please log in again.");
+        return;
       }
-      loadProfile();
+
+      let profileId = loggedInProfileUID;
+      // console.log("ProfileScreen - profileId from AsyncStorage:", profileId);
+      if (profileId) {
+        setProfileUID(profileId);
+        // console.log("ProfileScreen - Setting profileUID state to:", profileId);
+        // This is the logged-in user's own profile
+        setIsCurrentUserProfile(true);
+        await fetchUserData(profileId);
+        return;
+      }
+
+      // If no profile_uid, try to get user_uid and fetch profile
+      const userId = await AsyncStorage.getItem("user_uid");
+      // console.log("ProfileScreen - userId:", userId);
+      if (userId) {
+        try {
+          console.log("ProfileScreen - Profile Endpoint call loadProfile: ", `${ProfileScreenAPI}/${userId}`);
+          const response = await fetch(`${ProfileScreenAPI}/${userId}`);
+          const apiUser = normalizeUserProfileInfoResponse(await response.json());
+
+          // Handle case where profile is not found (404 error)
+          if ((!response.ok && response.status === 404) || apiUser.message === "Profile not found for this user" || (apiUser.code === 404 && apiUser.message === "Profile not found for this user")) {
+            // console.log("ProfileScreen - Profile not found for current user, routing to UserInfo");
+            setLoading(false);
+            // Clear any existing profile data but keep user credentials
+            await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+            await clearUserProfileCacheStorage();
+            reinitializeUnreadFromOutside().catch(() => {});
+            const referralProfileUid = String((await AsyncStorage.getItem("referral_uid")) || "").trim();
+            navigation.navigate("SignUp", {
+              requireReferralCompletion: true,
+              ...(referralProfileUid ? { referralProfileUid } : {}),
+              ...getOauthUserInfoNavigateParams(),
+            });
+            return;
+          }
+
+          const resolvedProfileUid = getProfilePersonalUid(apiUser);
+          if (apiUser && resolvedProfileUid) {
+            profileId = resolvedProfileUid;
+            setProfileUID(profileId);
+            // This is the logged-in user's own profile (fetched via user_uid)
+            setIsCurrentUserProfile(true);
+            await AsyncStorage.setItem("profile_uid", profileId);
+            reinitializeUnreadFromOutside().catch(() => {});
+            // Same payload as GET by profile id — hydrate from this response (avoid duplicate GET)
+            await processProfileApiUser(apiUser, profileId, response);
+            return;
+          }
+        } catch (err) {
+          console.error("Error fetching profile by user_uid:", err);
+        }
+      }
+
+      // // If still not found, show error
+      setLoading(false);
+      Alert.alert("Error", "Failed to load profile data. Please log in again.");
+    }
+    loadProfile();
   }, [routeProfileUID, JSON.stringify(route.params?.oauthPrefill ?? null)]); // oauthPrefill: OAuth → Profile → UserInfo prefill
 
   useFocusEffect(
@@ -647,9 +647,7 @@ const ProfileScreen = ({ route, navigation }) => {
     const handleKey = `${focusOfferingUid}:${String(focusOfferingToken ?? "")}`;
     if (focusOfferingHandledRef.current === handleKey) return;
 
-    const match = (user.expertise || []).find(
-      (exp) => String(exp.profile_expertise_uid || "").trim() === focusOfferingUid && isProfileOfferingVisible(exp, isCurrentUserProfile),
-    );
+    const match = (user.expertise || []).find((exp) => String(exp.profile_expertise_uid || "").trim() === focusOfferingUid && isProfileOfferingVisible(exp, isCurrentUserProfile));
     if (!match) return;
 
     focusOfferingHandledRef.current = handleKey;
@@ -672,7 +670,8 @@ const ProfileScreen = ({ route, navigation }) => {
           if (!cancelled) setIsAdminViewer(false);
           return;
         }
-        const row = Array.isArray(result?.result) ? result.result[0] : result?.result ?? result?.data ?? result;
+        const row = Array.isArray(result?.result) ? result.result[0] : (result?.result ?? result?.data ?? result);
+        if (await enforceTempPasswordGraceFromUserRow(row)) return;
         if (!cancelled) setIsAdminViewer(row?.user_role === "ADMIN");
       } catch (_) {
         if (!cancelled) setIsAdminViewer(false);
@@ -743,18 +742,17 @@ const ProfileScreen = ({ route, navigation }) => {
       // Ownership must come from storage + requested id — NOT React state.
       // Profile stays mounted across navigations; isCurrentUserProfile can still be
       // true from the previous (own) visit when fetch runs after setState(false).
-      const isOwnProfileRequest =
-        !!requestedUid &&
-        ((currentProfileUid && requestedUid === currentProfileUid) || (currentUserUid && requestedUid === currentUserUid));
-      const viewingOtherViaRoute =
-        !!routeUid && routeUid !== currentProfileUid && routeUid !== currentUserUid;
+      const isOwnProfileRequest = !!requestedUid && ((currentProfileUid && requestedUid === currentProfileUid) || (currentUserUid && requestedUid === currentUserUid));
+      const viewingOtherViaRoute = !!routeUid && routeUid !== currentProfileUid && routeUid !== currentUserUid;
 
       if (isOwnProfileRequest && !viewingOtherViaRoute) {
         setLoading(false);
-        await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number", "referral_uid", "referral_email"]);
+        await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
         await clearUserProfileCacheStorage();
+        const referralProfileUid = String((await AsyncStorage.getItem("referral_uid")) || "").trim();
         navigation.navigate("SignUp", {
           requireReferralCompletion: true,
+          ...(referralProfileUid ? { referralProfileUid } : {}),
           ...getOauthUserInfoNavigateParams(),
         });
         return;
@@ -790,7 +788,8 @@ const ProfileScreen = ({ route, navigation }) => {
       const bizListChanged = await persistMyBusinessUidsFromProfile(apiUser);
       if (bizListChanged) reinitializeUnreadFromOutside().catch(() => {});
       try {
-        await saveSessionProfilePayload(apiUser);
+        const mergedForSession = await mergePendingOauthIdentityIntoPayload(apiUser);
+        await saveSessionProfilePayload(mergedForSession);
         const session = await getSessionProfile({ forceRefresh: true });
         const path = session?.personalInfo?.profile_personal_path ?? session?.rawProfile?.personal_info?.profile_personal_path;
         console.log("[ProfileScreen] profile_personal_path:", path ?? "(not in cache)");
@@ -800,25 +799,29 @@ const ProfileScreen = ({ route, navigation }) => {
     }
 
     try {
+      const mergedApiUser = await mergePendingOauthIdentityIntoPayload(apiUser);
+      const personal = mergedApiUser?.personal_info || {};
       const userData = {
         profile_uid: profileUID,
-        email: apiUser?.user_email || "",
-        firstName: apiUser.personal_info?.profile_personal_first_name || "",
-        lastName: apiUser.personal_info?.profile_personal_last_name || "",
-        phoneNumber: apiUser.personal_info?.profile_personal_phone_number || "",
-        tagLine: apiUser.personal_info?.profile_personal_tag_line || "",
-        city: apiUser.personal_info?.profile_personal_city || "",
-        state: apiUser.personal_info?.profile_personal_state || "",
-        homeAddress: apiUser.personal_info?.profile_personal_home_address || "",
+        email: mergedApiUser?.user_email || apiUser?.user_email || "",
+        firstName: personal.profile_personal_first_name || "",
+        lastName: personal.profile_personal_last_name || "",
+        phoneNumber: personal.profile_personal_phone_number || "",
+        phoneVerified: personal.phone_verified === true || personal.phone_verified === 1,
+        tagLine: personal.profile_personal_tag_line || "",
+        city: personal.profile_personal_city || "",
+        state: personal.profile_personal_state || "",
+        homeAddress: personal.profile_personal_home_address || "",
         homeCoordinates: (() => {
-          const lat = apiUser.personal_info?.profile_personal_latitude;
-          const lng = apiUser.personal_info?.profile_personal_longitude;
+          const lat = personal.profile_personal_latitude;
+          const lng = personal.profile_personal_longitude;
           if (lat == null || lat === "" || lng == null || lng === "") return "";
           const la = parseFloat(lat);
           const lo = parseFloat(lng);
           if (!Number.isFinite(la) || !Number.isFinite(lo)) return "";
           return `${la}, ${lo}`;
         })(),
+<<<<<<< HEAD
         shortBio: apiUser.personal_info?.profile_personal_short_bio || "",
         emailIsPublic: apiUser.personal_info?.profile_personal_email_is_public === 1,
         phoneIsPublic: apiUser.personal_info?.profile_personal_phone_number_is_public === 1,
@@ -849,6 +852,22 @@ const ProfileScreen = ({ route, navigation }) => {
         businessVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_business_visibility", "profile_personal_business_is_public"),
         socialVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_social_visibility", "profile_personal_social_is_public"),
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
+=======
+        shortBio: personal.profile_personal_short_bio || "",
+        emailIsPublic: isApiPublicFlag(personal.profile_personal_email_is_public),
+        phoneIsPublic: isApiPublicFlag(personal.profile_personal_phone_number_is_public),
+        imageIsPublic: isApiPublicFlag(personal.profile_personal_image_is_public),
+        tagLineIsPublic: isApiPublicFlag(personal.profile_personal_tag_line_is_public),
+        locationIsPublic: isApiPublicFlag(personal.profile_personal_location_is_public),
+        shortBioIsPublic: isApiPublicFlag(personal.profile_personal_short_bio_is_public),
+        experienceIsPublic: isApiPublicFlag(personal.profile_personal_experience_is_public),
+        educationIsPublic: isApiPublicFlag(personal.profile_personal_education_is_public),
+        expertiseIsPublic: isApiPublicFlag(personal.profile_personal_expertise_is_public),
+        wishesIsPublic: isApiPublicFlag(personal.profile_personal_wishes_is_public),
+        businessIsPublic: isApiPublicFlag(personal.profile_personal_business_is_public),
+        socialLinksIsPublic: isSocialLinksSectionPublic(personal, mergedApiUser.links_info || apiUser.links_info),
+        profileImage: personal.profile_personal_image ? String(personal.profile_personal_image) : "",
+>>>>>>> master
         profilePersonalPath: apiUser.personal_info?.profile_personal_path || null,
         profileModerationItem: buildProfileModerationItem(apiUser),
         moderation: normalizeProfileModeration(buildProfileModerationItem(apiUser)),
@@ -887,18 +906,18 @@ const ProfileScreen = ({ route, navigation }) => {
       userData.businesses = parseProfileJsonArray(apiUser.business_info)
         .filter((bus) => profileBusinessHasRealOwnership(bus))
         .map((bus) => {
-        const entryVisible = bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true;
-        return {
-          profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
-          name: bus.business_name || bus.profile_business_name || "",
-          role: bus.profile_business_role || bus.role || bus.bu_role || "",
-          isApproved: bus.profile_business_approved === "1" || bus.profile_business_approved === 1 || bus.isApproved === true || bus.isApproved === "1",
-          isPublic: entryVisible,
-          bu_individual_business_is_public: entryVisible,
-          individualIsPublic: entryVisible,
-          business_updated_at: bus.business_updated_at ?? bus.updated_at,
-        };
-      });
+          const entryVisible = bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true;
+          return {
+            profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
+            name: bus.business_name || bus.profile_business_name || "",
+            role: bus.profile_business_role || bus.role || bus.bu_role || "",
+            isApproved: bus.profile_business_approved === "1" || bus.profile_business_approved === 1 || bus.isApproved === true || bus.isApproved === "1",
+            isPublic: entryVisible,
+            bu_individual_business_is_public: entryVisible,
+            individualIsPublic: entryVisible,
+            business_updated_at: bus.business_updated_at ?? bus.updated_at,
+          };
+        });
 
       // console.log("ProfileScreen - userData.businesses (after mapping):", JSON.stringify(userData.businesses, null, 2));
       // console.log("ProfileScreen - userData.businesses.length:", userData.businesses.length);
@@ -1559,8 +1578,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
   // Backend hides offerings/seekings for other viewers when moderated is 1, 2, or 3.
   // Owners use ProfileModerationScreen for 1/2; admins may still view full content.
-  const viewingUnavailableProfile =
-    routeProfileUID && !isCurrentUserProfile && profileVisibilityBlocked && !isAdminViewer;
+  const viewingUnavailableProfile = routeProfileUID && !isCurrentUserProfile && profileVisibilityBlocked && !isAdminViewer;
 
   if (viewingUnavailableProfile) {
     return (
@@ -1617,87 +1635,87 @@ const ProfileScreen = ({ route, navigation }) => {
           returnTo === "Account"
             ? () => navigation.navigate("Account")
             : routeProfileUID && !isCurrentUserProfile
-            ? () => {
-                // Navigate back to the screen we came from with preserved state
-                const wishDetailState = route.params?.wishDetailState;
-                const offeringDetailState = route.params?.offeringDetailState;
-                if (wishDetailState) {
-                  console.log("🔙 Returning to WishDetail");
-                  if (navigation.canGoBack()) {
-                    navigation.goBack();
-                  } else {
-                    navigation.navigate("WishDetail", {
-                      wishData: wishDetailState.wishData,
-                      profileData: wishDetailState.profileData,
-                      profile_uid: wishDetailState.profile_uid,
-                      searchState: wishDetailState.searchState,
-                      returnTo: wishDetailState.returnTo,
-                      profileState: wishDetailState.profileState,
-                    });
+              ? () => {
+                  // Navigate back to the screen we came from with preserved state
+                  const wishDetailState = route.params?.wishDetailState;
+                  const offeringDetailState = route.params?.offeringDetailState;
+                  if (wishDetailState) {
+                    console.log("🔙 Returning to WishDetail");
+                    if (navigation.canGoBack()) {
+                      navigation.goBack();
+                    } else {
+                      navigation.navigate("WishDetail", {
+                        wishData: wishDetailState.wishData,
+                        profileData: wishDetailState.profileData,
+                        profile_uid: wishDetailState.profile_uid,
+                        searchState: wishDetailState.searchState,
+                        returnTo: wishDetailState.returnTo,
+                        profileState: wishDetailState.profileState,
+                      });
+                    }
+                    return;
                   }
-                  return;
-                }
-                if (offeringDetailState) {
-                  console.log("🔙 Returning to OfferingDetail");
-                  if (navigation.canGoBack()) {
-                    navigation.goBack();
-                  } else {
-                    navigation.navigate("OfferingDetail", {
-                      expertiseData: offeringDetailState.expertiseData,
-                      profileData: offeringDetailState.profileData,
-                      profile_uid: offeringDetailState.profile_uid,
-                      searchState: offeringDetailState.searchState,
-                      returnTo: offeringDetailState.returnTo,
-                      profileState: offeringDetailState.profileState,
-                    });
+                  if (offeringDetailState) {
+                    console.log("🔙 Returning to OfferingDetail");
+                    if (navigation.canGoBack()) {
+                      navigation.goBack();
+                    } else {
+                      navigation.navigate("OfferingDetail", {
+                        expertiseData: offeringDetailState.expertiseData,
+                        profileData: offeringDetailState.profileData,
+                        profile_uid: offeringDetailState.profile_uid,
+                        searchState: offeringDetailState.searchState,
+                        returnTo: offeringDetailState.returnTo,
+                        profileState: offeringDetailState.profileState,
+                      });
+                    }
+                    return;
                   }
-                  return;
-                }
-                if (returnTo === "Search" && searchState) {
-                  console.log("🔙 Returning to Search with preserved state:", searchState);
-                  navigation.navigate("Search", {
-                    restoreState: true,
-                    searchState: searchState,
-                  });
-                } else if (returnTo === "WishResponses" && route.params?.wishResponsesState) {
-                  // Navigate back to WishResponses screen
-                  console.log("🔙 Returning to WishResponses");
-                  const { wishData, profileData, profile_uid, profileState: wishResponsesProfileState } = route.params.wishResponsesState;
-                  navigation.navigate("WishResponses", {
-                    wishData,
-                    profileData,
-                    profile_uid,
-                    profileState: wishResponsesProfileState,
-                  });
-                } else if (returnTo === "OfferingResponses" && route.params?.offeringResponsesState) {
-                  console.log("🔙 Returning to OfferingResponses");
-                  const { expertiseData, profileData, profile_uid, profileState: offeringResponsesProfileState } = route.params.offeringResponsesState;
-                  navigation.navigate("OfferingResponses", {
-                    expertiseData,
-                    profileData,
-                    profile_uid,
-                    profileState: offeringResponsesProfileState,
-                  });
-                } else if (returnTo === "Chat") {
-                  if (navigation.canGoBack()) {
-                    navigation.goBack();
-                  } else if (route.params?.chatParams) {
-                    navigation.navigate("Chat", route.params.chatParams);
+                  if (returnTo === "Search" && searchState) {
+                    console.log("🔙 Returning to Search with preserved state:", searchState);
+                    navigation.navigate("Search", {
+                      restoreState: true,
+                      searchState: searchState,
+                    });
+                  } else if (returnTo === "WishResponses" && route.params?.wishResponsesState) {
+                    // Navigate back to WishResponses screen
+                    console.log("🔙 Returning to WishResponses");
+                    const { wishData, profileData, profile_uid, profileState: wishResponsesProfileState } = route.params.wishResponsesState;
+                    navigation.navigate("WishResponses", {
+                      wishData,
+                      profileData,
+                      profile_uid,
+                      profileState: wishResponsesProfileState,
+                    });
+                  } else if (returnTo === "OfferingResponses" && route.params?.offeringResponsesState) {
+                    console.log("🔙 Returning to OfferingResponses");
+                    const { expertiseData, profileData, profile_uid, profileState: offeringResponsesProfileState } = route.params.offeringResponsesState;
+                    navigation.navigate("OfferingResponses", {
+                      expertiseData,
+                      profileData,
+                      profile_uid,
+                      profileState: offeringResponsesProfileState,
+                    });
+                  } else if (returnTo === "Chat") {
+                    if (navigation.canGoBack()) {
+                      navigation.goBack();
+                    } else if (route.params?.chatParams) {
+                      navigation.navigate("Chat", route.params.chatParams);
+                    } else {
+                      navigation.navigate("Connect");
+                    }
+                  } else if (returnTo === "Connect" || returnTo === "Network") {
+                    // Navigate back to Connect screen (Network is legacy returnTo)
+                    console.log("🔙 Returning to Connect");
+                    navigation.navigate("Connect");
+                  } else if (returnTo === "Account") {
+                    navigation.navigate("Account");
                   } else {
+                    // Default: Navigate to Connect screen when viewing another user's profile
                     navigation.navigate("Connect");
                   }
-                } else if (returnTo === "Connect" || returnTo === "Network") {
-                  // Navigate back to Connect screen (Network is legacy returnTo)
-                  console.log("🔙 Returning to Connect");
-                  navigation.navigate("Connect");
-                } else if (returnTo === "Account") {
-                  navigation.navigate("Account");
-                } else {
-                  // Default: Navigate to Connect screen when viewing another user's profile
-                  navigation.navigate("Connect");
                 }
-              }
-            : undefined
+              : undefined
         }
         rightButton={
           isCurrentUserProfile ? (
@@ -1818,9 +1836,7 @@ const ProfileScreen = ({ route, navigation }) => {
                 marginBottom: 14,
               }}
             >
-              <Text style={{ fontSize: 13, fontWeight: "700", color: darkMode ? "#ff8a80" : "#B71C1C", marginBottom: 4 }}>
-                Admin view · {getProfileModerationStatusLabel(profileModerationItem)}
-              </Text>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: darkMode ? "#ff8a80" : "#B71C1C", marginBottom: 4 }}>Admin view · {getProfileModerationStatusLabel(profileModerationItem)}</Text>
               <Text style={{ fontSize: 12, lineHeight: 17, color: darkMode ? "#ccc" : "#555" }}>
                 This profile is hidden from other users (taken down, pending review, or acknowledged). Offerings and seekings are filtered at read time only.
               </Text>
@@ -1830,7 +1846,7 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={styles.profileHeaderContainer}>
               <Image
                 source={
-                  user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && user.profileImage !== "" && String(user.profileImage).trim() !== ""
+                  user.profileImage && user.imageIsPublic && user.profileImage !== "" && String(user.profileImage).trim() !== ""
                     ? { uri: String(user.profileImage) }
                     : require("../assets/profile.png")
                 }
@@ -1953,7 +1969,7 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={{ width: 200, height: 200, borderRadius: 100, overflow: "hidden" }}>
               <Image
                 source={
-                  user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && String(user.profileImage).trim() !== "" ? { uri: String(user.profileImage) } : require("../assets/profile.png")
+                  user.profileImage && user.imageIsPublic && String(user.profileImage).trim() !== "" ? { uri: String(user.profileImage) } : require("../assets/profile.png")
                 }
                 style={{ width: 200, height: 200 }}
                 resizeMode='cover'
@@ -1969,7 +1985,7 @@ const ProfileScreen = ({ route, navigation }) => {
                 ...user,
                 relationship: relationshipType || existingRelationship?.circle_relationship || null,
                 imageIsPublic: user.imageIsPublic,
-                profileImage: isCurrentUserProfile || user.imageIsPublic ? user.profileImage : "",
+                profileImage: user.imageIsPublic ? user.profileImage : "",
               }}
             />
             {shortBioBelowCard ? <Text style={[styles.shortBioBelowCard, darkMode && styles.darkShortBioBelowCard]}>{shortBioBelowCard}</Text> : null}
@@ -2011,12 +2027,7 @@ const ProfileScreen = ({ route, navigation }) => {
                     accessibilityRole='button'
                     accessibilityLabel={connectionLabel}
                   >
-                    <Ionicons
-                      name={hasAssignedRelationship ? "eye-outline" : "person-add-outline"}
-                      size={14}
-                      color='#fff'
-                      style={styles.profileActionButtonIcon}
-                    />
+                    <Ionicons name={hasAssignedRelationship ? "eye-outline" : "person-add-outline"} size={14} color='#fff' style={styles.profileActionButtonIcon} />
                     <Text style={styles.connectionActionButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
                       {hasAssignedRelationship ? "View" : "Connect"}
                     </Text>
@@ -2064,8 +2075,7 @@ const ProfileScreen = ({ route, navigation }) => {
                 <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showOffering &&
-                (user.expertise &&
-                user.expertise.filter((exp) => isProfileOfferingVisible(exp, isCurrentUserProfile)).length > 0 ? (
+                (user.expertise && user.expertise.filter((exp) => isProfileOfferingVisible(exp, isCurrentUserProfile)).length > 0 ? (
                   user.expertise
                     .filter((exp) => isProfileOfferingVisible(exp, isCurrentUserProfile))
                     .sort((a, b) => {
@@ -2538,16 +2548,16 @@ const ProfileScreen = ({ route, navigation }) => {
               };
               const linksInfo = user.links_info || [];
               const socialItems = linksInfo.filter(isPublicSocialLinkRow).map((row) => {
-                  const name = String(row.social_link_name || "").toLowerCase();
-                  const meta = defaults[name];
-                  return {
-                    key: name,
-                    label: meta ? meta.label : row.social_link_name || name,
-                    icon: meta ? meta.icon : "link-outline",
-                    color: meta ? meta.color : "#555",
-                    url: String(row.social_link_url).trim(),
-                  };
-                });
+                const name = String(row.social_link_name || "").toLowerCase();
+                const meta = defaults[name];
+                return {
+                  key: name,
+                  label: meta ? meta.label : row.social_link_name || name,
+                  icon: meta ? meta.icon : "link-outline",
+                  color: meta ? meta.color : "#555",
+                  url: String(row.social_link_url).trim(),
+                };
+              });
               if (socialItems.length === 0) return null;
               return (
                 <View style={styles.fieldContainer}>
@@ -2682,52 +2692,52 @@ const ProfileScreen = ({ route, navigation }) => {
                       const businessModeratedBlocked = isCurrentUserProfile && isBusinessModeratedBlocked(business);
                       const businessTakenDown = getBusinessModeratedState(business) === MODERATED_TAKEN_DOWN;
                       return (
-                      <View
-                        key={`biz-${business.profile_business_uid || business.business_uid || "unknown"}-${index}`}
-                        style={[
-                          styles.sectionItemContainer,
-                          darkMode && styles.darkSectionItemContainer,
-                          businessTakenDown && (darkMode ? styles.darkTakenDownOfferingCard : styles.takenDownOfferingCard),
-                          index > 0 && { marginTop: 4 },
-                        ]}
-                      >
-                        {businessModeratedBlocked ? <BusinessModerationBanner item={business} darkMode={darkMode} /> : null}
-                        <TouchableOpacity
-                          onPress={() => {
-                            const uid = business.business_uid || business.profile_business_uid;
-                            if (uid) {
-                              navigation.navigate("BusinessProfile", { business_uid: uid });
-                            }
-                          }}
-                          activeOpacity={0.7}
+                        <View
+                          key={`biz-${business.profile_business_uid || business.business_uid || "unknown"}-${index}`}
+                          style={[
+                            styles.sectionItemContainer,
+                            darkMode && styles.darkSectionItemContainer,
+                            businessTakenDown && (darkMode ? styles.darkTakenDownOfferingCard : styles.takenDownOfferingCard),
+                            index > 0 && { marginTop: 4 },
+                          ]}
                         >
-                          <MiniCard business={mapBusinessToMiniCard(business)} />
-                        </TouchableOpacity>
-                        {business.role ? (
-                          <View style={styles.roleContainer}>
-                            <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role)}</Text>
-                          </View>
-                        ) : null}
-                        {routeProfileUID && !isCurrentUserProfile && (business.business_uid || business.profile_business_uid) ? (
+                          {businessModeratedBlocked ? <BusinessModerationBanner item={business} darkMode={darkMode} /> : null}
                           <TouchableOpacity
-                            style={[styles.contextChatButton, darkMode && styles.darkContextChatButton, { marginTop: 8 }]}
-                            activeOpacity={0.8}
-                            onPress={() =>
-                              navigation.navigate("Chat", {
-                                other_uid: business.business_uid || business.profile_business_uid,
-                                other_name: business.business_name || "Business",
-                                other_image: business.business_profile_img || null,
-                                reply_context: {
-                                  label: `Business: ${sanitizeText(business.business_name || "Business")}`,
-                                },
-                              })
-                            }
+                            onPress={() => {
+                              const uid = business.business_uid || business.profile_business_uid;
+                              if (uid) {
+                                navigation.navigate("BusinessProfile", { business_uid: uid });
+                              }
+                            }}
+                            activeOpacity={0.7}
                           >
-                            <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
-                            <Text style={styles.contextChatButtonText}>Message this business</Text>
+                            <MiniCard business={mapBusinessToMiniCard(business)} />
                           </TouchableOpacity>
-                        ) : null}
-                      </View>
+                          {business.role ? (
+                            <View style={styles.roleContainer}>
+                              <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role)}</Text>
+                            </View>
+                          ) : null}
+                          {routeProfileUID && !isCurrentUserProfile && (business.business_uid || business.profile_business_uid) ? (
+                            <TouchableOpacity
+                              style={[styles.contextChatButton, darkMode && styles.darkContextChatButton, { marginTop: 8 }]}
+                              activeOpacity={0.8}
+                              onPress={() =>
+                                navigation.navigate("Chat", {
+                                  other_uid: business.business_uid || business.profile_business_uid,
+                                  other_name: business.business_name || "Business",
+                                  other_image: business.business_profile_img || null,
+                                  reply_context: {
+                                    label: `Business: ${sanitizeText(business.business_name || "Business")}`,
+                                  },
+                                })
+                              }
+                            >
+                              <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
+                              <Text style={styles.contextChatButtonText}>Message this business</Text>
+                            </TouchableOpacity>
+                          ) : null}
+                        </View>
                       );
                     })
                   ) : (
@@ -2742,7 +2752,7 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={[styles.sectionHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <TouchableOpacity onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
-                  <Text style={styles.sectionHeaderText}>MY REVIEWS OF BUSINESSES / ORGANIZATIONS</Text>
+                  <Text style={styles.sectionHeaderText}>MY REVIEWS OF BUSINESSES</Text>
                 </TouchableOpacity>
                 {isCurrentUserProfile && (
                   <TouchableOpacity

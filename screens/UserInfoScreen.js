@@ -268,7 +268,7 @@ export default function UserInfoScreen({ navigation, route }) {
       if (route?.params?.returnToScanLanding && route?.params?.profile_uid) {
         Alert.alert("Success", "Profile saved successfully!");
         console.log("UserInfoScreen - Navigating to Network after scan with profile_uid:", route.params.profile_uid);
-        await goToNetworkForScanConnect(navigation, route.params.profile_uid);
+        await goToNetworkForScanConnect(navigation, route.params.profile_uid, { scannerIsNewSignup: true });
       } else if (route?.params?.returnToNewConnection && route?.params?.profile_uid) {
         Alert.alert("Success", "Profile saved successfully!");
         console.log("UserInfoScreen - Navigating to NewConnection with profile_uid:", route.params.profile_uid);

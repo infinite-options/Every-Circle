@@ -2,4 +2,9 @@
 # index.html and React Navigation can read the URL. Required for Apple Return URLs that
 # point at any path you registered (e.g. https://everycircle.com/ or .../login/).
 # https://docs.netlify.com/routing/redirects/rewrites-proxies/#history-pushstate-and-single-page-apps
+#
+# Child Safety / CSAE standards must be a crawlable static HTML page (Google Play requirement).
+# Keep these rules above the SPA catch-all so /child-safety is not rewritten to index.html.
+/child-safety    /child-safety.html   200
+/child-safety/   /child-safety.html   200
 /*    /index.html   200

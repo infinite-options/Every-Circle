@@ -102,6 +102,7 @@ const AcceptDetailsModal = ({ show, setShow, wishData, response, onContinue, onC
         lastName: response.profile_personal_last_name || "",
         email: response.profile_personal_email || "",
         phoneNumber: response.profile_personal_phone_number || "",
+        phoneVerified: response.phone_verified === true || response.phone_verified === 1 || response.phoneVerified === true,
         profileImage: response.profile_personal_image || "",
         tagLine: response.profile_personal_tag_line || "",
         emailIsPublic: response.profile_personal_email_is_public === 1,

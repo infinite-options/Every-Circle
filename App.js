@@ -4,7 +4,7 @@ if (typeof document !== "undefined" && document.head) {
   require("./utils/injectBorderlessInputStyles");
 }
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { LogBox, Platform, useWindowDimensions, StyleSheet, Text, View, Alert, ActivityIndicator, TouchableOpacity, Image } from "react-native";
+import { LogBox, Platform, useWindowDimensions, StyleSheet, Text, View, Alert, ActivityIndicator, TouchableOpacity, Image, AppState } from "react-native";
 
 // Check if we're on web by checking for window object (works at module load time)
 // This must be defined before any code that uses it
@@ -63,9 +63,9 @@ import BusinessSetupController from "./screens/BusinessSetupController";
 import BusinessProfileScreen from "./screens/BusinessProfileScreen";
 import SearchTab from "./screens/SearchTab";
 import ChangePasswordScreen from "./screens/ChangePasswordScreen";
+import VerifyPhoneScreen from "./screens/VerifyPhoneScreen";
 import DeleteAccountScreen from "./screens/DeleteAccountScreen";
 import ReactivateScreen from "./screens/ReactivateScreen";
-import FilterScreen from "./screens/FilterScreen-DNU";
 import TermsAndConditionsScreen from "./screens/TermsAndConditionsScreen";
 import PrivacyPolicyScreen from "./screens/PrivacyPolicyScreen";
 import ChildSafetyScreen from "./screens/ChildSafetyScreen";
@@ -94,6 +94,12 @@ import { fetchMiddleware as fetchCircle } from "./utils/httpMiddleware";
 import { appleCircleAuthPayload, fetchCircleAuthSocial, googleCircleAuthPayload, setOnAuthSessionExpired } from "./utils/authSession";
 import { isPendingDeletionAuthResponse, reactivateNavParamsFromAuthPayload } from "./utils/deletedProfile";
 import { resetSharedAblyClient } from "./utils/ablyClient";
+import {
+  enforceTempPasswordGraceOnLaunch,
+  getTempPasswordGraceRemainingMs,
+  forceLogoutForTempPasswordGrace,
+  subscribeTempPasswordGraceMarked,
+} from "./utils/tempPasswordGrace";
 
 const Stack = createNativeStackNavigator();
 
@@ -155,8 +161,14 @@ function buildAppleAuthRequestBody(userInfo) {
  * @param {boolean} options.clearStorage - true for Sign Up (clean slate, like Google sign-up)
  */
 async function completeAppleAuthSession(navigation, userInfo, options) {
-  const { clearStorage = false, setError, failureAlertTitle = "Apple" } = options;
+  const { clearStorage = false, setError, failureAlertTitle = "Apple", authRouteParams = {} } = options;
   try {
+    // Capture QR/scan referrer before any storage wipe so signup can skip "Who referred you?"
+    const preservedReferralUid = String(authRouteParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+    const preservedProfileUid = String(authRouteParams.profile_uid || "").trim() || null;
+    const preservedReturnToScanLanding = !!authRouteParams.returnToScanLanding;
+    const preservedReturnToNewConnection = !!authRouteParams.returnToNewConnection;
+
     if (clearStorage) {
       await AsyncStorage.clear();
     }
@@ -237,6 +249,10 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
       previousUserUid,
       preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
     });
+    // clearSessionAsyncStorageOnLogin always drops referral_uid — restore QR referrer for signup.
+    if (preservedReferralUid) {
+      await AsyncStorage.setItem("referral_uid", preservedReferralUid);
+    }
     if (idToken) {
       const circleAuth = await fetchCircleAuthSocial(appleCircleAuthPayload(idToken), fetchCircle);
       if (circleAuth?.pendingDeletion) {
@@ -272,6 +288,10 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
       navigation.navigate("SignUp", {
         pendingReferralAfterOAuth: true,
         appleUserInfo: appleUserInfoPayload,
+        ...(preservedReferralUid ? { referralProfileUid: preservedReferralUid } : {}),
+        ...(preservedProfileUid ? { profile_uid: preservedProfileUid } : {}),
+        ...(preservedReturnToScanLanding ? { returnToScanLanding: true } : {}),
+        ...(preservedReturnToNewConnection ? { returnToNewConnection: true } : {}),
       });
     }
   } catch (err) {
@@ -293,10 +313,18 @@ function isExistingSocialAccountApiResult(result) {
  * @param {{ clearStorage?: boolean }} [options] - set true for Sign Up screen to start from a clean local session
  */
 async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, options = {}) {
-  const { clearStorage = false } = options;
+  const { clearStorage = false, authRouteParams = {} } = options;
+  // Capture QR/scan referrer before any storage wipe so signup can skip "Who referred you?"
+  const preservedReferralUid = String(authRouteParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+  const preservedProfileUid = String(authRouteParams.profile_uid || "").trim() || null;
+  const preservedReturnToScanLanding = !!authRouteParams.returnToScanLanding;
+  const preservedReturnToNewConnection = !!authRouteParams.returnToNewConnection;
+
   if (clearStorage) {
     await AsyncStorage.clear();
   }
+
+  console.log("[GooglePhoto] completeGoogleSocialAuth input userInfo.user.photo =", userInfo?.user?.photo);
 
   const payload = {
     email: userInfo.user.email,
@@ -307,6 +335,7 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     last_name: userInfo.user.familyName || "",
     profile_picture: userInfo.user.photo || "",
   };
+  console.log("[GooglePhoto] social auth POST profile_picture =", payload.profile_picture);
   console.log("App.js - Google social auth POST:", GOOGLE_SOCIAL_AUTH_ENDPOINT, payload);
 
   const response = await fetch(GOOGLE_SOCIAL_AUTH_ENDPOINT, {
@@ -355,6 +384,10 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     previousUserUid,
     preserveKeys: ["user_uid", "user_email_id", "isThirdPartyAuth"],
   });
+  // clearSessionAsyncStorageOnLogin always drops referral_uid — restore QR referrer for signup.
+  if (preservedReferralUid) {
+    await AsyncStorage.setItem("referral_uid", preservedReferralUid);
+  }
   const circleAuth = await fetchCircleAuthSocial(googleCircleAuthPayload(googleAuthToken, userInfo), fetchCircle);
   if (circleAuth?.pendingDeletion) {
     await clearSessionAsyncStorage();
@@ -376,6 +409,7 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     googleId: userInfo.user.id,
     accessToken: googleAuthToken,
   };
+  console.log("[GooglePhoto] googleUserInfo.profilePicture =", googleUserInfo.profilePicture);
 
   if (existingAccount) {
     navigation.navigate("Profile", {
@@ -387,6 +421,10 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     navigation.navigate("SignUp", {
       pendingReferralAfterOAuth: true,
       googleUserInfo,
+      ...(preservedReferralUid ? { referralProfileUid: preservedReferralUid } : {}),
+      ...(preservedProfileUid ? { profile_uid: preservedProfileUid } : {}),
+      ...(preservedReturnToScanLanding ? { returnToScanLanding: true } : {}),
+      ...(preservedReturnToNewConnection ? { returnToNewConnection: true } : {}),
     });
   }
 }
@@ -442,6 +480,56 @@ export default function App() {
     return () => setOnAuthSessionExpired(null);
   }, []);
 
+  // Kick out when the temp-password signup grace window ends while the app is open / resumed.
+  useEffect(() => {
+    let cancelled = false;
+    let timerId = null;
+
+    const clearTimer = () => {
+      if (timerId != null) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+    };
+
+    const scheduleOrEnforce = async () => {
+      if (cancelled) return;
+      clearTimer();
+      const uid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
+      if (!uid) return;
+
+      const remaining = await getTempPasswordGraceRemainingMs();
+      if (remaining == null) return;
+      if (remaining <= 0) {
+        console.log("App.js - Temp-password grace ended while app open; forcing logout");
+        await forceLogoutForTempPasswordGrace({ navigateHome: true });
+        resetSharedAblyClient();
+        reportLoggedIn(false);
+        return;
+      }
+      timerId = setTimeout(() => {
+        void scheduleOrEnforce();
+      }, Math.min(remaining + 50, 2147483647));
+    };
+
+    void scheduleOrEnforce();
+
+    const unsubGrace = subscribeTempPasswordGraceMarked(() => {
+      void scheduleOrEnforce();
+    });
+
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void scheduleOrEnforce();
+    });
+
+    return () => {
+      cancelled = true;
+      clearTimer();
+      unsubGrace();
+      sub.remove();
+    };
+  }, []);
+
   // const [showSpinner, setShowSpinner] = useState(false);
   // const [signInInProgress, setSignInInProgress] = useState(false);
   // const [showUserInfo, setShowUserInfo] = useState(false);
@@ -465,7 +553,17 @@ export default function App() {
         console.log("App.js - Checking if user in AsyncStorage...");
         const uid = await AsyncStorage.getItem("user_uid");
         console.log("App.js - User UID:", uid);
-        reportLoggedIn(!!uid);
+
+        let stillLoggedIn = !!uid;
+        if (uid) {
+          const grace = await enforceTempPasswordGraceOnLaunch();
+          stillLoggedIn = grace.loggedIn;
+          if (grace.forcedLogout) {
+            console.log("App.js - Temp-password grace expired; session cleared");
+            resetSharedAblyClient();
+          }
+        }
+        reportLoggedIn(stillLoggedIn);
 
         // Check terms acceptance status
         const termsStatus = await AsyncStorage.getItem("termsAccepted");
@@ -473,7 +571,7 @@ export default function App() {
         setTermsAccepted(termsAcceptedValue);
         console.log("App.js - Terms Accepted:", termsAcceptedValue);
 
-        if (uid) setInitialRoute("Profile");
+        if (stillLoggedIn) setInitialRoute("Profile");
 
         // Configure Google Sign-In (only on native platforms)
         if (!isWeb && GoogleSignin) {
@@ -515,7 +613,7 @@ export default function App() {
   }, []);
 
   // Web Google Sign-In handler using Google Identity Services
-  const handleWebGoogleSignIn = useCallback(async (navigation) => {
+  const handleWebGoogleSignIn = useCallback(async (navigation, authRouteParams = {}) => {
     console.log("App.js - handleWebGoogleSignIn - Starting");
 
     return new Promise((resolve, reject) => {
@@ -532,7 +630,7 @@ export default function App() {
         script.defer = true;
         script.onload = () => {
           console.log("App.js - Google Identity Services script loaded");
-          initializeWebGoogleSignIn(navigation, resolve, reject, "signIn");
+          initializeWebGoogleSignIn(navigation, resolve, reject, "signIn", authRouteParams);
         };
         script.onerror = (error) => {
           console.error("App.js - Failed to load Google Identity Services:", error);
@@ -540,13 +638,13 @@ export default function App() {
         };
         document.head.appendChild(script);
       } else {
-        initializeWebGoogleSignIn(navigation, resolve, reject, "signIn");
+        initializeWebGoogleSignIn(navigation, resolve, reject, "signIn", authRouteParams);
       }
     });
   }, []);
 
   // Web Google Sign-Up: same GSI (JWT) as sign-in, then POST to GOOGLE_SOCIAL_AUTH_ENDPOINT
-  const handleWebGoogleSignUp = useCallback(async (navigation) => {
+  const handleWebGoogleSignUp = useCallback(async (navigation, authRouteParams = {}) => {
     console.log("App.js - handleWebGoogleSignUp - Starting");
     return new Promise((resolve, reject) => {
       if (typeof window === "undefined") {
@@ -560,7 +658,7 @@ export default function App() {
         script.defer = true;
         script.onload = () => {
           console.log("App.js - Google Identity Services script loaded (sign-up)");
-          initializeWebGoogleSignIn(navigation, resolve, reject, "signUp");
+          initializeWebGoogleSignIn(navigation, resolve, reject, "signUp", authRouteParams);
         };
         script.onerror = (error) => {
           console.error("App.js - Failed to load Google Identity Services:", error);
@@ -568,12 +666,12 @@ export default function App() {
         };
         document.head.appendChild(script);
       } else {
-        initializeWebGoogleSignIn(navigation, resolve, reject, "signUp");
+        initializeWebGoogleSignIn(navigation, resolve, reject, "signUp", authRouteParams);
       }
     });
   }, []);
 
-  const initializeWebGoogleSignIn = (navigation, resolve, reject, mode = "signIn") => {
+  const initializeWebGoogleSignIn = (navigation, resolve, reject, mode = "signIn", authRouteParams = {}) => {
     try {
       const webClientId = config.googleClientIds.web;
       console.log("App.js - Initializing Google Sign-In with client ID:", webClientId?.substring(0, 20) + "...");
@@ -586,33 +684,42 @@ export default function App() {
         return;
       }
 
-      // Use OAuth 2.0 flow with popup
+      // One Tap can dismiss/skip without ever calling the credential callback — settle exactly once.
+      let settled = false;
+      const settleResolve = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const settleReject = (err) => {
+        if (settled) return;
+        settled = true;
+        reject(err instanceof Error ? err : new Error(String(err || "Google Sign-In cancelled")));
+      };
+
       const handleCredentialResponse = async (response) => {
         try {
           console.log("App.js - Google Sign-In callback received");
 
-          // Decode the credential (JWT token)
           const credential = response.credential;
           console.log("App.js - Credential received (first 50 chars):", credential?.substring(0, 50));
 
-          // Decode JWT to get user info (payload is base64url encoded)
           const parts = credential.split(".");
           if (parts.length !== 3) {
             throw new Error("Invalid credential format");
           }
 
-          // Decode the payload (second part)
           const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-          console.log("App.js - Decoded payload:", {
+          console.log("App.js - Decoded Google JWT payload:", {
             email: payload.email,
             name: payload.name,
             picture: payload.picture,
           });
+          console.log("[GooglePhoto] JWT payload.picture =", payload.picture);
 
-          const userEmail = payload.email;
           const userInfo = {
             user: {
-              email: userEmail,
+              email: payload.email,
               name: payload.name,
               givenName: payload.given_name,
               familyName: payload.family_name,
@@ -623,24 +730,27 @@ export default function App() {
           };
 
           console.log("App.js - User info extracted:", userInfo);
+          console.log("[GooglePhoto] userInfo.user.photo =", userInfo.user.photo);
 
           try {
-            await completeGoogleSocialAuth(navigation, userInfo, credential, { clearStorage: mode === "signUp" });
-            resolve();
+            await completeGoogleSocialAuth(navigation, userInfo, credential, {
+              clearStorage: mode === "signUp",
+              authRouteParams,
+            });
+            settleResolve();
           } catch (socialErr) {
             console.error("App.js - Web Google social auth error:", socialErr);
             const title = mode === "signUp" ? "Sign Up Failed" : "Sign In Failed";
             Alert.alert(title, socialErr.message || "Please try again.");
-            reject(socialErr);
+            settleReject(socialErr);
           }
         } catch (error) {
           console.error("App.js - Error processing Google Sign-In:", error);
           Alert.alert("Sign In Failed", error.message || "Please try again.");
-          reject(error);
+          settleReject(error);
         }
       };
 
-      // Initialize Google Identity Services
       // use_fedcm_for_prompt: false — avoids Chrome FedCM when user/site disabled it (otherwise
       // console: "FedCM was disabled..." / GSI_LOGGER NetworkError retrieving a token).
       window.google.accounts.id.initialize({
@@ -651,19 +761,23 @@ export default function App() {
         use_fedcm_for_prompt: false,
       });
 
-      // Trigger the Google Sign-In prompt (One Tap or popup)
       console.log("App.js - Triggering Google Sign-In");
       window.google.accounts.id.prompt((notification) => {
         console.log("App.js - Prompt notification:", notification);
         if (notification.isNotDisplayed()) {
-          const reason = notification.getNotDisplayedReason();
+          const reason = notification.getNotDisplayedReason?.() || "unknown";
           console.log("App.js - Prompt not displayed, reason:", reason);
-          // If One Tap doesn't work, we can show a fallback message
-          // The user can still use the button which will trigger the flow
+          settleReject(new Error(`Google Sign-In unavailable (${reason}). Try email instead.`));
         } else if (notification.isSkippedMoment()) {
-          console.log("App.js - Prompt skipped, reason:", notification.getSkippedReason());
+          const reason = notification.getSkippedReason?.() || "unknown";
+          console.log("App.js - Prompt skipped, reason:", reason);
+          settleReject(new Error(`Google Sign-In skipped (${reason}). Try email instead.`));
         } else if (notification.isDismissedMoment()) {
-          console.log("App.js - Prompt dismissed, reason:", notification.getDismissedReason());
+          const reason = notification.getDismissedReason?.() || "unknown";
+          console.log("App.js - Prompt dismissed, reason:", reason);
+          // credential_returned: callback will settle the Promise — do not reject here.
+          if (reason === "credential_returned") return;
+          settleReject(new Error("Google Sign-In was dismissed. Try email instead."));
         }
       });
     } catch (error) {
@@ -673,68 +787,75 @@ export default function App() {
     }
   };
 
-  const signInHandler = useCallback(async (navigation) => {
-    console.log("App.js - Google Sign In Pressed - signInHandler - Starting");
-    console.log("App.js - Platform:", isWeb ? "Web" : "Native");
+  const signInHandler = useCallback(
+    async (navigation, authRouteParams = {}) => {
+      console.log("App.js - Google Sign In Pressed - signInHandler - Starting");
+      console.log("App.js - Platform:", isWeb ? "Web" : "Native");
 
-    // Handle web Google Sign-In differently
-    if (isWeb) {
-      console.log("App.js - Web platform: Using Google Identity Services");
+      // Handle web Google Sign-In differently
+      if (isWeb) {
+        console.log("App.js - Web platform: Using Google Identity Services");
+        try {
+          await handleWebGoogleSignIn(navigation, authRouteParams);
+        } catch (error) {
+          console.error("App.js - Web Google Sign-In error:", error);
+          Alert.alert("Sign In Failed", "Please try again.");
+        }
+        return;
+      }
+
+      // Native Google Sign-In
+      if (!GoogleSignin) {
+        Alert.alert("Not Available", "Google Sign-In is not available. Please use email/password login.");
+        return;
+      }
+
       try {
-        await handleWebGoogleSignIn(navigation);
-      } catch (error) {
-        console.error("App.js - Web Google Sign-In error:", error);
+        // First check if user is already signed in
+        const isSignedIn = await GoogleSignin.isSignedIn();
+        if (isSignedIn) {
+          await GoogleSignin.signOut();
+        }
+
+        // Check for Play Services
+        await GoogleSignin.hasPlayServices();
+
+        // Start new sign in process
+        const userInfo = await GoogleSignin.signIn();
+        console.log("App.js - Google Sign In successful:", userInfo);
+        console.log("[GooglePhoto] native SignIn userInfo.user.photo =", userInfo?.user?.photo);
+
+        const tokens = await GoogleSignin.getTokens();
+        await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, {
+          clearStorage: false,
+          authRouteParams,
+        });
+      } catch (err) {
+        console.error("App.js - Google Sign In error:", err);
+        if (statusCodes) {
+          if (err.code === statusCodes.SIGN_IN_CANCELLED) {
+            // User cancelled the login flow
+            return;
+          }
+          if (err.code === statusCodes.IN_PROGRESS) {
+            // Sign in is in progress already
+            Alert.alert("Sign In In Progress", "Please wait for the current sign in process to complete.");
+            return;
+          }
+        }
         Alert.alert("Sign In Failed", "Please try again.");
       }
-      return;
-    }
-
-    // Native Google Sign-In
-    if (!GoogleSignin) {
-      Alert.alert("Not Available", "Google Sign-In is not available. Please use email/password login.");
-      return;
-    }
-
-    try {
-      // First check if user is already signed in
-      const isSignedIn = await GoogleSignin.isSignedIn();
-      if (isSignedIn) {
-        await GoogleSignin.signOut();
-      }
-
-      // Check for Play Services
-      await GoogleSignin.hasPlayServices();
-
-      // Start new sign in process
-      const userInfo = await GoogleSignin.signIn();
-      console.log("App.js - Google Sign In successful:", userInfo);
-
-      const tokens = await GoogleSignin.getTokens();
-      await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, { clearStorage: false });
-    } catch (err) {
-      console.error("App.js - Google Sign In error:", err);
-      if (statusCodes) {
-        if (err.code === statusCodes.SIGN_IN_CANCELLED) {
-          // User cancelled the login flow
-          return;
-        }
-        if (err.code === statusCodes.IN_PROGRESS) {
-          // Sign in is in progress already
-          Alert.alert("Sign In In Progress", "Please wait for the current sign in process to complete.");
-          return;
-        }
-      }
-      Alert.alert("Sign In Failed", "Please try again.");
-    }
-  }, []);
+    },
+    [handleWebGoogleSignIn],
+  );
 
   const signUpHandler = useCallback(
-    async (navigation) => {
+    async (navigation, authRouteParams = {}) => {
       console.log("App.js - signUpHandler - Google Button Pressed");
 
       if (isWeb) {
         try {
-          await handleWebGoogleSignUp(navigation);
+          await handleWebGoogleSignUp(navigation, authRouteParams);
         } catch (error) {
           console.error("App.js - Web Google Sign-Up error:", error);
         }
@@ -753,8 +874,13 @@ export default function App() {
         }
         await GoogleSignin.hasPlayServices();
         const userInfo = await GoogleSignin.signIn();
+        console.log("App.js - Google Sign Up successful:", userInfo);
+        console.log("[GooglePhoto] native SignUp userInfo.user.photo =", userInfo?.user?.photo);
         const tokens = await GoogleSignin.getTokens();
-        await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, { clearStorage: true });
+        await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, {
+          clearStorage: true,
+          authRouteParams,
+        });
       } catch (err) {
         console.error("App.js - Google Sign Up error:", err);
         if (statusCodes) {
@@ -774,22 +900,24 @@ export default function App() {
   );
 
   const handleAppleSignIn = useCallback(
-    async (userInfo, navigation) => {
+    async (userInfo, navigation, authRouteParams = {}) => {
       await completeAppleAuthSession(navigation, userInfo, {
         clearStorage: false,
         setError,
         failureAlertTitle: "Apple Sign In",
+        authRouteParams,
       });
     },
     [setError],
   );
 
   const handleAppleSignUp = useCallback(
-    async (userInfo, navigation) => {
+    async (userInfo, navigation, authRouteParams = {}) => {
       await completeAppleAuthSession(navigation, userInfo, {
         clearStorage: true,
         setError,
         failureAlertTitle: "Apple Sign Up",
+        authRouteParams,
       });
     },
     [setError],
@@ -990,6 +1118,7 @@ export default function App() {
     },
     BusinessSetup: "business-setup",
     EditProfile: "edit-profile",
+    VerifyPhone: "verify-phone",
     ShoppingCart: "cart",
     EveryCircleMap: "map",
     PrivacyPolicy: "privacy-policy",
@@ -1062,7 +1191,21 @@ export default function App() {
     const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen"];
 
     // Allowed screens when terms are not accepted
-    const termsAllowedScreens = ["Home", "Login", "SignUp", "Reactivate", "Settings", "TermsAndConditions", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
+    const termsAllowedScreens = [
+      "Home",
+      "Login",
+      "SignUp",
+      "Reactivate",
+      "Settings",
+      "TermsAndConditions",
+      "PrivacyPolicy",
+      "ChildSafety",
+      "DeleteAccountInfo",
+      "HowItWorksScreen",
+      "ScanLanding",
+      "EveryCircleMap",
+      "BusinessProfile",
+    ];
 
     // If cookies not allowed and trying to access any screen except Settings (web only)
     if (SHOW_COOKIE_CONSENT_UI && !cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
@@ -1120,7 +1263,12 @@ export default function App() {
                     <Stack.Screen
                       name='Login'
                       children={(props) => (
-                        <LoginScreen {...props} onGoogleSignIn={() => signInHandler(props.navigation)} onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation)} onError={setError} />
+                        <LoginScreen
+                          {...props}
+                          onGoogleSignIn={() => signInHandler(props.navigation, props.route?.params)}
+                          onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation, props.route?.params)}
+                          onError={setError}
+                        />
                       )}
                     />
                     <Stack.Screen
@@ -1128,8 +1276,8 @@ export default function App() {
                       children={(props) => (
                         <SignUpScreen
                           {...props}
-                          onGoogleSignUp={() => signUpHandler(props.navigation)}
-                          onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation)}
+                          onGoogleSignUp={() => signUpHandler(props.navigation, props.route?.params)}
+                          onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation, props.route?.params)}
                           onError={setError}
                         />
                       )}
@@ -1137,7 +1285,6 @@ export default function App() {
                     <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
                     <Stack.Screen name='ContactUs' component={ContactUsScreen} />
                     <Stack.Screen name='UserInfo' component={UserInfoScreen} />
-                    {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
                     <Stack.Screen name='AccountType' component={AccountTypeScreen} />
                     <Stack.Screen name='Profile' component={ProfileScreen} />
                     <Stack.Screen name='ProfileModeration' component={ProfileModerationScreen} options={{ headerShown: false }} />
@@ -1150,9 +1297,9 @@ export default function App() {
                     <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
                     <Stack.Screen name='BusinessModeration' component={BusinessModerationScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
+                    <Stack.Screen name='VerifyPhone' component={VerifyPhoneScreen} />
                     <Stack.Screen name='DeleteAccount' component={DeleteAccountScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='Reactivate' component={ReactivateScreen} options={{ headerShown: false }} />
-                    <Stack.Screen name='Filters' component={FilterScreen} />
                     <Stack.Screen name='SearchTab' component={SearchTab} />
 
                     <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
@@ -1169,7 +1316,25 @@ export default function App() {
                     <Stack.Screen name='OfferingResponses' component={OfferingResponsesScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='ConnectLink' component={ConnectLinkScreenWrapper} />
                     <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
-                    <Stack.Screen name='ScanLanding' component={ScanLandingScreen} />
+                    <Stack.Screen
+                      name='ScanLanding'
+                      options={{ contentStyle: { backgroundColor: "#ECEEF5" } }}
+                      children={(props) => {
+                        const scanParams = {
+                          ...props.route?.params,
+                          returnToScanLanding: true,
+                          referralProfileUid: props.route?.params?.profile_uid || props.route?.params?.referralProfileUid,
+                        };
+                        return (
+                          <ScanLandingScreen
+                            {...props}
+                            onGoogleSignUp={(extraParams) => signUpHandler(props.navigation, { ...scanParams, ...extraParams })}
+                            onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation, scanParams)}
+                            onError={setError}
+                          />
+                        );
+                      }}
+                    />
                     <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='Inbox' component={InboxScreen} />
                     <Stack.Screen name='Chat' component={ChatScreen} />

@@ -14,6 +14,7 @@ import {
   OFFERING_DELIVERY_OPTION_CARD_LABEL,
   parseOfferingShipping,
 } from "./profileOfferingShipping";
+import { isNewCustomersOnlyBounty } from "./giftCard";
 
 function isTruthyFlag(v) {
   return v === 1 || v === "1" || v === true;
@@ -207,6 +208,7 @@ export function getOfferingAttributeBadges(offering) {
   badges.push({ key: "returnable", label: "Returnable", value: returnable });
   const qty = formatOfferingQtyBadgeValue(offering);
   if (qty) badges.push({ key: "qty", label: "Qty", value: qty });
+  if (isNewCustomersOnlyBounty(offering)) badges.push({ key: "bounty_scope", label: "Bounty", value: "New Customers Only" });
   return badges;
 }
 

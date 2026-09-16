@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal, PanResponder, Alert, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -27,7 +28,8 @@ import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTok
 import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened";
 import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { addScannedCircleConnection } from "../utils/addScannedCircleConnection";
-import { getSessionProfile, patchSessionPersonalInfoField, subscribeSessionProfile } from "../utils/sessionProfile";
+import { getSessionProfile, patchSessionPersonalInfoField, saveSessionProfilePayload, subscribeSessionProfile } from "../utils/sessionProfile";
+import { mergePendingOauthIdentityIntoPayload } from "../utils/oauthPendingProfileImage";
 import { miniCardUserFromSession, messagesOffFromSession } from "../utils/connectProfileHydration";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
@@ -600,6 +602,7 @@ const ConnectScreen = ({ navigation }) => {
   const [userProfileData, setUserProfileData] = useState(null);
   const [qrCodeData, setQrCodeData] = useState("");
   const [qrCodeDataObject, setQrCodeDataObject] = useState(null); // Store parsed QR code data object for display
+  const [qrLinkCopied, setQrLinkCopied] = useState(false);
   /** Ably `connection.state` and `Channel.state` (exact strings from the SDK) */
   const [ablyConnectionStatus, setAblyConnectionStatus] = useState("—");
   const [ablyChannelStatus, setAblyChannelStatus] = useState("—");
@@ -612,6 +615,7 @@ const ConnectScreen = ({ navigation }) => {
   const ablyAnyMessageHandlerRef = useRef(null);
   const ablyNetworkChannelRef = useRef(null);
   const ablyStateSyncCleanupRef = useRef(null);
+  const qrLinkCopiedTimeoutRef = useRef(null);
   const [formSwitchEnabled, setFormSwitchEnabled] = useState(true); // Exchange Contact Info: on by default when others scan your QR code
   const formSwitchEnabledRef = React.useRef(true); // Ref to track current value for Ably callback
   const [showDebugBlocks, setShowDebugBlocks] = useState(false); // Toggle visibility of QR Code Contains and Ably Messages Received blocks
@@ -645,6 +649,8 @@ const ConnectScreen = ({ navigation }) => {
   const [scannedProfileData, setScannedProfileData] = useState(null);
   const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
   const showScannedProfileModalRef = useRef(null);
+  // 'scan' = current user scanned someone; 'ably' = QR owner received scanner notification
+  const connectPopupContextRef = useRef({ source: "scan", scannerIsNewSignup: false });
   const [showViewMyNetwork, setShowViewMyNetwork] = useState(true);
   /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
   const [focusTick, setFocusTick] = useState(0);
@@ -1122,9 +1128,27 @@ const ConnectScreen = ({ navigation }) => {
     console.log("🔗 QR Code URL:", scanUrl);
   }, []);
 
+  const copyQrLink = useCallback(async () => {
+    if (!qrCodeData) return;
+    try {
+      await Clipboard.setStringAsync(qrCodeData);
+      setQrLinkCopied(true);
+      if (qrLinkCopiedTimeoutRef.current) clearTimeout(qrLinkCopiedTimeoutRef.current);
+      qrLinkCopiedTimeoutRef.current = setTimeout(() => setQrLinkCopied(false), 2000);
+    } catch (e) {
+      Alert.alert("Error", "Could not copy link.");
+    }
+  }, [qrCodeData]);
+
+  useEffect(() => {
+    return () => {
+      if (qrLinkCopiedTimeoutRef.current) clearTimeout(qrLinkCopiedTimeoutRef.current);
+    };
+  }, []);
+
   const hydrateMyProfileFromSession = useCallback(async () => {
     try {
-      const session = await refreshFromSession({ forceRefresh: true });
+      let session = await refreshFromSession({ forceRefresh: true });
       const profileId = String(session?.profileUid || profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
       if (!profileId) return;
 
@@ -1133,8 +1157,48 @@ const ConnectScreen = ({ navigation }) => {
         userUid = String((await AsyncStorage.getItem("user_uid")) || "").trim();
       } catch (_) {}
 
+      // Always merge pending OAuth name + photo so Connect with Me shows identity after signup.
+      let raw = session?.rawProfile;
+      if (!raw || typeof raw !== "object") {
+        raw = {
+          personal_info: { profile_personal_uid: profileId },
+          user_email: session?.userEmail || "",
+        };
+      }
+      let merged = await mergePendingOauthIdentityIntoPayload(raw);
+      const pi = merged?.personal_info || {};
+      const hasName = Boolean(String(pi.profile_personal_first_name || "").trim() || String(pi.profile_personal_last_name || "").trim());
+      const hasPublicImage =
+        Boolean(pi.profile_personal_image && String(pi.profile_personal_image).trim()) &&
+        (pi.profile_personal_image_is_public === 1 || pi.profile_personal_image_is_public === "1" || pi.profile_personal_image_is_public === true);
+
+      // If session is still incomplete, refresh from API once and merge OAuth identity again.
+      if (!hasName || !hasPublicImage) {
+        try {
+          const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+          if (res.ok) {
+            const apiUser = await res.json();
+            merged = await mergePendingOauthIdentityIntoPayload(apiUser);
+          }
+        } catch (e) {
+          console.warn("ConnectScreen - live profile refresh for MiniCard failed:", e?.message || e);
+        }
+      }
+
+      if (merged?.personal_info) {
+        session = (await saveSessionProfilePayload(merged)) || session;
+      }
+
       const userData = miniCardUserFromSession(session, profileId, userUid);
-      if (userData) setUserProfileData(userData);
+      if (userData) {
+        console.log("[GooglePhoto] Connect MiniCard", {
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          profileImage: userData.profileImage,
+          imageIsPublic: userData.imageIsPublic,
+        });
+        setUserProfileData(userData);
+      }
       setMessagesOff(messagesOffFromSession(session));
       applyQrFromProfile(profileId);
       initializeAblyChannel(profileId);
@@ -1354,8 +1418,12 @@ const ConnectScreen = ({ navigation }) => {
           // Exchange Contact Info: show same connect modal as the scanner (stay on Network)
           if (formSwitchEnabledRef.current && message.data.scanner_profile_uid) {
             const scannerProfileUid = message.data.scanner_profile_uid;
+            const scannerIsNewSignup = Boolean(message.data.scanner_is_new_signup);
             InteractionManager.runAfterInteractions(() => {
-              showScannedProfileModalRef.current?.(scannerProfileUid);
+              showScannedProfileModalRef.current?.(scannerProfileUid, {
+                source: "ably",
+                scannerIsNewSignup,
+              });
             });
           } else {
             console.log("🔵 ConnectScreen - Form Switch is OFF or no scanner_profile_uid, not opening connect modal");
@@ -1419,9 +1487,13 @@ const ConnectScreen = ({ navigation }) => {
     return () => clearInterval(id);
   }, [ablyListeningChannel]);
 
-  const showScannedProfileModal = useCallback(async (profileUid) => {
+  const showScannedProfileModal = useCallback(async (profileUid, options = {}) => {
     if (!profileUid) return;
     try {
+      connectPopupContextRef.current = {
+        source: options.source === "ably" ? "ably" : "scan",
+        scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
+      };
       const profileInfo = await fetchPublicProfileCard(profileUid);
       setScannedProfileData(profileInfo);
       setShowScannedProfilePopup(true);
@@ -1442,7 +1514,7 @@ const ConnectScreen = ({ navigation }) => {
       const key = `${uid}:${scanConnectToken ?? ""}`;
       if (lastHandledScanConnectKeyRef.current === key) return;
       lastHandledScanConnectKeyRef.current = key;
-      showScannedProfileModal(uid);
+      showScannedProfileModal(uid, { source: "scan" });
       navigation.setParams({ scannedProfileUid: undefined, scanConnectToken: undefined });
     },
     [showScannedProfileModal, navigation],
@@ -1470,7 +1542,7 @@ const ConnectScreen = ({ navigation }) => {
         return;
       }
 
-      await showScannedProfileModal(scanData.profile_uid);
+      await showScannedProfileModal(scanData.profile_uid, { source: "scan" });
 
       // Notify QR owner (Exchange Contact Info)
       publishNewConnectionOpened(scanData.profile_uid, { message: "QR Code Scanned" }).then((result) => {
@@ -1488,7 +1560,11 @@ const ConnectScreen = ({ navigation }) => {
     try {
       if (!scannedProfileData?.profile_uid) return;
 
-      const result = await addScannedCircleConnection(scannedProfileData.profile_uid, connectionData);
+      // Capture before await — modal close / remount must not change the routing decision.
+      const connectedProfileUid = scannedProfileData.profile_uid;
+      const { source, scannerIsNewSignup } = connectPopupContextRef.current || {};
+
+      const result = await addScannedCircleConnection(connectedProfileUid, connectionData);
       if (result.ok) {
         const currentProfileUID = await AsyncStorage.getItem("profile_uid");
         const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
@@ -1497,6 +1573,23 @@ const ConnectScreen = ({ navigation }) => {
         }
         setShowScannedProfilePopup(false);
         setScannedProfileData(null);
+        lastHandledScanConnectKeyRef.current = null;
+
+        // Scanner → scanned user's Profile.
+        // QR owner → scanner's Profile if scanner is an existing member; stay on Connect if scanner is mid-signup.
+        const shouldOpenProfile = source === "scan" || (source === "ably" && !scannerIsNewSignup);
+        if (shouldOpenProfile && connectedProfileUid) {
+          // Profile is often already in the stack as the QR owner's own profile. A plain
+          // navigate() can pop to that screen and keep empty/stale params — merge: false
+          // replaces params so the other member's profile loads (same pattern as BottomNavBar).
+          InteractionManager.runAfterInteractions(() => {
+            navigation.navigate({
+              name: "Profile",
+              params: { profile_uid: connectedProfileUid, returnTo: "Connect" },
+              merge: false,
+            });
+          });
+        }
       } else if (result.error && result.error !== "not_logged_in" && result.error !== "self") {
         console.error("Error adding scanned connection:", result.error);
       }
@@ -1616,6 +1709,7 @@ const ConnectScreen = ({ navigation }) => {
       state: sanitizeText(p.profile_personal_state || ""),
       email: sanitizeText(apiUser?.user_email),
       phoneNumber: sanitizeText(p.profile_personal_phone_number),
+      phoneVerified: p.phone_verified === true || p.phone_verified === 1 || apiUser?.phoneVerified === true,
       profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
     };
   };
@@ -1667,6 +1761,7 @@ const ConnectScreen = ({ navigation }) => {
             city: deleted ? "" : sanitizeText(node.profile_personal_city || ""),
             state: deleted ? "" : sanitizeText(node.profile_personal_state || ""),
             phoneNumber: deleted ? "" : sanitizeText(node.profile_personal_phone_number || ""),
+            phoneVerified: !deleted && (node.phone_verified === true || node.phone_verified === 1 || node.phoneVerified === true),
             profileImage: deleted ? "" : sanitizeText(node.profile_personal_image || ""),
             relationship: node.circle_relationship || null,
             emailIsPublic: !deleted && node.profile_personal_email_is_public === 1,
@@ -1723,6 +1818,7 @@ const ConnectScreen = ({ navigation }) => {
               state: deleted ? "" : sanitizeText(p.profile_personal_state || ""),
               email: sanitizeText(emailRaw || ""),
               phoneNumber: deleted ? "" : sanitizeText(p.profile_personal_phone_number || ""),
+              phoneVerified: !deleted && (p.phone_verified === true || p.phone_verified === 1 || circle.phoneVerified === true),
               profileImage: deleted ? "" : sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
               relationship: circle.circle_relationship || null,
               emailIsPublic: !deleted && p.profile_personal_email_is_public === 1,
@@ -2760,9 +2856,17 @@ const ConnectScreen = ({ navigation }) => {
 
                   {/* QR at original 220px; form rows wider (286px) */}
                   <View style={styles.qrCodeSectionWrapper}>
-                    <View style={[styles.qrCodeWrapper, darkMode && styles.darkQrCodeWrapper]}>
+                    <TouchableOpacity
+                      style={[styles.qrCodeWrapper, darkMode && styles.darkQrCodeWrapper]}
+                      onPress={copyQrLink}
+                      activeOpacity={0.7}
+                      accessibilityRole='button'
+                      accessibilityLabel='Copy connect link'
+                      accessibilityHint='Copies your QR code link to the clipboard'
+                    >
                       <QRCodeComponent value={qrCodeData} size={200} color={darkMode ? "#ffffff" : "#000000"} backgroundColor={darkMode ? "#1a1a1a" : "#ffffff"} />
-                    </View>
+                    </TouchableOpacity>
+                    {qrLinkCopied ? <Text style={[styles.qrCodeInfoText, darkMode && styles.darkQrCodeInfoText, { marginBottom: 10 }]}>Link copied!</Text> : null}
 
                     {/* Form Switch Toggle */}
                     <View style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]}>
@@ -3937,6 +4041,7 @@ const ConnectScreen = ({ navigation }) => {
           setShowScannedProfilePopup(false);
           setScannedProfileData(null);
           lastHandledScanConnectKeyRef.current = null;
+          connectPopupContextRef.current = { source: "scan", scannerIsNewSignup: false };
         }}
         onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
       />

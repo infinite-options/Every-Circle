@@ -10,6 +10,7 @@ import {
 import { decryptResponse } from "./encryption";
 import { isPrivacyModeEnabled } from "./privacyMode";
 import { isPendingDeletionAuthResponse } from "./deletedProfile";
+import { persistPhoneIdentity, unwrapIdentityPayload } from "./phoneVerification";
 
 /** Called after a failed token refresh so the app can reset navigation to Home. */
 let onAuthSessionExpired = null;
@@ -57,6 +58,14 @@ export async function persistAuthTokens(result) {
   }
   if (tokens.profile_id) {
     await AsyncStorage.setItem("profile_uid", String(tokens.profile_id));
+  }
+
+  // Login/social/refresh may include user identity with phone_number + phone_verified.
+  const identity = unwrapIdentityPayload(result) || unwrapIdentityPayload(tokens);
+  if (identity) {
+    try {
+      await persistPhoneIdentity(identity);
+    } catch (_) {}
   }
   return Boolean(tokens.access_token);
 }
@@ -120,7 +129,8 @@ export async function fetchCircleAuthLogin(email, hashedPassword, fetchFn) {
       return { ok: false, pendingDeletion: true, data };
     }
     const tokens = unwrapAuthResult(data) || data;
-    const ok = await persistAuthTokens(tokens);
+    // Prefer full response so nested `user` phone identity is persisted.
+    const ok = await persistAuthTokens(data?.access_token || data?.refresh_token ? data : tokens);
     if (!ok) {
       console.warn("Circle auth login did not return tokens", data);
     }
@@ -151,7 +161,7 @@ export async function fetchCircleAuthSocial({ provider, idToken, accessToken }, 
       return { ok: false, pendingDeletion: true, data };
     }
     const tokens = unwrapAuthResult(data) || data;
-    const ok = await persistAuthTokens(tokens);
+    const ok = await persistAuthTokens(data?.access_token || data?.refresh_token ? data : tokens);
     if (!ok) {
       console.warn("Circle auth social did not return tokens", data);
     }
@@ -215,7 +225,7 @@ async function doRefreshCircleTokens() {
     }
     const tokens = unwrapAuthResult(data) || data;
     if (!tokens?.access_token) return false;
-    await persistAuthTokens(tokens);
+    await persistAuthTokens(data?.access_token || data?.refresh_token ? data : tokens);
     return true;
   } catch (e) {
     console.warn("refreshCircleTokens failed", e?.message || e);

@@ -35,7 +35,7 @@ function iosMajorVersion() {
   return parseFloat(v);
 }
 
-const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText: buttonTextOverride }) => {
+const AppleSignIn = ({ onSignIn, onError, onAuthSessionStart, onAuthSessionEnd, disabled, mode = "signIn", buttonText: buttonTextOverride }) => {
   const { width: windowW } = useWindowDimensions();
   const btnW = buttonWidthForWindow(windowW);
   const label = buttonTextOverride || (mode === "signUp" ? "Sign up with Apple" : "Sign in with Apple");
@@ -61,6 +61,13 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
   }, []);
   const handleAppleSignIn = async () => {
     if (disabled) return;
+    onAuthSessionStart?.();
+    let ended = false;
+    const endSession = (result) => {
+      if (ended) return;
+      ended = true;
+      onAuthSessionEnd?.(result);
+    };
     try {
       console.log("AppleSignIn - handleAppleSignIn");
       if (Platform.OS === "ios") {
@@ -93,9 +100,6 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
           console.log("=== Apple auth — iOS — identity / id token (JWT string) ===\n", idTokenString);
         }
 
-        // User is authenticated.  Do we need an if statement here?
-        // if no email use credential to look up user info
-
         // If we received the user's name, store it for future use
         if (credential.fullName && credential.fullName.familyName !== null) {
           console.log("AppleSignIn - received name details", credential.fullName);
@@ -111,7 +115,6 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
             console.error("Error storing user full name:", error);
           }
 
-          // User is authenticated
           const idTok = credential.idToken || credential.identityToken;
           const userInfo = {
             user: {
@@ -125,11 +128,11 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
             lastName: credential.fullName?.familyName || "",
           };
           console.log("AppleSignIn - userInfo saved", userInfo);
-          onSignIn(userInfo);
+          await onSignIn?.(userInfo);
+          endSession({ status: "success" });
         } else {
           console.log("AppleSignIn - did not receive name details");
 
-          // Try to get stored email if not provided in current sign-in
           let userEmail = credential.email;
           if (!userEmail) {
             console.log("AppleSignIn - email is null, trying to get from storage");
@@ -164,7 +167,8 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
             lastName: "",
           };
           console.log("AppleSignIn - userInfo saved", userInfo);
-          onSignIn(userInfo);
+          await onSignIn?.(userInfo);
+          endSession({ status: "success" });
         }
       } else {
         console.log("AppleSignIn - non-iOS (web or Android) web auth session");
@@ -174,7 +178,8 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
         console.log("AppleSignIn - redirectUri:", redirectUri);
 
         if (!servicesId || !redirectUri) {
-          onError("Missing EXPO_PUBLIC_APPLE_SERVICES_ID or EXPO_PUBLIC_APPLE_REDIRECT_URI");
+          onError?.("Missing EXPO_PUBLIC_APPLE_SERVICES_ID or EXPO_PUBLIC_APPLE_REDIRECT_URI");
+          endSession({ status: "error" });
           return;
         }
 
@@ -220,15 +225,17 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
           }
 
           if (oidcError) {
-            onError(u.searchParams.get("error_description") || oidcError);
+            onError?.(u.searchParams.get("error_description") || oidcError);
+            endSession({ status: "error" });
             return;
           }
           if (!idToken) {
-            onError(
+            onError?.(
               code
                 ? "Apple returned a code but no id_token in the callback URL. If this persists, your server may need to exchange the code for tokens (response_type=code only)."
                 : "Apple did not return an id_token in the callback URL",
             );
+            endSession({ status: "error" });
             return;
           }
           let sub = "apple_web";
@@ -272,23 +279,27 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
               /* ignore */
             }
           }
-          onSignIn({
+          await onSignIn?.({
             user: { id: sub, email: email || "Apple User", name },
             idToken,
             authorizationCode: code || null,
             firstName,
             lastName,
           });
+          endSession({ status: "success" });
         } else {
           console.log("Web authentication cancelled or failed", result);
+          endSession({ status: "cancelled" });
         }
       }
     } catch (error) {
       if (error.code === "ERR_CANCELED") {
         console.log("User canceled Apple Sign-in");
+        endSession({ status: "cancelled" });
       } else {
         console.error("Apple Sign-In Error:", error);
-        onError(error.message);
+        onError?.(error.message);
+        endSession({ status: "error" });
       }
     }
   };

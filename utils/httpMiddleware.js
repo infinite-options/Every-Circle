@@ -30,10 +30,15 @@ function alreadyEncrypted(body) {
   }
 }
 
-/** Login/social/refresh/logout/reactivate must not trigger a refresh-retry loop. */
+/** Login/social/refresh/logout/reactivate must not trigger a refresh-retry loop.
+ *  Phone verify-otp uses HTTP 401 for a wrong code — do not treat that as session expiry. */
 function shouldSkipAuthRefresh(url) {
   if (!url || typeof url !== "string") return true;
-  return /\/api\/v1\/auth\/(login|social|refresh|logout)(\/|$|\?)/.test(url) || /\/api\/v1\/account\/reactivate(\/|$|\?)/.test(url);
+  return (
+    /\/api\/v1\/auth\/(login|social|refresh|logout)(\/|$|\?)/.test(url) ||
+    /\/api\/v1\/auth\/phone\/verify-otp(\/|$|\?)/.test(url) ||
+    /\/api\/v1\/account\/reactivate(\/|$|\?)/.test(url)
+  );
 }
 
 /** Do not send a leftover access token to login/social/refresh/reactivate. */

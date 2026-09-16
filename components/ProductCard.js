@@ -16,6 +16,7 @@ import {
 import { normServiceShippingRefundable } from "../utils/buildBusinessServiceForApi";
 import { OFFERING_DELIVERY_CHARGE_LABEL, OFFERING_DELIVERY_OPTION_CARD_LABEL } from "../utils/profileOfferingShipping";
 import { businessDeliveredModeSelected, formatListingModeForDisplay } from "../utils/listingFulfillmentMode";
+import { isGiftCardItem, isNewCustomersOnlyBounty } from "../utils/giftCard";
 import ProfileItemEditIcon from "./ProfileItemEditIcon";
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
@@ -134,6 +135,8 @@ function buildAttributeBadges(service) {
   badges.push({ key: "returnable", label: "Returnable", value: returnable });
   const qty = formatQtyBadgeValue(service);
   if (qty) badges.push({ key: "qty", label: "Qty", value: qty });
+  if (isGiftCardItem(service)) badges.push({ key: "gift_card", label: "Gift Card", value: "Yes" });
+  if (isNewCustomersOnlyBounty(service)) badges.push({ key: "bounty_scope", label: "Bounty", value: "New Customers Only" });
   return badges;
 }
 

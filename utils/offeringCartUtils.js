@@ -321,6 +321,12 @@ export function profileDataForCartModal(source) {
     lastName: source.lastName || personalInfo?.profile_personal_last_name || source.profile_personal_last_name || "",
     email: source.email || source.user_email || personalInfo?.profile_personal_email || source.profile_personal_email || "",
     phoneNumber: source.phoneNumber || source.phone || personalInfo?.profile_personal_phone_number || source.profile_personal_phone_number || "",
+    phoneVerified:
+      personalInfo?.phone_verified === true ||
+      personalInfo?.phone_verified === 1 ||
+      source.phone_verified === true ||
+      source.phone_verified === 1 ||
+      source.phoneVerified === true,
     profileImage: source.profileImage || source.image || personalInfo?.profile_personal_image || source.profile_personal_image || "",
     tagLine: source.tagLine || personalInfo?.profile_personal_tag_line || source.profile_personal_tag_line || "",
     city: source.city || personalInfo?.profile_personal_city || source.profile_personal_city || "",

@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Platform, Image, ScrollView } from "react-native";
+import React, { useState, useEffect, useRef } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Platform, Image, ScrollView, ActivityIndicator } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getUserEmail } from "../utils/emailStorage";
 import { axiosMiddleware as axios } from "../utils/httpMiddleware";
 import { REFERRAL_API_ENDPOINT } from "../apiConfig";
+import { mergePendingOauthIdentityIntoPayload, getOauthProfileSetupStatus, setOauthProfileSetupStatus } from "../utils/oauthPendingProfileImage";
+import { saveSessionProfilePayload } from "../utils/sessionProfile";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 import { useUnread } from "../contexts/UnreadContext";
@@ -15,11 +17,18 @@ const isWeb = Platform.OS === "web";
 const userProfileAPI = REFERRAL_API_ENDPOINT;
 
 const ICON_SIZE = 40;
+/** Max time to block Next Steps while profile/photo setup finishes. */
+const PROFILE_SETUP_WAIT_MS = 15000;
+const PROFILE_SETUP_POLL_MS = 400;
 
 const AccountTypeScreen = ({ navigation, route }) => {
   const { reinitialize } = useUnread();
   const [email, setEmail] = useState(route.params?.email || "");
   const { user_uid = "" } = route.params || {};
+  const awaitingFromRoute = !!route.params?.awaitingProfileSetup;
+  const [setupBlocking, setSetupBlocking] = useState(awaitingFromRoute);
+  const [navigating, setNavigating] = useState(false);
+  const waitCancelledRef = useRef(false);
 
   useEffect(() => {
     // If email is not provided in route params, try to get it from AsyncStorage
@@ -39,38 +48,102 @@ const AccountTypeScreen = ({ navigation, route }) => {
     }
   }, [email]);
 
+  // Block taps until OAuth profile/photo setup status is done|failed, or 15s timeout.
+  useEffect(() => {
+    waitCancelledRef.current = false;
+    let pollTimer = null;
+    let timeoutTimer = null;
+
+    const finishWait = async (reason) => {
+      if (waitCancelledRef.current) return;
+      waitCancelledRef.current = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      console.log("[GooglePhoto] AccountType setup wait ended:", reason);
+      setSetupBlocking(false);
+    };
+
+    const checkStatus = async () => {
+      const status = await getOauthProfileSetupStatus();
+      if (status === "done" || status === "failed") {
+        await finishWait(status);
+        return true;
+      }
+      // No status and not told to wait — allow interaction.
+      if (!status && !awaitingFromRoute) {
+        await finishWait("no-pending-setup");
+        return true;
+      }
+      return false;
+    };
+
+    (async () => {
+      const alreadyDone = await checkStatus();
+      if (alreadyDone) return;
+
+      setSetupBlocking(true);
+      pollTimer = setInterval(() => {
+        void checkStatus();
+      }, PROFILE_SETUP_POLL_MS);
+
+      timeoutTimer = setTimeout(() => {
+        void (async () => {
+          await setOauthProfileSetupStatus("done");
+          await finishWait("timeout-15s");
+        })();
+      }, PROFILE_SETUP_WAIT_MS);
+    })();
+
+    return () => {
+      waitCancelledRef.current = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+    };
+  }, [awaitingFromRoute]);
+
   console.log("AccountTypeScreen - Email: ", email);
   console.log("AccountTypeScreen - User UID: ", user_uid);
 
+  const buttonsDisabled = setupBlocking || navigating;
+
   const handleSelectAccount = async () => {
+    if (buttonsDisabled) return;
     if (!user_uid) {
       Alert.alert("Error", "User ID is missing. Cannot fetch profile.");
       return;
     }
 
+    setNavigating(true);
     try {
       console.log(`Fetching profile for user_uid: ${user_uid}`);
 
       const url = userProfileAPI + user_uid;
       console.log("Check Email API: ", url);
 
-      // const response = await axios.get(
-      //   https://ioec2ecaspm.infiniteoptions.com/api/v1/userprofileinfo/${user_uid}
-      // );
-
       const response = await axios.get(url);
 
-      console.log("Profile API Response:", response.data);
-
       // Check if we have valid profile data (personal_info exists)
-      // Even if status is 500, the data might still be valid
-      const profileData = response.data;
+      // Even if status is 500, the data might still be valid.
+      // Merge pending Google photo so MiniCard shows it if the API has no image yet.
+      const profileData = await mergePendingOauthIdentityIntoPayload(response.data);
+      console.log("Profile API Response:", profileData);
+      console.log(
+        "[GooglePhoto] AccountType profile_personal_image =",
+        profileData?.personal_info?.profile_personal_image || "(none)",
+      );
+      console.log(
+        "[GooglePhoto] AccountType name =",
+        profileData?.personal_info?.profile_personal_first_name,
+        profileData?.personal_info?.profile_personal_last_name,
+      );
 
       if (profileData && profileData.personal_info) {
-        // Store profile_uid in AsyncStorage for consistency with other screens
         if (profileData.personal_info.profile_personal_uid) {
           await AsyncStorage.setItem("profile_uid", profileData.personal_info.profile_personal_uid);
         }
+        try {
+          await saveSessionProfilePayload(profileData);
+        } catch (_) {}
         await persistMyBusinessUidsFromProfile(profileData);
         reinitialize().catch(() => {});
 
@@ -80,19 +153,21 @@ const AccountTypeScreen = ({ navigation, route }) => {
         });
       } else {
         Alert.alert("Error", "Profile data not found. Please try again.");
+        setNavigating(false);
       }
     } catch (error) {
       console.error("Error fetching profile:", error.response?.data || error.message);
 
-      // Check if error response contains valid data despite the error
-      const errorData = error.response?.data;
+      const errorData = await mergePendingOauthIdentityIntoPayload(error.response?.data);
       if (errorData && errorData.personal_info) {
         console.log("Found valid profile data in error response, proceeding...");
 
-        // Store profile_uid in AsyncStorage
         if (errorData.personal_info.profile_personal_uid) {
           await AsyncStorage.setItem("profile_uid", errorData.personal_info.profile_personal_uid);
         }
+        try {
+          await saveSessionProfilePayload(errorData);
+        } catch (_) {}
         await persistMyBusinessUidsFromProfile(errorData);
         reinitialize().catch(() => {});
 
@@ -102,6 +177,7 @@ const AccountTypeScreen = ({ navigation, route }) => {
         });
       } else {
         Alert.alert("Error", "Could not load profile. Please try again.");
+        setNavigating(false);
       }
     }
   };
@@ -121,14 +197,28 @@ const AccountTypeScreen = ({ navigation, route }) => {
       <ScrollView style={styles.listScroll} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
         <View style={styles.listWrapper}>
           {listItems.map((item, index) => (
-            <TouchableOpacity key={index} style={styles.listItem} onPress={item.onPress} activeOpacity={0.7}>
-              <Image source={item.icon} style={styles.listItemIcon} resizeMode='contain' />
-              <Text style={[styles.listItemText, { color: item.textColor }]}>{item.label}</Text>
+            <TouchableOpacity
+              key={index}
+              style={[styles.listItem, buttonsDisabled && styles.listItemDisabled]}
+              onPress={item.onPress}
+              activeOpacity={0.7}
+              disabled={buttonsDisabled}
+            >
+              <Image source={item.icon} style={[styles.listItemIcon, buttonsDisabled && styles.listItemIconDisabled]} resizeMode='contain' />
+              <Text style={[styles.listItemText, { color: item.textColor }, buttonsDisabled && styles.listItemTextDisabled]}>{item.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
       </ScrollView>
       <BottomNavBar navigation={navigation} />
+
+      {setupBlocking ? (
+        <View style={styles.blockingOverlay} pointerEvents='auto'>
+          <ActivityIndicator size='large' color='#fff' />
+          <Text style={styles.blockingText}>Finishing your profile…</Text>
+          <Text style={styles.blockingSubText}>Please wait a moment</Text>
+        </View>
+      ) : null}
     </View>
   );
 };
@@ -166,15 +256,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 12,
   },
+  listItemDisabled: {
+    opacity: 0.45,
+  },
   listItemIcon: {
     width: ICON_SIZE,
     height: ICON_SIZE,
     marginRight: 16,
   },
+  listItemIconDisabled: {
+    opacity: 0.7,
+  },
   listItemText: {
     flex: 1,
     fontSize: 18,
     fontWeight: "600",
+  },
+  listItemTextDisabled: {
+    opacity: 0.85,
+  },
+  blockingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 100,
+    elevation: 100,
+    paddingHorizontal: 24,
+  },
+  blockingText: {
+    marginTop: 16,
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  blockingSubText: {
+    marginTop: 8,
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 14,
+    textAlign: "center",
   },
 });
 export default AccountTypeScreen;

@@ -9,6 +9,7 @@ import { USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
 import { sanitizeText } from "../utils/textSanitizer";
+import { isApiPublicFlag, isSharedProfileImagePublic } from "../utils/apiPublicFlag";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 
@@ -59,12 +60,13 @@ const ConnectLinkScreen = () => {
         state: sanitizeText(p.profile_personal_state || ""),
         email: sanitizeText(result?.user_email || ""),
         phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+        phoneVerified: p.phone_verified === true || p.phone_verified === 1 || result.phoneVerified === true,
         profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-        emailIsPublic: p.profile_personal_email_is_public === 1,
-        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-        locationIsPublic: p.profile_personal_location_is_public === 1,
-        imageIsPublic: p.profile_personal_image_is_public === 1,
+        emailIsPublic: isApiPublicFlag(p.profile_personal_email_is_public),
+        phoneIsPublic: isApiPublicFlag(p.profile_personal_phone_number_is_public),
+        tagLineIsPublic: isApiPublicFlag(p.profile_personal_tag_line_is_public) || isApiPublicFlag(p.profile_personal_tagline_is_public),
+        locationIsPublic: isApiPublicFlag(p.profile_personal_location_is_public),
+        imageIsPublic: Boolean(p.profile_personal_image && String(p.profile_personal_image).trim()) && isSharedProfileImagePublic(p.profile_personal_image_is_public),
       });
     } catch (e) {
       console.warn("ConnectLinkScreen - Failed to fetch my data:", e);
@@ -90,12 +92,13 @@ const ConnectLinkScreen = () => {
         state: sanitizeText(p.profile_personal_state || ""),
         email: sanitizeText(apiUser?.user_email || ""),
         phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+        phoneVerified: p.phone_verified === true || p.phone_verified === 1 || apiUser.phoneVerified === true,
         profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-        emailIsPublic: p.profile_personal_email_is_public === 1,
-        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-        locationIsPublic: p.profile_personal_location_is_public === 1,
-        imageIsPublic: p.profile_personal_image_is_public === 1,
+        emailIsPublic: isApiPublicFlag(p.profile_personal_email_is_public),
+        phoneIsPublic: isApiPublicFlag(p.profile_personal_phone_number_is_public),
+        tagLineIsPublic: isApiPublicFlag(p.profile_personal_tag_line_is_public) || isApiPublicFlag(p.profile_personal_tagline_is_public),
+        locationIsPublic: isApiPublicFlag(p.profile_personal_location_is_public),
+        imageIsPublic: Boolean(p.profile_personal_image && String(p.profile_personal_image).trim()) && isSharedProfileImagePublic(p.profile_personal_image_is_public),
       };
 
       setProfileData(profileInfo);

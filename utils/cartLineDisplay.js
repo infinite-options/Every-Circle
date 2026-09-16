@@ -13,6 +13,7 @@ import { normServiceShippingRefundable } from "./buildBusinessServiceForApi";
 import { businessDeliveredModeSelected } from "./listingFulfillmentMode";
 import { OFFERING_DELIVERY_CHARGE_LABEL, OFFERING_DELIVERY_OPTION_CARD_LABEL } from "./profileOfferingShipping";
 import { parsePrice } from "./priceUtils";
+import { isGiftCardItem, isNewCustomersOnlyBounty } from "./giftCard";
 import {
   FULFILLMENT_PICKUP,
   FULFILLMENT_SHIP,
@@ -68,6 +69,8 @@ function getBusinessCartLineAttributeBadges(item) {
   const ship = formatBusinessShipBadgeValue(item);
   if (ship) badges.push({ key: "ship", label: OFFERING_DELIVERY_OPTION_CARD_LABEL, value: ship });
   badges.push({ key: "returnable", label: "Returnable", value: formatBusinessReturnableBadgeValue(item) });
+  if (isGiftCardItem(item)) badges.push({ key: "gift_card", label: "Gift Card", value: "Yes" });
+  if (isNewCustomersOnlyBounty(item)) badges.push({ key: "bounty_scope", label: "Bounty", value: "New Customers Only" });
   return badges;
 }
 

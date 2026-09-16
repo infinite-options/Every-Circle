@@ -16,9 +16,12 @@ import { clearSessionAsyncStorage, clearSessionAsyncStorageOnLogin } from "../ut
 import { fetchCircleAuthLogin } from "../utils/authSession";
 import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
 import { isAccountDeletedAuthMessage, isPendingDeletionAuthResponse, reactivateNavParamsFromAuthPayload } from "../utils/deletedProfile";
+import { clearTempPasswordGracePeriod, clearUserPasswordTempFlag } from "../utils/tempPasswordGrace";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
+import { isValidEmail } from "../utils/emailValidation";
 // import SignUpScreen from "./screens/SignUpScreen";
 
 // Accept navigation from props
@@ -40,8 +43,7 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
     navigation.navigate("Reactivate", reactivateNavParamsFromAuthPayload(payload, { email, password }));
   };
   const validateInputs = (email, password) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{3,}$/;
-    const isEmailValid = email.trim() !== "" && emailRegex.test(email);
+    const isEmailValid = email.trim() !== "" && isValidEmail(email);
     const isPasswordValid = password.length >= 6;
     setIsValid(isEmailValid && isPasswordValid);
   };
@@ -64,8 +66,7 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
 
   const handleContinue = async () => {
     console.log("LoginScreen - Continue Button Pressed");
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{3,}$/;
-    if (!emailRegex.test(email)) {
+    if (!isValidEmail(email)) {
       setEmailError("Email is not valid. Please sign up first.");
       return;
     }
@@ -170,7 +171,12 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
             text: "Sign Up",
             onPress: () => {
               setShowSpinner(false);
-              navigation.navigate("SignUp");
+              navigation.navigate("SignUp", {
+                ...(route.params?.profile_uid ? { profile_uid: route.params.profile_uid } : {}),
+                ...(route.params?.referralProfileUid ? { referralProfileUid: route.params.referralProfileUid } : {}),
+                ...(route.params?.returnToScanLanding ? { returnToScanLanding: true } : {}),
+                ...(route.params?.returnToNewConnection ? { returnToNewConnection: true } : {}),
+              });
             },
           },
         ]);
@@ -185,6 +191,12 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
         preserveKeys: ["user_uid", "user_email_id"],
       });
 
+      // Login purge drops referral_uid — restore QR/scan referrer for incomplete-profile signup.
+      const knownReferralUid = String(route.params?.referralProfileUid || "").trim();
+      if (knownReferralUid) {
+        await AsyncStorage.setItem("referral_uid", knownReferralUid);
+      }
+
       const circleAuth = await fetchCircleAuthLogin(email, hashedPassword, fetch);
       if (circleAuth?.pendingDeletion) {
         await clearSessionAsyncStorage();
@@ -194,16 +206,21 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
         return;
       }
 
+      // They entered a password (temp or permanent) — clear the one-time force-logout flag.
+      await clearUserPasswordTempFlag(user_uid);
+      await clearTempPasswordGracePeriod();
+
       const scanProfileUid = route?.params?.returnToScanLanding ? route?.params?.profile_uid : null;
       if (scanProfileUid) {
         const sessionProfileUid = await ensureSessionProfileUid(user_uid);
         if (sessionProfileUid) {
           await goToNetworkForScanConnect(navigation, scanProfileUid);
         } else {
-          navigation.navigate("UserInfo", {
-            returnToScanLanding: true,
-            profile_uid: scanProfileUid,
-            referralId: scanProfileUid,
+          await finishSignupAfterReferral(navigation, {
+            referralUid: scanProfileUid,
+            routeParams: route?.params || {},
+            userUid: user_uid,
+            email: user_email,
           });
         }
         return;
@@ -219,31 +236,34 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
   };
 
   const onReset = async () => {
-    if (forgotPasswordEmail === "") {
+    const resetEmail = String(forgotPasswordEmail || "").trim();
+    if (!resetEmail) {
       Alert.alert("Error", "Please enter an email");
       return;
     }
     setShowForgotPasswordSpinner(true);
-    axios
-      .post(SET_TEMP_PASSWORD_ENDPOINT, {
-        email: forgotPasswordEmail,
-      })
-      .then((response) => {
-        if (response.data.message === "A temporary password has been sent") {
-          setShowForgotPasswordSpinner(false);
-          setShowPassModal(true);
-        }
-        if (response.data.code === 280) {
-          Alert.alert("Error", "No account found with that email.");
-          setShowForgotPasswordSpinner(false);
-          return;
-        }
-      })
-      .catch((error) => {
-        console.error("Forgot password error:", error);
-        Alert.alert("Error", "Something went wrong. Please try again.");
-        setShowForgotPasswordSpinner(false);
+    try {
+      const response = await fetch(SET_TEMP_PASSWORD_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: resetEmail }),
       });
+      const data = await response.json().catch(() => ({}));
+      if (data.message === "A temporary password has been sent") {
+        setShowPassModal(true);
+        return;
+      }
+      if (data.code === 280) {
+        Alert.alert("Error", "No account found with that email.");
+        return;
+      }
+      Alert.alert("Error", data.message || "Something went wrong. Please try again.");
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      Alert.alert("Error", "Something went wrong. Please try again.");
+    } finally {
+      setShowForgotPasswordSpinner(false);
+    }
   };
 
   return (
@@ -254,6 +274,44 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
           <View style={styles.header}>
             <Text style={styles.title}>Welcome to everyCircle!</Text>
             <Text style={styles.subtitle}>Please choose a login option to continue.</Text>
+          </View>
+
+          <View style={styles.socialContainer}>
+            <GoogleBrandedSignInButton
+              label='Sign in with Google'
+              signingIn={signingIn}
+              onPress={async () => {
+                if (!signingIn) {
+                  setSigningIn(true);
+                  try {
+                    await onGoogleSignIn();
+                  } finally {
+                    setSigningIn(false);
+                  }
+                }
+              }}
+            />
+            <AppleSignIn
+              mode='signIn'
+              onSignIn={async (...args) => {
+                if (!signingIn) {
+                  setSigningIn(true);
+                  try {
+                    await onAppleSignIn(...args);
+                  } finally {
+                    setSigningIn(false);
+                  }
+                }
+              }}
+              onError={onError}
+              disabled={signingIn}
+            />
+          </View>
+
+          <View style={styles.dividerContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.divider} />
           </View>
 
           <View style={styles.inputContainer}>
@@ -299,48 +357,20 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
             )}
           </TouchableOpacity>
 
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.divider} />
-          </View>
-
-          <View style={styles.socialContainer}>
-            <GoogleBrandedSignInButton
-              label='Sign in with Google'
-              signingIn={signingIn}
-              onPress={async () => {
-                if (!signingIn) {
-                  setSigningIn(true);
-                  try {
-                    await onGoogleSignIn();
-                  } finally {
-                    setSigningIn(false);
-                  }
-                }
-              }}
-            />
-            <AppleSignIn
-              mode='signIn'
-              onSignIn={async (...args) => {
-                if (!signingIn) {
-                  setSigningIn(true);
-                  try {
-                    await onAppleSignIn(...args);
-                  } finally {
-                    setSigningIn(false);
-                  }
-                }
-              }}
-              onError={onError}
-              disabled={signingIn}
-            />
-          </View>
-
           <View style={styles.footer}>
             <Text style={styles.footerText}>
               Don't have an account?{" "}
-              <Text style={styles.signUpText} onPress={() => navigation.navigate("SignUp")}>
+              <Text
+                style={styles.signUpText}
+                onPress={() =>
+                  navigation.navigate("SignUp", {
+                    ...(route.params?.profile_uid ? { profile_uid: route.params.profile_uid } : {}),
+                    ...(route.params?.referralProfileUid ? { referralProfileUid: route.params.referralProfileUid } : {}),
+                    ...(route.params?.returnToScanLanding ? { returnToScanLanding: true } : {}),
+                    ...(route.params?.returnToNewConnection ? { returnToNewConnection: true } : {}),
+                  })
+                }
+              >
                 Sign Up
               </Text>
             </Text>

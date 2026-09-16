@@ -5,7 +5,9 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
-const CHILD_SAFETY_POLICY_TEXT = `Last updated: September 3, 2026
+const CHILD_SAFETY_POLICY_TEXT = `Last updated: September 15, 2026
+
+The publicly published version of these standards is available at https://everycircle.com/child-safety.
 
 1. Our Commitment to Child Safety
 
@@ -179,6 +181,9 @@ Questions or concerns regarding child safety, CSAE, CSAM, or this policy may be 
 
 everyCircle Support
 support@everycircle.com
+
+The publicly published Child Safety Standards for everyCircle are available at:
+https://everycircle.com/child-safety
 
 everyCircle is committed to maintaining a platform that does not facilitate child sexual abuse or exploitation and to taking appropriate action when such activity is identified.`;
 

@@ -283,6 +283,7 @@ const ExpertiseSection = ({
       profile_expertise_condition_type: "na",
       profile_expertise_condition_detail: "",
       profile_expertise_bounty_type: "none",
+      profile_expertise_new_customers_only: 0,
       profile_expertise_is_returnable: 0,
       profile_expertise_return_window_days: "",
       profile_expertise_shipping: null,
@@ -378,8 +379,14 @@ const ExpertiseSection = ({
 
   const handleOfferingBountyTypeChange = (index, selected) => {
     if (selected.value === "none") {
-      handleInputChange(index, "profile_expertise_bounty_type", "none");
-      handleInputChange(index, "bounty", "");
+      const updated = [...expertise];
+      updated[index] = {
+        ...updated[index],
+        profile_expertise_bounty_type: "none",
+        bounty: "",
+        profile_expertise_new_customers_only: 0,
+      };
+      setExpertise(updated);
     } else {
       handleInputChange(index, "profile_expertise_bounty_type", selected.value);
     }
@@ -1410,6 +1417,36 @@ const ExpertiseSection = ({
               <Text style={[formStyles.warningText, darkMode && formStyles.darkWarningText]}>
                 Warning: Bounty is greater than the item cost. You may pay referrers more than you charge per item.
               </Text>
+            ) : null}
+            {item.profile_expertise_bounty_type !== "none" ? (
+              <TouchableOpacity
+                style={formStyles.checkboxRow}
+                onPress={() => {
+                  const checked =
+                    item.profile_expertise_new_customers_only === 1 || item.profile_expertise_new_customers_only === "1";
+                  handleInputChange(index, "profile_expertise_new_customers_only", checked ? 0 : 1);
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={
+                    item.profile_expertise_new_customers_only === 1 || item.profile_expertise_new_customers_only === "1"
+                      ? "checkbox"
+                      : "square-outline"
+                  }
+                  size={20}
+                  color={
+                    item.profile_expertise_new_customers_only === 1 || item.profile_expertise_new_customers_only === "1"
+                      ? "#111"
+                      : darkMode
+                        ? "#aaa"
+                        : "#666"
+                  }
+                />
+                <Text style={[formStyles.checkboxLabel, darkMode && formStyles.darkCheckboxLabel]}>
+                  Bounty only available to New Customers
+                </Text>
+              </TouchableOpacity>
             ) : null}
           </View>
 

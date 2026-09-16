@@ -293,6 +293,21 @@ export function createProfileItemCardFormStyles(accent = PROFILE_ITEM_FORM_ACCEN
       gap: 6,
       paddingVertical: 2,
     },
+    checkboxRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 8,
+      marginBottom: 4,
+      gap: 10,
+    },
+    checkboxLabel: {
+      fontSize: 15,
+      color: "#333",
+      flex: 1,
+    },
+    darkCheckboxLabel: {
+      color: "#e0e0e0",
+    },
     checkboxLabelCompact: {
       fontSize: 12,
       color: "#333",

@@ -21,6 +21,7 @@ export const HEADER_COLORS = {
   account: "#18884A", // Green
   search: "#4F8A8B", // Green shade
   changePassword: "#AF52DE", // Purple
+  verifyPhone: "#4B2E83", // Deep Purple (settings family)
   businessProfile: "#AF52DE", // Purple
   editBusinessProfile: "#929090", // Gray (same as editProfile)
   login: "#800000", // Maroon (same as profile)
