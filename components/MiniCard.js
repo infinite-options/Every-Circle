@@ -290,15 +290,10 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
             if (deleted) return null;
             if (phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "") {
               return (
-<<<<<<< HEAD
                 <View style={styles.fieldRow}>
                   <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>
-                  <VisibilityBadge label={user?.phoneVisibilityLabel} darkMode={darkMode} />
-=======
-                <View style={styles.phoneRow}>
-                  <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>
                   {phoneVerified ? <PhoneVerifiedBadge size={14} /> : null}
->>>>>>> master
+                  <VisibilityBadge label={user?.phoneVisibilityLabel} darkMode={darkMode} />
                 </View>
               );
             }

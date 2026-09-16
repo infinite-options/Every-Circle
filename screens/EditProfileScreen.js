@@ -142,7 +142,6 @@ function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
     shortBio: pi.profile_personal_short_bio || "",
     homeAddress: pi.profile_personal_home_address || "",
     personal_info: pi,
-<<<<<<< HEAD
     cityVisibility: resolveVisibilityLevel(pi, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles"),
     stateVisibility: resolveVisibilityLevel(pi, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles"),
     emailVisibility: resolveVisibilityLevel(pi, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles"),
@@ -156,7 +155,6 @@ function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
     businessVisibility: resolveVisibilityLevel(pi, "profile_personal_business_visibility", "profile_personal_business_is_public"),
     socialVisibility: resolveVisibilityLevel(pi, "profile_personal_social_visibility", "profile_personal_social_is_public"),
     imageVisibility: resolveVisibilityLevel(pi, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles"),
-=======
     locationIsPublic: isApiPublicFlag(pi.profile_personal_location_is_public),
     emailIsPublic: isApiPublicFlag(pi.profile_personal_email_is_public),
     phoneIsPublic: isApiPublicFlag(pi.profile_personal_phone_number_is_public),
@@ -169,7 +167,6 @@ function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
     businessIsPublic: isApiPublicFlag(pi.profile_personal_business_is_public),
     socialLinksIsPublic: isApiPublicFlag(pi.profile_personal_social_links_is_public),
     imageIsPublic: isApiPublicFlag(pi.profile_personal_image_is_public),
->>>>>>> master
     profileImage: image,
     profile_personal_image: image,
     experience: parseProfileJsonArray(json?.experience_info),
@@ -1500,14 +1497,12 @@ const EditProfileScreen = ({ route, navigation }) => {
               )
             ) : null}
           </View>
-          <View style={styles.toggleContainer}>
-            <TouchableOpacity onPress={() => handleToggleVisibility("phoneIsPublic")} style={[styles.togglePill, formData.phoneIsPublic && styles.togglePillActiveGreen]}>
-              <Text style={[styles.togglePillText, formData.phoneIsPublic && styles.togglePillTextActive]}>{formData.phoneIsPublic ? "Visible" : "Show"}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleToggleVisibility("phoneIsPublic")} style={[styles.togglePill, !formData.phoneIsPublic && styles.togglePillActiveRed]}>
-              <Text style={[styles.togglePillText, !formData.phoneIsPublic && styles.togglePillTextActive]}>{!formData.phoneIsPublic ? "Hidden" : "Hide"}</Text>
-            </TouchableOpacity>
-          </View>
+          <ConnectionVisibilityPicker
+            value={formData.phoneVisibility}
+            onChange={(level) => handleVisibilityChange("phoneVisibility", level)}
+            darkMode={darkMode}
+            allowCircleLevel
+          />
         </View>
         <View style={styles.phoneInputRow}>
           <TextInput
@@ -1888,17 +1883,10 @@ const EditProfileScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         {showProfile && (
           <>
-<<<<<<< HEAD
             {renderField("First Name (Public)", formData.firstName, undefined, "firstName", null)}
             {renderField("Last Name (Public)", formData.lastName, undefined, "lastName", null)}
-            {renderField("Phone Number", formData.phoneNumber, formData.phoneVisibility, "phoneNumber", "phoneVisibility")}
-            {renderField("Email", formData.email, formData.emailVisibility, "email", "emailVisibility")}
-=======
-            {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
-            {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
             {renderPhoneField()}
-            {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
->>>>>>> master
+            {renderField("Email", formData.email, formData.emailVisibility, "email", "emailVisibility")}
             {renderHomeAddressField()}
             {renderField("City", formData.city, formData.cityVisibility, "city", "cityVisibility")}
             {renderField("State", formData.state, formData.stateVisibility, "state", "stateVisibility")}
