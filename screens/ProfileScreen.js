@@ -821,38 +821,6 @@ const ProfileScreen = ({ route, navigation }) => {
           if (!Number.isFinite(la) || !Number.isFinite(lo)) return "";
           return `${la}, ${lo}`;
         })(),
-<<<<<<< HEAD
-        shortBio: apiUser.personal_info?.profile_personal_short_bio || "",
-        emailIsPublic: apiUser.personal_info?.profile_personal_email_is_public === 1,
-        phoneIsPublic: apiUser.personal_info?.profile_personal_phone_number_is_public === 1,
-        imageIsPublic: apiUser.personal_info?.profile_personal_image_is_public === 1,
-        tagLineIsPublic: apiUser.personal_info?.profile_personal_tag_line_is_public === 1,
-        locationIsPublic: apiUser.personal_info?.profile_personal_location_is_public === 1,
-        shortBioIsPublic: apiUser.personal_info?.profile_personal_short_bio_is_public === 1,
-        experienceIsPublic: apiUser.personal_info?.profile_personal_experience_is_public === 1,
-        educationIsPublic: apiUser.personal_info?.profile_personal_education_is_public === 1,
-        expertiseIsPublic: apiUser.personal_info?.profile_personal_expertise_is_public === 1,
-        wishesIsPublic: apiUser.personal_info?.profile_personal_wishes_is_public === 1,
-        businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
-        socialLinksIsPublic: isSocialLinksSectionPublic(apiUser.personal_info, apiUser.links_info),
-        // Connection-level visibility (Everyone/1st-3rd degree/Only Me) for Edit Profile's
-        // per-field pickers - meaningless as viewer-facing gating, only used to preselect the
-        // owner's saved level when they reopen Edit Profile.
-        emailVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles"),
-        phoneVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_phone_number_visibility", "profile_personal_phone_number_is_public", "profile_personal_phone_number_visibility_circles"),
-        imageVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles"),
-        tagLineVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_tag_line_visibility", "profile_personal_tag_line_is_public", "profile_personal_tag_line_visibility_circles"),
-        cityVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles"),
-        stateVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles"),
-        shortBioVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_short_bio_visibility", "profile_personal_short_bio_is_public", "profile_personal_short_bio_visibility_circles"),
-        experienceVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_experience_visibility", "profile_personal_experience_is_public"),
-        educationVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_education_visibility", "profile_personal_education_is_public"),
-        expertiseVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_expertise_visibility", "profile_personal_expertise_is_public", "profile_personal_expertise_visibility_circles"),
-        wishesVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_wishes_visibility", "profile_personal_wishes_is_public", "profile_personal_wishes_visibility_circles"),
-        businessVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_business_visibility", "profile_personal_business_is_public"),
-        socialVisibility: resolveVisibilityLevel(apiUser.personal_info, "profile_personal_social_visibility", "profile_personal_social_is_public"),
-        profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
-=======
         shortBio: personal.profile_personal_short_bio || "",
         emailIsPublic: isApiPublicFlag(personal.profile_personal_email_is_public),
         phoneIsPublic: isApiPublicFlag(personal.profile_personal_phone_number_is_public),
@@ -866,9 +834,24 @@ const ProfileScreen = ({ route, navigation }) => {
         wishesIsPublic: isApiPublicFlag(personal.profile_personal_wishes_is_public),
         businessIsPublic: isApiPublicFlag(personal.profile_personal_business_is_public),
         socialLinksIsPublic: isSocialLinksSectionPublic(personal, mergedApiUser.links_info || apiUser.links_info),
+        // Connection-level visibility (Everyone/1st-3rd degree/Only Me) for Edit Profile's
+        // per-field pickers - meaningless as viewer-facing gating, only used to preselect the
+        // owner's saved level when they reopen Edit Profile.
+        emailVisibility: resolveVisibilityLevel(personal, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles"),
+        phoneVisibility: resolveVisibilityLevel(personal, "profile_personal_phone_number_visibility", "profile_personal_phone_number_is_public", "profile_personal_phone_number_visibility_circles"),
+        imageVisibility: resolveVisibilityLevel(personal, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles"),
+        tagLineVisibility: resolveVisibilityLevel(personal, "profile_personal_tag_line_visibility", "profile_personal_tag_line_is_public", "profile_personal_tag_line_visibility_circles"),
+        cityVisibility: resolveVisibilityLevel(personal, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles"),
+        stateVisibility: resolveVisibilityLevel(personal, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles"),
+        shortBioVisibility: resolveVisibilityLevel(personal, "profile_personal_short_bio_visibility", "profile_personal_short_bio_is_public", "profile_personal_short_bio_visibility_circles"),
+        experienceVisibility: resolveVisibilityLevel(personal, "profile_personal_experience_visibility", "profile_personal_experience_is_public"),
+        educationVisibility: resolveVisibilityLevel(personal, "profile_personal_education_visibility", "profile_personal_education_is_public"),
+        expertiseVisibility: resolveVisibilityLevel(personal, "profile_personal_expertise_visibility", "profile_personal_expertise_is_public", "profile_personal_expertise_visibility_circles"),
+        wishesVisibility: resolveVisibilityLevel(personal, "profile_personal_wishes_visibility", "profile_personal_wishes_is_public", "profile_personal_wishes_visibility_circles"),
+        businessVisibility: resolveVisibilityLevel(personal, "profile_personal_business_visibility", "profile_personal_business_is_public"),
+        socialVisibility: resolveVisibilityLevel(personal, "profile_personal_social_visibility", "profile_personal_social_is_public"),
         profileImage: personal.profile_personal_image ? String(personal.profile_personal_image) : "",
->>>>>>> master
-        profilePersonalPath: apiUser.personal_info?.profile_personal_path || null,
+        profilePersonalPath: personal.profile_personal_path || apiUser.personal_info?.profile_personal_path || null,
         profileModerationItem: buildProfileModerationItem(apiUser),
         moderation: normalizeProfileModeration(buildProfileModerationItem(apiUser)),
       };
