@@ -655,44 +655,23 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
           {/* Referral Modal */}
           <Modal visible={showReferralModal} transparent animationType='fade'>
-            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" }}>
-              <View style={{ backgroundColor: "#fff", padding: 24, borderRadius: 12, width: "90%", maxWidth: 500, maxHeight: "80%" }}>
-                <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>Who referred you to everyCircle?</Text>
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)", padding: 16 }}>
+              <View
+                style={{
+                  backgroundColor: "#fff",
+                  padding: 20,
+                  borderRadius: 12,
+                  width: "100%",
+                  maxWidth: 560,
+                  maxHeight: "88%",
+                  minHeight: 420,
+                }}
+              >
+                <Text style={{ fontSize: 20, fontWeight: "bold", color: "#333", marginBottom: 6 }}>Who referred you to everyCircle?</Text>
+                <Text style={{ fontSize: 14, lineHeight: 20, color: "#666", marginBottom: 16 }}>
+                  Type a name, email, or location — matching people appear as you type.
+                </Text>
 
-                {/* Email Input Section */}
-                {/* <TextInput
-                  style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 8 }}
-                  placeholder='Enter referral email (optional)'
-                  value={referralId}
-                  onChangeText={setReferralId}
-                  keyboardType='email-address'
-                  autoCapitalize='none'
-                  editable={!isCheckingReferral}
-                  accessibilitylabel='Referral email'
-                  accessibilityHint='Enter the email address of the person who referred you, or leave it blank'
-                  accessibilityState={{ disabled: isCheckingReferral }}
-                /> */}
-                {/* {!!referralError && <Text style={{ color: "red", marginBottom: 8 }}>{referralError}</Text>}
-                <TouchableOpacity
-                  style={{ backgroundColor: "#FF9500", paddingVertical: 12, paddingHorizontal: 30, borderRadius: 25, minWidth: 100, alignItems: "center", justifyContent: "center", marginBottom: 12 }}
-                  onPress={handleReferralSubmit}
-                  disabled={isCheckingReferral}
-                  accessibilityRole='button'
-                  accessibilitylabel={isCheckingReferral ? "Checking referral" : "Continue"}
-                  accessibilityHint='Checks the referral email and continues'
-                  accessibilityState={{ disabled: isCheckingReferral, busy: isCheckingReferral }}
-                >
-                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}>{isCheckingReferral ? "Checking..." : "Continue"}</Text>
-                </TouchableOpacity> */}
-
-                {/* Divider */}
-                {/* <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 16 }}>
-                  <View style={{ flex: 1, height: 1, backgroundColor: "#E5E5E5" }} />
-                  <Text style={{ marginHorizontal: 10, color: "#666", fontSize: 14 }}>OR SEARCH</Text>
-                  <View style={{ flex: 1, height: 1, backgroundColor: "#E5E5E5" }} />
-                </View> */}
-
-                {/* Search Section - Embed ReferralSearch content here */}
                 <ReferralSearch
                   visible={true}
                   onSelect={handleReferralSelect}
@@ -707,6 +686,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                         }
                   }
                   embedded={true}
+                  hideEmptyState={false}
                   instructionText='Search by email, city, state, or name'
                   searchPlaceholder='Email, location, or name'
                   noResultsSubtext='Try another spelling, city, or email.'

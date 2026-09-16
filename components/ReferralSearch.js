@@ -1,8 +1,52 @@
 // components/ReferralSearch.js
-import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Modal, FlatList, Image, ActivityIndicator, StyleSheet, Platform } from "react-native";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { View, Text, TextInput, TouchableOpacity, Modal, FlatList, ActivityIndicator, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { searchReferralProfiles } from "../utils/searchReferralProfiles";
+import MiniCard from "./MiniCard";
+
+const SEARCH_DEBOUNCE_MS = 350;
+const MIN_QUERY_LENGTH = 2;
+
+function referralProfileToMiniCardUser(item) {
+  const imageUrl = item.profile_personal_image ? String(item.profile_personal_image).trim() : "";
+  const imageIsPublic =
+    item.profile_personal_image_is_public === true ||
+    item.profile_personal_image_is_public === 1 ||
+    item.profile_personal_image_is_public === "1" ||
+    Boolean(imageUrl);
+
+  return {
+    firstName: item.profile_personal_first_name || "",
+    lastName: item.profile_personal_last_name || "",
+    tagLine: item.profile_personal_tag_line || item.profile_personal_tagline || "",
+    tagLineIsPublic:
+      item.profile_personal_tag_line_is_public === true ||
+      item.profile_personal_tag_line_is_public === 1 ||
+      item.profile_personal_tag_line_is_public === "1" ||
+      Boolean(item.profile_personal_tag_line || item.profile_personal_tagline),
+    email: item.profile_email_id || item.user_email_id || "",
+    emailIsPublic:
+      item.profile_personal_email_is_public === true ||
+      item.profile_personal_email_is_public === 1 ||
+      item.profile_personal_email_is_public === "1" ||
+      Boolean(item.profile_email_id || item.user_email_id),
+    phoneNumber: item.profile_personal_phone_number || "",
+    phoneIsPublic:
+      item.profile_personal_phone_number_is_public === true ||
+      item.profile_personal_phone_number_is_public === 1 ||
+      item.profile_personal_phone_number_is_public === "1",
+    city: item.profile_personal_city || "",
+    state: item.profile_personal_state || "",
+    locationIsPublic:
+      item.profile_personal_location_is_public === true ||
+      item.profile_personal_location_is_public === 1 ||
+      item.profile_personal_location_is_public === "1" ||
+      Boolean(item.profile_personal_city || item.profile_personal_state),
+    profileImage: imageUrl,
+    imageIsPublic,
+  };
+}
 
 const ReferralSearch = ({
   visible,
@@ -26,25 +70,83 @@ const ReferralSearch = ({
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const debounceRef = useRef(null);
+  const searchRequestIdRef = useRef(0);
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+  const resetSearchState = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    searchRequestIdRef.current += 1;
+    setSearchQuery("");
+    setSearchResults([]);
+    setHasSearched(false);
+    setIsSearching(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  // Clear when standalone modal closes so the next open starts fresh.
+  useEffect(() => {
+    if (!embedded && !visible) {
+      resetSearchState();
+    }
+  }, [embedded, visible, resetSearchState]);
+
+  const runSearch = useCallback(async (rawQuery) => {
+    const query = String(rawQuery || "").trim();
+    if (query.length < MIN_QUERY_LENGTH) {
+      setSearchResults([]);
+      setHasSearched(false);
+      setIsSearching(false);
       return;
     }
 
+    const requestId = ++searchRequestIdRef.current;
     setIsSearching(true);
     setHasSearched(true);
 
     try {
-      const results = await searchReferralProfiles(searchQuery);
+      const results = await searchReferralProfiles(query);
+      if (requestId !== searchRequestIdRef.current) return;
       setSearchResults(results);
     } catch (error) {
       console.error("Error searching referrals:", error);
+      if (requestId !== searchRequestIdRef.current) return;
       setSearchResults([]);
     } finally {
-      setIsSearching(false);
+      if (requestId === searchRequestIdRef.current) {
+        setIsSearching(false);
+      }
     }
-  };
+  }, []);
+
+  const handleQueryChange = useCallback(
+    (text) => {
+      setSearchQuery(text);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+
+      const trimmed = String(text || "").trim();
+      if (trimmed.length < MIN_QUERY_LENGTH) {
+        searchRequestIdRef.current += 1;
+        setSearchResults([]);
+        setHasSearched(false);
+        setIsSearching(false);
+        return;
+      }
+
+      setIsSearching(true);
+      debounceRef.current = setTimeout(() => {
+        runSearch(text);
+      }, SEARCH_DEBOUNCE_MS);
+    },
+    [runSearch],
+  );
 
   const handleSelectUser = (user) => {
     if (onSelectUser) {
@@ -52,120 +154,124 @@ const ReferralSearch = ({
     } else if (onSelect) {
       onSelect(user.profile_personal_uid, user.profile_personal_user_id);
     }
-    // Reset modal state
-    setSearchQuery("");
-    setSearchResults([]);
-    setHasSearched(false);
+    resetSearchState();
   };
 
   const renderUserItem = ({ item }) => {
-    const fullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
-    const location = [item.profile_personal_city, item.profile_personal_state].filter(Boolean).join(", ");
-
-    const existingConnection = networkData.find(
-      (n) => n.network_profile_personal_uid === item.profile_personal_uid
-    );
+    const existingConnection = networkData.find((n) => n.network_profile_personal_uid === item.profile_personal_uid);
     const relationship = existingConnection?.circle_relationship;
-
     const degree = existingConnection?.degree;
+    const metaParts = [
+      relationship ? relationship.charAt(0).toUpperCase() + relationship.slice(1) : null,
+      degree ? `Level ${degree}` : null,
+    ].filter(Boolean);
 
     return (
-      <TouchableOpacity style={styles.userItem} onPress={() => handleSelectUser(item)}>
-        <Image
-          source={item.profile_personal_image ? { uri: item.profile_personal_image } : require("../assets/profile.png")}
-          style={styles.userImage}
-        />
-        <View style={styles.userInfo}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Text style={styles.userName}>{fullName || "Unknown"}</Text>
-            {(relationship || degree) ? (
-              <Text style={{ fontSize: 13, color: "#888", fontStyle: "italic" }}>
-                {[
-                  relationship ? relationship.charAt(0).toUpperCase() + relationship.slice(1) : null,
-                  degree ? `Level ${degree}` : null,
-                ].filter(Boolean).join(" · ")}
-              </Text>
-            ) : null}
-          </View>
-          {location ? <Text style={styles.userLocation}>{location}</Text> : null}
+      <TouchableOpacity
+        style={styles.userItem}
+        onPress={() => handleSelectUser(item)}
+        accessibilityRole='button'
+        accessibilityLabel={`Select ${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim()}
+      >
+        <View style={styles.miniCardWrap}>
+          <MiniCard user={referralProfileToMiniCardUser(item)} embedded />
+          {metaParts.length > 0 ? <Text style={styles.connectionMeta}>{metaParts.join(" · ")}</Text> : null}
         </View>
         <Ionicons name='chevron-forward' size={20} color='#666' />
       </TouchableOpacity>
     );
   };
 
-  return embedded ? (
-    // Embedded version (no modal wrapper)
-    <>
-      {/* Search Input */}
-      <View style={styles.searchContainer}>
-        <Ionicons
-          name='search'
-          size={20}
-          color='#666'
-          style={styles.searchIcon}
-          importantForAccessibility='no'
-          {...(Platform.OS === "web" ? { "aria-hidden": true } : { accessible: false })}
-        />
-        <TextInput
-          style={styles.searchInput}
-          placeholder={searchPlaceholder}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onSubmitEditing={handleSearch}
-          autoCapitalize='none'
-          keyboardType={searchPlaceholder.toLowerCase().includes("email") ? "email-address" : "default"}
-          accessibilityLabel={searchPlaceholder}
-          accessibilityHint='Enter search terms'
-          accessibilityRole='search'
-        />
+  const searchField = (
+    <View style={styles.searchContainer}>
+      <Ionicons
+        name='search'
+        size={20}
+        color='#666'
+        style={styles.searchIcon}
+        importantForAccessibility='no'
+        {...(Platform.OS === "web" ? { "aria-hidden": true } : { accessible: false })}
+      />
+      <TextInput
+        style={styles.searchInput}
+        placeholder={searchPlaceholder}
+        value={searchQuery}
+        onChangeText={handleQueryChange}
+        onSubmitEditing={() => runSearch(searchQuery)}
+        autoCapitalize='none'
+        autoCorrect={false}
+        keyboardType={searchPlaceholder.toLowerCase().includes("email") ? "email-address" : "default"}
+        accessibilityLabel={searchPlaceholder}
+        accessibilityHint='Results update as you type'
+        accessibilityRole='search'
+        returnKeyType='search'
+      />
+      {searchQuery.length > 0 ? (
         <TouchableOpacity
-          onPress={handleSearch}
-          style={[styles.searchButton, searchButtonColor && { backgroundColor: searchButtonColor }]}
+          onPress={() => handleQueryChange("")}
+          style={styles.clearButton}
           accessibilityRole='button'
-          accessibilitylabel='Search'
-          accessibilityHint='Runs the search'
+          accessibilityLabel='Clear search'
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={styles.searchButtonText}>Search</Text>
+          <Ionicons name='close-circle' size={20} color='#999' />
         </TouchableOpacity>
-      </View>
+      ) : null}
+    </View>
+  );
 
-      {/* Results */}
-      <View style={[styles.resultsContainer, { minHeight: hideEmptyState && !hasSearched && searchResults.length === 0 ? 0 : 150 }]}>
-        {isSearching ? (
-          <View style={styles.centerContainer}>
-            <ActivityIndicator size='large' color='#007AFF' />
-            <Text style={styles.loadingText}>Searching...</Text>
-          </View>
-        ) : hasSearched && searchResults.length === 0 ? (
-          <View style={styles.centerContainer}>
-            <Ionicons name='search' size={48} color='#ccc' />
-            <Text style={styles.noResultsText}>No users found</Text>
-            <Text style={styles.noResultsSubtext}>{noResultsSubtext}</Text>
-          </View>
-        ) : searchResults.length > 0 ? (
-          <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item, index) => `${item.profile_personal_uid || "user"}-${index}`} style={styles.resultsList} />
-        ) : hideEmptyState ? null : (
-          <View style={styles.centerContainer}>
-            <Ionicons name='people' size={48} color='#ccc' />
-            <Text style={styles.instructionText}>{instructionText}</Text>
-          </View>
-        )}
-      </View>
-
-      {/* New User Button - optional */}
-      {showNewUserButton && onNewUser && (
-        <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
-          <Text style={styles.newUserButtonText}>I was not referred</Text>
-        </TouchableOpacity>
+  const resultsBlock = (
+    <View style={[styles.resultsContainer, { minHeight: hideEmptyState && !hasSearched && searchResults.length === 0 ? 0 : 150 }]}>
+      {isSearching ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size='large' color={searchButtonColor || "#007AFF"} />
+          <Text style={styles.loadingText}>Searching...</Text>
+        </View>
+      ) : hasSearched && searchResults.length === 0 ? (
+        <View style={styles.centerContainer}>
+          <Ionicons name='search' size={48} color='#ccc' />
+          <Text style={styles.noResultsText}>No users found</Text>
+          <Text style={styles.noResultsSubtext}>{noResultsSubtext}</Text>
+        </View>
+      ) : searchResults.length > 0 ? (
+        <FlatList
+          data={searchResults}
+          renderItem={renderUserItem}
+          keyExtractor={(item, index) => `${item.profile_personal_uid || "user"}-${index}`}
+          style={styles.resultsList}
+          keyboardShouldPersistTaps='handled'
+        />
+      ) : hideEmptyState ? null : (
+        <View style={styles.centerContainer}>
+          <Ionicons name='people' size={48} color='#ccc' />
+          <Text style={styles.instructionText}>{instructionText}</Text>
+          <Text style={styles.instructionHint}>Matches appear after you type at least {MIN_QUERY_LENGTH} characters.</Text>
+        </View>
       )}
-    </>
-  ) : (
-    // Original standalone modal version
+    </View>
+  );
+
+  const newUserButton =
+    showNewUserButton && onNewUser ? (
+      <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
+        <Text style={styles.newUserButtonText}>I was not referred</Text>
+      </TouchableOpacity>
+    ) : null;
+
+  if (embedded) {
+    return (
+      <>
+        {searchField}
+        {resultsBlock}
+        {newUserButton}
+      </>
+    );
+  }
+
+  return (
     <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
-          {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerTextContainer}>
               <Text style={styles.title}>{modalTitle}</Text>
@@ -183,51 +289,9 @@ const ReferralSearch = ({
             </View>
           ) : null}
 
-          {/* Search Input */}
-          <View style={styles.searchContainer}>
-            <Ionicons name='search' size={20} color='#666' style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder={searchPlaceholder}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onSubmitEditing={handleSearch}
-              autoCapitalize='none'
-            />
-            <TouchableOpacity onPress={handleSearch} style={[styles.searchButton, searchButtonColor && { backgroundColor: searchButtonColor }]}>
-              <Text style={styles.searchButtonText}>Search</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Results */}
-          <View style={styles.resultsContainer}>
-            {isSearching ? (
-              <View style={styles.centerContainer}>
-                <ActivityIndicator size='large' color='#007AFF' />
-                <Text style={styles.loadingText}>Searching...</Text>
-              </View>
-            ) : hasSearched && searchResults.length === 0 ? (
-              <View style={styles.centerContainer}>
-                <Ionicons name='search' size={48} color='#ccc' />
-                <Text style={styles.noResultsText}>No users found</Text>
-                <Text style={styles.noResultsSubtext}>{noResultsSubtext}</Text>
-              </View>
-            ) : searchResults.length > 0 ? (
-              <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item, index) => `${item.profile_personal_uid || "user"}-${index}`} style={styles.resultsList} />
-            ) : hideEmptyState ? null : (
-              <View style={styles.centerContainer}>
-                <Ionicons name='people' size={48} color='#ccc' />
-                <Text style={styles.instructionText}>{instructionText}</Text>
-              </View>
-            )}
-          </View>
-
-          {/* New User Button - optional */}
-          {showNewUserButton && onNewUser && (
-            <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
-              <Text style={styles.newUserButtonText}>I was not referred</Text>
-            </TouchableOpacity>
-          )}
+          {searchField}
+          {resultsBlock}
+          {newUserButton}
         </View>
       </View>
     </Modal>
@@ -297,24 +361,23 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E8E8E8",
   },
   searchIcon: {
     marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
     fontSize: 16,
+    color: "#333",
+    ...(Platform.OS === "web" ? { outlineStyle: "none" } : null),
   },
-  searchButton: {
-    backgroundColor: "#007AFF",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  searchButtonText: {
-    color: "#fff",
-    fontWeight: "600",
+  clearButton: {
+    marginLeft: 4,
+    padding: 4,
   },
   resultsContainer: {
     flex: 1,
@@ -332,30 +395,23 @@ const styles = StyleSheet.create({
   userItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
     backgroundColor: "#fff",
   },
-  userImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 12,
-    backgroundColor: "#eee",
-  },
-  userInfo: {
+  miniCardWrap: {
     flex: 1,
+    minWidth: 0,
+    marginRight: 8,
   },
-  userName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 2,
-  },
-  userLocation: {
-    fontSize: 14,
-    color: "#666",
+  connectionMeta: {
+    marginTop: 4,
+    marginLeft: 2,
+    fontSize: 13,
+    color: "#888",
+    fontStyle: "italic",
   },
   centerContainer: {
     flex: 1,
@@ -378,11 +434,18 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 14,
     color: "#666",
+    textAlign: "center",
   },
   instructionText: {
     marginTop: 12,
     fontSize: 16,
     color: "#666",
+    textAlign: "center",
+  },
+  instructionHint: {
+    marginTop: 8,
+    fontSize: 13,
+    color: "#999",
     textAlign: "center",
   },
   newUserButton: {
@@ -396,17 +459,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
-  },
-  relationshipBadge: {
-    alignSelf: "flex-start",
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginTop: 4,
-  },
-  relationshipBadgeText: {
-    fontSize: 11,
-    fontWeight: "600",
   },
 });
 
