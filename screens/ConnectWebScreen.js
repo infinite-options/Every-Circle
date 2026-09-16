@@ -10,7 +10,7 @@ import { USER_PROFILE_INFO_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { miniCardUserFromSession } from "../utils/connectProfileHydration";
 import MiniCard from "../components/MiniCard";
-import { sanitizeText } from "../utils/textSanitizer";
+import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
@@ -130,31 +130,7 @@ const ConnectWebScreen = () => {
   const fetchProfileData = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
-      if (!response.ok) {
-        throw new Error("Profile not found");
-      }
-      const apiUser = await response.json();
-
-      const p = apiUser?.personal_info || {};
-      const profileInfo = {
-        profile_uid: profileUid,
-        firstName: sanitizeText(p.profile_personal_first_name || ""),
-        lastName: sanitizeText(p.profile_personal_last_name || ""),
-        tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
-        city: sanitizeText(p.profile_personal_city || ""),
-        state: sanitizeText(p.profile_personal_state || ""),
-        email: sanitizeText(apiUser?.user_email || ""),
-        phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
-        phoneVerified: p.phone_verified === true || p.phone_verified === 1 || apiUser.phoneVerified === true,
-        profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-        emailIsPublic: p.profile_personal_email_is_public === 1,
-        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-        locationIsPublic: p.profile_personal_location_is_public === 1,
-        imageIsPublic: p.profile_personal_image_is_public === 1,
-      };
-
+      const profileInfo = await fetchPublicProfileCard(profileUid);
       setProfileData(profileInfo);
     } catch (err) {
       console.error("Error fetching profile:", err);

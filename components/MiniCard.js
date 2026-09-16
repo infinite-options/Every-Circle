@@ -199,7 +199,12 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
     user?.personal_info?.profile_personal_tagline_is_public == 1 ||
     user?.tagLineIsPublic;
   // Display = TRUE: show uploaded image when user has chosen to display it (works with 1, "1", true from API or flattened shape)
-  const imageIsPublic = user?.personal_info?.profile_personal_image_is_public == 1 || user?.imageIsPublic === true || user?.imageIsPublic === 1 || user?.imageIsPublic === "1";
+  const imageIsPublic =
+    user?.personal_info?.profile_personal_image_is_public == 1 ||
+    user?.imageIsPublic === true ||
+    user?.imageIsPublic === 1 ||
+    user?.imageIsPublic === "1" ||
+    user?.imageIsPublic === "true";
   const city = sanitizeText(user?.personal_info?.profile_personal_city || user?.city || "");
   const state = sanitizeText(user?.personal_info?.profile_personal_state || user?.state || "");
   const locationIsPublic =
