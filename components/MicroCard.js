@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
+import { resolvePersonalDisplayFlag, PERSONAL_AUDIENCE_KEYS } from "../utils/profileAudience";
 
 let PROFILE_IMAGE_SOURCE;
 try {
@@ -42,8 +43,8 @@ const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix
   const profileImageRaw = user?.profileImage ?? user?.personal_info?.profile_personal_image ?? "";
   const profileImage = sanitizeText(typeof profileImageRaw === "string" ? profileImageRaw : String(profileImageRaw || ""));
 
-  const tagLineIsPublic = user?.personal_info?.profile_personal_tagline_is_public == 1 || user?.personal_info?.profile_personal_tag_line_is_public == 1 || user?.tagLineIsPublic;
-  const imageIsPublic = user?.personal_info?.profile_personal_image_is_public == 1 || user?.imageIsPublic === true || user?.imageIsPublic === 1 || user?.imageIsPublic === "1";
+  const tagLineIsPublic = resolvePersonalDisplayFlag(user?.tagLineIsPublic, user, PERSONAL_AUDIENCE_KEYS.tagLine);
+  const imageIsPublic = resolvePersonalDisplayFlag(user?.imageIsPublic, user, PERSONAL_AUDIENCE_KEYS.image);
 
   const nameParts = deleted ? [] : [firstName, lastName].filter((part) => part && part !== "." && part.trim() !== "" && !part.match(/^[\s.,;:!?\-_=+]*$/));
   const displayName = deleted ? DELETED_USER_LABEL : nameParts.length ? nameParts.join(" ") : "Unknown";

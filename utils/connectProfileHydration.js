@@ -1,5 +1,5 @@
 import { sanitizeText } from "./textSanitizer";
-import { isApiPublicFlag } from "./apiPublicFlag";
+import { getPersonalDisplayFlags } from "./profileAudience";
 
 /** MiniCard + QR fields for Connect tab, from shared session profile (no network). */
 export function miniCardUserFromSession(session, profileUidOptional, userUidOptional = "") {
@@ -8,6 +8,7 @@ export function miniCardUserFromSession(session, profileUidOptional, userUidOpti
 
   const p = session?.personalInfo || session?.rawProfile?.personal_info || {};
   const userUid = String(userUidOptional || "").trim();
+  const flags = getPersonalDisplayFlags(p);
 
   return {
     profile_uid: profileUID,
@@ -21,11 +22,11 @@ export function miniCardUserFromSession(session, profileUidOptional, userUidOpti
     city: sanitizeText(p.profile_personal_city || ""),
     state: sanitizeText(p.profile_personal_state || ""),
     profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-    emailIsPublic: isApiPublicFlag(p.profile_personal_email_is_public),
-    phoneIsPublic: isApiPublicFlag(p.profile_personal_phone_number_is_public),
-    tagLineIsPublic: isApiPublicFlag(p.profile_personal_tag_line_is_public) || isApiPublicFlag(p.profile_personal_tagline_is_public),
-    locationIsPublic: isApiPublicFlag(p.profile_personal_location_is_public),
-    imageIsPublic: isApiPublicFlag(p.profile_personal_image_is_public),
+    emailIsPublic: flags.emailIsPublic,
+    phoneIsPublic: flags.phoneIsPublic,
+    tagLineIsPublic: flags.tagLineIsPublic,
+    locationIsPublic: flags.locationIsPublic,
+    imageIsPublic: flags.imageIsPublic,
   };
 }
 

@@ -50,6 +50,7 @@ import {
 } from "../utils/transactionDateTime";
 import { businessCcFeePayerFromSource } from "../utils/businessCcFeePayer";
 import { roundCreditCardMoney } from "../utils/cartCreditCardFee";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 
 /** 1 = compact: Purchases (Date, Type, Seller, Delivered, Received, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
@@ -9713,6 +9714,7 @@ export default function AccountScreen({ navigation, route }) {
       if (!profileId) return;
       const result = session?.rawProfile;
       if (result && result.personal_info) {
+        const flags = getPersonalDisplayFlags(result.personal_info);
         setPersonalProfileData({
           firstName: result.personal_info.profile_personal_first_name || "",
           lastName: result.personal_info.profile_personal_last_name || "",
@@ -9723,11 +9725,7 @@ export default function AccountScreen({ navigation, route }) {
           city: result.personal_info.profile_personal_city || "",
           state: result.personal_info.profile_personal_state || "",
           profileImage: result.personal_info.profile_personal_image || "",
-          emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
-          phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
-          tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
-          locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
-          imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+          ...flags,
         });
       }
     } catch (error) {
@@ -9873,6 +9871,7 @@ export default function AccountScreen({ navigation, route }) {
 
         if (mapped.profile?.personal_info) {
           const result = mapped.profile;
+          const flags = getPersonalDisplayFlags(result.personal_info);
           setPersonalProfileData({
             firstName: result.personal_info.profile_personal_first_name || "",
             lastName: result.personal_info.profile_personal_last_name || "",
@@ -9883,11 +9882,7 @@ export default function AccountScreen({ navigation, route }) {
             city: result.personal_info.profile_personal_city || "",
             state: result.personal_info.profile_personal_state || "",
             profileImage: result.personal_info.profile_personal_image || "",
-            emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
-            phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
-            tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
-            locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
-            imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+            ...flags,
           });
         } else {
           await fetchPersonalProfileData();

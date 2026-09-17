@@ -1,22 +1,23 @@
 // ConnectionVisibilityPicker.js
-// Per-field "who can see this" control for Edit Profile: the classic
-// Visible/Hidden pills, plus - only while Visible is selected - a small
-// secondary picker to narrow "Visible" down. Two independent, combinable
-// checkbox filters live there: a circle-degree set (see
-// utils/profilePathConnectionDegree.js / the "Level N Connection" concept
-// shown elsewhere in the app - pick any mix of 1st/2nd/3rd, e.g. 1st + 3rd
-// while skipping 2nd) and, where `allowCircleLevel` is set (personal-info
-// fields and individual offering/seeking items), an optional circle-
-// relationship filter (Friends/Colleagues/Family - same categories Messages
-// Privacy and Nearby Location Privacy already use). Picking both ANDs them
-// together, e.g. "2nd Degree" + "Family" = 2nd-degree connections who are
-// also tagged Family. Either can also be picked on its own - a circle filter
-// with no degree cap (any degree, just tagged Family) is valid, and so is a
-// degree cap with no circle filter. "Everyone" is its own checkbox, fully
-// exclusive of both: picking it clears any degree/circle selection (no
-// restriction at all), and picking a degree or a circle - either one -
-// clears Everyone in turn. Hidden always means only_me; Visible defaults to
-// Everyone.
+// Per-field "who can see this" control for Edit Profile: Hide plus a combined
+// "Visible: <audience>" pill (opens the audience picker). Simple mode keeps a
+// plain Visible/Hide toggle with no audience dropdown.
+//
+// Audience model (POST/PUT profile_personal_*_audience):
+//   null  → Only Me
+//   { degree: "all" | 1 | 2 | 3, circles: string[] }
+// degree "all" = Everyone (no hop-distance limit)
+// degree N = visible to connections at hop distance <= N (cumulative)
+// circles [] / omit = no circle filter; non-empty ANDs with degree
+// (viewer must be tagged friend | family | colleague).
+//
+// Internal picker value remains a compact string ("only_me" | "everyone" |
+// "2" | "2:friend,family") so existing form state keeps working. For personal
+// audience fields, degree options are single-select ("Level N or closer").
+// Item-level offering/seeking can still use multi-select degrees via
+// `allowMultiDegree`. Circle chips are optional multi-select. "Everyone"
+// clears any degree. Circles alone with no degree map to
+// { degree: "all", circles: [...] }.
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,7 +25,13 @@ import { Ionicons } from "@expo/vector-icons";
 const PRIMARY = "#4B2E83";
 const VISIBLE_GREEN = "#2e7d32"; // same shade as the Visible pill
 
-const DEGREE_OPTIONS = [
+const DEGREE_OPTIONS_CUMULATIVE = [
+  { key: 1, label: "Level 1 or closer" },
+  { key: 2, label: "Level 2 or closer" },
+  { key: 3, label: "Level 3 or closer" },
+];
+
+const DEGREE_OPTIONS_MULTI = [
   { key: 1, label: "1st Degree Connections" },
   { key: 2, label: "2nd Degree Connections" },
   { key: 3, label: "3rd Degree Connections" },
@@ -47,12 +54,9 @@ export function visibilityFromIsPublic(isPublic) {
 }
 
 /** Split a picker value into { level, degrees, circleTypes }. `level` is "only_me" | "everyone"
- * (nothing restricted at all) | "restricted" (a degree set and/or a circle filter is active - see
- * `degrees`/`circleTypes`; either can be picked without the other, e.g. circles alone with no
- * degree cap). Handles the current "<head>:<circlesCsv>" encoding, where <head> is
- * "everyone"/"only_me"/"specific" (legacy) or a CSV of exact degree numbers like "1,3"; also
- * expands an older single cumulative value (e.g. "degree2") into the equivalent explicit set
- * ([1,2]) for editing. */
+ * (nothing restricted at all) | "restricted" (a degree set and/or a circle filter is active).
+ * Handles "<head>:<circlesCsv>" encoding; expands an older cumulative "degree2" into [1,2]
+ * for multi-degree editing (item-level), or callers may take Math.max for audience. */
 export function parseVisibilityValue(value) {
   if (typeof value !== "string" || !value) return { level: "everyone", degrees: [], circleTypes: [] };
   const sep = value.indexOf(":");
@@ -66,31 +70,83 @@ export function parseVisibilityValue(value) {
     const legacyMatch = /^degree([123])$/.exec(head);
     degrees = legacyMatch
       ? Array.from({ length: Number(legacyMatch[1]) }, (_, i) => i + 1)
-      : head.split(",").map((d) => Number(d.trim())).filter((n) => n === 1 || n === 2 || n === 3);
+      : head
+          .split(",")
+          .map((d) => Number(d.trim()))
+          .filter((n) => n === 1 || n === 2 || n === 3);
   }
   const level = degrees.length > 0 || circleTypes.length > 0 ? "restricted" : "everyone";
   return { level, degrees, circleTypes };
 }
 
-/** Inverse of parseVisibilityValue - build the single string this picker stores/emits. `level`
- * only matters for "only_me"; otherwise the encoded head is derived straight from `degrees`
- * (falling back to "everyone" - no degree cap - when empty, circles alone included). */
+/** Inverse of parseVisibilityValue - build the single string this picker stores/emits. */
 export function composeVisibilityValue(level, degrees, circleTypes) {
   const head = level === "only_me" ? "only_me" : degrees && degrees.length > 0 ? [...new Set(degrees)].sort().join(",") : "everyone";
   if (circleTypes && circleTypes.length > 0) return `${head}:${circleTypes.join(",")}`;
   return head;
 }
 
-/** Read `<prefix>_visibility` (+ `<prefix>_visibility_circles` and `<prefix>_visibility_degrees`,
- * ANDed on top when present) off a personal_info-shaped object into this picker's single
- * composite value, falling back to the legacy `<prefix>_is_public` boolean for profiles saved
- * before this feature existed. `degreesKey` is optional - omit for fields whose picker doesn't
- * offer degree checkboxes; the raw enum's legacy cumulative value (e.g. "degree2") is still
- * expanded to an equivalent explicit set ([1,2]) when no degrees CSV has been saved yet. */
+/** Convert an *_audience API value (object, JSON string, or null) into the picker string. */
+export function audienceToVisibilityValue(audience) {
+  if (audience == null || audience === "" || audience === "null") return "only_me";
+  let parsed = audience;
+  if (typeof audience === "string") {
+    try {
+      parsed = JSON.parse(audience);
+    } catch {
+      return "everyone";
+    }
+  }
+  if (parsed == null) return "only_me";
+  if (typeof parsed !== "object" || Array.isArray(parsed)) return "everyone";
+
+  const circles = Array.isArray(parsed.circles)
+    ? parsed.circles.map((c) => String(c).trim()).filter((c) => c === "friend" || c === "family" || c === "colleague")
+    : [];
+
+  const deg = parsed.degree;
+  if (deg === "all" || deg == null || deg === "") {
+    return composeVisibilityValue("everyone", [], circles);
+  }
+  const n = Number(deg);
+  if (n === 1 || n === 2 || n === 3) {
+    // Audience degree N is cumulative; store as a single max for the Level-N picker.
+    return composeVisibilityValue("everyone", [n], circles);
+  }
+  return composeVisibilityValue("everyone", [], circles);
+}
+
+/** Convert a picker string into an *_audience payload value (null or { degree, circles }). */
+export function visibilityValueToAudience(value) {
+  const { level, degrees, circleTypes } = parseVisibilityValue(value);
+  if (level === "only_me") return null;
+  return {
+    degree: degrees.length > 0 ? Math.max(...degrees) : "all",
+    circles: circleTypes || [],
+  };
+}
+
+/**
+ * Read `profile_personal_*_audience` into the picker string.
+ * Audience is the only source of truth (null / missing → Only Me).
+ * Does not read `*_is_public`.
+ */
+export function resolveAudienceLevel(personalInfo, audienceKey) {
+  if (personalInfo && Object.prototype.hasOwnProperty.call(personalInfo, audienceKey)) {
+    return audienceToVisibilityValue(personalInfo[audienceKey]);
+  }
+  return "only_me";
+}
+
+/** Legacy: read `<prefix>_visibility` (+ circles/degrees) for item-level expertise/wish fields. */
 export function resolveVisibilityLevel(personalInfo, visibilityKey, isPublicKey, circlesKey, degreesKey) {
   const raw = personalInfo?.[visibilityKey];
   const isKnownLevel = raw === "specific" || raw === "everyone" || raw === "only_me" || /^degree[123]$/.test(raw || "");
-  if (!isKnownLevel) return visibilityFromIsPublic(personalInfo?.[isPublicKey] === 1);
+  if (!isKnownLevel) {
+    return visibilityFromIsPublic(
+      personalInfo?.[isPublicKey] === 1 || personalInfo?.[isPublicKey] === "1" || personalInfo?.[isPublicKey] === true
+    );
+  }
   if (raw === "only_me") return "only_me";
 
   const circleTypes = circlesKey ? (personalInfo?.[circlesKey] || "").split(",").filter(Boolean) : [];
@@ -110,11 +166,18 @@ export function resolveVisibilityLevel(personalInfo, visibilityKey, isPublicKey,
   return composeVisibilityValue("everyone", degrees, circleTypes);
 }
 
-function shortLabelFor(degrees, circleTypes) {
+function shortLabelFor(degrees, circleTypes, { cumulative = true } = {}) {
   const hasDegrees = degrees && degrees.length > 0;
   const hasCircles = circleTypes && circleTypes.length > 0;
   if (!hasDegrees && !hasCircles) return "Everyone";
-  const degreeLabel = hasDegrees ? degrees.map((d) => `${d}${d === 1 ? "st" : d === 2 ? "nd" : "rd"}`).join("+") + " Degree" : null;
+  let degreeLabel = null;
+  if (hasDegrees) {
+    if (cumulative) {
+      degreeLabel = `Level ${Math.max(...degrees)} or closer`;
+    } else {
+      degreeLabel = degrees.map((d) => `${d}${d === 1 ? "st" : d === 2 ? "nd" : "rd"}`).join("+") + " Degree";
+    }
+  }
   const circleLabel = hasCircles
     ? circleTypes.length === 1
       ? CIRCLE_TYPE_LABEL[circleTypes[0]] || "Circles"
@@ -123,14 +186,11 @@ function shortLabelFor(degrees, circleTypes) {
   return degreeLabel && circleLabel ? `${degreeLabel} · ${circleLabel}` : degreeLabel || circleLabel;
 }
 
-/** Small "who sees this" badge text for a preview card: null only for the fully-public state
- * (Everyone, no circle filter) and Only Me (field is hidden entirely); otherwise the same short
- * label the picker's own collapsed pill shows (e.g. "2nd Degree", "1st+3rd Degree · Family",
- * "Family" alone with no degree cap). */
-export function visibilityBadgeLabel(value) {
+/** Small "who sees this" badge text for a preview card: null for Everyone / Only Me. */
+export function visibilityBadgeLabel(value, options) {
   const { level, degrees, circleTypes } = parseVisibilityValue(value);
   if (level === "only_me" || level === "everyone") return null;
-  return shortLabelFor(degrees, circleTypes);
+  return shortLabelFor(degrees, circleTypes, options);
 }
 
 export default function ConnectionVisibilityPicker({
@@ -140,6 +200,8 @@ export default function ConnectionVisibilityPicker({
   disabled = false,
   allowCircleLevel = false,
   allowDegreeLevels = true,
+  /** When true (offering/seeking items), degrees are multi-select. Personal audience uses single cumulative Level N. */
+  allowMultiDegree = false,
   simple = false,
 }) {
   const [degreeModalOpen, setDegreeModalOpen] = useState(false);
@@ -148,10 +210,13 @@ export default function ConnectionVisibilityPicker({
 
   const emit = (degrees, circleTypes) => onChange?.(composeVisibilityValue("everyone", degrees, circleTypes));
   const isEveryone = currentLevel === "everyone"; // both degrees and circleTypes empty
-  // Everyone is exclusive of any restriction: picking it clears degrees AND circles. Picking a
-  // degree or a circle - either one, independently, neither requires the other - moves away from
-  // Everyone automatically (it's just whatever's left empty).
+  const selectedDegree = currentDegrees.length > 0 ? Math.max(...currentDegrees) : null;
+  const degreeOptions = allowMultiDegree ? DEGREE_OPTIONS_MULTI : DEGREE_OPTIONS_CUMULATIVE;
+
   const selectEveryone = () => emit([], []);
+  const selectDegree = (n) => {
+    emit([n], currentCircleTypes);
+  };
   const toggleDegree = (n) => {
     const next = currentDegrees.includes(n) ? currentDegrees.filter((d) => d !== n) : [...currentDegrees, n];
     emit(next, currentCircleTypes);
@@ -161,17 +226,47 @@ export default function ConnectionVisibilityPicker({
     emit(currentDegrees, next);
   };
 
+  const audienceSummary = shortLabelFor(currentDegrees, currentCircleTypes, { cumulative: !allowMultiDegree });
+  const visiblePillLabel = simple || isHidden ? (!isHidden ? "Visible" : "Show") : `Visible: ${audienceSummary}`;
+
   return (
     <>
       <View style={styles.toggleContainer}>
         <TouchableOpacity
-          // simple mode (fields that no longer offer degree/circle granularity at all): Visible
-          // always resolves straight to Everyone rather than reopening whatever level was last set.
-          onPress={() => !disabled && emit(simple ? [] : currentDegrees, simple ? [] : currentCircleTypes)}
-          style={[styles.togglePill, !isHidden && styles.togglePillActiveGreen, disabled && styles.pillDisabled]}
+          // simple mode: Visible always resolves straight to Everyone.
+          // Full mode: combined Visible+audience pill opens the audience picker.
+          onPress={() => {
+            if (disabled) return;
+            if (simple) {
+              emit([], []);
+              return;
+            }
+            if (isHidden) {
+              emit(currentDegrees, currentCircleTypes);
+            }
+            setDegreeModalOpen(true);
+          }}
+          style={[
+            styles.togglePill,
+            !isHidden && (simple ? styles.togglePillActiveGreen : styles.degreePill),
+            disabled && styles.pillDisabled,
+          ]}
           disabled={disabled}
+          activeOpacity={0.7}
         >
-          <Text style={[styles.togglePillText, !isHidden && styles.togglePillTextActive]}>{!isHidden ? "Visible" : "Show"}</Text>
+          <Text
+            style={[
+              styles.togglePillText,
+              !isHidden && styles.togglePillTextActive,
+              !isHidden && !simple && styles.degreePillText,
+            ]}
+            numberOfLines={1}
+          >
+            {visiblePillLabel}
+          </Text>
+          {!isHidden && !simple ? (
+            <Ionicons name='chevron-down' size={13} color='#fff' style={{ marginLeft: 3 }} />
+          ) : null}
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => !disabled && onChange?.("only_me")}
@@ -180,17 +275,6 @@ export default function ConnectionVisibilityPicker({
         >
           <Text style={[styles.togglePillText, isHidden && styles.togglePillTextActive]}>{isHidden ? "Hidden" : "Hide"}</Text>
         </TouchableOpacity>
-        {!isHidden && !simple ? (
-          <TouchableOpacity
-            style={[styles.degreePill, darkMode && styles.degreePillDark]}
-            onPress={() => !disabled && setDegreeModalOpen(true)}
-            disabled={disabled}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.degreePillText, darkMode && styles.degreePillTextDark]}>{shortLabelFor(currentDegrees, currentCircleTypes)}</Text>
-            <Ionicons name='chevron-down' size={13} color='#fff' style={{ marginLeft: 3 }} />
-          </TouchableOpacity>
-        ) : null}
       </View>
 
       <Modal visible={degreeModalOpen} transparent animationType='fade' onRequestClose={() => setDegreeModalOpen(false)}>
@@ -202,10 +286,17 @@ export default function ConnectionVisibilityPicker({
               <Text style={[styles.optionText, darkMode && styles.optionTextDark]}>Everyone</Text>
             </TouchableOpacity>
             {allowDegreeLevels
-              ? DEGREE_OPTIONS.map(({ key, label }) => (
-                  <TouchableOpacity key={key} style={styles.optionRow} onPress={() => toggleDegree(key)} activeOpacity={0.7}>
+              ? degreeOptions.map(({ key, label }) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={styles.optionRow}
+                    onPress={() => (allowMultiDegree ? toggleDegree(key) : selectDegree(key))}
+                    activeOpacity={0.7}
+                  >
                     <Ionicons
-                      name={currentDegrees.includes(key) ? "checkbox" : "square-outline"}
+                      name={
+                        (allowMultiDegree ? currentDegrees.includes(key) : selectedDegree === key) ? "checkbox" : "square-outline"
+                      }
                       size={17}
                       color={PRIMARY}
                       style={{ marginRight: 10 }}
@@ -248,11 +339,14 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   togglePill: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 14,
     backgroundColor: "#eee",
     marginLeft: 6,
+    maxWidth: 260,
   },
   togglePillActiveGreen: {
     backgroundColor: "#2e7d32",

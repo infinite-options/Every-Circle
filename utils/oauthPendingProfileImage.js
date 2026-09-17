@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { isApiPublicFlag } from "./apiPublicFlag";
+import { EVERYONE_AUDIENCE, isPersonalAudienceFieldVisible, PERSONAL_AUDIENCE_KEYS } from "./profileAudience";
 
 /** Google/Apple photo URL kept until the API returns a stored profile_personal_image. */
 export const OAUTH_PENDING_PROFILE_IMAGE_KEY = "oauth_pending_profile_image";
@@ -126,7 +126,7 @@ export function withOauthPhotoOnPayload(apiPayload, photoUrl) {
     personal_info: {
       ...personalInfo,
       profile_personal_image: photo,
-      profile_personal_image_is_public: 1,
+      profile_personal_image_audience: EVERYONE_AUDIENCE,
     },
   };
 }
@@ -178,8 +178,8 @@ export async function mergePendingOauthIdentityIntoPayload(apiPayload) {
     lastName: names.lastName,
     profilePicture: photo,
   });
-  if (profileHasName(merged) && profileHasImage(merged) && isApiPublicFlag(merged?.personal_info?.profile_personal_image_is_public)) {
-    if (profileHasName(apiPayload) && profileHasImage(apiPayload) && isApiPublicFlag(apiPayload?.personal_info?.profile_personal_image_is_public)) {
+  if (profileHasName(merged) && profileHasImage(merged) && isPersonalAudienceFieldVisible(merged, PERSONAL_AUDIENCE_KEYS.image)) {
+    if (profileHasName(apiPayload) && profileHasImage(apiPayload) && isPersonalAudienceFieldVisible(apiPayload, PERSONAL_AUDIENCE_KEYS.image)) {
       await clearOauthPendingProfileNames();
       await clearOauthPendingProfileImage();
     }

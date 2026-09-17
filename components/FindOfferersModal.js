@@ -17,6 +17,7 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { sanitizeText } from "../utils/textSanitizer";
 import { isOfferingModeratedBlocked } from "../utils/offeringModeration";
 import { expertiseDataForCartModal } from "../utils/offeringCartUtils";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 
 const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
 
@@ -44,21 +45,20 @@ function mapExpertiseRow(item, i) {
     passes_relevance_cutoff: item.passes_relevance_cutoff !== false,
     profile_uid: profileUid,
     expertiseData: expertiseDataForCartModal(item, profileUid),
-    profileData: {
-      firstName: item.profile_personal_first_name || "",
-      lastName: item.profile_personal_last_name || "",
-      email: item.user_email_id || "",
-      phone: item.profile_personal_phone_number || "",
-      image: item.profile_personal_image || "",
-      tagLine: item.profile_personal_tag_line || "",
-      city: item.profile_personal_city || "",
-      state: item.profile_personal_state || "",
-      emailIsPublic: item.profile_personal_email_is_public == 1,
-      phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-      imageIsPublic: item.profile_personal_image_is_public == 1,
-      tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
-      locationIsPublic: item.profile_personal_location_is_public == 1,
-    },
+    profileData: (() => {
+      const flags = getPersonalDisplayFlags(item);
+      return {
+        firstName: item.profile_personal_first_name || "",
+        lastName: item.profile_personal_last_name || "",
+        email: item.user_email_id || "",
+        phone: item.profile_personal_phone_number || "",
+        image: item.profile_personal_image || "",
+        tagLine: item.profile_personal_tag_line || "",
+        city: item.profile_personal_city || "",
+        state: item.profile_personal_state || "",
+        ...flags,
+      };
+    })(),
   };
 }
 

@@ -48,6 +48,7 @@ import {
   googlePhotoUrlsMatch,
 } from "../utils/resolveBusinessProfileImage";
 import { buildBusinessMiniCardBusiness } from "../utils/mapBusinessToMiniCard";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 import { getPlaceDetails } from "../utils/googlePlaces";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import {
@@ -1502,11 +1503,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
                         : businessUser.profile_personal_image && String(businessUser.profile_personal_image).trim() !== ""
                           ? String(businessUser.profile_personal_image).trim()
                           : "";
+                    const personalFlags = getPersonalDisplayFlags(businessUser);
                     const imageIsPublic =
                       businessUser.profile_photo_is_public === 1 ||
                       businessUser.profile_photo_is_public === "1" ||
-                      businessUser.profile_personal_image_is_public === 1 ||
-                      businessUser.profile_personal_image_is_public === "1" ||
+                      personalFlags.imageIsPublic ||
                       businessUser.image_is_public === 1 ||
                       businessUser.image_is_public === "1";
                     const userForMiniCard = {
@@ -1518,14 +1519,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       emailIsPublic:
                         businessUser.user_email_is_public === 1 ||
                         businessUser.user_email_is_public === "1" ||
-                        businessUser.profile_personal_email_is_public === 1 ||
-                        businessUser.profile_personal_email_is_public === "1" ||
+                        personalFlags.emailIsPublic ||
                         businessUser.email_is_public === 1,
                       phoneIsPublic:
                         businessUser.phone_is_public === 1 ||
                         businessUser.phone_is_public === "1" ||
-                        businessUser.profile_personal_phone_number_is_public === 1 ||
-                        businessUser.profile_personal_phone_number_is_public === "1",
+                        personalFlags.phoneIsPublic,
                       phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
                       phoneVerified:
                         businessUser.phone_verified === true ||
@@ -1534,14 +1533,13 @@ export default function BusinessProfileScreen({ route, navigation }) {
                         businessUser.personal_info?.phone_verified === true ||
                         businessUser.personal_info?.phone_verified === 1,
                       tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
-                      tagLineIsPublic: businessUser.profile_personal_tag_line_is_public === 1 || businessUser.profile_personal_tag_line_is_public === "1" || false,
+                      tagLineIsPublic: personalFlags.tagLineIsPublic || false,
                       city: businessUser.city || businessUser.profile_personal_city || "",
                       state: businessUser.state || businessUser.profile_personal_state || "",
                       locationIsPublic:
                         businessUser.location_is_public === 1 ||
                         businessUser.location_is_public === "1" ||
-                        businessUser.profile_personal_location_is_public === 1 ||
-                        businessUser.profile_personal_location_is_public === "1" ||
+                        personalFlags.locationIsPublic ||
                         false,
                     };
                     const profileUid = businessUser.profile_id || businessUser.profile_uid || businessUser.profile_personal_uid;

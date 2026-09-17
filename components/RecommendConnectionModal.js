@@ -19,6 +19,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CIRCLES_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { isProfileDeleted } from "../utils/deletedProfile";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
 /**
@@ -53,7 +54,7 @@ const RecommendConnectionModal = ({ visible, onClose, onSelectConnection }) => {
           return {
             uid: row.network_profile_personal_uid || row.profile_personal_uid,
             name: name || "Unknown",
-            image: row.profile_personal_image_is_public === 1 ? row.profile_personal_image || null : null,
+            image: getPersonalDisplayFlags(row).imageIsPublic ? row.profile_personal_image || null : null,
             location: [row.profile_personal_city, row.profile_personal_state].filter(Boolean).join(", "),
             relationship: row.circle_relationship || null,
           };

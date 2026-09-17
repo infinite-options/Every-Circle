@@ -9,6 +9,7 @@ import { getHeaderColors } from "../config/headerColors";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { profileUidFromUserProfileResponse } from "../utils/ensureSessionProfileUid";
 import { refreshCircleTokens } from "../utils/authSession";
+import { digitsForPhoneApi, formatPhoneNumberInput } from "../utils/phoneVerification";
 
 export default function UserInfoScreen({ navigation, route }) {
   // console.log("UserInfoScreen - route.params:", route.params);
@@ -23,7 +24,10 @@ export default function UserInfoScreen({ navigation, route }) {
   const isAppleSignIn = !!appleUserInfo;
 
   // Apple already provided name/email via Authentication Services — do not require them again.
-  const isValid = isAppleSignIn ? phoneNumber.replace(/\D/g, "").length === 10 : firstName.trim() && lastName.trim() && phoneNumber.replace(/\D/g, "").length === 10;
+  const isValid = isAppleSignIn
+    ? digitsForPhoneApi(phoneNumber).length === 10
+    : firstName.trim() && lastName.trim() && digitsForPhoneApi(phoneNumber).length === 10;
+
 
   useEffect(() => {
     console.log("UserInfoScreen - route.params:", route.params);
@@ -119,27 +123,9 @@ export default function UserInfoScreen({ navigation, route }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route?.params?.googleUserInfo, route?.params?.appleUserInfo]);
 
-  const formatPhoneNumber = (text) => {
-    // Remove all non-digit characters and limit to 10 digits
-    const cleaned = ("" + text).replace(/\D/g, "").slice(0, 10);
-
-    const match = cleaned.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
-
-    if (!match) return text;
-
-    let formatted = "";
-    if (match[1]) formatted += `(${match[1]}`;
-    if (match[1] && match[1].length === 3) formatted += ") ";
-    if (match[2]) formatted += match[2];
-    if (match[2] && match[2].length === 3) formatted += "-";
-    if (match[3]) formatted += match[3];
-
-    return formatted;
-  };
-
   const handleContinue = async () => {
     console.log("UserInfoScreen - Continue button pressed");
-    const cleanPhoneNumber = phoneNumber.replace(/\D/g, "");
+    const cleanPhoneNumber = digitsForPhoneApi(phoneNumber);
     if (!isAppleSignIn && (!firstName.trim() || !lastName.trim())) {
       Alert.alert("Error", "Please fill in all fields");
       return;
@@ -344,9 +330,10 @@ export default function UserInfoScreen({ navigation, route }) {
         <TextInput
           style={styles.input}
           value={phoneNumber}
-          onChangeText={(text) => setPhoneNumber(formatPhoneNumber(text))}
-          placeholder='(000) 000-0000'
+          onChangeText={(text) => setPhoneNumber(formatPhoneNumberInput(text))}
+          placeholder='+1 (000) 000-0000'
           keyboardType='phone-pad'
+          maxLength={17}
           accessibilitylabel='Phone number'
           accessibilityHint='Required for password recovery'
         />

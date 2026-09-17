@@ -63,7 +63,7 @@ export default function ProfileSeekingListCard({
               {title}
             </Text>
             {onVisibilityChange ? (
-              <ConnectionVisibilityPicker value={item?.visibility} onChange={onVisibilityChange} darkMode={darkMode} allowCircleLevel />
+              <ConnectionVisibilityPicker value={item?.visibility} onChange={onVisibilityChange} darkMode={darkMode} allowCircleLevel allowMultiDegree />
             ) : item?.isPublic === false ? (
               <View style={[styles.hiddenBadge, darkMode && styles.hiddenBadgeDark]}>
                 <Text style={styles.hiddenBadgeText}>Hidden</Text>

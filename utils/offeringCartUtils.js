@@ -3,6 +3,7 @@ import { expertiseCartTaxFields } from "./cartLineTax";
 import { isBusinessShippingApplicable } from "./businessServiceShipping";
 import { isCartItemBuyerPaysShipping, resolveCartLine } from "./cartFulfillmentMethod";
 import { buildOfferingCardModel } from "./offeringResubmission";
+import { resolvePersonalDisplayFlag, resolveLocationDisplayFlag, PERSONAL_AUDIENCE_KEYS } from "./profileAudience";
 
 /** Parse offering cost string into unit value and unit suffix (e.g. "total", "/hr"). */
 export function parseOfferingCostParts(costStr) {
@@ -303,15 +304,6 @@ export function expertiseDataForCartModal(source, profileUid = "") {
   };
 }
 
-function isProfileShowFieldPublic(value) {
-  return value === true || value === 1 || value === "1";
-}
-
-function resolveProfileShowFieldPublic(explicit, apiValue) {
-  if (explicit !== undefined && explicit !== null) return isProfileShowFieldPublic(explicit);
-  return isProfileShowFieldPublic(apiValue);
-}
-
 /** MiniCard / modal seller info from profile or search row shapes. */
 export function profileDataForCartModal(source) {
   if (!source || typeof source !== "object") return null;
@@ -331,11 +323,11 @@ export function profileDataForCartModal(source) {
     tagLine: source.tagLine || personalInfo?.profile_personal_tag_line || source.profile_personal_tag_line || "",
     city: source.city || personalInfo?.profile_personal_city || source.profile_personal_city || "",
     state: source.state || personalInfo?.profile_personal_state || source.profile_personal_state || "",
-    emailIsPublic: resolveProfileShowFieldPublic(source.emailIsPublic, personalInfo?.profile_personal_email_is_public ?? source.profile_personal_email_is_public),
-    phoneIsPublic: resolveProfileShowFieldPublic(source.phoneIsPublic, personalInfo?.profile_personal_phone_number_is_public ?? source.profile_personal_phone_number_is_public),
-    tagLineIsPublic: resolveProfileShowFieldPublic(source.tagLineIsPublic, personalInfo?.profile_personal_tag_line_is_public ?? source.profile_personal_tag_line_is_public),
-    imageIsPublic: resolveProfileShowFieldPublic(source.imageIsPublic, personalInfo?.profile_personal_image_is_public ?? source.profile_personal_image_is_public),
-    locationIsPublic: resolveProfileShowFieldPublic(source.locationIsPublic, personalInfo?.profile_personal_location_is_public ?? source.profile_personal_location_is_public),
+    emailIsPublic: resolvePersonalDisplayFlag(source.emailIsPublic, source, PERSONAL_AUDIENCE_KEYS.email),
+    phoneIsPublic: resolvePersonalDisplayFlag(source.phoneIsPublic, source, PERSONAL_AUDIENCE_KEYS.phone),
+    tagLineIsPublic: resolvePersonalDisplayFlag(source.tagLineIsPublic, source, PERSONAL_AUDIENCE_KEYS.tagLine),
+    imageIsPublic: resolvePersonalDisplayFlag(source.imageIsPublic, source, PERSONAL_AUDIENCE_KEYS.image),
+    locationIsPublic: resolveLocationDisplayFlag(source.locationIsPublic, source),
   };
 }
 

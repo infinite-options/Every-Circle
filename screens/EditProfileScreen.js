@@ -12,10 +12,12 @@ import { getHeaderColors } from "../config/headerColors";
 import { useFocusEffect } from "@react-navigation/native";
 import PhoneOtpVerifyModal from "../components/PhoneOtpVerifyModal";
 import PhoneVerifiedBadge from "../components/PhoneVerifiedBadge";
-import { isApiPublicFlag } from "../utils/apiPublicFlag";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 import {
   digitsForPhoneApi,
   fetchAuthMe,
+  formatPhoneNumberInput,
+  formatUsPhoneDisplay,
   getCachedPhoneIdentity,
   persistPhoneIdentity,
 } from "../utils/phoneVerification";
@@ -38,7 +40,12 @@ import { buildProfileModerationItem, isProfileOwnerRestricted } from "../utils/p
 import { mapOfferingFormToPayload, mapProfileOfferingToFormItem } from "../utils/offeringResubmission";
 import { mapProfileWishToFormItem, mapWishFormToPayload } from "../utils/wishResubmission";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
-import ConnectionVisibilityPicker, { resolveVisibilityLevel, parseVisibilityValue, visibilityBadgeLabel } from "../components/ConnectionVisibilityPicker";
+import ConnectionVisibilityPicker, {
+  resolveAudienceLevel,
+  parseVisibilityValue,
+  visibilityBadgeLabel,
+  visibilityValueToAudience,
+} from "../components/ConnectionVisibilityPicker";
 
 function isPublicFlag(value) {
   return value === 1 || value === "1" || value === true;
@@ -48,27 +55,16 @@ function isPublicFlag(value) {
  * preview - true for anything but Only Me. The preview can't simulate one specific viewer, so it
  * shows every field that's visible to *someone*, and (via visibilityBadgeLabel, imported below)
  * labels non-Everyone fields with the exact level chosen, so the preview still visibly changes
- * as the owner switches between Everyone/1st-3rd Degree/Specific Circles. */
+ * as the owner switches between Everyone / Level N or closer / Specific Circles. */
 function isVisibleInPreview(level) {
   return level !== "only_me";
 }
 
-/** Append a personal-info visibility field to a multipart payload, splitting a picker's
- * composite value into three: `<visibilityKey>` (a legacy-compatible enum placeholder),
- * `<visibilityKey>_degrees` (the exact degree-number CSV, the real source of truth wherever the
- * backend has a column for it), and `<visibilityKey>_circles` (the circle-type CSV). Both CSVs
- * AND onto whichever base level is set; an empty string is a real value - it clears a
- * previously-saved filter. */
-function appendVisibility(payload, visibilityKey, value) {
-  const { level, degrees, circleTypes } = parseVisibilityValue(value);
-  // The DB enum only knows everyone/degree1/degree2/degree3/only_me - any picked degrees map to
-  // the highest one as a legacy-compatible placeholder (or "everyone" when no degree is picked,
-  // circles-only included); the degrees CSV below is what actually governs an exact-set field's
-  // gating.
-  const enumLevel = level === "only_me" ? "only_me" : degrees.length > 0 ? `degree${Math.max(...degrees)}` : "everyone";
-  payload.append(visibilityKey, enumLevel);
-  payload.append(`${visibilityKey}_degrees`, degrees.join(","));
-  payload.append(`${visibilityKey}_circles`, circleTypes.join(","));
+/** Append a personal-info `*_audience` JSON field to a multipart payload.
+ * Only Me → null; otherwise { degree: "all"|1|2|3, circles: string[] }. */
+function appendAudience(payload, audienceKey, value) {
+  const audience = visibilityValueToAudience(value);
+  payload.append(audienceKey, JSON.stringify(audience));
 }
 
 function businessEntryVisibilityFromApi(biz) {
@@ -141,7 +137,7 @@ function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
     email: json?.user_email || "",
     firstName: pi.profile_personal_first_name || "",
     lastName: pi.profile_personal_last_name || "",
-    phoneNumber: pi.profile_personal_phone_number || "",
+    phoneNumber: formatUsPhoneDisplay(pi.profile_personal_phone_number || ""),
     phone_verified: resolveInitialPhoneVerified({ personal_info: pi, phone_verified: json?.phone_verified }),
     tagLine: pi.profile_personal_tag_line || "",
     city: pi.profile_personal_city || "",
@@ -149,31 +145,20 @@ function mapRawProfileToEditUser(json, profileUid, sessionBusinesses) {
     shortBio: pi.profile_personal_short_bio || "",
     homeAddress: pi.profile_personal_home_address || "",
     personal_info: pi,
-    cityVisibility: resolveVisibilityLevel(pi, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles", "profile_personal_city_visibility_degrees"),
-    stateVisibility: resolveVisibilityLevel(pi, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles", "profile_personal_state_visibility_degrees"),
-    emailVisibility: resolveVisibilityLevel(pi, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles", "profile_personal_email_visibility_degrees"),
-    phoneVisibility: resolveVisibilityLevel(pi, "profile_personal_phone_number_visibility", "profile_personal_phone_number_is_public", "profile_personal_phone_number_visibility_circles", "profile_personal_phone_number_visibility_degrees"),
-    tagLineVisibility: resolveVisibilityLevel(pi, "profile_personal_tag_line_visibility", "profile_personal_tag_line_is_public", "profile_personal_tag_line_visibility_circles"),
-    shortBioVisibility: resolveVisibilityLevel(pi, "profile_personal_short_bio_visibility", "profile_personal_short_bio_is_public", "profile_personal_short_bio_visibility_circles"),
-    experienceVisibility: resolveVisibilityLevel(pi, "profile_personal_experience_visibility", "profile_personal_experience_is_public"),
-    educationVisibility: resolveVisibilityLevel(pi, "profile_personal_education_visibility", "profile_personal_education_is_public"),
-    expertiseVisibility: resolveVisibilityLevel(pi, "profile_personal_expertise_visibility", "profile_personal_expertise_is_public", "profile_personal_expertise_visibility_circles"),
-    wishesVisibility: resolveVisibilityLevel(pi, "profile_personal_wishes_visibility", "profile_personal_wishes_is_public", "profile_personal_wishes_visibility_circles"),
-    businessVisibility: resolveVisibilityLevel(pi, "profile_personal_business_visibility", "profile_personal_business_is_public"),
-    socialVisibility: resolveVisibilityLevel(pi, "profile_personal_social_visibility", "profile_personal_social_is_public"),
-    imageVisibility: resolveVisibilityLevel(pi, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles", "profile_personal_image_visibility_degrees"),
-    locationIsPublic: isApiPublicFlag(pi.profile_personal_location_is_public),
-    emailIsPublic: isApiPublicFlag(pi.profile_personal_email_is_public),
-    phoneIsPublic: isApiPublicFlag(pi.profile_personal_phone_number_is_public),
-    tagLineIsPublic: isApiPublicFlag(pi.profile_personal_tag_line_is_public),
-    shortBioIsPublic: isApiPublicFlag(pi.profile_personal_short_bio_is_public),
-    experienceIsPublic: isApiPublicFlag(pi.profile_personal_experience_is_public),
-    educationIsPublic: isApiPublicFlag(pi.profile_personal_education_is_public),
-    expertiseIsPublic: isApiPublicFlag(pi.profile_personal_expertise_is_public),
-    wishesIsPublic: isApiPublicFlag(pi.profile_personal_wishes_is_public),
-    businessIsPublic: isApiPublicFlag(pi.profile_personal_business_is_public),
-    socialLinksIsPublic: isApiPublicFlag(pi.profile_personal_social_links_is_public),
-    imageIsPublic: isApiPublicFlag(pi.profile_personal_image_is_public),
+    cityVisibility: resolveAudienceLevel(pi, "profile_personal_city_audience"),
+    stateVisibility: resolveAudienceLevel(pi, "profile_personal_state_audience"),
+    emailVisibility: resolveAudienceLevel(pi, "profile_personal_email_audience"),
+    phoneVisibility: resolveAudienceLevel(pi, "profile_personal_phone_number_audience"),
+    tagLineVisibility: resolveAudienceLevel(pi, "profile_personal_tag_line_audience"),
+    shortBioVisibility: resolveAudienceLevel(pi, "profile_personal_short_bio_audience"),
+    experienceVisibility: resolveAudienceLevel(pi, "profile_personal_experience_audience"),
+    educationVisibility: resolveAudienceLevel(pi, "profile_personal_education_audience"),
+    expertiseVisibility: resolveAudienceLevel(pi, "profile_personal_expertise_audience"),
+    wishesVisibility: resolveAudienceLevel(pi, "profile_personal_wishes_audience"),
+    businessVisibility: resolveAudienceLevel(pi, "profile_personal_business_audience"),
+    socialVisibility: resolveAudienceLevel(pi, "profile_personal_social_audience"),
+    imageVisibility: resolveAudienceLevel(pi, "profile_personal_image_audience"),
+    ...getPersonalDisplayFlags(pi),
     profileImage: image,
     profile_personal_image: image,
     experience: parseProfileJsonArray(json?.experience_info),
@@ -215,6 +200,207 @@ function resolveInitialPhoneVerified(user) {
 
 function truthyFlag(value) {
   return value === true || value === 1 || value === "1";
+}
+
+function splitModeratedExpertise(user, profileUid) {
+  const uid = String(profileUid || user?.profile_uid || "").trim();
+  const mapped = (user?.expertise || []).map((e) => mapProfileOfferingToFormItem(e, uid));
+  const moderated = mapped.filter(
+    (e) => isOfferingModeratedBlocked(e) && getOfferingModeratedState(e) !== MODERATED_ACKNOWLEDGED
+  );
+  const editable = mapped.filter((e) => !isOfferingModeratedBlocked(e));
+  return {
+    moderated,
+    expertise: editable.length > 0 ? editable : [],
+  };
+}
+
+function splitModeratedWishes(user, profileUid) {
+  const uid = String(profileUid || user?.profile_uid || "").trim();
+  const mapped = (user?.wishes || []).map((w) => mapProfileWishToFormItem(w, uid));
+  const moderated = mapped.filter(
+    (w) => isSeekingModeratedBlocked(w) && getSeekingModeratedState(w) !== MODERATED_ACKNOWLEDGED
+  );
+  const editable = mapped.filter((w) => !isSeekingModeratedBlocked(w));
+  return {
+    moderated,
+    wishes: editable.length > 0 ? editable : [],
+  };
+}
+
+function buildSocialLinksFromUser(user) {
+  const fixed = [
+    { platform: "linkedin", label: "LinkedIn", icon: "logo-linkedin" },
+    { platform: "instagram", label: "Instagram", icon: "logo-instagram" },
+    { platform: "twitter", label: "Twitter / X", icon: "logo-twitter" },
+  ];
+  const linksInfo = Array.isArray(user?.links_info) ? user.links_info : [];
+  const linksMap = {};
+  linksInfo.forEach((row) => {
+    if (!row || typeof row !== "object") return;
+    const name = String(row.social_link_name || "").toLowerCase();
+    if (!name) return;
+    linksMap[name] = {
+      url: row.social_link_url || "",
+      isPublic: row.social_link_is_public === 1 || row.social_link_is_public === "1" || row.social_link_is_public === true,
+    };
+  });
+  const result = fixed.map(({ platform, label, icon }) => ({
+    platform,
+    label,
+    icon,
+    url: linksMap[platform]?.url || "",
+    isPublic: linksMap[platform]?.isPublic ?? false,
+    isFixed: true,
+  }));
+  Object.entries(linksMap).forEach(([platform, { url, isPublic }]) => {
+    if (!fixed.find((f) => f.platform === platform)) {
+      result.push({ platform, label: platform, icon: "link-outline", url, isPublic, isFixed: false });
+    }
+  });
+  return result;
+}
+
+function buildExperienceFromUser(user, profileUid) {
+  const uid = String(profileUid || user?.profile_uid || "").trim();
+  return (
+    user?.experience?.map((e) => {
+      const rawImg = e.profile_experience_image || "";
+      const resolved = resolveProfileItemImageUri(rawImg, uid);
+      return {
+        profile_experience_uid: e.profile_experience_uid || "",
+        company: e.company || e.profile_experience_company_name || "",
+        title: e.title || e.profile_experience_position || "",
+        description: e.description || e.profile_experience_description || "",
+        startDate: e.startDate || e.profile_experience_start_date || "",
+        endDate: e.endDate || e.profile_experience_end_date || "",
+        isCurrent: String(e.endDate || e.profile_experience_end_date || "").trim().toLowerCase() === "present",
+        isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_experience_is_public === 1,
+        profile_experience_image: rawImg,
+        profile_experience_image_is_public: e.profile_experience_image_is_public === 0 || e.profile_experience_image_is_public === "0" ? 0 : 1,
+        _jobNewImageUri: "",
+        _jobWebImageFile: null,
+        _jobOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
+        _jobDeleteImageUrl: "",
+        _jobImageError: false,
+      };
+    }) || [
+      {
+        company: "",
+        title: "",
+        description: "",
+        startDate: "",
+        endDate: "",
+        isCurrent: false,
+        isPublic: true,
+        profile_experience_image: "",
+        profile_experience_image_is_public: 1,
+        _jobNewImageUri: "",
+        _jobWebImageFile: null,
+        _jobOriginalImage: "",
+        _jobDeleteImageUrl: "",
+        _jobImageError: false,
+      },
+    ]
+  );
+}
+
+function buildEducationFromUser(user, profileUid) {
+  const uid = String(profileUid || user?.profile_uid || "").trim();
+  return (
+    user?.education?.map((e) => {
+      const rawImg = e.profile_education_image || "";
+      const resolved = resolveProfileItemImageUri(rawImg, uid);
+      return {
+        profile_education_uid: e.profile_education_uid || "",
+        school: e.school || e.profile_education_school_name || "",
+        degree: e.degree || e.profile_education_degree || "",
+        startDate: e.startDate || e.profile_education_start_date || "",
+        endDate: e.endDate || e.profile_education_end_date || "",
+        isCurrent: String(e.endDate || e.profile_education_end_date || "").trim().toLowerCase() === "present",
+        isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_education_is_public === 1,
+        profile_education_image: rawImg,
+        profile_education_image_is_public: e.profile_education_image_is_public === 0 || e.profile_education_image_is_public === "0" ? 0 : 1,
+        _eduNewImageUri: "",
+        _eduWebImageFile: null,
+        _eduOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
+        _eduDeleteImageUrl: "",
+        _eduImageError: false,
+      };
+    }) || [
+      {
+        school: "",
+        degree: "",
+        startDate: "",
+        endDate: "",
+        isCurrent: false,
+        isPublic: true,
+        profile_education_image: "",
+        profile_education_image_is_public: 1,
+        _eduNewImageUri: "",
+        _eduWebImageFile: null,
+        _eduOriginalImage: "",
+        _eduDeleteImageUrl: "",
+        _eduImageError: false,
+      },
+    ]
+  );
+}
+
+/** Build Edit Profile form state from a ProfileScreen-shaped `user` object. */
+function buildEditFormData(user, profileUid) {
+  const uid = String(profileUid || user?.profile_uid || "").trim();
+  const home = getInitialHomeLatLng(user);
+  const expertiseState = splitModeratedExpertise(user, uid);
+  const wishState = splitModeratedWishes(user, uid);
+  const hasSocialUrl = (user?.links_info || []).some((row) => String(row?.social_link_url || "").trim());
+  return {
+    formData: {
+      email: user?.email || "",
+      firstName: user?.firstName || "",
+      lastName: user?.lastName || "",
+      phoneNumber: formatUsPhoneDisplay(user?.phoneNumber || user?.personal_info?.profile_personal_phone_number || ""),
+      tagLine: user?.tagLine || "",
+      shortBio: user?.shortBio || "",
+      city: user?.city || "",
+      state: user?.state || "",
+      homeLatitude: home.lat,
+      homeLongitude: home.lng,
+      cityVisibility: user?.cityVisibility || "only_me",
+      stateVisibility: user?.stateVisibility || "only_me",
+      emailVisibility: user?.emailVisibility || "only_me",
+      phoneVisibility: user?.phoneVisibility || "only_me",
+      tagLineVisibility: user?.tagLineVisibility || "only_me",
+      shortBioVisibility: user?.shortBioVisibility || "only_me",
+      experienceVisibility: user?.experienceVisibility || "only_me",
+      educationVisibility: user?.educationVisibility || "only_me",
+      expertiseVisibility: user?.expertiseVisibility || "only_me",
+      wishesVisibility: user?.wishesVisibility || "only_me",
+      businessVisibility: user?.businessVisibility || "only_me",
+      socialVisibility: !hasSocialUrl ? "only_me" : user?.socialVisibility || "only_me",
+      imageVisibility: user?.imageVisibility || "only_me",
+      businesses: Array.isArray(user?.businesses)
+        ? user.businesses.map(mapBusinessEntryForEdit)
+        : [{ name: "", role: "", isPublic: true, individualIsPublic: true, isApproved: 0, isNew: false }],
+      experience: buildExperienceFromUser(user, uid),
+      education: buildEducationFromUser(user, uid),
+      expertise: expertiseState.expertise,
+      wishes: wishState.wishes,
+      socialLinks: buildSocialLinksFromUser(user),
+    },
+    moderatedExpertise: expertiseState.moderated,
+    moderatedWishes: wishState.moderated,
+    homeAddress: (() => {
+      const savedAddress = user?.personal_info?.profile_personal_home_address || user?.homeAddress;
+      if (savedAddress) return savedAddress;
+      if (home.lat != null && home.lng != null) {
+        return [user?.city, user?.state].filter(Boolean).join(", ");
+      }
+      return "";
+    })(),
+    profileImage: user?.profile_personal_image || user?.profileImage || "",
+    phoneVerified: resolveInitialPhoneVerified(user),
+  };
 }
 
 const EditProfileScreen = ({ route, navigation }) => {
@@ -296,189 +482,15 @@ const EditProfileScreen = ({ route, navigation }) => {
     }, [user]),
   );
 
-  const initialHomeLatLng = getInitialHomeLatLng(user);
+  const initialBuilt = buildEditFormData(user, initialFormProfileUid);
+  const moderatedExpertiseRef = useRef(initialBuilt.moderatedExpertise);
+  const moderatedOfferingCount = initialBuilt.moderatedExpertise.length;
+  const moderatedWishesRef = useRef(initialBuilt.moderatedWishes);
+  const moderatedSeekingCount = initialBuilt.moderatedWishes.length;
+  // Tracks whether form state was seeded from a real user payload (route or session restore).
+  const formSeededFromUserRef = useRef(Boolean(user?.profile_uid || user?.firstName || user?.email));
 
-  const initialExpertiseState = (() => {
-    const uid = initialFormProfileUid;
-    const mapped = (user?.expertise || []).map((e) => mapProfileOfferingToFormItem(e, uid));
-    const moderated = mapped.filter(
-      (e) => isOfferingModeratedBlocked(e) && getOfferingModeratedState(e) !== MODERATED_ACKNOWLEDGED
-    );
-    const editable = mapped.filter((e) => !isOfferingModeratedBlocked(e));
-    return {
-      moderated,
-      expertise: editable.length > 0 ? editable : [],
-    };
-  })();
-  const moderatedExpertiseRef = useRef(initialExpertiseState.moderated);
-  const moderatedOfferingCount = initialExpertiseState.moderated.length;
-
-  const initialWishState = (() => {
-    const uid = initialFormProfileUid;
-    const mapped = (user?.wishes || []).map((w) => mapProfileWishToFormItem(w, uid));
-    const moderated = mapped.filter(
-      (w) => isSeekingModeratedBlocked(w) && getSeekingModeratedState(w) !== MODERATED_ACKNOWLEDGED
-    );
-    const editable = mapped.filter((w) => !isSeekingModeratedBlocked(w));
-    return {
-      moderated,
-      wishes: editable.length > 0 ? editable : [],
-    };
-  })();
-  const moderatedWishesRef = useRef(initialWishState.moderated);
-  const moderatedSeekingCount = initialWishState.moderated.length;
-
-  const [formData, setFormData] = useState({
-    email: user?.email || "",
-    firstName: user?.firstName || "",
-    lastName: user?.lastName || "",
-    phoneNumber: user?.phoneNumber || "",
-    tagLine: user?.tagLine || "",
-    shortBio: user?.shortBio || "",
-    city: user?.city || "",
-    state: user?.state || "",
-    homeLatitude: initialHomeLatLng.lat,
-    homeLongitude: initialHomeLatLng.lng,
-    cityVisibility: user?.cityVisibility || "only_me",
-    stateVisibility: user?.stateVisibility || "only_me",
-    emailVisibility: user?.emailVisibility || "only_me",
-    phoneVisibility: user?.phoneVisibility || "only_me",
-    tagLineVisibility: user?.tagLineVisibility || "only_me",
-    shortBioVisibility: user?.shortBioVisibility || "only_me",
-    experienceVisibility: user?.experienceVisibility || "only_me",
-    educationVisibility: user?.educationVisibility || "only_me",
-    expertiseVisibility: user?.expertiseVisibility || "only_me",
-    wishesVisibility: user?.wishesVisibility || "only_me",
-    businessVisibility: user?.businessVisibility || "only_me",
-    // Section-level social defaults to Hidden. Legacy profiles often have the flag saved as
-    // public from an old UI default — keep Hidden until the user has at least one link URL
-    // and has the section marked public.
-    socialVisibility: (() => {
-      const hasSocialUrl = (user?.links_info || []).some((row) => String(row?.social_link_url || "").trim());
-      if (!hasSocialUrl) return "only_me";
-      return user?.socialVisibility || "only_me";
-    })(),
-    imageVisibility: user?.imageVisibility || "only_me",
-    businesses: Array.isArray(user?.businesses)
-      ? user.businesses.map(mapBusinessEntryForEdit)
-      : [{ name: "", role: "", isPublic: true, individualIsPublic: true, isApproved: 0, isNew: false }],
-    experience: (() => {
-      const uid = initialFormProfileUid;
-      return (
-        user?.experience?.map((e) => {
-          const rawImg = e.profile_experience_image || "";
-          const resolved = resolveProfileItemImageUri(rawImg, uid);
-          return {
-            profile_experience_uid: e.profile_experience_uid || "",
-            company: e.company || e.profile_experience_company_name || "",
-            title: e.title || e.profile_experience_position || "",
-            description: e.description || e.profile_experience_description || "",
-            startDate: e.startDate || e.profile_experience_start_date || "",
-            endDate: e.endDate || e.profile_experience_end_date || "",
-            isCurrent: String(e.endDate || e.profile_experience_end_date || "").trim().toLowerCase() === "present",
-            isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_experience_is_public === 1,
-            profile_experience_image: rawImg,
-            profile_experience_image_is_public: e.profile_experience_image_is_public === 0 || e.profile_experience_image_is_public === "0" ? 0 : 1,
-            _jobNewImageUri: "",
-            _jobWebImageFile: null,
-            _jobOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
-            _jobDeleteImageUrl: "",
-            _jobImageError: false,
-          };
-        }) || [
-          {
-            company: "",
-            title: "",
-            description: "",
-            startDate: "",
-            endDate: "",
-            isCurrent: false,
-            isPublic: true,
-            profile_experience_image: "",
-            profile_experience_image_is_public: 1,
-            _jobNewImageUri: "",
-            _jobWebImageFile: null,
-            _jobOriginalImage: "",
-            _jobDeleteImageUrl: "",
-            _jobImageError: false,
-          },
-        ]
-      );
-    })(),
-    education: (() => {
-      const uid = initialFormProfileUid;
-      return (
-        user?.education?.map((e) => {
-          const rawImg = e.profile_education_image || "";
-          const resolved = resolveProfileItemImageUri(rawImg, uid);
-          return {
-            profile_education_uid: e.profile_education_uid || "",
-            school: e.school || e.profile_education_school_name || "",
-            degree: e.degree || e.profile_education_degree || "",
-            startDate: e.startDate || e.profile_education_start_date || "",
-            endDate: e.endDate || e.profile_education_end_date || "",
-            isCurrent: String(e.endDate || e.profile_education_end_date || "").trim().toLowerCase() === "present",
-            isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_education_is_public === 1,
-            profile_education_image: rawImg,
-            profile_education_image_is_public: e.profile_education_image_is_public === 0 || e.profile_education_image_is_public === "0" ? 0 : 1,
-            _eduNewImageUri: "",
-            _eduWebImageFile: null,
-            _eduOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
-            _eduDeleteImageUrl: "",
-            _eduImageError: false,
-          };
-        }) || [
-          {
-            school: "",
-            degree: "",
-            startDate: "",
-            endDate: "",
-            isCurrent: false,
-            isPublic: true,
-            profile_education_image: "",
-            profile_education_image_is_public: 1,
-            _eduNewImageUri: "",
-            _eduWebImageFile: null,
-            _eduOriginalImage: "",
-            _eduDeleteImageUrl: "",
-            _eduImageError: false,
-          },
-        ]
-      );
-    })(),
-    expertise: initialExpertiseState.expertise,
-    wishes: initialWishState.wishes,
-    socialLinks: (() => {
-      const fixed = [
-        { platform: "linkedin",  label: "LinkedIn",    icon: "logo-linkedin"  },
-        { platform: "instagram", label: "Instagram",   icon: "logo-instagram" },
-        { platform: "twitter",   label: "Twitter / X", icon: "logo-twitter"   },
-      ];
-      const linksInfo = user?.links_info || [];
-      const linksMap = {};
-      linksInfo.forEach((row) => {
-        const name = String(row.social_link_name || "").toLowerCase();
-        linksMap[name] = {
-          url: row.social_link_url || "",
-          isPublic: row.social_link_is_public === 1 || row.social_link_is_public === "1" || row.social_link_is_public === true,
-        };
-      });
-      const result = fixed.map(({ platform, label, icon }) => ({
-        platform,
-        label,
-        icon,
-        url: linksMap[platform]?.url || "",
-        isPublic: linksMap[platform]?.isPublic ?? false,
-        isFixed: true,
-      }));
-      Object.entries(linksMap).forEach(([platform, { url, isPublic }]) => {
-        if (!fixed.find((f) => f.platform === platform)) {
-          result.push({ platform, label: platform, icon: "link-outline", url, isPublic, isFixed: false });
-        }
-      });
-      return result;
-    })(),
-  });
+  const [formData, setFormData] = useState(() => initialBuilt.formData);
   // console.log("EditProfileScreen business_info:", formData.businesses);
 
   // Add state to track deleted items
@@ -497,14 +509,7 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [shortBioHeight, setShortBioHeight] = useState(40); // Initial height for Short Bio
   const fileInputRef = useRef(null); // For web file input
   const [imageUpdateKey, setImageUpdateKey] = useState(0); // Key to force MiniCard re-render when image changes
-  const [homeAddress, setHomeAddress] = useState(() => {
-    const savedAddress = user?.personal_info?.profile_personal_home_address || user?.homeAddress;
-    if (savedAddress) return savedAddress;
-    if (initialHomeLatLng.lat != null && initialHomeLatLng.lng != null) {
-      return [user?.city, user?.state].filter(Boolean).join(", ");
-    }
-    return "";
-  });
+  const [homeAddress, setHomeAddress] = useState(initialBuilt.homeAddress);
   const [addressSuggestions, setAddressSuggestions] = useState([]);
   const [addressSearchLoading, setAddressSearchLoading] = useState(false);
   const addressDebounceRef = useRef(null);
@@ -943,22 +948,21 @@ const EditProfileScreen = ({ route, navigation }) => {
         payload.append("profile_personal_latitude", "");
         payload.append("profile_personal_longitude", "");
       }
-      // Personal-info fields can carry a "specific:friend,family" composite value (Specific
-      // Circles); split it into the two fields the backend expects. Section fields (below)
-      // never compose - they're always a plain level string.
-      appendVisibility(payload, "profile_personal_city_visibility", formData.cityVisibility);
-      appendVisibility(payload, "profile_personal_state_visibility", formData.stateVisibility);
-      appendVisibility(payload, "profile_personal_phone_number_visibility", formData.phoneVisibility);
-      appendVisibility(payload, "profile_personal_email_visibility", formData.emailVisibility);
-      appendVisibility(payload, "profile_personal_tag_line_visibility", formData.tagLineVisibility);
-      appendVisibility(payload, "profile_personal_short_bio_visibility", formData.shortBioVisibility);
-      appendVisibility(payload, "profile_personal_image_visibility", formData.imageVisibility);
-      payload.append("profile_personal_experience_visibility", formData.experienceVisibility);
-      payload.append("profile_personal_education_visibility", formData.educationVisibility);
-      appendVisibility(payload, "profile_personal_expertise_visibility", formData.expertiseVisibility);
-      appendVisibility(payload, "profile_personal_wishes_visibility", formData.wishesVisibility);
-      payload.append("profile_personal_business_visibility", formData.businessVisibility);
-      payload.append("profile_personal_social_visibility", formData.socialVisibility);
+      // Personal-info privacy: one JSON *_audience field per profile field
+      // (null = Only Me; { degree, circles } otherwise).
+      appendAudience(payload, "profile_personal_city_audience", formData.cityVisibility);
+      appendAudience(payload, "profile_personal_state_audience", formData.stateVisibility);
+      appendAudience(payload, "profile_personal_phone_number_audience", formData.phoneVisibility);
+      appendAudience(payload, "profile_personal_email_audience", formData.emailVisibility);
+      appendAudience(payload, "profile_personal_tag_line_audience", formData.tagLineVisibility);
+      appendAudience(payload, "profile_personal_short_bio_audience", formData.shortBioVisibility);
+      appendAudience(payload, "profile_personal_image_audience", formData.imageVisibility);
+      appendAudience(payload, "profile_personal_experience_audience", formData.experienceVisibility);
+      appendAudience(payload, "profile_personal_education_audience", formData.educationVisibility);
+      appendAudience(payload, "profile_personal_expertise_audience", formData.expertiseVisibility);
+      appendAudience(payload, "profile_personal_wishes_audience", formData.wishesVisibility);
+      appendAudience(payload, "profile_personal_business_audience", formData.businessVisibility);
+      appendAudience(payload, "profile_personal_social_audience", formData.socialVisibility);
       console.log("EditProfileScreen - Sending businessVisibility:", formData.businessVisibility);
 
       const moderatedWishUids = new Set(
@@ -1345,7 +1349,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         console.log("    -> (web) file name:", Platform.OS === "web" && webImageFile ? webImageFile.name : "N/A");
       }
       console.log("  delete_profile_image (URL):", deleteProfileImage || "(not sent)");
-      console.log("  profile_personal_image_visibility:", formData.imageVisibility);
+      console.log("  profile_personal_image_audience:", JSON.stringify(visibilityValueToAudience(formData.imageVisibility)));
       console.log("--------------------------------------------");
       console.log("============================================");
 
@@ -1426,20 +1430,19 @@ const EditProfileScreen = ({ route, navigation }) => {
                 profile_personal_home_address: homeAddress,
                 profile_personal_latitude: homeLat,
                 profile_personal_longitude: homeLng,
-                profile_personal_location_is_public:
-                  parseVisibilityValue(formData.cityVisibility).level === "only_me" && parseVisibilityValue(formData.stateVisibility).level === "only_me" ? 0 : 1,
-                profile_personal_city_visibility: (() => {
-                  const { level, degrees } = parseVisibilityValue(formData.cityVisibility);
-                  return level === "only_me" ? "only_me" : degrees.length > 0 ? `degree${Math.max(...degrees)}` : "everyone";
-                })(),
-                profile_personal_city_visibility_degrees: parseVisibilityValue(formData.cityVisibility).degrees.join(","),
-                profile_personal_city_visibility_circles: parseVisibilityValue(formData.cityVisibility).circleTypes.join(","),
-                profile_personal_state_visibility: (() => {
-                  const { level, degrees } = parseVisibilityValue(formData.stateVisibility);
-                  return level === "only_me" ? "only_me" : degrees.length > 0 ? `degree${Math.max(...degrees)}` : "everyone";
-                })(),
-                profile_personal_state_visibility_degrees: parseVisibilityValue(formData.stateVisibility).degrees.join(","),
-                profile_personal_state_visibility_circles: parseVisibilityValue(formData.stateVisibility).circleTypes.join(","),
+                profile_personal_city_audience: visibilityValueToAudience(formData.cityVisibility),
+                profile_personal_state_audience: visibilityValueToAudience(formData.stateVisibility),
+                profile_personal_email_audience: visibilityValueToAudience(formData.emailVisibility),
+                profile_personal_phone_number_audience: visibilityValueToAudience(formData.phoneVisibility),
+                profile_personal_tag_line_audience: visibilityValueToAudience(formData.tagLineVisibility),
+                profile_personal_short_bio_audience: visibilityValueToAudience(formData.shortBioVisibility),
+                profile_personal_image_audience: visibilityValueToAudience(formData.imageVisibility),
+                profile_personal_experience_audience: visibilityValueToAudience(formData.experienceVisibility),
+                profile_personal_education_audience: visibilityValueToAudience(formData.educationVisibility),
+                profile_personal_expertise_audience: visibilityValueToAudience(formData.expertiseVisibility),
+                profile_personal_wishes_audience: visibilityValueToAudience(formData.wishesVisibility),
+                profile_personal_business_audience: visibilityValueToAudience(formData.businessVisibility),
+                profile_personal_social_audience: visibilityValueToAudience(formData.socialVisibility),
               },
             },
           });
@@ -1462,7 +1465,7 @@ const EditProfileScreen = ({ route, navigation }) => {
 
   const renderField = (label, value, visibilityLevel, fieldName, visibilityFieldName, editable = true, pickerProps = { allowCircleLevel: true }) => (
     <View style={styles.fieldContainer}>
-      {/* Row: Label and connection-level picker (name fields have no picker - always public) */}
+      {/* Row: Label and connection-level picker (name fields: Always Visible note) */}
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}</Text>
         {visibilityFieldName ? (
@@ -1472,7 +1475,9 @@ const EditProfileScreen = ({ route, navigation }) => {
             darkMode={darkMode}
             {...pickerProps}
           />
-        ) : null}
+        ) : (
+          <Text style={[styles.toggleText, styles.alwaysHiddenLabel, darkMode && styles.darkAlwaysHiddenLabel]}>Always Visible</Text>
+        )}
       </View>
       <TextInput
         style={[
@@ -1523,10 +1528,10 @@ const EditProfileScreen = ({ route, navigation }) => {
           <TextInput
             style={[styles.input, styles.phoneInput, darkMode && styles.darkInput]}
             value={formData.phoneNumber}
-            onChangeText={(text) => handleFieldChange("phoneNumber", text)}
+            onChangeText={(text) => handleFieldChange("phoneNumber", formatPhoneNumberInput(text))}
             placeholder='Enter phone number'
             placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
-            maxLength={14}
+            maxLength={17}
             keyboardType='phone-pad'
           />
           {showVerifyCta ? (
@@ -1755,9 +1760,17 @@ const EditProfileScreen = ({ route, navigation }) => {
   }, [isChanged, navigation]);
 
   // Browser / Fast Refresh of /edit-profile drops route.params.user, so reload from session.
+  // Important: same-screen replace/setParams does NOT remount this component, so we must
+  // explicitly re-seed form state when the user payload arrives (otherwise fields stay empty).
   const missingRouteUser = !user;
   useEffect(() => {
-    if (!missingRouteUser) return;
+    if (!missingRouteUser) {
+      // Route already has a user (e.g. navigated from Profile). Mark seeded.
+      if (user?.profile_uid || user?.firstName || user?.email) {
+        formSeededFromUserRef.current = true;
+      }
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -1777,8 +1790,25 @@ const EditProfileScreen = ({ route, navigation }) => {
           leaveEditProfile(navigation);
           return;
         }
-        navigation.replace("EditProfile", {
-          user: mapRawProfileToEditUser(json, profileUid, session?.businesses),
+        const mappedUser = mapRawProfileToEditUser(json, profileUid, session?.businesses);
+        const built = buildEditFormData(mappedUser, profileUid);
+        moderatedExpertiseRef.current = built.moderatedExpertise;
+        moderatedWishesRef.current = built.moderatedWishes;
+        setFormData(built.formData);
+        setHomeAddress(built.homeAddress);
+        setPhoneVerified(built.phoneVerified);
+        setProfileUID(profileUid);
+        setOriginalProfileImage(built.profileImage);
+        setProfileImage(built.profileImage);
+        setProfileImageUri(built.profileImage);
+        setImageError(false);
+        setImageUpdateKey((k) => k + 1);
+        savedPhoneDigitsRef.current = digitsForPhoneApi(
+          mappedUser.phoneNumber || mappedUser.personal_info?.profile_personal_phone_number || ""
+        );
+        formSeededFromUserRef.current = true;
+        navigation.setParams({
+          user: mappedUser,
           profile_uid: profileUid,
           businessesData: session?.businesses,
         });
@@ -1791,6 +1821,27 @@ const EditProfileScreen = ({ route, navigation }) => {
       cancelled = true;
     };
   }, [missingRouteUser, navigation]);
+
+  // If params.user arrives later without remount (setParams), seed once when form is still empty.
+  useEffect(() => {
+    if (!user || formSeededFromUserRef.current) return;
+    if (!(user.profile_uid || user.firstName || user.email || user.phoneNumber)) return;
+    const built = buildEditFormData(user, user.profile_uid || routeProfileUID);
+    moderatedExpertiseRef.current = built.moderatedExpertise;
+    moderatedWishesRef.current = built.moderatedWishes;
+    setFormData(built.formData);
+    setHomeAddress(built.homeAddress);
+    setPhoneVerified(built.phoneVerified);
+    if (user.profile_uid) setProfileUID(user.profile_uid);
+    setOriginalProfileImage(built.profileImage);
+    setProfileImage(built.profileImage);
+    setProfileImageUri(built.profileImage);
+    setImageUpdateKey((k) => k + 1);
+    savedPhoneDigitsRef.current = digitsForPhoneApi(
+      user.phoneNumber || user.personal_info?.profile_personal_phone_number || ""
+    );
+    formSeededFromUserRef.current = true;
+  }, [user, routeProfileUID]);
 
   // Whether each section still has required fields missing — drives the greyed-out Submit highlighting below.
   const offeringIsValid =
@@ -1898,8 +1949,8 @@ const EditProfileScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         {showProfile && (
           <>
-            {renderField("First Name (Public)", formData.firstName, undefined, "firstName", null)}
-            {renderField("Last Name (Public)", formData.lastName, undefined, "lastName", null)}
+            {renderField("First Name", formData.firstName, undefined, "firstName", null)}
+            {renderField("Last Name", formData.lastName, undefined, "lastName", null)}
             {renderPhoneField()}
             {renderField("Email", formData.email, formData.emailVisibility, "email", "emailVisibility")}
             {renderHomeAddressField()}
@@ -2550,7 +2601,8 @@ const styles = StyleSheet.create({
   },
   toggleContainer: {
     flexDirection: "row",
-    gap: 4,
+    alignItems: "center",
+    flexWrap: "wrap",
   },
   phoneLabelCol: {
     flex: 1,
@@ -2577,38 +2629,41 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   verifyPhoneButton: {
-    backgroundColor: "#18884A",
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    // Match ConnectionVisibilityPicker Hidden pill size/color (#c62828 + white text).
+    backgroundColor: "#c62828",
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     justifyContent: "center",
     alignItems: "center",
   },
   verifyPhoneButtonText: {
     color: "#fff",
-    fontWeight: "700",
-    fontSize: 13,
+    fontWeight: "600",
+    fontSize: 12,
   },
   togglePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-    backgroundColor: "transparent",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: "#eee",
+    marginLeft: 6,
   },
   togglePillActiveGreen: {
-    backgroundColor: "#4CAF50",
+    backgroundColor: "#2e7d32",
   },
   togglePillActiveRed: {
-    backgroundColor: "#ef9a9a",
+    backgroundColor: "#c62828",
   },
   togglePillText: {
-    fontSize: 13,
-    color: "#4e4e4e",
-    fontWeight: "500",
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#333",
   },
   togglePillTextActive: {
     color: "#fff",
-    fontWeight: "bold",
   },
   homeCoordHint: {
     fontSize: 13,

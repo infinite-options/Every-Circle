@@ -17,6 +17,7 @@ import { normalizeMessageForUi, orderMessagesForChatList } from "../utils/chatCo
 import { buildChatMessagePostBody } from "../utils/chatReplyContext";
 import { sanitizeText } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -71,11 +72,7 @@ function miniCardUserFromParams(displayName, imageUri) {
 
 function mapUserProfileApiToMiniCardUser(apiUser) {
   const p = apiUser?.personal_info || {};
-  const tagLineIsPublic = p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1;
-  const emailIsPublic = p.profile_personal_email_is_public === 1;
-  const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
-  const imageIsPublic = p.profile_personal_image_is_public === 1;
-  const locationIsPublic = p.profile_personal_location_is_public === 1;
+  const { tagLineIsPublic, emailIsPublic, phoneIsPublic, imageIsPublic, locationIsPublic } = getPersonalDisplayFlags(p);
   return {
     firstName: sanitizeText(p.profile_personal_first_name || ""),
     lastName: sanitizeText(p.profile_personal_last_name || ""),

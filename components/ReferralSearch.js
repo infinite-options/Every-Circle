@@ -4,6 +4,7 @@ import { View, Text, TextInput, TouchableOpacity, Modal, FlatList, ActivityIndic
 import { Ionicons } from "@expo/vector-icons";
 import { searchReferralProfiles } from "../utils/searchReferralProfiles";
 import MicroCard from "./MicroCard";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 
 const SEARCH_DEBOUNCE_MS = 350;
 const MIN_QUERY_LENGTH = 2;
@@ -13,23 +14,15 @@ const MODAL_HEIGHT = Math.min(560, Math.round(Dimensions.get("window").height * 
 
 function referralProfileToMicroCardUser(item, relationship) {
   const imageUrl = item.profile_personal_image ? String(item.profile_personal_image).trim() : "";
-  const imageIsPublic =
-    item.profile_personal_image_is_public === true ||
-    item.profile_personal_image_is_public === 1 ||
-    item.profile_personal_image_is_public === "1" ||
-    Boolean(imageUrl);
+  const flags = getPersonalDisplayFlags(item);
 
   return {
     firstName: item.profile_personal_first_name || "",
     lastName: item.profile_personal_last_name || "",
     tagLine: item.profile_personal_tag_line || item.profile_personal_tagline || "",
-    tagLineIsPublic:
-      item.profile_personal_tag_line_is_public === true ||
-      item.profile_personal_tag_line_is_public === 1 ||
-      item.profile_personal_tag_line_is_public === "1" ||
-      Boolean(item.profile_personal_tag_line || item.profile_personal_tagline),
+    tagLineIsPublic: flags.tagLineIsPublic || Boolean(item.profile_personal_tag_line || item.profile_personal_tagline),
     profileImage: imageUrl,
-    imageIsPublic,
+    imageIsPublic: flags.imageIsPublic || Boolean(imageUrl),
     circle_relationship: relationship || null,
   };
 }

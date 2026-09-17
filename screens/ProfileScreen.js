@@ -53,7 +53,7 @@ import { saveSessionProfilePayload, clearUserProfileCacheStorage, getSessionProf
 import { profileBusinessHasRealOwnership } from "../utils/businessOwnership";
 import { useSessionBusinesses } from "../contexts/SessionProfileContext";
 import { sanitizeText } from "../utils/textSanitizer";
-import { isApiPublicFlag } from "../utils/apiPublicFlag";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 import { mergePendingOauthIdentityIntoPayload } from "../utils/oauthPendingProfileImage";
 import { upsertReferralNetworkRelationship } from "../utils/searchReferralProfiles";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceAddressDetails } from "../utils/googlePlaces";
@@ -62,7 +62,7 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import ReviewImageStrip from "../components/ReviewImageStrip";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
-import { resolveVisibilityLevel } from "../components/ConnectionVisibilityPicker";
+import { resolveAudienceLevel, resolveVisibilityLevel } from "../components/ConnectionVisibilityPicker";
 import { recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
 import { recordWishMessageResponse } from "../utils/wishMessageResponse";
 import { buildOfferingReplyContext, buildSeekingReplyContext } from "../utils/chatReplyContext";
@@ -213,14 +213,12 @@ function NoBountyIcon({ darkMode }) {
 // Helper function to format phone number for display
 const formatPhoneNumberForDisplay = (phoneNumber) => {
   if (!phoneNumber) return "";
-  // Remove all non-digit characters
   const cleaned = ("" + phoneNumber).replace(/\D/g, "");
-  // If it's not 10 digits, return as-is
-  if (cleaned.length !== 10) return phoneNumber;
-  // Format as (XXX) XXX-XXXX
-  const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+  const national = cleaned.length === 11 && cleaned.startsWith("1") ? cleaned.slice(1) : cleaned;
+  if (national.length !== 10) return phoneNumber;
+  const match = national.match(/^(\d{3})(\d{3})(\d{4})$/);
   if (match) {
-    return `(${match[1]}) ${match[2]}-${match[3]}`;
+    return `+1 (${match[1]}) ${match[2]}-${match[3]}`;
   }
   return phoneNumber;
 };
@@ -822,34 +820,37 @@ const ProfileScreen = ({ route, navigation }) => {
           return `${la}, ${lo}`;
         })(),
         shortBio: personal.profile_personal_short_bio || "",
-        emailIsPublic: isApiPublicFlag(personal.profile_personal_email_is_public),
-        phoneIsPublic: isApiPublicFlag(personal.profile_personal_phone_number_is_public),
-        imageIsPublic: isApiPublicFlag(personal.profile_personal_image_is_public),
-        tagLineIsPublic: isApiPublicFlag(personal.profile_personal_tag_line_is_public),
-        locationIsPublic: isApiPublicFlag(personal.profile_personal_location_is_public),
-        shortBioIsPublic: isApiPublicFlag(personal.profile_personal_short_bio_is_public),
-        experienceIsPublic: isApiPublicFlag(personal.profile_personal_experience_is_public),
-        educationIsPublic: isApiPublicFlag(personal.profile_personal_education_is_public),
-        expertiseIsPublic: isApiPublicFlag(personal.profile_personal_expertise_is_public),
-        wishesIsPublic: isApiPublicFlag(personal.profile_personal_wishes_is_public),
-        businessIsPublic: isApiPublicFlag(personal.profile_personal_business_is_public),
+        ...(() => {
+          const flags = getPersonalDisplayFlags(personal);
+          return {
+            emailIsPublic: flags.emailIsPublic,
+            phoneIsPublic: flags.phoneIsPublic,
+            imageIsPublic: flags.imageIsPublic,
+            tagLineIsPublic: flags.tagLineIsPublic,
+            locationIsPublic: flags.locationIsPublic,
+            shortBioIsPublic: flags.shortBioIsPublic,
+            experienceIsPublic: flags.experienceIsPublic,
+            educationIsPublic: flags.educationIsPublic,
+            expertiseIsPublic: flags.expertiseIsPublic,
+            wishesIsPublic: flags.wishesIsPublic,
+            businessIsPublic: flags.businessIsPublic,
+          };
+        })(),
         socialLinksIsPublic: isSocialLinksSectionPublic(personal, mergedApiUser.links_info || apiUser.links_info),
-        // Connection-level visibility (Everyone/1st-3rd degree/Only Me) for Edit Profile's
-        // per-field pickers - meaningless as viewer-facing gating, only used to preselect the
-        // owner's saved level when they reopen Edit Profile.
-        emailVisibility: resolveVisibilityLevel(personal, "profile_personal_email_visibility", "profile_personal_email_is_public", "profile_personal_email_visibility_circles", "profile_personal_email_visibility_degrees"),
-        phoneVisibility: resolveVisibilityLevel(personal, "profile_personal_phone_number_visibility", "profile_personal_phone_number_is_public", "profile_personal_phone_number_visibility_circles", "profile_personal_phone_number_visibility_degrees"),
-        imageVisibility: resolveVisibilityLevel(personal, "profile_personal_image_visibility", "profile_personal_image_is_public", "profile_personal_image_visibility_circles", "profile_personal_image_visibility_degrees"),
-        tagLineVisibility: resolveVisibilityLevel(personal, "profile_personal_tag_line_visibility", "profile_personal_tag_line_is_public", "profile_personal_tag_line_visibility_circles"),
-        cityVisibility: resolveVisibilityLevel(personal, "profile_personal_city_visibility", "profile_personal_location_is_public", "profile_personal_city_visibility_circles", "profile_personal_city_visibility_degrees"),
-        stateVisibility: resolveVisibilityLevel(personal, "profile_personal_state_visibility", "profile_personal_location_is_public", "profile_personal_state_visibility_circles", "profile_personal_state_visibility_degrees"),
-        shortBioVisibility: resolveVisibilityLevel(personal, "profile_personal_short_bio_visibility", "profile_personal_short_bio_is_public", "profile_personal_short_bio_visibility_circles"),
-        experienceVisibility: resolveVisibilityLevel(personal, "profile_personal_experience_visibility", "profile_personal_experience_is_public"),
-        educationVisibility: resolveVisibilityLevel(personal, "profile_personal_education_visibility", "profile_personal_education_is_public"),
-        expertiseVisibility: resolveVisibilityLevel(personal, "profile_personal_expertise_visibility", "profile_personal_expertise_is_public", "profile_personal_expertise_visibility_circles"),
-        wishesVisibility: resolveVisibilityLevel(personal, "profile_personal_wishes_visibility", "profile_personal_wishes_is_public", "profile_personal_wishes_visibility_circles"),
-        businessVisibility: resolveVisibilityLevel(personal, "profile_personal_business_visibility", "profile_personal_business_is_public"),
-        socialVisibility: resolveVisibilityLevel(personal, "profile_personal_social_visibility", "profile_personal_social_is_public"),
+        // Audience for Edit Profile per-field pickers (preselect only).
+        emailVisibility: resolveAudienceLevel(personal, "profile_personal_email_audience"),
+        phoneVisibility: resolveAudienceLevel(personal, "profile_personal_phone_number_audience"),
+        imageVisibility: resolveAudienceLevel(personal, "profile_personal_image_audience"),
+        tagLineVisibility: resolveAudienceLevel(personal, "profile_personal_tag_line_audience"),
+        cityVisibility: resolveAudienceLevel(personal, "profile_personal_city_audience"),
+        stateVisibility: resolveAudienceLevel(personal, "profile_personal_state_audience"),
+        shortBioVisibility: resolveAudienceLevel(personal, "profile_personal_short_bio_audience"),
+        experienceVisibility: resolveAudienceLevel(personal, "profile_personal_experience_audience"),
+        educationVisibility: resolveAudienceLevel(personal, "profile_personal_education_audience"),
+        expertiseVisibility: resolveAudienceLevel(personal, "profile_personal_expertise_audience"),
+        wishesVisibility: resolveAudienceLevel(personal, "profile_personal_wishes_audience"),
+        businessVisibility: resolveAudienceLevel(personal, "profile_personal_business_audience"),
+        socialVisibility: resolveAudienceLevel(personal, "profile_personal_social_audience"),
         profileImage: personal.profile_personal_image ? String(personal.profile_personal_image) : "",
         profilePersonalPath: personal.profile_personal_path || apiUser.personal_info?.profile_personal_path || null,
         profileModerationItem: buildProfileModerationItem(apiUser),
@@ -958,15 +959,13 @@ const ProfileScreen = ({ route, navigation }) => {
       userData.social_links = socialLinks;
       userData.social_icons = apiUser.social_icons || {};
       userData.links_info = Array.isArray(apiUser.links_info) ? apiUser.links_info : [];
+      userData.personal_info = personal;
       // console.log("ProfileScreen - Setting user data:", userData);
       // console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
       setUser(userData);
 
       userData.ratings = apiUser.ratings_info || [];
       setUser(userData);
-      // console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
-      // console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
-
       const rawBusinessInfo = parseProfileJsonArray(apiUser.business_info);
       const moderationByUid = {};
       for (const bus of rawBusinessInfo) {

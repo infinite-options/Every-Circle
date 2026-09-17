@@ -980,6 +980,7 @@ const ExpertiseSection = ({
                       onChange={(level) => handleEntryVisibilityChange(index, level)}
                       darkMode={darkMode}
                       allowCircleLevel
+                      allowMultiDegree
                     />
                   </View>
                 ) : null}

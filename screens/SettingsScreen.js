@@ -40,6 +40,7 @@ import { setAllowCookies as persistAllowCookies, subscribeAllowCookies, persistS
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
 import { fetchProfileModerationReviewQueue, fetchProfileModerationDetail, reviewProfileModeration } from "../utils/profileModeration";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 import { fetchBusinessModerationReviewQueue, fetchBusinessModerationDetail, reviewBusinessModeration } from "../utils/businessModeration";
 import OfferingReviewDetailPanel from "../components/OfferingReviewDetailPanel";
 import SeekingReviewDetailPanel from "../components/SeekingReviewDetailPanel";
@@ -571,6 +572,7 @@ export default function SettingsScreen() {
 
   const applyProfileToSettings = useCallback((result) => {
     if (!result?.personal_info) return;
+    const flags = getPersonalDisplayFlags(result.personal_info);
     setPersonalProfileData({
       firstName: result.personal_info.profile_personal_first_name || "",
       lastName: result.personal_info.profile_personal_last_name || "",
@@ -581,11 +583,7 @@ export default function SettingsScreen() {
       city: result.personal_info.profile_personal_city || "",
       state: result.personal_info.profile_personal_state || "",
       profileImage: result.personal_info.profile_personal_image || "",
-      emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
-      phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
-      tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
-      locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
-      imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+      ...flags,
     });
     const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
     const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);

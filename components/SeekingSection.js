@@ -941,6 +941,7 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, visibilityLevel, o
                   onChange={(level) => handleEntryVisibilityChange(index, level)}
                   darkMode={darkMode}
                   allowCircleLevel
+                  allowMultiDegree
                 />
               </View>
             </View>

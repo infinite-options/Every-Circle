@@ -31,6 +31,7 @@ import { addScannedCircleConnection } from "../utils/addScannedCircleConnection"
 import { getSessionProfile, patchSessionPersonalInfoField, saveSessionProfilePayload, subscribeSessionProfile } from "../utils/sessionProfile";
 import { mergePendingOauthIdentityIntoPayload } from "../utils/oauthPendingProfileImage";
 import { miniCardUserFromSession, messagesOffFromSession } from "../utils/connectProfileHydration";
+import { getPersonalDisplayFlags, isPersonalAudienceFieldVisible, PERSONAL_AUDIENCE_KEYS } from "../utils/profileAudience";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import NearbyPeopleMapView from "../components/NearbyPeopleMapView";
@@ -1171,7 +1172,7 @@ const ConnectScreen = ({ navigation }) => {
       const hasName = Boolean(String(pi.profile_personal_first_name || "").trim() || String(pi.profile_personal_last_name || "").trim());
       const hasPublicImage =
         Boolean(pi.profile_personal_image && String(pi.profile_personal_image).trim()) &&
-        (pi.profile_personal_image_is_public === 1 || pi.profile_personal_image_is_public === "1" || pi.profile_personal_image_is_public === true);
+        isPersonalAudienceFieldVisible(pi, PERSONAL_AUDIENCE_KEYS.image);
 
       // If session is still incomplete, refresh from API once and merge OAuth identity again.
       if (!hasName || !hasPublicImage) {
@@ -1779,6 +1780,16 @@ const ConnectScreen = ({ navigation }) => {
       const data = await response.json();
       return data.map((node) => {
         const deleted = isProfileDeleted(node);
+        const flags = deleted
+          ? { emailIsPublic: false, phoneIsPublic: false, tagLineIsPublic: false, locationIsPublic: false, imageIsPublic: false }
+          : getPersonalDisplayFlags(node);
+        const audienceFields = deleted
+          ? {}
+          : Object.fromEntries(
+              Object.values(PERSONAL_AUDIENCE_KEYS)
+                .filter((key) => Object.prototype.hasOwnProperty.call(node, key))
+                .map((key) => [key, node[key]]),
+            );
         return {
           ...node,
           __mc: {
@@ -1792,21 +1803,18 @@ const ConnectScreen = ({ navigation }) => {
             phoneVerified: !deleted && (node.phone_verified === true || node.phone_verified === 1 || node.phoneVerified === true),
             profileImage: deleted ? "" : sanitizeText(node.profile_personal_image || ""),
             relationship: node.circle_relationship || null,
-            emailIsPublic: !deleted && node.profile_personal_email_is_public === 1,
-            phoneIsPublic: !deleted && node.profile_personal_phone_number_is_public === 1,
-            tagLineIsPublic: !deleted && node.profile_personal_tag_line_is_public === 1,
-            locationIsPublic: !deleted && node.profile_personal_location_is_public === 1,
-            imageIsPublic: !deleted && node.profile_personal_image_is_public === 1,
+            emailIsPublic: flags.emailIsPublic,
+            phoneIsPublic: flags.phoneIsPublic,
+            tagLineIsPublic: flags.tagLineIsPublic,
+            locationIsPublic: flags.locationIsPublic,
+            imageIsPublic: flags.imageIsPublic,
             personal_info: {
               profile_personal_first_name: deleted ? "" : sanitizeText(node.profile_personal_first_name || ""),
               profile_personal_last_name: deleted ? "" : sanitizeText(node.profile_personal_last_name || ""),
               profile_personal_tag_line: deleted ? "" : sanitizeText(node.profile_personal_tag_line || ""),
               profile_personal_phone_number: deleted ? "" : sanitizeText(node.profile_personal_phone_number || ""),
               profile_personal_image: deleted ? "" : sanitizeText(node.profile_personal_image || ""),
-              profile_personal_email_is_public: deleted ? 0 : node.profile_personal_email_is_public || 0,
-              profile_personal_phone_number_is_public: deleted ? 0 : node.profile_personal_phone_number_is_public || 0,
-              profile_personal_tag_line_is_public: deleted ? 0 : node.profile_personal_tag_line_is_public || 0,
-              profile_personal_image_is_public: deleted ? 0 : node.profile_personal_image_is_public || 0,
+              ...audienceFields,
             },
             is_deleted: deleted,
           },
@@ -1834,6 +1842,16 @@ const ConnectScreen = ({ navigation }) => {
           const deleted = isProfileDeleted(p) || isProfileDeleted(circle);
           const tagLineRaw = deleted ? "" : p.profile_personal_tag_line || p.profile_personal_tagline || "";
           const emailRaw = deleted ? "" : p.user_email_id ?? p.user_email ?? "";
+          const flags = deleted
+            ? { emailIsPublic: false, phoneIsPublic: false, tagLineIsPublic: false, locationIsPublic: false, imageIsPublic: false }
+            : getPersonalDisplayFlags(p);
+          const audienceFields = deleted
+            ? {}
+            : Object.fromEntries(
+                Object.values(PERSONAL_AUDIENCE_KEYS)
+                  .filter((key) => Object.prototype.hasOwnProperty.call(p, key))
+                  .map((key) => [key, p[key]]),
+              );
           return {
             ...circle,
             degree: 1,
@@ -1849,11 +1867,11 @@ const ConnectScreen = ({ navigation }) => {
               phoneVerified: !deleted && (p.phone_verified === true || p.phone_verified === 1 || circle.phoneVerified === true),
               profileImage: deleted ? "" : sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
               relationship: circle.circle_relationship || null,
-              emailIsPublic: !deleted && p.profile_personal_email_is_public === 1,
-              phoneIsPublic: !deleted && p.profile_personal_phone_number_is_public === 1,
-              tagLineIsPublic: !deleted && (p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1),
-              locationIsPublic: !deleted && p.profile_personal_location_is_public === 1,
-              imageIsPublic: !deleted && p.profile_personal_image_is_public === 1,
+              emailIsPublic: flags.emailIsPublic,
+              phoneIsPublic: flags.phoneIsPublic,
+              tagLineIsPublic: flags.tagLineIsPublic,
+              locationIsPublic: flags.locationIsPublic,
+              imageIsPublic: flags.imageIsPublic,
               personal_info: {
                 profile_personal_first_name: deleted ? "" : sanitizeText(p.profile_personal_first_name || ""),
                 profile_personal_last_name: deleted ? "" : sanitizeText(p.profile_personal_last_name || ""),
@@ -1863,11 +1881,7 @@ const ConnectScreen = ({ navigation }) => {
                 profile_personal_image: deleted ? "" : sanitizeText(p.profile_personal_image || ""),
                 profile_personal_city: deleted ? "" : sanitizeText(p.profile_personal_city || ""),
                 profile_personal_state: deleted ? "" : sanitizeText(p.profile_personal_state || ""),
-                profile_personal_email_is_public: deleted ? 0 : p.profile_personal_email_is_public || 0,
-                profile_personal_phone_number_is_public: deleted ? 0 : p.profile_personal_phone_number_is_public || 0,
-                profile_personal_tag_line_is_public: deleted ? 0 : p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
-                profile_personal_image_is_public: deleted ? 0 : p.profile_personal_image_is_public || 0,
-                profile_personal_location_is_public: deleted ? 0 : p.profile_personal_location_is_public || 0,
+                ...audienceFields,
               },
               is_deleted: deleted,
             },
