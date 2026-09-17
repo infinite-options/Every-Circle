@@ -315,7 +315,8 @@ export async function createMinimalSignupProfile({
 }
 
 /**
- * After account + referrer are known: stub profile, then QR → Connect + reverse-contact notify, else AccountType.
+ * After account + referrer are known: stub profile, then open Connect with the referrer
+ * (relationship → their Profile). "I was not referred" goes to AccountType.
  */
 export async function finishSignupAfterReferral(
   navigation,
@@ -344,16 +345,24 @@ export async function finishSignupAfterReferral(
     throw err;
   }
 
-  const qrOwnerUid = String(routeParams.profile_uid || routeParams.referralProfileUid || "").trim();
+  /** Placeholder used when the user taps "I was not referred" — not a real profile to connect with. */
+  const NOT_REFERRED_UID = "110-000001";
+  const fromRoute = String(routeParams.profile_uid || routeParams.referralProfileUid || "").trim();
+  const connectTargetUid =
+    fromRoute && fromRoute !== NOT_REFERRED_UID
+      ? fromRoute
+      : ref && ref !== NOT_REFERRED_UID
+        ? ref
+        : "";
 
-  // Same path as UserInfo / Login after scan: open Connect modal and notify QR owner (Exchange Contact Info).
-  if (routeParams.returnToScanLanding && qrOwnerUid) {
-    await goToNetworkForScanConnect(navigation, qrOwnerUid, { scannerIsNewSignup: true });
+  if (routeParams.returnToNewConnection && connectTargetUid) {
+    navigation.navigate("NewConnection", { profile_uid: connectTargetUid });
     return;
   }
 
-  if (routeParams.returnToNewConnection && qrOwnerUid) {
-    navigation.navigate("NewConnection", { profile_uid: qrOwnerUid });
+  // Home signup + QR scan: open Connect with Me immediately (Ably notify is backgrounded).
+  if (connectTargetUid) {
+    await goToNetworkForScanConnect(navigation, connectTargetUid, { scannerIsNewSignup: true });
     return;
   }
 

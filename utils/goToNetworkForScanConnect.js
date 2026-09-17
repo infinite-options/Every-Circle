@@ -29,12 +29,12 @@ export async function goToNetworkForScanConnect(navigation, scannedProfileUid, o
 
   navigation.navigate("Connect", networkScanConnectParams(scannedProfileUid));
 
-  // Notify QR owner (requires scanner profile_uid — set after UserInfo on new signup)
+  // Notify QR owner in the background — do not block showing Connect with Me.
   if (scannerProfileUid) {
-    await publishNewConnectionOpened(scannedProfileUid, {
+    void publishNewConnectionOpened(scannedProfileUid, {
       message: "QR Code Scanned",
       scannerProfileUid,
       scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
-    });
+    }).catch(() => {});
   }
 }

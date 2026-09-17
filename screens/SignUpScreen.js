@@ -99,9 +99,15 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     console.log("[GooglePhoto] route.params?.googleUserInfo?.profilePicture =", route.params?.googleUserInfo?.profilePicture);
 
     try {
+      const isRealReferrer = selectedReferralUid && selectedReferralUid !== NOT_REFERRED_REFERRAL_UID;
       await finishSignupAfterReferral(navigation, {
         referralUid: selectedReferralUid,
-        routeParams: { ...authContinuationParams(route), referralProfileUid: route.params?.referralProfileUid },
+        routeParams: {
+          ...authContinuationParams(route),
+          // Prefer QR owner from scan flow; otherwise the person just chosen in Who referred you.
+          referralProfileUid: route.params?.referralProfileUid || (isRealReferrer ? selectedReferralUid : undefined),
+          profile_uid: route.params?.profile_uid || (isRealReferrer ? selectedReferralUid : undefined),
+        },
         email: email || pendingGoogleUserInfo?.email || pendingAppleUserInfo?.email || "",
         firstName: oauthFirst,
         lastName: oauthLast,
@@ -668,7 +674,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               >
                 <Text style={{ fontSize: 20, fontWeight: "bold", color: "#333", marginBottom: 6 }}>Who referred you to everyCircle?</Text>
                 <Text style={{ fontSize: 14, lineHeight: 20, color: "#666", marginBottom: 12 }}>
-                  Type a name, email, or location — matching people appear as you type.
+                  Start typing a name, email, or location — matching people appear automatically.
                 </Text>
 
                 <ReferralSearch
@@ -686,8 +692,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   }
                   embedded={true}
                   hideEmptyState={false}
-                  instructionText='Search by email, city, state, or name'
-                  searchPlaceholder='Email, location, or name'
+                  instructionText='Type at least 2 characters to see matching people'
+                  searchPlaceholder='Name, email, or location'
                   noResultsSubtext='Try another spelling, city, or email.'
                 />
               </View>
@@ -757,7 +763,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         <View style={styles.finishingOverlay} pointerEvents='auto'>
           <ActivityIndicator size='large' color='#fff' />
           <Text style={styles.finishingText}>Finishing your profile…</Text>
-          <Text style={styles.finishingSubText}>Saving your Google photo</Text>
+          {pendingGoogleUserInfo?.profilePicture || route.params?.googleUserInfo?.profilePicture ? (
+            <Text style={styles.finishingSubText}>Saving your Google photo</Text>
+          ) : null}
         </View>
       ) : null}
     </View>

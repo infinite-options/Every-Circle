@@ -1,6 +1,6 @@
 // ScannedProfilePopup.js - Popup to display scanned profile information
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView, useWindowDimensions, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView, useWindowDimensions, Alert, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
@@ -87,6 +87,7 @@ const ScannedProfilePopup = ({
   actionLabel = "Add to Network",
   title = "Connect With Me",
   relationshipRequired = false,
+  loadingProfile = false,
 }) => {
   const { darkMode } = useDarkMode();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
@@ -152,7 +153,7 @@ const ScannedProfilePopup = ({
     { relationship: selectedRelationship, date, event, note, city, state, introducedBy },
     initialData,
   );
-  const isSaveDisabled = (relationshipRequired && !isRelationshipValid) || !hasChanges;
+  const isSaveDisabled = (relationshipRequired && !isRelationshipValid) || !hasChanges || loadingProfile;
 
   const handleAdd = () => {
     if (relationshipRequired && !isRelationshipValid) {
@@ -198,7 +199,14 @@ const ScannedProfilePopup = ({
             bounces={false}
           >
             <View style={styles.content}>
-              <MiniCard user={profileData} />
+              {loadingProfile ? (
+                <View style={styles.loadingProfileRow}>
+                  <ActivityIndicator size='small' color={darkMode ? "#fff" : "#007AFF"} />
+                  <Text style={[styles.loadingProfileText, darkMode && styles.darkLoadingProfileText]}>Loading profile…</Text>
+                </View>
+              ) : (
+                <MiniCard user={profileData} />
+              )}
             </View>
 
             <View style={styles.relationshipContainer}>
@@ -405,6 +413,20 @@ const styles = StyleSheet.create({
   },
   content: {
     marginBottom: 20,
+  },
+  loadingProfileRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 20,
+  },
+  loadingProfileText: {
+    fontSize: 15,
+    color: "#666",
+  },
+  darkLoadingProfileText: {
+    color: "#ccc",
   },
   buttonContainer: {
     gap: 10,

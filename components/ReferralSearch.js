@@ -42,12 +42,12 @@ const ReferralSearch = ({
   embedded = false,
   onSelectUser,
   showNewUserButton = true,
-  instructionText = "Search for the person who referred you",
+  instructionText = "Type at least 2 characters to see matching people",
   hideEmptyState = false,
   searchButtonColor,
   modalTitle = "Who referred you?",
   helperText,
-  searchPlaceholder = "Search by name or city",
+  searchPlaceholder = "Name, email, or location",
   noResultsSubtext = "Try a different name or location",
   networkData = [],
   preparingNetwork = false,
@@ -227,6 +227,7 @@ const ReferralSearch = ({
           keyExtractor={(item, index) => `${item.profile_personal_uid || "user"}-${index}`}
           style={styles.resultsList}
           keyboardShouldPersistTaps='handled'
+          nestedScrollEnabled
         />
       ) : hideEmptyState ? null : (
         <View style={styles.centerContainer}>

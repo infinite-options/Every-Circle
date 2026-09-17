@@ -84,7 +84,6 @@ const ALLOWED_TWO_LETTER_TLDS = new Set(
     "qa",
     "kw",
     "bh",
-    "om",
     "eg",
     "ng",
     "ke",
@@ -103,6 +102,7 @@ const BLOCKED_TLD_TYPOS = new Set(
     "con", // com
     "cmo",
     "ocm",
+    "om", // com (missing c)
     "comm",
     "coom",
     "comn",

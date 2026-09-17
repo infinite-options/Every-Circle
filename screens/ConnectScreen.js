@@ -648,6 +648,7 @@ const ConnectScreen = ({ navigation }) => {
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [scannedProfileData, setScannedProfileData] = useState(null);
   const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
+  const [scannedProfileLoading, setScannedProfileLoading] = useState(false);
   const showScannedProfileModalRef = useRef(null);
   // 'scan' = current user scanned someone; 'ably' = QR owner received scanner notification
   const connectPopupContextRef = useRef({ source: "scan", scannerIsNewSignup: false });
@@ -1489,16 +1490,32 @@ const ConnectScreen = ({ navigation }) => {
 
   const showScannedProfileModal = useCallback(async (profileUid, options = {}) => {
     if (!profileUid) return;
+    connectPopupContextRef.current = {
+      source: options.source === "ably" ? "ably" : "scan",
+      scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
+    };
+    // Show Connect with Me immediately; fill MiniCard once the public card loads.
+    setScannedProfileData({
+      profile_uid: profileUid,
+      firstName: "",
+      lastName: "",
+      tagLine: "",
+      email: "",
+      phoneNumber: "",
+      profileImage: "",
+      city: "",
+      state: "",
+      imageIsPublic: false,
+    });
+    setScannedProfileLoading(true);
+    setShowScannedProfilePopup(true);
     try {
-      connectPopupContextRef.current = {
-        source: options.source === "ably" ? "ably" : "scan",
-        scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
-      };
       const profileInfo = await fetchPublicProfileCard(profileUid);
       setScannedProfileData(profileInfo);
-      setShowScannedProfilePopup(true);
     } catch (error) {
       console.error("Error loading profile for connect modal:", error);
+    } finally {
+      setScannedProfileLoading(false);
     }
   }, []);
 
@@ -1560,9 +1577,7 @@ const ConnectScreen = ({ navigation }) => {
     try {
       if (!scannedProfileData?.profile_uid) return;
 
-      // Capture before await — modal close / remount must not change the routing decision.
       const connectedProfileUid = scannedProfileData.profile_uid;
-      const { source, scannerIsNewSignup } = connectPopupContextRef.current || {};
 
       const result = await addScannedCircleConnection(connectedProfileUid, connectionData);
       if (result.ok) {
@@ -1574,22 +1589,35 @@ const ConnectScreen = ({ navigation }) => {
         setShowScannedProfilePopup(false);
         setScannedProfileData(null);
         lastHandledScanConnectKeyRef.current = null;
+        connectPopupContextRef.current = { source: "scan", scannerIsNewSignup: false };
 
-        // Scanner → scanned user's Profile.
-        // QR owner → scanner's Profile if scanner is an existing member; stay on Connect if scanner is mid-signup.
-        const shouldOpenProfile = source === "scan" || (source === "ably" && !scannerIsNewSignup);
-        if (shouldOpenProfile && connectedProfileUid) {
-          // Profile is often already in the stack as the QR owner's own profile. A plain
-          // navigate() can pop to that screen and keep empty/stale params — merge: false
-          // replaces params so the other member's profile loads (same pattern as BottomNavBar).
-          InteractionManager.runAfterInteractions(() => {
-            navigation.navigate({
-              name: "Profile",
-              params: { profile_uid: connectedProfileUid, returnTo: "Connect" },
-              merge: false,
-            });
-          });
+        // After Connect with Me: full name → stay on Connect (own QR); missing name → own Profile to complete it.
+        let first = String(userProfileData?.firstName || "").trim();
+        let last = String(userProfileData?.lastName || "").trim();
+        if (!first || !last) {
+          try {
+            const pairs = await AsyncStorage.multiGet(["user_first_name", "user_last_name"]);
+            first = first || String(pairs?.[0]?.[1] || "").trim();
+            last = last || String(pairs?.[1]?.[1] || "").trim();
+          } catch (_) {}
         }
+        if (!first || !last) {
+          try {
+            const session = await getSessionProfile();
+            const p = session?.personalInfo || session?.rawProfile?.personal_info || {};
+            first = first || String(p.profile_personal_first_name || "").trim();
+            last = last || String(p.profile_personal_last_name || "").trim();
+          } catch (_) {}
+        }
+        const hasFullName = Boolean(first && last);
+
+        InteractionManager.runAfterInteractions(() => {
+          if (hasFullName) {
+            navigation.navigate({ name: "Connect", params: {}, merge: false });
+          } else {
+            navigation.navigate({ name: "Profile", params: {}, merge: false });
+          }
+        });
       } else if (result.error && result.error !== "not_logged_in" && result.error !== "self") {
         console.error("Error adding scanned connection:", result.error);
       }
@@ -4027,19 +4055,20 @@ const ConnectScreen = ({ navigation }) => {
         showNewUserButton={false}
         modalTitle='Connect & Follow'
         helperText='Connecting with someone allows you to See and Follow their recommendations. They get added to your Circle and their recommendations, offers and wishes rank higher in your search results. Connecting with someone does not add you to their Circles. They must add you independently.'
-        instructionText='Search by email, city, state, or name, then choose someone to open their profile.'
+        instructionText='Type a name, email, or location — matching people appear as you type.'
         searchPlaceholder='Email, location, or name'
         noResultsSubtext='Try another spelling, city, or email.'
-        searchButtonColor={getHeaderColor("network")}
         networkData={connectDirectlyMergedNetworkData}
         preparingNetwork={connectDirectlyPrepareLoading}
       />
       <ScannedProfilePopup
         visible={showScannedProfilePopup}
         profileData={scannedProfileData}
+        loadingProfile={scannedProfileLoading}
         onClose={() => {
           setShowScannedProfilePopup(false);
           setScannedProfileData(null);
+          setScannedProfileLoading(false);
           lastHandledScanConnectKeyRef.current = null;
           connectPopupContextRef.current = { source: "scan", scannerIsNewSignup: false };
         }}
