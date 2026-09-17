@@ -5,6 +5,7 @@ import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/nativ
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
+import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import AppleSignIn from "../AppleSignIn";
 import { CREATE_ACCOUNT_ENDPOINT, CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT, UPDATE_EMAIL_PASSWORD_ENDPOINT } from "../apiConfig";
@@ -19,6 +20,13 @@ import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
 import { isValidEmail } from "../utils/emailValidation";
+import {
+  savePendingScanConnection,
+  hasPendingScanConnectionFor,
+  captureEphemeralSignupKeys,
+  restoreEphemeralSignupKeys,
+  flushPendingScanConnectionAfterAuth,
+} from "../utils/pendingScanConnection";
 import versionData from "../version.json";
 
 const OAUTH_TIMEOUT_MS = 30000;
@@ -136,6 +144,11 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [submittingPassword, setSubmittingPassword] = useState(false);
   const [emailFallbackHint, setEmailFallbackHint] = useState("");
   const [scrollViewportH, setScrollViewportH] = useState(0);
+  /** Guest QR: notes saved (or valid draft) before showing Google/Apple/email auth. */
+  const [notesCommitted, setNotesCommitted] = useState(false);
+  const [showGuestConnectPopup, setShowGuestConnectPopup] = useState(false);
+  const [savingGuestNotes, setSavingGuestNotes] = useState(false);
+  const [checkingDraft, setCheckingDraft] = useState(!!profileUid);
   const redirectStartedRef = useRef(false);
   const emailInputRef = useRef(null);
   const oauthWatchdogRef = useRef(null);
@@ -183,6 +196,57 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }, [checkSession]),
   );
 
+  // Resume auth step if a valid draft already exists for this QR owner (within TTL).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!profileUid) {
+        setCheckingDraft(false);
+        return;
+      }
+      setCheckingDraft(true);
+      try {
+        const hasDraft = await hasPendingScanConnectionFor(profileUid);
+        if (cancelled) return;
+        setNotesCommitted(hasDraft);
+        if (!hasDraft) {
+          setShowGuestConnectPopup(true);
+        }
+      } finally {
+        if (!cancelled) setCheckingDraft(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileUid]);
+
+  const clearAndRestoreEphemeralKeys = useCallback(async (referralUidOverride) => {
+    const ephemeral = await captureEphemeralSignupKeys();
+    await AsyncStorage.clear();
+    refreshAllowCookies();
+    await restoreEphemeralSignupKeys(ephemeral, referralUidOverride || ephemeral.referralUid);
+  }, []);
+
+  const handleGuestAddConnection = useCallback(
+    async (connectionData) => {
+      if (!profileUid || savingGuestNotes) return;
+      setSavingGuestNotes(true);
+      try {
+        await savePendingScanConnection(profileUid, connectionData);
+        await AsyncStorage.setItem("referral_uid", profileUid);
+        setNotesCommitted(true);
+        setShowGuestConnectPopup(false);
+      } catch (e) {
+        console.warn("ScanLanding - save pending connection failed:", e?.message || e);
+        Alert.alert("Error", "Could not save your notes. Please try again.");
+      } finally {
+        setSavingGuestNotes(false);
+      }
+    },
+    [profileUid, savingGuestNotes],
+  );
+
   const redirectToNetwork = useCallback(async () => {
     if (!profileUid || redirectStartedRef.current) return;
     const myUid = await AsyncStorage.getItem("profile_uid");
@@ -190,6 +254,17 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
 
     redirectStartedRef.current = true;
     setRedirecting(true);
+
+    // Returning after auth with a notes draft: create connection + notify owner (no empty Connect with Me).
+    const flushResult = await flushPendingScanConnectionAfterAuth({
+      scannerIsNewSignup: true,
+      relatedProfileUid: profileUid,
+    });
+    if (flushResult.flushed) {
+      navigation.navigate("Profile", { profile_uid: flushResult.relatedProfileUid || profileUid });
+      return;
+    }
+
     await goToNetworkForScanConnect(navigation, profileUid);
   }, [profileUid, navigation]);
 
@@ -373,9 +448,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
         setPasswordFallbackError(createAccountData.message || "Failed to create account.");
         return;
       }
-      await AsyncStorage.clear();
-      refreshAllowCookies();
-      if (preservedReferralUid) await AsyncStorage.setItem("referral_uid", preservedReferralUid);
+      await clearAndRestoreEphemeralKeys(preservedReferralUid);
       await finishAfterPasswordSet(createAccountData.user_uid, trimmed, preservedReferralUid, password);
     } catch (err) {
       console.error("ScanLanding - password fallback failed:", err);
@@ -383,7 +456,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     } finally {
       setSubmittingPassword(false);
     }
-  }, [password, confirmPassword, pendingTempSignupUserUid, email, profileUid, authParams, navigation, finishAfterPasswordSet]);
+  }, [password, confirmPassword, pendingTempSignupUserUid, email, profileUid, authParams, navigation, finishAfterPasswordSet, clearAndRestoreEphemeralKeys]);
 
   /** Email-only signup on this page: temp password email + stub profile → Connect + reverse-contact notify. */
   const handleEmailContinue = useCallback(async () => {
@@ -441,8 +514,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       }
 
       if (createAccountData.code === 281 && createAccountData.user_uid) {
-        await AsyncStorage.clear();
-        refreshAllowCookies();
+        await clearAndRestoreEphemeralKeys(preservedReferralUid);
         await AsyncStorage.setItem("user_uid", String(createAccountData.user_uid));
         await AsyncStorage.setItem("user_email_id", trimmed);
         if (preservedReferralUid) {
@@ -482,7 +554,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     } finally {
       setSubmittingEmail(false);
     }
-  }, [email, submittingEmail, signingIn, persistReferral, profileUid, authParams, navigation, openPasswordFallbackModal]);
+  }, [email, submittingEmail, signingIn, persistReferral, profileUid, authParams, navigation, openPasswordFallbackModal, clearAndRestoreEphemeralKeys]);
 
   const handleGoogleSignUp = useCallback(async () => {
     if (signingIn || submittingEmail || !onGoogleSignUp) return;
@@ -582,7 +654,9 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }).catch(() => {});
   }, [profileData]);
 
-  const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
+  const showGuestActions = !checkingSession && !checkingDraft && !isLoggedIn && !redirecting;
+  const showGuestNotesStep = showGuestActions && !notesCommitted;
+  const showGuestAuthStep = showGuestActions && notesCommitted;
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
   const versionLabel = buildVersionLabel();
 
@@ -708,21 +782,44 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       >
         <View style={[styles.panel, panelMinHeight ? { minHeight: panelMinHeight } : null]}>
           <View style={styles.body}>
-            <Text style={styles.headline}>Connect on everyCircle</Text>
+            <Text style={styles.headline}>{showGuestNotesStep ? "Connect With Me" : "Connect on everyCircle"}</Text>
             <Text style={styles.sub}>
-              {showRedirecting ? "Taking you to your network…" : "You're one click from joining the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+              {showRedirecting
+                ? "Taking you to your network…"
+                : showGuestNotesStep
+                  ? "Add a few notes about how you know this person, then join everyCircle to save the connection."
+                  : "You're one click from joining the most trusted network on the planet. Join with Google or Apple, or enter your email."}
             </Text>
 
-            {(loading || showRedirecting) && (
+            {(loading || checkingDraft || showRedirecting) && (
               <View style={styles.centerRow}>
                 <ActivityIndicator size='large' color='#2434C2' />
-                <Text style={styles.muted}>{loading ? "Loading profile…" : "Opening connect…"}</Text>
+                <Text style={styles.muted}>{loading || checkingDraft ? "Loading profile…" : "Opening connect…"}</Text>
               </View>
             )}
 
             {!loading && error && <Text style={styles.error}>{error}</Text>}
 
-            {!loading && !error && profileData && showGuestActions && (
+            {!loading && !error && profileData && showGuestNotesStep && (
+              <>
+                <View style={styles.cardWrap}>
+                  <MiniCard user={profileData} />
+                </View>
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={() => setShowGuestConnectPopup(true)}
+                  activeOpacity={0.85}
+                  disabled={savingGuestNotes}
+                >
+                  <Text style={styles.primaryBtnText}>Add connection details</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.secondaryBtn, styles.lastSecondaryBtn]} onPress={downloadVCard} activeOpacity={0.85}>
+                  <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {!loading && !error && profileData && showGuestAuthStep && (
               <>
                 <View style={styles.cardWrap}>
                   <MiniCard user={profileData} />
@@ -795,6 +892,15 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
           <Text style={styles.version}>{versionLabel}</Text>
         </View>
       </ScrollView>
+
+      <ScannedProfilePopup
+        visible={showGuestNotesStep && showGuestConnectPopup && !!profileData}
+        profileData={profileData}
+        onClose={() => setShowGuestConnectPopup(false)}
+        onAddConnection={handleGuestAddConnection}
+        title='Connect With Me'
+        actionLabel={savingGuestNotes ? "Saving…" : "Add to Network"}
+      />
 
       <Modal visible={showPasswordFallbackModal} transparent animationType='fade'>
         <View style={styles.modalOverlay}>

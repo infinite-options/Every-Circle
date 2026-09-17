@@ -17,6 +17,7 @@ import { fetchCircleAuthLogin } from "../utils/authSession";
 import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
+import { flushPendingScanConnectionAfterAuth } from "../utils/pendingScanConnection";
 import { isAccountDeletedAuthMessage, isPendingDeletionAuthResponse, reactivateNavParamsFromAuthPayload } from "../utils/deletedProfile";
 import { clearTempPasswordGracePeriod, clearUserPasswordTempFlag } from "../utils/tempPasswordGrace";
 import AppHeader from "../components/AppHeader";
@@ -214,7 +215,15 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
       if (scanProfileUid) {
         const sessionProfileUid = await ensureSessionProfileUid(user_uid);
         if (sessionProfileUid) {
-          await goToNetworkForScanConnect(navigation, scanProfileUid);
+          const flushResult = await flushPendingScanConnectionAfterAuth({
+            scannerIsNewSignup: false,
+            relatedProfileUid: scanProfileUid,
+          });
+          if (flushResult.flushed) {
+            navigation.navigate("Profile", { profile_uid: flushResult.relatedProfileUid || scanProfileUid });
+          } else {
+            await goToNetworkForScanConnect(navigation, scanProfileUid);
+          }
         } else {
           await finishSignupAfterReferral(navigation, {
             referralUid: scanProfileUid,

@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { markAccountScreenPersonalStale } from "./accountScreenPersonalCache";
 import { USER_PROFILE_JSON_CACHE_KEY, clearSessionProfileCache } from "./sessionProfile";
+import { discardStalePendingScanConnectionOnLaunch } from "./pendingScanConnection";
 
 /**
  * Keys preserved after purge so users aren't forced through terms/cookies UI again after logout or a wipe.
@@ -242,6 +243,11 @@ export async function clearEphemeralReferralKeysOnLaunch() {
     await AsyncStorage.multiRemove(["referral_uid", "referral_email"]);
   } catch (e) {
     console.warn("clearEphemeralReferralKeysOnLaunch:", e?.message || e);
+  }
+  try {
+    await discardStalePendingScanConnectionOnLaunch();
+  } catch (e) {
+    console.warn("clearEphemeralReferralKeysOnLaunch pending draft:", e?.message || e);
   }
 }
 

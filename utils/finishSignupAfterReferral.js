@@ -7,6 +7,7 @@ import { profileUidFromUserProfileResponse } from "./ensureSessionProfileUid";
 import { refreshCircleTokens } from "./authSession";
 import { getUserEmail } from "./emailStorage";
 import { goToNetworkForScanConnect } from "./goToNetworkForScanConnect";
+import { flushPendingScanConnectionAfterAuth } from "./pendingScanConnection";
 import { refreshSessionProfileFromNetwork, saveSessionProfilePayload } from "./sessionProfile";
 import {
   setOauthPendingProfileIdentity,
@@ -360,7 +361,17 @@ export async function finishSignupAfterReferral(
     return;
   }
 
-  // Home signup + QR scan: open Connect with Me immediately (Ably notify is backgrounded).
+  // QR guest notes-first: draft was saved on Add to Network — flush + notify owner (no empty Connect with Me).
+  const flushResult = await flushPendingScanConnectionAfterAuth({
+    scannerIsNewSignup: true,
+    relatedProfileUid: connectTargetUid || undefined,
+  });
+  if (flushResult.flushed) {
+    navigation.navigate("Profile", { profile_uid: flushResult.relatedProfileUid });
+    return;
+  }
+
+  // Home signup + QR scan (no draft): open Connect with Me immediately (Ably notify is backgrounded).
   if (connectTargetUid) {
     await goToNetworkForScanConnect(navigation, connectTargetUid, { scannerIsNewSignup: true });
     return;

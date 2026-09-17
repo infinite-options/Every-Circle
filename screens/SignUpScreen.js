@@ -19,6 +19,7 @@ import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
 import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
 import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
 import { isValidEmail } from "../utils/emailValidation";
+import { captureEphemeralSignupKeys, restoreEphemeralSignupKeys } from "../utils/pendingScanConnection";
 
 function authContinuationParams(route) {
   const p = route?.params || {};
@@ -352,8 +353,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
     setIsAttemptingLogin(true);
     try {
+      const ephemeral = await captureEphemeralSignupKeys();
       const preservedReferralUid =
-        String(route.params?.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+        String(route.params?.referralProfileUid || ephemeral.referralUid || "").trim() || null;
       const emailTrimmed = email.trim();
 
       if (pendingTempSignupUserUid) {
@@ -400,6 +402,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         }
         await AsyncStorage.clear();
         refreshAllowCookies();
+        await restoreEphemeralSignupKeys(ephemeral, preservedReferralUid);
         await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
         await AsyncStorage.setItem("user_email_id", emailTrimmed);
         if (preservedReferralUid) await AsyncStorage.setItem("referral_uid", preservedReferralUid);
@@ -459,10 +462,12 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           return;
         }
         if (result.user_uid) {
+          const ephemeral = await captureEphemeralSignupKeys();
           const preservedReferralUid =
-            String(route.params?.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+            String(route.params?.referralProfileUid || ephemeral.referralUid || "").trim() || null;
           await AsyncStorage.clear();
           refreshAllowCookies();
+          await restoreEphemeralSignupKeys(ephemeral, preservedReferralUid);
           await AsyncStorage.setItem("user_uid", result.user_uid);
           await AsyncStorage.setItem("user_email_id", googleUserInfo.email);
           if (preservedReferralUid) {
@@ -500,8 +505,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       setUserExistsError("");
       setIsAttemptingLogin(true);
       const emailTrimmed = email.trim();
+      const ephemeral = await captureEphemeralSignupKeys();
       const preservedReferralUid =
-        String(route.params?.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+        String(route.params?.referralProfileUid || ephemeral.referralUid || "").trim() || null;
 
       let createAccountData = null;
       let createAccountResponse = null;
@@ -539,6 +545,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       if (createAccountData.code === 281 && createAccountData.user_uid) {
         await AsyncStorage.clear();
         refreshAllowCookies();
+        await restoreEphemeralSignupKeys(ephemeral, preservedReferralUid);
         await AsyncStorage.setItem("user_uid", String(createAccountData.user_uid));
         await AsyncStorage.setItem("user_email_id", emailTrimmed);
         if (preservedReferralUid) {

@@ -90,6 +90,13 @@ import ChatScreen from "./screens/ChatScreen";
 import AddReviewSearchScreen from "./screens/AddReviewSearchScreen";
 import EveryCircleMapScreen from "./screens/EveryCircleMapScreen";
 import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv, clearSessionAsyncStorage, clearSessionAsyncStorageOnLogin } from "./utils/clearAppAsyncStorage";
+import {
+  captureEphemeralSignupKeys,
+  restoreEphemeralSignupKeys,
+  flushPendingScanConnectionAfterAuth,
+} from "./utils/pendingScanConnection";
+import { ensureSessionProfileUid } from "./utils/ensureSessionProfileUid";
+import { goToNetworkForScanConnect } from "./utils/goToNetworkForScanConnect";
 import { fetchMiddleware as fetchCircle } from "./utils/httpMiddleware";
 import { appleCircleAuthPayload, fetchCircleAuthSocial, googleCircleAuthPayload, setOnAuthSessionExpired } from "./utils/authSession";
 import { isPendingDeletionAuthResponse, reactivateNavParamsFromAuthPayload } from "./utils/deletedProfile";
@@ -163,14 +170,17 @@ function buildAppleAuthRequestBody(userInfo) {
 async function completeAppleAuthSession(navigation, userInfo, options) {
   const { clearStorage = false, setError, failureAlertTitle = "Apple", authRouteParams = {} } = options;
   try {
-    // Capture QR/scan referrer before any storage wipe so signup can skip "Who referred you?"
-    const preservedReferralUid = String(authRouteParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+    // Capture QR/scan referrer + pending connection draft before any storage wipe.
+    const ephemeral = await captureEphemeralSignupKeys();
+    const preservedReferralUid =
+      String(authRouteParams.referralProfileUid || ephemeral.referralUid || "").trim() || null;
     const preservedProfileUid = String(authRouteParams.profile_uid || "").trim() || null;
     const preservedReturnToScanLanding = !!authRouteParams.returnToScanLanding;
     const preservedReturnToNewConnection = !!authRouteParams.returnToNewConnection;
 
     if (clearStorage) {
       await AsyncStorage.clear();
+      await restoreEphemeralSignupKeys(ephemeral, preservedReferralUid);
     }
     const { user, idToken, authorizationCode } = userInfo;
     console.log("=== App.js: Apple — userInfo (from AppleSignIn) ===", userInfo);
@@ -253,6 +263,9 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
     if (preservedReferralUid) {
       await AsyncStorage.setItem("referral_uid", preservedReferralUid);
     }
+    if (ephemeral.pendingRaw) {
+      await restoreEphemeralSignupKeys({ pendingRaw: ephemeral.pendingRaw }, null);
+    }
     if (idToken) {
       const circleAuth = await fetchCircleAuthSocial(appleCircleAuthPayload(idToken), fetchCircle);
       if (circleAuth?.pendingDeletion) {
@@ -279,6 +292,21 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
     const existingAccount = isExistingSocialAccountApiResult(result);
 
     if (existingAccount) {
+      await ensureSessionProfileUid(String(userUid));
+      const flushResult = await flushPendingScanConnectionAfterAuth({
+        scannerIsNewSignup: false,
+        relatedProfileUid: preservedProfileUid || undefined,
+      });
+      if (flushResult.flushed) {
+        navigation.navigate("Profile", {
+          profile_uid: flushResult.relatedProfileUid || preservedProfileUid,
+        });
+        return;
+      }
+      if (preservedReturnToScanLanding && preservedProfileUid) {
+        await goToNetworkForScanConnect(navigation, preservedProfileUid);
+        return;
+      }
       navigation.navigate("Profile", {
         oauthPrefill: {
           appleUserInfo: appleUserInfoPayload,
@@ -314,14 +342,17 @@ function isExistingSocialAccountApiResult(result) {
  */
 async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, options = {}) {
   const { clearStorage = false, authRouteParams = {} } = options;
-  // Capture QR/scan referrer before any storage wipe so signup can skip "Who referred you?"
-  const preservedReferralUid = String(authRouteParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
+  // Capture QR/scan referrer + pending connection draft before any storage wipe.
+  const ephemeral = await captureEphemeralSignupKeys();
+  const preservedReferralUid =
+    String(authRouteParams.referralProfileUid || ephemeral.referralUid || "").trim() || null;
   const preservedProfileUid = String(authRouteParams.profile_uid || "").trim() || null;
   const preservedReturnToScanLanding = !!authRouteParams.returnToScanLanding;
   const preservedReturnToNewConnection = !!authRouteParams.returnToNewConnection;
 
   if (clearStorage) {
     await AsyncStorage.clear();
+    await restoreEphemeralSignupKeys(ephemeral, preservedReferralUid);
   }
 
   console.log("[GooglePhoto] completeGoogleSocialAuth input userInfo.user.photo =", userInfo?.user?.photo);
@@ -388,6 +419,9 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
   if (preservedReferralUid) {
     await AsyncStorage.setItem("referral_uid", preservedReferralUid);
   }
+  if (ephemeral.pendingRaw) {
+    await restoreEphemeralSignupKeys({ pendingRaw: ephemeral.pendingRaw }, null);
+  }
   const circleAuth = await fetchCircleAuthSocial(googleCircleAuthPayload(googleAuthToken, userInfo), fetchCircle);
   if (circleAuth?.pendingDeletion) {
     await clearSessionAsyncStorage();
@@ -412,6 +446,21 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
   console.log("[GooglePhoto] googleUserInfo.profilePicture =", googleUserInfo.profilePicture);
 
   if (existingAccount) {
+    await ensureSessionProfileUid(String(userUid));
+    const flushResult = await flushPendingScanConnectionAfterAuth({
+      scannerIsNewSignup: false,
+      relatedProfileUid: preservedProfileUid || undefined,
+    });
+    if (flushResult.flushed) {
+      navigation.navigate("Profile", {
+        profile_uid: flushResult.relatedProfileUid || preservedProfileUid,
+      });
+      return;
+    }
+    if (preservedReturnToScanLanding && preservedProfileUid) {
+      await goToNetworkForScanConnect(navigation, preservedProfileUid);
+      return;
+    }
     navigation.navigate("Profile", {
       oauthPrefill: {
         googleUserInfo,
