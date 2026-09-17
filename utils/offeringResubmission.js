@@ -59,7 +59,9 @@ export function mapProfileOfferingToFormItem(exp, profileUid) {
     // exp.visibility first: this can run twice (ProfileScreen's buildOfferingCardModel, then again
     // when EditProfileScreen re-maps an already-form-shaped item from route params) - on the second
     // pass the raw profile_expertise_visibility column is gone, only the previous result remains.
-    visibility: exp.visibility || resolveVisibilityLevel(exp, "profile_expertise_visibility", "profile_expertise_is_public", "profile_expertise_visibility_circles"),
+    visibility:
+      exp.visibility ||
+      resolveVisibilityLevel(exp, "profile_expertise_visibility", "profile_expertise_is_public", "profile_expertise_visibility_circles", "profile_expertise_visibility_degrees"),
     _expNewImageUri: "",
     _expWebImageFile: null,
     _expOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
@@ -124,11 +126,19 @@ function buildOfferingConditionForApi(e) {
 
 export function mapOfferingFormToPayload(e) {
   const publicBlocked = isOfferingVisibilityBlocked(e);
-  // A moderated item can never be set visible, regardless of what level the owner picked -
-  // force it back to Only Me, mirroring the previous isPublic-only enforcement.
-  const { level: pickedLevel, circleTypes } = parseVisibilityValue(e.visibility);
-  const visibilityLevel = publicBlocked ? "only_me" : pickedLevel;
-  const isPublicValue = visibilityLevel === "only_me" ? 0 : 1;
+  // A moderated item can never be set visible, regardless of what level/degrees/circles the owner
+  // picked - force it back to Only Me, mirroring the previous isPublic-only enforcement.
+  const parsed = parseVisibilityValue(e.visibility);
+  const scope = publicBlocked ? "only_me" : parsed.level;
+  const degrees = publicBlocked ? [] : parsed.degrees;
+  const circleTypes = publicBlocked ? [] : parsed.circleTypes;
+  const isPublicValue = scope === "only_me" ? 0 : 1;
+  // The DB enum only knows everyone/degree1/degree2/degree3/only_me - any picked degrees map to
+  // the highest one as a legacy-compatible placeholder (or "everyone" when no degree is picked,
+  // circles-only included); the degrees CSV sent below is what actually governs gating once any
+  // degrees column exists for this field.
+  const visibilityLevel = scope === "only_me" ? "only_me" : degrees.length > 0 ? `degree${Math.max(...degrees)}` : "everyone";
+  const visibilityDegreesCsv = degrees.join(",");
   const unlimited = isOfferingQtyUnlimited(e);
   const shippingFields = buildOfferingShippingForApi(e);
   const normalizedCost = normalizeOfferingCostForSubmit(e.cost);
@@ -142,7 +152,10 @@ export function mapOfferingFormToPayload(e) {
     profile_expertise_bounty: e.bounty || "",
     profile_expertise_is_public: isPublicValue,
     profile_expertise_visibility: visibilityLevel,
-    profile_expertise_visibility_circles: visibilityLevel === "specific" ? circleTypes.join(",") : "",
+    // Both AND onto whichever base level was picked - always send the current selection (an
+    // empty string clears a previously-saved filter).
+    profile_expertise_visibility_degrees: visibilityDegreesCsv,
+    profile_expertise_visibility_circles: circleTypes.join(","),
     profile_expertise_image: e.profile_expertise_image || "",
     profile_expertise_image_is_public: e.profile_expertise_image_is_public === 0 || e.profile_expertise_image_is_public === "0" ? 0 : 1,
     profile_expertise_start: e.profile_expertise_start || "",
