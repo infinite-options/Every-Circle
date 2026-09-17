@@ -69,6 +69,7 @@ import { buildOfferingReplyContext, buildSeekingReplyContext } from "../utils/ch
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
+import { useHeaderCart } from "../components/HeaderCartButton";
 import FlagOfferingModal from "../components/FlagOfferingModal";
 import FlagSeekingModal from "../components/FlagSeekingModal";
 import FlagProfileModal from "../components/FlagProfileModal";
@@ -254,6 +255,7 @@ const ProfileScreen = ({ route, navigation }) => {
   // Allows opening a specific user's profile when navigating from the Network screen
   const { profile_uid: routeProfileUID, returnTo, searchState, focusOfferingUid: focusOfferingUidParam, focusOfferingToken } = route.params || {};
   const focusOfferingUid = String(focusOfferingUidParam || "").trim();
+  const { cartCount: offeringCartCount, openCart: openOfferingCart, refreshCart: refreshOfferingCart } = useHeaderCart(navigation, { returnTo, searchState });
 
   /** Forward Google/Apple prefill when routing incomplete profiles to UserInfo (OAuth skips App.js profile fetch). */
   const getOauthUserInfoNavigateParams = () => {
@@ -1485,6 +1487,7 @@ const ProfileScreen = ({ route, navigation }) => {
       };
       const { cartItem, addedQty, mergedQty, capped, maxQty } = await upsertExpertiseCartItem(cartItemDraft);
       setOfferingCartModalItem(null);
+      refreshOfferingCart();
       const title = expertiseData?.title || "Item";
       const alertMessage =
         capped && maxQty != null ? `Only ${maxQty} available. ${title} is now at ${mergedQty} in your cart (added ${addedQty}).` : `${title}: added ${addedQty} — ${mergedQty} now in your cart.`;
@@ -2055,7 +2058,26 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowOffering(!showOffering)}>
                 <Text style={styles.sectionHeaderText}>OFFERING</Text>
-                <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <TouchableOpacity
+                    style={styles.offeringCartButton}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      openOfferingCart();
+                    }}
+                    accessibilityRole='button'
+                    accessibilityLabel='Go to checkout'
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name='cart-outline' size={20} color='#000' style={{ transform: [{ scaleX: -1 }] }} />
+                    {offeringCartCount > 0 ? (
+                      <View style={styles.offeringCartBadge}>
+                        <Text style={styles.offeringCartBadgeText}>{offeringCartCount}</Text>
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+                  <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                </View>
               </TouchableOpacity>
               {showOffering &&
                 (user.expertise && user.expertise.filter((exp) => isProfileOfferingVisible(exp, isCurrentUserProfile)).length > 0 ? (
@@ -3453,6 +3475,28 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#000",
     letterSpacing: 1,
+  },
+  offeringCartButton: {
+    marginRight: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  offeringCartBadge: {
+    position: "absolute",
+    top: -6,
+    right: -8,
+    backgroundColor: "#FF3B30",
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
+  },
+  offeringCartBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "bold",
   },
   sectionItemContainer: {
     borderWidth: 1,

@@ -4,10 +4,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { loadAllCartItems } from "../utils/shoppingCartStorage";
 
-export function HeaderCartButton({ cartCount, onPress }) {
+export function HeaderCartButton({ cartCount, onPress, iconColor = "#fff", size = 24 }) {
   return (
     <TouchableOpacity style={styles.cartButton} onPress={onPress} accessibilityRole='button' accessibilityLabel='Shopping cart'>
-      <Ionicons name='cart-outline' size={24} color='#fff' />
+      <Ionicons name='cart-outline' size={size} color={iconColor} />
       {cartCount > 0 ? (
         <View style={styles.cartBadge}>
           <Text style={styles.cartBadgeText}>{cartCount}</Text>
@@ -52,7 +52,7 @@ export function useHeaderCart(navigation, { returnTo, searchState } = {}) {
 
   const headerCartButton = <HeaderCartButton cartCount={cartCount} onPress={openCart} />;
 
-  return { cartCount, cartItems, refreshCart, headerCartButton };
+  return { cartCount, cartItems, refreshCart, openCart, headerCartButton };
 }
 
 const styles = StyleSheet.create({
