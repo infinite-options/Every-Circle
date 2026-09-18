@@ -338,8 +338,8 @@ function groupNetworkByDegree(data) {
 }
 
 /**
- * Normalize GET /api/network response.
- * Supports legacy flat arrays and the new `{ nodes, edges }` (or wrapped) shape.
+ * Normalize GET /api/network/{uid}/{degree} response.
+ * Contract: `{ nodes: [...], edges: [...] }` (structured) or a legacy flat array of nodes.
  */
 function extractNetworkNodesAndEdges(payload) {
   if (Array.isArray(payload)) {
@@ -348,51 +348,31 @@ function extractNetworkNodesAndEdges(payload) {
   if (!payload || typeof payload !== "object") {
     return { nodes: [], edges: null };
   }
-
-  const pickEdges = (...candidates) => {
-    for (const c of candidates) {
-      if (Array.isArray(c)) return c;
-    }
-    return null;
-  };
-
-  const pickNodes = (root) => {
-    if (!root || typeof root !== "object") return null;
-    if (Array.isArray(root)) return root;
-    for (const key of ["nodes", "people", "members", "network_nodes", "connections", "results", "data"]) {
-      if (Array.isArray(root[key])) return root[key];
-    }
-    return null;
-  };
-
-  const candidates = [payload, payload.data, payload.result, payload.network, payload.payload, payload.body].filter((v) => v && typeof v === "object");
-  for (const root of candidates) {
-    const nodes = pickNodes(root);
-    if (nodes) {
-      return {
-        nodes,
-        edges: pickEdges(root.edges, root.network_edges, root.links, payload.edges, payload.network_edges, payload.links),
-      };
-    }
+  if (Array.isArray(payload.nodes)) {
+    return {
+      nodes: payload.nodes,
+      edges: Array.isArray(payload.edges) ? payload.edges : null,
+    };
   }
   return { nodes: [], edges: null };
 }
 
 /** Map BE edges onto nodes as parent_uid; ensure network_profile_personal_uid is set. */
 function normalizeNetworkApiNodes(nodes, edges) {
+  const list = Array.isArray(nodes) ? nodes : [];
   const edgesByTo = new Map();
   if (Array.isArray(edges)) {
     for (const e of edges) {
-      const to = String(e?.to || e?.child_uid || e?.target || "").trim();
-      const from = String(e?.from || e?.parent_uid || e?.source || "").trim();
+      const to = String(e?.to || "").trim();
+      const from = String(e?.from || "").trim();
       if (to && from) edgesByTo.set(to, from);
     }
   }
 
-  return (nodes || [])
+  return list
     .map((node) => {
       if (!node || typeof node !== "object") return null;
-      const profileUid = String(node.profile_uid || node.network_profile_personal_uid || node.profile_personal_uid || "").trim();
+      const profileUid = String(node.profile_uid || node.network_profile_personal_uid || "").trim();
       if (!profileUid) return null;
       const parentFromEdge = edgesByTo.get(profileUid);
       const parent_uid = String(node.parent_uid || parentFromEdge || "").trim() || null;
@@ -1468,6 +1448,12 @@ const ConnectScreen = ({ navigation }) => {
 
       channel.attach((err) => {
         if (err) {
+          const msg = String(err?.message || err || "");
+          // Intentional teardown / navigation — not actionable.
+          if (/connection closed/i.test(msg)) {
+            setAblyChannelStatus(String(channel.state));
+            return;
+          }
           console.error("❌ ConnectScreen - Error attaching to Ably channel:", err);
         } else {
           console.log("✅ ConnectScreen - Ready to receive messages on channel:", channelName);
@@ -1768,8 +1754,8 @@ const ConnectScreen = ({ navigation }) => {
       }
       const data = await response.json();
       const { nodes: rawNodes, edges } = extractNetworkNodesAndEdges(data);
-      if (__DEV__ && (!Array.isArray(rawNodes) || rawNodes.length === 0) && data && typeof data === "object" && !Array.isArray(data)) {
-        console.warn("🔵 ConnectScreen - network payload had no nodes array; keys:", Object.keys(data));
+      if (!Array.isArray(rawNodes)) {
+        throw new Error(`Network response missing nodes array (keys: ${data && typeof data === "object" ? Object.keys(data).join(",") : typeof data})`);
       }
       const normalizedNodes = normalizeNetworkApiNodes(rawNodes, edges);
       return normalizedNodes.map((node) => {

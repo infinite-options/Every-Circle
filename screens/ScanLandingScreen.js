@@ -20,7 +20,7 @@ import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
 import { isValidEmail } from "../utils/emailValidation";
 import {
-  hasPendingScanConnectionFor,
+  loadPendingScanConnection,
   captureEphemeralSignupKeys,
   restoreEphemeralSignupKeys,
   flushPendingScanConnectionAfterAuth,
@@ -142,11 +142,9 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [submittingPassword, setSubmittingPassword] = useState(false);
   const [emailFallbackHint, setEmailFallbackHint] = useState("");
   const [scrollViewportH, setScrollViewportH] = useState(0);
-  /** Guest QR: notes saved (or valid draft) before showing Google/Apple/email auth. */
+  /** Guest QR: notes saved in this session (Add to Network → back here). Not inferred from stale drafts. */
   const [notesCommitted, setNotesCommitted] = useState(false);
-  const [checkingDraft, setCheckingDraft] = useState(!!profileUid);
   const redirectStartedRef = useRef(false);
-  const guestNotesNavStartedRef = useRef(false);
   const emailInputRef = useRef(null);
   const oauthWatchdogRef = useRef(null);
   const appleAuthInFlightRef = useRef(false);
@@ -193,48 +191,56 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }, [checkSession]),
   );
 
-  // Resume auth step if a valid draft already exists for this QR owner (within TTL).
+  // New QR target: start at connection details again.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!profileUid) {
-        setCheckingDraft(false);
-        return;
-      }
-      setCheckingDraft(true);
-      try {
-        const hasDraft = await hasPendingScanConnectionFor(profileUid);
-        if (cancelled) return;
-        setNotesCommitted(hasDraft);
-      } finally {
-        if (!cancelled) setCheckingDraft(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    setNotesCommitted(false);
   }, [profileUid]);
 
+  // Returning from Connect With Me (Add to Network) → show Google / Apple / email.
   useEffect(() => {
     if (route.params?.notesCommitted) {
       setNotesCommitted(true);
-      guestNotesNavStartedRef.current = false;
       navigation.setParams({ notesCommitted: undefined });
     }
   }, [route.params?.notesCommitted, navigation]);
 
-  // Guest scan: skip the intermediate "Add connection details" button — open the form immediately.
+  // Guest scan: always open Connect With Me for connection details (do not skip when a leftover draft exists).
   useEffect(() => {
-    if (loading || checkingSession || checkingDraft || isLoggedIn || notesCommitted || redirecting) return;
+    if (loading || checkingSession || isLoggedIn || notesCommitted || redirecting) return;
     if (!profileUid || !profileData || error) return;
-    if (guestNotesNavStartedRef.current) return;
-    guestNotesNavStartedRef.current = true;
-    navigation.navigate("ConnectWithMe", {
-      profileUid,
-      profileData,
-      mode: "guest",
-    });
-  }, [loading, checkingSession, checkingDraft, isLoggedIn, notesCommitted, redirecting, profileUid, profileData, error, navigation]);
+
+    let cancelled = false;
+    (async () => {
+      let initialData = null;
+      try {
+        const draft = await loadPendingScanConnection();
+        if (draft && draft.relatedProfileUid === profileUid) {
+          initialData = {
+            relationship: draft.relationship,
+            date: draft.date,
+            event: draft.event,
+            note: draft.note,
+            city: draft.city,
+            state: draft.state,
+            introducedBy: draft.introducedBy,
+          };
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      if (cancelled) return;
+      navigation.navigate("ConnectWithMe", {
+        profileUid,
+        profileData,
+        mode: "guest",
+        ...(initialData ? { initialData } : {}),
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, checkingSession, isLoggedIn, notesCommitted, redirecting, profileUid, profileData, error, navigation]);
 
   const clearAndRestoreEphemeralKeys = useCallback(async (referralUidOverride) => {
     const ephemeral = await captureEphemeralSignupKeys();
@@ -650,7 +656,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }).catch(() => {});
   }, [profileData]);
 
-  const showGuestActions = !checkingSession && !checkingDraft && !isLoggedIn && !redirecting;
+  const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
   const showGuestNotesStep = showGuestActions && !notesCommitted;
   const showGuestAuthStep = showGuestActions && notesCommitted;
   const showRedirecting = redirecting || (isLoggedIn && !showGuestActions) || showGuestNotesStep;
@@ -787,12 +793,10 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                 : "You're one click from joining the most trusted network on the planet. Join with Google or Apple, or enter your email."}
             </Text>
 
-            {(loading || checkingDraft || (showRedirecting && !showGuestAuthStep)) && (
+            {(loading || (showRedirecting && !showGuestAuthStep)) && (
               <View style={styles.centerRow}>
                 <ActivityIndicator size='large' color='#2434C2' />
-                <Text style={styles.muted}>
-                  {loading || checkingDraft ? "Loading profile…" : notesCommitted ? "Opening connect…" : "Opening connection details…"}
-                </Text>
+                <Text style={styles.muted}>{loading ? "Loading profile…" : notesCommitted ? "Opening connect…" : "Opening connection details…"}</Text>
               </View>
             )}
 
