@@ -5,7 +5,6 @@ import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/nativ
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
-import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import AppleSignIn from "../AppleSignIn";
 import { CREATE_ACCOUNT_ENDPOINT, CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT, UPDATE_EMAIL_PASSWORD_ENDPOINT } from "../apiConfig";
@@ -21,7 +20,6 @@ import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
 import { isValidEmail } from "../utils/emailValidation";
 import {
-  savePendingScanConnection,
   hasPendingScanConnectionFor,
   captureEphemeralSignupKeys,
   restoreEphemeralSignupKeys,
@@ -146,8 +144,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [scrollViewportH, setScrollViewportH] = useState(0);
   /** Guest QR: notes saved (or valid draft) before showing Google/Apple/email auth. */
   const [notesCommitted, setNotesCommitted] = useState(false);
-  const [showGuestConnectPopup, setShowGuestConnectPopup] = useState(false);
-  const [savingGuestNotes, setSavingGuestNotes] = useState(false);
   const [checkingDraft, setCheckingDraft] = useState(!!profileUid);
   const redirectStartedRef = useRef(false);
   const emailInputRef = useRef(null);
@@ -209,9 +205,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
         const hasDraft = await hasPendingScanConnectionFor(profileUid);
         if (cancelled) return;
         setNotesCommitted(hasDraft);
-        if (!hasDraft) {
-          setShowGuestConnectPopup(true);
-        }
       } finally {
         if (!cancelled) setCheckingDraft(false);
       }
@@ -221,31 +214,19 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     };
   }, [profileUid]);
 
+  useEffect(() => {
+    if (route.params?.notesCommitted) {
+      setNotesCommitted(true);
+      navigation.setParams({ notesCommitted: undefined });
+    }
+  }, [route.params?.notesCommitted, navigation]);
+
   const clearAndRestoreEphemeralKeys = useCallback(async (referralUidOverride) => {
     const ephemeral = await captureEphemeralSignupKeys();
     await AsyncStorage.clear();
     refreshAllowCookies();
     await restoreEphemeralSignupKeys(ephemeral, referralUidOverride || ephemeral.referralUid);
   }, []);
-
-  const handleGuestAddConnection = useCallback(
-    async (connectionData) => {
-      if (!profileUid || savingGuestNotes) return;
-      setSavingGuestNotes(true);
-      try {
-        await savePendingScanConnection(profileUid, connectionData);
-        await AsyncStorage.setItem("referral_uid", profileUid);
-        setNotesCommitted(true);
-        setShowGuestConnectPopup(false);
-      } catch (e) {
-        console.warn("ScanLanding - save pending connection failed:", e?.message || e);
-        Alert.alert("Error", "Could not save your notes. Please try again.");
-      } finally {
-        setSavingGuestNotes(false);
-      }
-    },
-    [profileUid, savingGuestNotes],
-  );
 
   const redirectToNetwork = useCallback(async () => {
     if (!profileUid || redirectStartedRef.current) return;
@@ -807,9 +788,14 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                 </View>
                 <TouchableOpacity
                   style={styles.primaryBtn}
-                  onPress={() => setShowGuestConnectPopup(true)}
+                  onPress={() =>
+                    navigation.navigate("ConnectWithMe", {
+                      profileUid,
+                      profileData,
+                      mode: "guest",
+                    })
+                  }
                   activeOpacity={0.85}
-                  disabled={savingGuestNotes}
                 >
                   <Text style={styles.primaryBtnText}>Add connection details</Text>
                 </TouchableOpacity>
@@ -892,15 +878,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
           <Text style={styles.version}>{versionLabel}</Text>
         </View>
       </ScrollView>
-
-      <ScannedProfilePopup
-        visible={showGuestNotesStep && showGuestConnectPopup && !!profileData}
-        profileData={profileData}
-        onClose={() => setShowGuestConnectPopup(false)}
-        onAddConnection={handleGuestAddConnection}
-        title='Connect With Me'
-        actionLabel={savingGuestNotes ? "Saving…" : "Add to Network"}
-      />
 
       <Modal visible={showPasswordFallbackModal} transparent animationType='fade'>
         <View style={styles.modalOverlay}>

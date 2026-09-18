@@ -1,4 +1,4 @@
-// ScannedProfilePopup.js - Popup to display scanned profile information
+// ScannedProfilePopup.js - Popup or full-screen form to connect with a scanned profile
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -32,17 +32,22 @@ if (Platform.OS !== "web") {
 }
 
 /** Visible viewport height / keyboard inset — critical on iOS Safari where Keyboard events are unreliable. */
-function useKeyboardAwareViewport(windowHeight) {
+function useKeyboardAwareViewport(windowHeight, enabled) {
   const [visibleHeight, setVisibleHeight] = useState(windowHeight);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
 
   useEffect(() => {
+    if (!enabled) {
+      setVisibleHeight(windowHeight);
+      setKeyboardOpen(false);
+      return;
+    }
+
     if (Platform.OS === "web" && typeof window !== "undefined") {
       const update = () => {
         const vv = window.visualViewport;
         const nextH = vv?.height ?? window.innerHeight ?? windowHeight;
         setVisibleHeight(nextH);
-        // Treat a meaningful shrink vs layout viewport as keyboard open.
         const layoutH = window.innerHeight || windowHeight;
         setKeyboardOpen(layoutH - nextH > 80);
       };
@@ -75,7 +80,7 @@ function useKeyboardAwareViewport(windowHeight) {
       subShow.remove();
       subHide.remove();
     };
-  }, [windowHeight]);
+  }, [windowHeight, enabled]);
 
   return { visibleHeight, keyboardOpen };
 }
@@ -140,6 +145,195 @@ const resetConnectionForm = (setters) => {
   setters.setShowDatePicker(false);
 };
 
+function ConnectionFormFields({
+  darkMode,
+  loadingProfile,
+  profileData,
+  relationshipRequired,
+  selectedRelationship,
+  setSelectedRelationship,
+  date,
+  setDate,
+  showDatePicker,
+  setShowDatePicker,
+  event,
+  setEvent,
+  note,
+  setNote,
+  city,
+  setCity,
+  state,
+  setState,
+  introducedBy,
+  setIntroducedBy,
+}) {
+  const relationships = [
+    { value: "friend", label: "Friend" },
+    { value: "colleague", label: "Colleague" },
+    { value: "family", label: "Family" },
+  ];
+
+  const isRelationshipValid = selectedRelationship && REL_TYPES.includes(selectedRelationship);
+
+  return (
+    <>
+      <View style={styles.content}>
+        {loadingProfile ? (
+          <View style={styles.loadingProfileRow}>
+            <ActivityIndicator size='small' color={darkMode ? "#fff" : "#007AFF"} />
+            <Text style={[styles.loadingProfileText, darkMode && styles.darkLoadingProfileText]}>Loading profile…</Text>
+          </View>
+        ) : (
+          <MiniCard user={profileData} />
+        )}
+      </View>
+
+      <View style={styles.relationshipContainer}>
+        <Text style={[styles.relationshipLabel, darkMode && styles.darkRelationshipLabel]}>
+          Relationship:{relationshipRequired ? " *" : ""}
+        </Text>
+        {relationshipRequired && !isRelationshipValid ? (
+          <Text style={styles.relationshipError}>Please select Friend, Colleague, or Family.</Text>
+        ) : null}
+        <View style={styles.relationshipButtons}>
+          {relationships.map((rel) => (
+            <TouchableOpacity
+              key={rel.value}
+              style={[
+                styles.relationshipButton,
+                selectedRelationship === rel.value && styles.relationshipButtonActive,
+                darkMode && styles.darkRelationshipButton,
+                selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonActive,
+              ]}
+              onPress={() =>
+                setSelectedRelationship((prev) => {
+                  if (relationshipRequired) return rel.value;
+                  return prev === rel.value ? null : rel.value;
+                })
+              }
+            >
+              <Text
+                style={[
+                  styles.relationshipButtonText,
+                  selectedRelationship === rel.value && styles.relationshipButtonTextActive,
+                  darkMode && styles.darkRelationshipButtonText,
+                  selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonTextActive,
+                ]}
+              >
+                {rel.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.inputContainer}>
+        <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Date:</Text>
+        {Platform.OS === "web" ? (
+          <WebTextInput style={[styles.textInput, darkMode && styles.darkTextInput]} type='date' value={date} onChangeText={setDate} />
+        ) : DateTimePicker ? (
+          <>
+            <TouchableOpacity style={[styles.dateButton, darkMode && styles.darkDateButton]} onPress={() => setShowDatePicker(true)}>
+              <Text style={[styles.dateButtonText, darkMode && styles.darkDateButtonText]}>{formatCircleDateForDisplay(date)}</Text>
+              <Ionicons name='calendar-outline' size={18} color={darkMode ? "#aaa" : "#666"} />
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={circleDateToDate(date)}
+                mode='date'
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={(_, selectedDate) => {
+                  if (Platform.OS === "android") setShowDatePicker(false);
+                  if (selectedDate) setDate(dateToCircleDate(selectedDate));
+                }}
+              />
+            )}
+            {Platform.OS === "ios" && showDatePicker && (
+              <TouchableOpacity style={styles.datePickerDone} onPress={() => setShowDatePicker(false)}>
+                <Text style={styles.datePickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        ) : (
+          <WebTextInput
+            style={[styles.textInput, darkMode && styles.darkTextInput]}
+            value={date}
+            onChangeText={setDate}
+            placeholder='YYYY-MM-DD'
+            placeholderTextColor={darkMode ? "#666" : "#999"}
+          />
+        )}
+      </View>
+
+      <View style={styles.inputContainer}>
+        <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Event:</Text>
+        <WebTextInput
+          style={[styles.textInput, darkMode && styles.darkTextInput]}
+          value={event}
+          onChangeText={setEvent}
+          placeholder='Enter event name'
+          placeholderTextColor={darkMode ? "#666" : "#999"}
+        />
+      </View>
+
+      <View style={styles.inputContainer}>
+        <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Note:</Text>
+        <WebTextInput
+          style={[styles.textInput, styles.textArea, darkMode && styles.darkTextInput]}
+          value={note}
+          onChangeText={setNote}
+          placeholder='Enter notes or comments'
+          placeholderTextColor={darkMode ? "#666" : "#999"}
+          multiline
+          numberOfLines={3}
+        />
+      </View>
+
+      <View style={styles.inputRow}>
+        <View style={[styles.inputContainer, styles.inputHalf]}>
+          <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>City:</Text>
+          <WebTextInput style={[styles.textInput, darkMode && styles.darkTextInput]} value={city} onChangeText={setCity} placeholder='City' placeholderTextColor={darkMode ? "#666" : "#999"} />
+        </View>
+
+        <View style={[styles.inputContainer, styles.inputHalf]}>
+          <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>State:</Text>
+          <WebTextInput
+            style={[styles.textInput, darkMode && styles.darkTextInput]}
+            value={state}
+            onChangeText={setState}
+            placeholder='State'
+            placeholderTextColor={darkMode ? "#666" : "#999"}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.inputContainer, styles.lastInputContainer]}>
+        <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Introduced By:</Text>
+        <WebTextInput
+          style={[styles.textInput, darkMode && styles.darkTextInput]}
+          value={introducedBy}
+          onChangeText={setIntroducedBy}
+          placeholder='Who introduced you?'
+          placeholderTextColor={darkMode ? "#666" : "#999"}
+        />
+      </View>
+    </>
+  );
+}
+
+function ConnectionFormButtons({ darkMode, actionLabel, isSaveDisabled, onAdd, onClose }) {
+  return (
+    <View style={[styles.buttonContainer, darkMode && styles.darkButtonContainer]}>
+      <TouchableOpacity style={[styles.addButton, isSaveDisabled && styles.addButtonDisabled]} onPress={onAdd} disabled={isSaveDisabled}>
+        <Text style={styles.addButtonText}>{actionLabel}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.viewButton} onPress={onClose}>
+        <Text style={[styles.viewButtonText, darkMode && styles.darkViewButtonText]}>Close</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 const ScannedProfilePopup = ({
   visible,
   profileData,
@@ -150,10 +344,14 @@ const ScannedProfilePopup = ({
   title = "Connect With Me",
   relationshipRequired = false,
   loadingProfile = false,
+  variant = "modal",
+  hideHeader = false,
 }) => {
   const { darkMode } = useDarkMode();
+  const isScreen = variant === "screen";
+  const isActive = isScreen || visible;
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
-  const { visibleHeight, keyboardOpen } = useKeyboardAwareViewport(windowHeight);
+  const { visibleHeight, keyboardOpen } = useKeyboardAwareViewport(windowHeight, !isScreen);
   const [selectedRelationship, setSelectedRelationship] = useState("friend");
   const [event, setEvent] = useState("");
   const [note, setNote] = useState("");
@@ -162,20 +360,16 @@ const ScannedProfilePopup = ({
   const [introducedBy, setIntroducedBy] = useState("");
   const [date, setDate] = useState(getTodayCircleDate());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const wasVisibleRef = useRef(false);
+  const wasActiveRef = useRef(false);
 
-  // Keep the sheet inside the visible viewport (mobile web keyboard + address bars).
   const overlayPadding = windowWidth < 400 ? 12 : 20;
   const topPadding = keyboardOpen ? Math.min(overlayPadding, 8) : overlayPadding;
   const modalMaxHeight = Math.max(240, visibleHeight - topPadding * 2);
-  // Reserve space for title + pinned action buttons so the middle always scrolls.
   const scrollMaxHeight = Math.max(120, modalMaxHeight - 170);
 
-  // Hydrate only when the modal opens/closes — not when parent relationship data arrives later.
-  // Re-syncing mid-edit reset TextInput values and can crash Android while the user is typing.
   useEffect(() => {
-    if (visible) {
-      if (!wasVisibleRef.current) {
+    if (isActive) {
+      if (!wasActiveRef.current) {
         setSelectedRelationship(resolveInitialRelationship(initialData));
         setEvent(initialData?.event || "");
         setNote(initialData?.note || "");
@@ -185,11 +379,11 @@ const ScannedProfilePopup = ({
         setDate(initialData?.date || getTodayCircleDate());
         setShowDatePicker(false);
       }
-      wasVisibleRef.current = true;
+      wasActiveRef.current = true;
       return;
     }
 
-    if (wasVisibleRef.current) {
+    if (wasActiveRef.current) {
       resetConnectionForm({
         setSelectedRelationship,
         setEvent,
@@ -201,16 +395,11 @@ const ScannedProfilePopup = ({
         setShowDatePicker,
       });
     }
-    wasVisibleRef.current = false;
-  }, [visible]);
+    wasActiveRef.current = false;
+  }, [isActive]);
 
-  if (!profileData) return null;
-
-  const relationships = [
-    { value: "friend", label: "Friend" },
-    { value: "colleague", label: "Colleague" },
-    { value: "family", label: "Family" },
-  ];
+  if (!isScreen && !visible) return null;
+  if (!profileData && !loadingProfile) return null;
 
   const isRelationshipValid = selectedRelationship && REL_TYPES.includes(selectedRelationship);
   const hasChanges = connectionFormHasChanges(
@@ -237,12 +426,65 @@ const ScannedProfilePopup = ({
     }
   };
 
+  const formFieldsProps = {
+    darkMode,
+    loadingProfile,
+    profileData,
+    relationshipRequired,
+    selectedRelationship,
+    setSelectedRelationship,
+    date,
+    setDate,
+    showDatePicker,
+    setShowDatePicker,
+    event,
+    setEvent,
+    note,
+    setNote,
+    city,
+    setCity,
+    state,
+    setState,
+    introducedBy,
+    setIntroducedBy,
+  };
+
+  const headerRow = !hideHeader ? (
+    <View style={styles.header}>
+      <Text style={[styles.title, darkMode && styles.darkTitle]}>{title}</Text>
+      <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+        <Ionicons name='close' size={24} color={darkMode ? "#fff" : "#333"} />
+      </TouchableOpacity>
+    </View>
+  ) : null;
+
+  const buttonRow = (
+    <ConnectionFormButtons darkMode={darkMode} actionLabel={actionLabel} isSaveDisabled={isSaveDisabled} onAdd={handleAdd} onClose={onClose} />
+  );
+
+  if (isScreen) {
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.screenRoot}>
+        <View style={[styles.screenContent, darkMode && styles.darkScreenContent]}>
+          {headerRow}
+          <ScrollView
+            style={styles.screenScrollView}
+            contentContainerStyle={styles.screenScrollContent}
+            showsVerticalScrollIndicator
+            keyboardShouldPersistTaps='handled'
+            nestedScrollEnabled
+          >
+            <ConnectionFormFields {...formFieldsProps} />
+          </ScrollView>
+          {buttonRow}
+        </View>
+      </KeyboardAvoidingView>
+    );
+  }
+
   return (
     <Modal visible={visible} transparent={true} animationType='fade' onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View
           style={[
             styles.modalOverlay,
@@ -250,25 +492,12 @@ const ScannedProfilePopup = ({
             {
               padding: overlayPadding,
               paddingTop: topPadding,
-              // Pin to top when keyboard is open so fields stay above it.
               justifyContent: keyboardOpen ? "flex-start" : "center",
             },
           ]}
         >
-          <View
-            style={[
-              styles.modalContent,
-              darkMode && styles.darkModalContent,
-              { maxHeight: modalMaxHeight },
-            ]}
-          >
-            <View style={styles.header}>
-              <Text style={[styles.title, darkMode && styles.darkTitle]}>{title}</Text>
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <Ionicons name='close' size={24} color={darkMode ? "#fff" : "#333"} />
-              </TouchableOpacity>
-            </View>
-
+          <View style={[styles.modalContent, darkMode && styles.darkModalContent, { maxHeight: modalMaxHeight }]}>
+            {headerRow}
             <ScrollView
               style={[styles.scrollView, { maxHeight: scrollMaxHeight }]}
               contentContainerStyle={styles.scrollContent}
@@ -277,160 +506,9 @@ const ScannedProfilePopup = ({
               nestedScrollEnabled
               bounces={false}
             >
-            <View style={styles.content}>
-              {loadingProfile ? (
-                <View style={styles.loadingProfileRow}>
-                  <ActivityIndicator size='small' color={darkMode ? "#fff" : "#007AFF"} />
-                  <Text style={[styles.loadingProfileText, darkMode && styles.darkLoadingProfileText]}>Loading profile…</Text>
-                </View>
-              ) : (
-                <MiniCard user={profileData} />
-              )}
-            </View>
-
-            <View style={styles.relationshipContainer}>
-              <Text style={[styles.relationshipLabel, darkMode && styles.darkRelationshipLabel]}>
-                Relationship:{relationshipRequired ? " *" : ""}
-              </Text>
-              {relationshipRequired && !isRelationshipValid ? (
-                <Text style={styles.relationshipError}>Please select Friend, Colleague, or Family.</Text>
-              ) : null}
-              <View style={styles.relationshipButtons}>
-                {relationships.map((rel) => (
-                  <TouchableOpacity
-                    key={rel.value}
-                    style={[
-                      styles.relationshipButton,
-                      selectedRelationship === rel.value && styles.relationshipButtonActive,
-                      darkMode && styles.darkRelationshipButton,
-                      selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonActive,
-                    ]}
-                    onPress={() =>
-                      setSelectedRelationship((prev) => {
-                        if (relationshipRequired) return rel.value;
-                        return prev === rel.value ? null : rel.value;
-                      })
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.relationshipButtonText,
-                        selectedRelationship === rel.value && styles.relationshipButtonTextActive,
-                        darkMode && styles.darkRelationshipButtonText,
-                        selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonTextActive,
-                      ]}
-                    >
-                      {rel.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Date:</Text>
-              {Platform.OS === "web" ? (
-                <WebTextInput style={[styles.textInput, darkMode && styles.darkTextInput]} type='date' value={date} onChangeText={setDate} />
-              ) : DateTimePicker ? (
-                <>
-                  <TouchableOpacity style={[styles.dateButton, darkMode && styles.darkDateButton]} onPress={() => setShowDatePicker(true)}>
-                    <Text style={[styles.dateButtonText, darkMode && styles.darkDateButtonText]}>{formatCircleDateForDisplay(date)}</Text>
-                    <Ionicons name='calendar-outline' size={18} color={darkMode ? "#aaa" : "#666"} />
-                  </TouchableOpacity>
-                  {showDatePicker && (
-                    <DateTimePicker
-                      value={circleDateToDate(date)}
-                      mode='date'
-                      display={Platform.OS === "ios" ? "spinner" : "default"}
-                      onChange={(_, selectedDate) => {
-                        if (Platform.OS === "android") setShowDatePicker(false);
-                        if (selectedDate) setDate(dateToCircleDate(selectedDate));
-                      }}
-                    />
-                  )}
-                  {Platform.OS === "ios" && showDatePicker && (
-                    <TouchableOpacity style={styles.datePickerDone} onPress={() => setShowDatePicker(false)}>
-                      <Text style={styles.datePickerDoneText}>Done</Text>
-                    </TouchableOpacity>
-                  )}
-                </>
-              ) : (
-                <WebTextInput
-                  style={[styles.textInput, darkMode && styles.darkTextInput]}
-                  value={date}
-                  onChangeText={setDate}
-                  placeholder='YYYY-MM-DD'
-                  placeholderTextColor={darkMode ? "#666" : "#999"}
-                />
-              )}
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Event:</Text>
-              <WebTextInput
-                style={[styles.textInput, darkMode && styles.darkTextInput]}
-                value={event}
-                onChangeText={setEvent}
-                placeholder='Enter event name'
-                placeholderTextColor={darkMode ? "#666" : "#999"}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Note:</Text>
-              <WebTextInput
-                style={[styles.textInput, styles.textArea, darkMode && styles.darkTextInput]}
-                value={note}
-                onChangeText={setNote}
-                placeholder='Enter notes or comments'
-                placeholderTextColor={darkMode ? "#666" : "#999"}
-                multiline
-                numberOfLines={3}
-              />
-            </View>
-
-            <View style={styles.inputRow}>
-              <View style={[styles.inputContainer, styles.inputHalf]}>
-                <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>City:</Text>
-                <WebTextInput style={[styles.textInput, darkMode && styles.darkTextInput]} value={city} onChangeText={setCity} placeholder='City' placeholderTextColor={darkMode ? "#666" : "#999"} />
-              </View>
-
-              <View style={[styles.inputContainer, styles.inputHalf]}>
-                <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>State:</Text>
-                <WebTextInput
-                  style={[styles.textInput, darkMode && styles.darkTextInput]}
-                  value={state}
-                  onChangeText={setState}
-                  placeholder='State'
-                  placeholderTextColor={darkMode ? "#666" : "#999"}
-                />
-              </View>
-            </View>
-
-            <View style={[styles.inputContainer, styles.lastInputContainer]}>
-              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Introduced By:</Text>
-              <WebTextInput
-                style={[styles.textInput, darkMode && styles.darkTextInput]}
-                value={introducedBy}
-                onChangeText={setIntroducedBy}
-                placeholder='Who introduced you?'
-                placeholderTextColor={darkMode ? "#666" : "#999"}
-              />
-            </View>
-          </ScrollView>
-
-          <View style={[styles.buttonContainer, darkMode && styles.darkButtonContainer]}>
-            <TouchableOpacity
-              style={[styles.addButton, isSaveDisabled && styles.addButtonDisabled]}
-              onPress={handleAdd}
-              disabled={isSaveDisabled}
-            >
-              <Text style={styles.addButtonText}>{actionLabel}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.viewButton} onPress={onClose}>
-              <Text style={[styles.viewButtonText, darkMode && styles.darkViewButtonText]}>Close</Text>
-            </TouchableOpacity>
-          </View>
+              <ConnectionFormFields {...formFieldsProps} />
+            </ScrollView>
+            {buttonRow}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -439,6 +517,24 @@ const ScannedProfilePopup = ({
 };
 
 const styles = StyleSheet.create({
+  screenRoot: {
+    flex: 1,
+  },
+  screenContent: {
+    flex: 1,
+    backgroundColor: "#fff",
+    padding: 16,
+    width: "100%",
+  },
+  darkScreenContent: {
+    backgroundColor: "#2a2a2a",
+  },
+  screenScrollView: {
+    flex: 1,
+  },
+  screenScrollContent: {
+    paddingBottom: 24,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",

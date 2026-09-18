@@ -37,13 +37,10 @@ import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
 
 import FeedbackPopup from "../components/FeedbackPopup";
 import ReferralSearch from "../components/ReferralSearch";
-import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors, getHeaderColor } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
 import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened";
-import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
-import { addScannedCircleConnection } from "../utils/addScannedCircleConnection";
 import { getSessionProfile, patchSessionPersonalInfoField, saveSessionProfilePayload, subscribeSessionProfile } from "../utils/sessionProfile";
 import { mergePendingOauthIdentityIntoPayload } from "../utils/oauthPendingProfileImage";
 import { miniCardUserFromSession, messagesOffFromSession } from "../utils/connectProfileHydration";
@@ -666,12 +663,7 @@ const ConnectScreen = ({ navigation }) => {
   activeViewRef.current = activeView;
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
-  const [scannedProfileData, setScannedProfileData] = useState(null);
-  const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
-  const [scannedProfileLoading, setScannedProfileLoading] = useState(false);
-  const showScannedProfileModalRef = useRef(null);
-  // 'scan' = current user scanned someone; 'ably' = QR owner received scanner notification
-  const connectPopupContextRef = useRef({ source: "scan", scannerIsNewSignup: false });
+  const openConnectWithMeRef = useRef(null);
   const [showViewMyNetwork, setShowViewMyNetwork] = useState(true);
   /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
   const [focusTick, setFocusTick] = useState(0);
@@ -1436,10 +1428,7 @@ const ConnectScreen = ({ navigation }) => {
             const scannerProfileUid = message.data.scanner_profile_uid;
             const scannerIsNewSignup = Boolean(message.data.scanner_is_new_signup);
             InteractionManager.runAfterInteractions(() => {
-              showScannedProfileModalRef.current?.(scannerProfileUid, {
-                source: "ably",
-                scannerIsNewSignup,
-              });
+              openConnectWithMeRef.current?.(scannerProfileUid, { scannerIsNewSignup });
             });
           } else {
             console.log("🔵 ConnectScreen - Form Switch is OFF or no scanner_profile_uid, not opening connect modal");
@@ -1503,70 +1492,50 @@ const ConnectScreen = ({ navigation }) => {
     return () => clearInterval(id);
   }, [ablyListeningChannel]);
 
-  const showScannedProfileModal = useCallback(async (profileUid, options = {}) => {
-    if (!profileUid) return;
-    connectPopupContextRef.current = {
-      source: options.source === "ably" ? "ably" : "scan",
-      scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
-    };
-    // Show Connect with Me immediately; fill MiniCard once the public card loads.
-    setScannedProfileData({
-      profile_uid: profileUid,
-      firstName: "",
-      lastName: "",
-      tagLine: "",
-      email: "",
-      phoneNumber: "",
-      profileImage: "",
-      city: "",
-      state: "",
-      imageIsPublic: false,
-    });
-    setScannedProfileLoading(true);
-    setShowScannedProfilePopup(true);
-    try {
-      const profileInfo = await fetchPublicProfileCard(profileUid);
-      setScannedProfileData(profileInfo);
-    } catch (error) {
-      console.error("Error loading profile for connect modal:", error);
-    } finally {
-      setScannedProfileLoading(false);
-    }
-  }, []);
+  const openConnectWithMe = useCallback(
+    (profileUid, options = {}) => {
+      if (!profileUid) return;
+      navigation.navigate("ConnectWithMe", {
+        profileUid,
+        mode: "scan",
+        scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
+      });
+    },
+    [navigation],
+  );
 
   useEffect(() => {
-    showScannedProfileModalRef.current = showScannedProfileModal;
-  }, [showScannedProfileModal]);
+    openConnectWithMeRef.current = openConnectWithMe;
+  }, [openConnectWithMe]);
 
   const lastHandledScanConnectKeyRef = useRef(null);
 
-  const openConnectModalFromScanParam = useCallback(
+  const openConnectFromScanParam = useCallback(
     (uid, scanConnectToken) => {
       if (!uid) return;
       const key = `${uid}:${scanConnectToken ?? ""}`;
       if (lastHandledScanConnectKeyRef.current === key) return;
       lastHandledScanConnectKeyRef.current = key;
-      showScannedProfileModal(uid, { source: "scan" });
+      openConnectWithMe(uid);
       navigation.setParams({ scannedProfileUid: undefined, scanConnectToken: undefined });
     },
-    [showScannedProfileModal, navigation],
+    [openConnectWithMe, navigation],
   );
 
   const scanUid = route.params?.scannedProfileUid;
   const scanToken = route.params?.scanConnectToken;
 
-  // Scan landing / QR scanner → show connect modal (Ably publish is done in goToNetworkForScanConnect or handleQRScanComplete)
+  // Legacy Connect params from older callers — Ably publish is done in goToNetworkForScanConnect or handleQRScanComplete
   useEffect(() => {
-    openConnectModalFromScanParam(scanUid, scanToken);
-  }, [scanUid, scanToken, openConnectModalFromScanParam]);
+    openConnectFromScanParam(scanUid, scanToken);
+  }, [scanUid, scanToken, openConnectFromScanParam]);
 
   useFocusEffect(
     useCallback(() => {
-      openConnectModalFromScanParam(scanUid, scanToken);
-    }, [scanUid, scanToken, openConnectModalFromScanParam]),
+      openConnectFromScanParam(scanUid, scanToken);
+    }, [scanUid, scanToken, openConnectFromScanParam]),
   );
 
-  // Handle QR scan complete - fetch profile data and show popup
   const handleQRScanComplete = async (scanData) => {
     try {
       if (!scanData || !scanData.profile_uid) {
@@ -1574,70 +1543,15 @@ const ConnectScreen = ({ navigation }) => {
         return;
       }
 
-      await showScannedProfileModal(scanData.profile_uid, { source: "scan" });
+      openConnectWithMe(scanData.profile_uid);
 
-      // Notify QR owner (Exchange Contact Info)
       publishNewConnectionOpened(scanData.profile_uid, { message: "QR Code Scanned" }).then((result) => {
         if (result.ok) {
           console.log("✅ ConnectScreen - Ably new-connection-opened published for reciprocal exchange");
         }
       });
     } catch (error) {
-      console.error("Error fetching scanned profile:", error);
-    }
-  };
-
-  // Handle adding connection from scanned profile
-  const handleAddScannedConnection = async (connectionData) => {
-    try {
-      if (!scannedProfileData?.profile_uid) return;
-
-      const connectedProfileUid = scannedProfileData.profile_uid;
-
-      const result = await addScannedCircleConnection(connectedProfileUid, connectionData);
-      if (result.ok) {
-        const currentProfileUID = await AsyncStorage.getItem("profile_uid");
-        const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
-        if (currentProfileUID) {
-          fetchNetwork(currentProfileUID, currentDegree);
-        }
-        setShowScannedProfilePopup(false);
-        setScannedProfileData(null);
-        lastHandledScanConnectKeyRef.current = null;
-        connectPopupContextRef.current = { source: "scan", scannerIsNewSignup: false };
-
-        // After Connect with Me: full name → stay on Connect (own QR); missing name → own Profile to complete it.
-        let first = String(userProfileData?.firstName || "").trim();
-        let last = String(userProfileData?.lastName || "").trim();
-        if (!first || !last) {
-          try {
-            const pairs = await AsyncStorage.multiGet(["user_first_name", "user_last_name"]);
-            first = first || String(pairs?.[0]?.[1] || "").trim();
-            last = last || String(pairs?.[1]?.[1] || "").trim();
-          } catch (_) {}
-        }
-        if (!first || !last) {
-          try {
-            const session = await getSessionProfile();
-            const p = session?.personalInfo || session?.rawProfile?.personal_info || {};
-            first = first || String(p.profile_personal_first_name || "").trim();
-            last = last || String(p.profile_personal_last_name || "").trim();
-          } catch (_) {}
-        }
-        const hasFullName = Boolean(first && last);
-
-        InteractionManager.runAfterInteractions(() => {
-          if (hasFullName) {
-            navigation.navigate({ name: "Connect", params: {}, merge: false });
-          } else {
-            navigation.navigate({ name: "Profile", params: {}, merge: false });
-          }
-        });
-      } else if (result.error && result.error !== "not_logged_in" && result.error !== "self") {
-        console.error("Error adding scanned connection:", result.error);
-      }
-    } catch (error) {
-      console.error("Error adding scanned connection:", error);
+      console.error("Error opening Connect With Me after scan:", error);
     }
   };
 
@@ -4078,20 +3992,6 @@ const ConnectScreen = ({ navigation }) => {
         networkData={connectDirectlyMergedNetworkData}
         preparingNetwork={connectDirectlyPrepareLoading}
       />
-      <ScannedProfilePopup
-        visible={showScannedProfilePopup}
-        profileData={scannedProfileData}
-        loadingProfile={scannedProfileLoading}
-        onClose={() => {
-          setShowScannedProfilePopup(false);
-          setScannedProfileData(null);
-          setScannedProfileLoading(false);
-          lastHandledScanConnectKeyRef.current = null;
-          connectPopupContextRef.current = { source: "scan", scannerIsNewSignup: false };
-        }}
-        onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
-      />
-
       {filterModalKind === "relationship" && (
         <ConnectionFilterModal
           visible
