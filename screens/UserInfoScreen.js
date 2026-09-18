@@ -10,6 +10,7 @@ import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { profileUidFromUserProfileResponse } from "../utils/ensureSessionProfileUid";
 import { refreshCircleTokens } from "../utils/authSession";
 import { digitsForPhoneApi, formatPhoneNumberInput } from "../utils/phoneVerification";
+import { EVERYONE_AUDIENCE, audienceJsonForForm } from "../utils/profileAudience";
 
 export default function UserInfoScreen({ navigation, route }) {
   // console.log("UserInfoScreen - route.params:", route.params);
@@ -176,6 +177,8 @@ export default function UserInfoScreen({ navigation, route }) {
       formData.append("profile_personal_phone_number", cleanPhoneNumber);
       formData.append("profile_personal_referred_by", referralId || "100-000001");
       formData.append("user_uid", userUid);
+      // Signup default: email visible to Everyone (changeable later in Profile).
+      formData.append("profile_personal_email_audience", audienceJsonForForm(EVERYONE_AUDIENCE));
 
       // Add profile_uid to form data only for PUT requests
       if (profileExists && profilePersonalUid) {
