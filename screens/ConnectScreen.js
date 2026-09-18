@@ -328,8 +328,8 @@ function groupNetworkByDegree(data) {
   (data || []).forEach((item) => {
     const deg = Number(item.degree) || 0;
     if (!grouped[deg]) grouped[deg] = [];
-    const uid = String(item.network_profile_personal_uid || item.profile_personal_uid || "").trim();
-    if (uid && grouped[deg].some((existing) => String(existing.network_profile_personal_uid || existing.profile_personal_uid || "").trim() === uid)) {
+    const uid = String(item.network_profile_personal_uid || item.profile_personal_uid || item.profile_uid || "").trim();
+    if (uid && grouped[deg].some((existing) => String(existing.network_profile_personal_uid || existing.profile_personal_uid || existing.profile_uid || "").trim() === uid)) {
       return;
     }
     grouped[deg].push(item);
@@ -337,10 +337,79 @@ function groupNetworkByDegree(data) {
   return grouped;
 }
 
+/**
+ * Normalize GET /api/network response.
+ * Supports legacy flat arrays and the new `{ nodes, edges }` (or wrapped) shape.
+ */
+function extractNetworkNodesAndEdges(payload) {
+  if (Array.isArray(payload)) {
+    return { nodes: payload, edges: null };
+  }
+  if (!payload || typeof payload !== "object") {
+    return { nodes: [], edges: null };
+  }
+
+  const pickEdges = (...candidates) => {
+    for (const c of candidates) {
+      if (Array.isArray(c)) return c;
+    }
+    return null;
+  };
+
+  const pickNodes = (root) => {
+    if (!root || typeof root !== "object") return null;
+    if (Array.isArray(root)) return root;
+    for (const key of ["nodes", "people", "members", "network_nodes", "connections", "results", "data"]) {
+      if (Array.isArray(root[key])) return root[key];
+    }
+    return null;
+  };
+
+  const candidates = [payload, payload.data, payload.result, payload.network, payload.payload, payload.body].filter((v) => v && typeof v === "object");
+  for (const root of candidates) {
+    const nodes = pickNodes(root);
+    if (nodes) {
+      return {
+        nodes,
+        edges: pickEdges(root.edges, root.network_edges, root.links, payload.edges, payload.network_edges, payload.links),
+      };
+    }
+  }
+  return { nodes: [], edges: null };
+}
+
+/** Map BE edges onto nodes as parent_uid; ensure network_profile_personal_uid is set. */
+function normalizeNetworkApiNodes(nodes, edges) {
+  const edgesByTo = new Map();
+  if (Array.isArray(edges)) {
+    for (const e of edges) {
+      const to = String(e?.to || e?.child_uid || e?.target || "").trim();
+      const from = String(e?.from || e?.parent_uid || e?.source || "").trim();
+      if (to && from) edgesByTo.set(to, from);
+    }
+  }
+
+  return (nodes || [])
+    .map((node) => {
+      if (!node || typeof node !== "object") return null;
+      const profileUid = String(node.profile_uid || node.network_profile_personal_uid || node.profile_personal_uid || "").trim();
+      if (!profileUid) return null;
+      const parentFromEdge = edgesByTo.get(profileUid);
+      const parent_uid = String(node.parent_uid || parentFromEdge || "").trim() || null;
+      return {
+        ...node,
+        profile_uid: profileUid,
+        network_profile_personal_uid: profileUid,
+        parent_uid,
+      };
+    })
+    .filter(Boolean);
+}
+
 function applyConnectionFilters(nodes, filters) {
   const { relationshipFilter, dateFrom = "", dateTo = "", locationFilter, eventFilter, notesFilter, introducedByFilter, searchMatchUids = null } = filters;
 
-  let filtered = nodes || [];
+  let filtered = Array.isArray(nodes) ? nodes : [];
 
   if (relationshipFilter !== "All") {
     filtered = filtered.filter((node) => {
@@ -1017,7 +1086,7 @@ const ConnectScreen = ({ navigation }) => {
     console.log("🔵 ConnectScreen - data/state changed", {
       profileUid: profileUid || null,
       activeView,
-      networkCount: networkData.length,
+      networkCount: Array.isArray(networkData) ? networkData.length : 0,
       degree,
       loading,
       error: error || null,
@@ -1613,14 +1682,6 @@ const ConnectScreen = ({ navigation }) => {
     return String(value).replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;").replace(/\n/g, "\\n");
   };
 
-  // Update graph HTML when network data or view mode changes (for web)
-  useEffect(() => {
-    if (Platform.OS === "web" && viewMode === "graph" && profileUid) {
-      const html = generateVisHTML(networkData, profileUid || "YOU");
-      setGraphHtml(html);
-    }
-  }, [viewMode, networkData, profileUid, userProfileData]);
-
   // Create/update iframe element for web
   useEffect(() => {
     if (Platform.OS === "web" && viewMode === "graph" && graphHtml && iframeContainerRef.current && typeof document !== "undefined") {
@@ -1706,7 +1767,12 @@ const ConnectScreen = ({ navigation }) => {
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
       const data = await response.json();
-      return data.map((node) => {
+      const { nodes: rawNodes, edges } = extractNetworkNodesAndEdges(data);
+      if (__DEV__ && (!Array.isArray(rawNodes) || rawNodes.length === 0) && data && typeof data === "object" && !Array.isArray(data)) {
+        console.warn("🔵 ConnectScreen - network payload had no nodes array; keys:", Object.keys(data));
+      }
+      const normalizedNodes = normalizeNetworkApiNodes(rawNodes, edges);
+      return normalizedNodes.map((node) => {
         const deleted = isProfileDeleted(node);
         const flags = deleted ? { emailIsPublic: false, phoneIsPublic: false, tagLineIsPublic: false, locationIsPublic: false, imageIsPublic: false } : getPersonalDisplayFlags(node);
         const audienceFields = deleted
@@ -1993,33 +2059,15 @@ const ConnectScreen = ({ navigation }) => {
 
   /** ✅ Build vis-network HTML (hierarchical layout by degree) */
   const generateVisHTML = (data, youId) => {
-    // console.log("🔷 generateVisHTML called with:");
-    // console.log("  - youId:", youId);
-    // console.log("  - data length:", data.length);
-    console.log(
-      "  - data sample (first 3):",
-      JSON.stringify(
-        data.slice(0, 3).map((n) => ({
-          network_profile_personal_uid: n.network_profile_personal_uid,
-          profile_personal_uid: n.profile_personal_uid,
-          target_uid: n.target_uid,
-          degree: n.degree,
-          parent_uid: n.parent_uid,
-          via_uid: n.via_uid,
-          source_uid: n.source_uid,
-          connection_uid: n.connection_uid,
-        })),
-        null,
-        2,
-      ),
-    );
+    const rows = Array.isArray(data) ? data : [];
+    const youKey = youId ? String(youId) : "YOU";
 
     // Get user's profile image if available
     const userImage = userProfileData?.profileImage || "";
     const hasUserImage = userImage && String(userImage).trim() !== "";
 
     // Calculate base size for other nodes (max of image nodes or dot nodes)
-    const otherNodeSizes = data.map((n) => {
+    const otherNodeSizes = rows.map((n) => {
       const img = n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
       const hasImg = img && String(img).trim() !== "";
       return hasImg ? 18 : 10;
@@ -2038,7 +2086,7 @@ const ConnectScreen = ({ navigation }) => {
 
     const nodes = [
       {
-        id: youId || "YOU",
+        id: youKey,
         label: userNodeLabel,
         shape: hasUserImage ? "circularImage" : "dot",
         image: hasUserImage ? userImage : undefined,
@@ -2050,18 +2098,21 @@ const ConnectScreen = ({ navigation }) => {
       },
     ];
 
-    const allUids = new Set([youId]);
-    data.forEach((n) => allUids.add(n.network_profile_personal_uid));
+    const allUids = new Set([youKey]);
+    rows.forEach((n) => {
+      const uid = String(n.network_profile_personal_uid || n.profile_uid || "").trim();
+      if (uid) allUids.add(uid);
+    });
 
-    data.forEach((n) => {
-      const nodeUid = n.network_profile_personal_uid;
-      if (nodeUid && youId && String(nodeUid) === String(youId)) {
+    rows.forEach((n) => {
+      const nodeUid = String(n.network_profile_personal_uid || n.profile_uid || "").trim();
+      if (!nodeUid || nodeUid === youKey) {
         return;
       }
       const isDeleted = isProfileDeleted(n) || n.__mc?.isDeleted;
       const name = isDeleted ? DELETED_USER_LABEL : n.__mc?.personal_info?.profile_personal_first_name || n.__mc?.firstName || "";
       const last = isDeleted ? "" : n.__mc?.personal_info?.profile_personal_last_name || n.__mc?.lastName || "";
-      const label = isDeleted ? DELETED_USER_LABEL : [name, last].filter(Boolean).join(" ") || (nodeUid ? String(nodeUid).slice(-3) : "???");
+      const label = isDeleted ? DELETED_USER_LABEL : [name, last].filter(Boolean).join(" ") || nodeUid.slice(-3) || "???";
 
       const img = isDeleted ? "" : n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
 
@@ -2089,120 +2140,60 @@ const ConnectScreen = ({ navigation }) => {
     });
 
     const edges = [];
-    // console.log("🔷 Building edges...");
-    data.forEach((n) => {
+    rows.forEach((n) => {
       const deg = Number(n.degree) || 1;
-      const nodeUid = n.network_profile_personal_uid;
-      if (nodeUid && youId && String(nodeUid) === String(youId)) {
+      const nodeUid = String(n.network_profile_personal_uid || n.profile_uid || "").trim();
+      if (!nodeUid || nodeUid === youKey) {
         return;
       }
-      console.log(`\n  Processing node ${nodeUid} (degree ${deg}):`, {
-        profile_personal_referred_by: n.profile_personal_referred_by,
-        profile_personal_uid: n.profile_personal_uid,
-        target_uid: n.target_uid,
-        parent_uid: n.parent_uid,
-        via_uid: n.via_uid,
-      });
 
       let parent = null;
+      const parentCandidate = String(n.parent_uid || "").trim();
 
-      // HIGHEST PRIORITY: Use profile_personal_referred_by - this is who referred/connected this person
-      if (n.profile_personal_referred_by && n.profile_personal_referred_by !== nodeUid && allUids.has(n.profile_personal_referred_by)) {
-        const referredByNode = data.find((x) => x.network_profile_personal_uid === n.profile_personal_referred_by);
+      // Prefer BE-provided parent_uid / edges (normalized onto each node).
+      if (parentCandidate && parentCandidate !== nodeUid && (allUids.has(parentCandidate) || parentCandidate === youKey)) {
+        parent = parentCandidate;
+      }
+
+      // Legacy fallbacks only if BE did not supply parent_uid.
+      const referredBy = String(n.profile_personal_referred_by || "").trim();
+      if (!parent && referredBy && referredBy !== nodeUid && allUids.has(referredBy)) {
+        const referredByNode = rows.find((x) => String(x.network_profile_personal_uid || x.profile_uid || "").trim() === referredBy);
         if (referredByNode) {
           const referredByDeg = Number(referredByNode.degree) || 1;
-          // For degree 1, the referrer should be YOU or in degree 1
-          // For degree > 1, the referrer should be in degree-1
           if (deg === 1) {
-            if (n.profile_personal_referred_by === youId || referredByDeg === 1) {
-              parent = n.profile_personal_referred_by;
-              console.log(`    ✅ Found parent via profile_personal_referred_by (degree 1): ${parent}`);
+            if (referredBy === youKey || referredByDeg === 1) {
+              parent = referredBy;
             }
           } else if (referredByDeg === deg - 1) {
-            parent = n.profile_personal_referred_by;
-            console.log(`    ✅ Found parent via profile_personal_referred_by (${parent} is in degree ${referredByDeg}): ${parent}`);
-          } else {
-            console.log(`    ⚠️ profile_personal_referred_by ${n.profile_personal_referred_by} exists but is degree ${referredByDeg}, not ${deg - 1}`);
+            parent = referredBy;
           }
-        } else if (n.profile_personal_referred_by === youId) {
-          // If referrer is YOU, use it directly
-          parent = youId;
-          console.log(`    ✅ Found parent via profile_personal_referred_by (YOU): ${parent}`);
+        } else if (referredBy === youKey) {
+          parent = youKey;
         }
       }
 
-      // Fallback: try getParentUid (checks parent_uid, via_uid, etc.)
       if (!parent) {
         try {
           const p = getParentUid(n);
-          if (p && allUids.has(p)) {
-            parent = p;
-            console.log(`    ✅ Found parent via getParentUid: ${parent}`);
-          }
-        } catch (e) {
-          console.log(`    ❌ Error in getParentUid:`, e);
+          const pKey = p ? String(p).trim() : "";
+          if (pKey && allUids.has(pKey)) parent = pKey;
+        } catch (_) {
+          /* ignore */
         }
       }
 
-      // Fallback: Check if this node's profile_personal_uid or target_uid points to a valid parent
-      // Circle API rows set profile_personal_uid to the *contact* (same as network_profile_personal_uid).
-      // Treating that as "parent" sets parent === nodeUid (self-loop) and breaks vis-network layout
-      // (image vs ring misalignment, missing-looking edges). Connections rows use these as real parent refs.
-      if (!parent && (n.profile_personal_uid || n.target_uid)) {
-        const directParentUid = n.profile_personal_uid || n.target_uid;
-        if (directParentUid !== nodeUid && allUids.has(directParentUid)) {
-          const parentNode = data.find((x) => x.network_profile_personal_uid === directParentUid);
-          if (parentNode) {
-            const parentDeg = Number(parentNode.degree) || 1;
-            if (deg === 1) {
-              if (directParentUid === youId || parentDeg === 1) {
-                parent = directParentUid;
-                console.log(`    ✅ Found parent via profile_personal_uid/target_uid (degree 1): ${parent}`);
-              }
-            } else if (parentDeg === deg - 1) {
-              parent = directParentUid;
-              console.log(`    ✅ Found parent via profile_personal_uid/target_uid (${directParentUid} is in degree ${parentDeg}): ${parent}`);
-            }
-          }
-        }
-      }
-
-      // For degree > 1, if still no parent, try reverse lookup
-      // Find a node in degree-1 that has this node's UID as its profile_personal_uid or target_uid
-      if (!parent && deg > 1) {
-        const connectingNode = data.find((x) => {
-          const xDeg = Number(x.degree) || 1;
-          const connectsToThisNode = x.profile_personal_uid === nodeUid || x.target_uid === nodeUid;
-          const isPreviousDegree = xDeg === deg - 1;
-          return connectsToThisNode && isPreviousDegree;
-        });
-
-        if (connectingNode && allUids.has(connectingNode.network_profile_personal_uid)) {
-          parent = connectingNode.network_profile_personal_uid;
-          console.log(`    ✅ Found parent via reverse lookup (node ${parent} connects to ${nodeUid}): ${parent}`);
-        }
-      }
-
-      // For degree 1, connect to YOU if no parent found
       if (!parent && deg === 1) {
-        parent = youId || "YOU";
-        console.log(`    ✅ Connecting to YOU (degree 1, no parent found)`);
+        parent = youKey;
       }
 
-      // Last resort for degree > 1: find any node with degree-1
       if (!parent && deg > 1) {
-        const fallbackParent = data.find((x) => Number(x.degree) === deg - 1);
-        if (fallbackParent && allUids.has(fallbackParent.network_profile_personal_uid)) {
-          parent = fallbackParent.network_profile_personal_uid;
-          console.log(`    ⚠️ Using fallback parent (first degree-1 node): ${parent}`);
-        } else {
-          parent = youId || "YOU";
-          console.log(`    ⚠️ No parent found, connecting to YOU`);
-        }
+        const fallbackParent = rows.find((x) => Number(x.degree) === deg - 1);
+        const fallbackUid = String(fallbackParent?.network_profile_personal_uid || fallbackParent?.profile_uid || "").trim();
+        parent = fallbackUid && allUids.has(fallbackUid) ? fallbackUid : youKey;
       }
 
       if (parent && parent !== nodeUid) {
-        console.log(`  ✅ Edge: ${parent} -> ${nodeUid} (degree ${deg})`);
         edges.push({
           from: parent,
           to: nodeUid,
@@ -2212,16 +2203,6 @@ const ConnectScreen = ({ navigation }) => {
         });
       }
     });
-
-    console.log("🔷 Total edges created:", edges.length);
-    console.log(
-      "🔷 Edges:",
-      JSON.stringify(
-        edges.map((e) => `${e.from} -> ${e.to}`),
-        null,
-        2,
-      ),
-    );
 
     const payload = { nodes, edges };
 
@@ -2343,24 +2324,38 @@ const ConnectScreen = ({ navigation }) => {
     }
   }, [navigation, profileUid]);
 
-  // Update graph HTML when network data or view mode or filters change (for web)
+  // Update graph HTML when network data / filters change (web iframe + native WebView)
   useEffect(() => {
-    if (Platform.OS === "web" && viewMode === "graph" && profileUid) {
-      const filtered = applyConnectionFilters(networkData, {
-        relationshipFilter,
-        dateFrom,
-        dateTo,
-        locationFilter,
-        eventFilter,
-        notesFilter,
-        introducedByFilter,
-        searchMatchUids,
-      });
+    if (viewMode !== "graph" || !profileUid) return;
 
-      const html = generateVisHTML(filtered, profileUid || "YOU");
-      setGraphHtml(html);
-    }
-  }, [viewMode, networkData, profileUid, relationshipFilter, dateFrom, dateTo, locationFilter, eventFilter, notesFilter, introducedByFilter, searchMatchUids, userProfileData]);
+    const filtered = applyConnectionFilters(networkData, {
+      relationshipFilter,
+      dateFrom,
+      dateTo,
+      locationFilter,
+      eventFilter,
+      notesFilter,
+      introducedByFilter,
+      searchMatchUids,
+    });
+
+    setGraphHtml(generateVisHTML(filtered, profileUid || "YOU"));
+  }, [
+    viewMode,
+    networkData,
+    profileUid,
+    relationshipFilter,
+    dateFrom,
+    dateTo,
+    locationFilter,
+    eventFilter,
+    notesFilter,
+    introducedByFilter,
+    searchMatchUids,
+    userProfileData?.profileImage,
+    userProfileData?.firstName,
+    userProfileData?.lastName,
+  ]);
 
   const filteredNetworkData = applyConnectionFilters(networkData, {
     relationshipFilter,
@@ -3179,26 +3174,33 @@ const ConnectScreen = ({ navigation }) => {
                           )
                         ) : WebViewComponent ? (
                           // Native: Use WebView
-                          <WebViewComponent
-                            originWhitelist={["*"]}
-                            source={{ html: generateVisHTML(filteredNetworkData, profileUid || "YOU") }}
-                            onMessage={(event) => {
-                              const uid = event?.nativeEvent?.data;
-                              if (uid && uid !== (profileUid || "YOU")) {
-                                navigation.navigate("Profile", {
-                                  profile_uid: uid,
-                                  returnTo: "Connect",
-                                });
-                              }
-                            }}
-                            javaScriptEnabled
-                            incognito
-                            sharedCookiesEnabled={false}
-                            thirdPartyCookiesEnabled={false}
-                            automaticallyAdjustContentInsets
-                            allowsInlineMediaPlayback
-                            androidLayerType={Platform.OS === "android" ? "hardware" : "none"}
-                          />
+                          graphHtml ? (
+                            <WebViewComponent
+                              originWhitelist={["*"]}
+                              source={{ html: graphHtml }}
+                              onMessage={(event) => {
+                                const uid = event?.nativeEvent?.data;
+                                if (uid && uid !== (profileUid || "YOU")) {
+                                  navigation.navigate("Profile", {
+                                    profile_uid: uid,
+                                    returnTo: "Connect",
+                                  });
+                                }
+                              }}
+                              javaScriptEnabled
+                              incognito
+                              sharedCookiesEnabled={false}
+                              thirdPartyCookiesEnabled={false}
+                              automaticallyAdjustContentInsets
+                              allowsInlineMediaPlayback
+                              androidLayerType={Platform.OS === "android" ? "hardware" : "none"}
+                            />
+                          ) : (
+                            <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+                              <ActivityIndicator size='large' color='#AF52DE' />
+                              <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading graph view...</Text>
+                            </View>
+                          )
                         ) : (
                           <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 20 }}>
                             <Text style={[styles.errorText, darkMode && styles.darkErrorText, { textAlign: "center", marginBottom: 10 }]}>
