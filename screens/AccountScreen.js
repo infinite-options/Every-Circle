@@ -11637,6 +11637,8 @@ export default function AccountScreen({ navigation, route }) {
   const showPurchasesPurchasedItemColumn = !compactPurchasesLayout && (effectivePurchasesShowDebugColumns || showWebWidePurchasedItemColumn);
   /** Purchases always show item column so receipt opens from the purchased item, not the seller. */
   const showPurchasesItemColumn = true;
+  /** Native phones: stacked cards instead of the wide multi-column table (web keeps the table). */
+  const usePurchasesCardLayout = Platform.OS !== "web";
 
   if (isLoading) {
     return (
@@ -11798,19 +11800,20 @@ export default function AccountScreen({ navigation, route }) {
                     <Text style={styles.loadingText}>Loading transaction data...</Text>
                   ) : personalPurchasesDisplayList.length > 0 ? (
                     <View style={styles.transactionsContainer}>
-                      {/* Table Header */}
-                      <View style={styles.transactionHeaderRow}>
-                        <Text style={styles.transactionHeaderDate}>Date</Text>
-                        {showPurchasesTxnIdColumn ? <Text style={styles.transactionHeaderId}>Transaction ID</Text> : null}
-                        {showPurchasesTypeColumn ? <Text style={styles.transactionHeaderPurchaseType}>Type</Text> : null}
-                        <Text style={styles.transactionHeaderBusiness}>Seller</Text>
-                        {showPurchasesItemColumn ? <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text> : null}
-                        {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderQty}>Qty</Text>}
-                        <Text style={styles.transactionHeaderDelivered}>Delivered</Text>
-                        <Text style={styles.transactionHeaderReceived}>Received</Text>
-                        <Text style={styles.transactionHeaderAmount}>Amount</Text>
-                      </View>
-                      {/* Table Rows */}
+                      {/* Table header — web only; native uses stacked cards below */}
+                      {!usePurchasesCardLayout ? (
+                        <View style={styles.transactionHeaderRow}>
+                          <Text style={styles.transactionHeaderDate}>Date</Text>
+                          {showPurchasesTxnIdColumn ? <Text style={styles.transactionHeaderId}>Transaction ID</Text> : null}
+                          {showPurchasesTypeColumn ? <Text style={styles.transactionHeaderPurchaseType}>Type</Text> : null}
+                          <Text style={styles.transactionHeaderBusiness}>Seller</Text>
+                          {showPurchasesItemColumn ? <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text> : null}
+                          {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderQty}>Qty</Text>}
+                          <Text style={styles.transactionHeaderDelivered}>Delivered</Text>
+                          <Text style={styles.transactionHeaderReceived}>Received</Text>
+                          <Text style={styles.transactionHeaderAmount}>Amount</Text>
+                        </View>
+                      ) : null}
                       {personalPurchasesDisplayList.map((transaction, i) => {
                         const isReturnRow = isReturnListRow(transaction);
                         const orderUid = resolveListRowOrderUid(transaction);
@@ -11821,6 +11824,10 @@ export default function AccountScreen({ navigation, route }) {
                         const displayAmount = rowDisplay?.amount_label || (v3Money.totalKnown ? formatSignedOrderMoney(v3Money.total) : ACCOUNT_SCREEN_DISPLAY_NA);
                         const rowIdentity = resolveTrrUid(transaction) || transaction.transaction_uid || transaction.ti_uid || "purchase";
                         const rowKey = `${rowIdentity}-${isReturnRow ? "return" : "sale"}-${i}`;
+                        const sellerName = transaction.business_name || transaction.transaction_business_name || "N/A";
+                        const itemLabel = formatPurchasedItemDisplay(transaction.purchased_item) || (isReturnRow ? "View return" : "View receipt");
+                        const qtyLabel = resolveAccountScreenDisplayField(transaction, "qty_label");
+                        const typeLabel = resolveAccountScreenDisplayField(transaction, "type_label");
                         const openPurchaseRowDetail = () => {
                           if (orderUid === "—") return;
                           if (isReturnRow) {
@@ -11837,6 +11844,102 @@ export default function AccountScreen({ navigation, route }) {
                           openOrderDetail({ orderUid, rawRow: transaction }, { isSellerView: false });
                         };
 
+                        const deliveredLabel = resolveAccountScreenDisplayField(transaction, "delivered_label");
+                        const receivedLabel = resolveAccountScreenDisplayField(transaction, "received_label");
+                        const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
+                        const canVerifyReceipt = buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel);
+                        const receivedDisplayLabel = canVerifyReceipt ? "Verify" : receivedLabel;
+                        const receivedBadge = getProductSaleStatusBadgeStyle("received", canVerifyReceipt ? "verify" : receivedLabel);
+                        const openVerifyReceipt = () => openDeliveryVerification(transaction);
+
+                        const renderBadge = (label, badgeStyle) => (
+                          <View style={[styles.purchaseStatusBadge, badgeStyle.badge]}>
+                            <Text style={[styles.purchaseStatusBadgeText, badgeStyle.text]} numberOfLines={1}>
+                              {label}
+                            </Text>
+                          </View>
+                        );
+
+                        const deliveredNode = isReturnRow ? (
+                          <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7}>
+                            {renderBadge(deliveredLabel, deliveredBadge)}
+                          </TouchableOpacity>
+                        ) : canVerifyReceipt ? (
+                          <TouchableOpacity onPress={openVerifyReceipt} activeOpacity={0.7}>
+                            {renderBadge(deliveredLabel, deliveredBadge)}
+                          </TouchableOpacity>
+                        ) : (
+                          renderBadge(deliveredLabel, deliveredBadge)
+                        );
+
+                        const receivedNode = canVerifyReceipt ? (
+                          <TouchableOpacity onPress={openVerifyReceipt} activeOpacity={0.7}>
+                            {renderBadge(receivedDisplayLabel, receivedBadge)}
+                          </TouchableOpacity>
+                        ) : isReturnRow ? (
+                          <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7}>
+                            {renderBadge(receivedLabel, receivedBadge)}
+                          </TouchableOpacity>
+                        ) : (
+                          renderBadge(receivedLabel, receivedBadge)
+                        );
+
+                        const itemNode = isReturnRow ? (
+                          <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7}>
+                            <Text style={[usePurchasesCardLayout ? styles.purchaseMobileItem : styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={usePurchasesCardLayout ? 3 : 4}>
+                              {itemLabel}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
+                            <Text style={[usePurchasesCardLayout ? styles.purchaseMobileItem : styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={usePurchasesCardLayout ? 3 : 4}>
+                              {itemLabel}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+
+                        if (usePurchasesCardLayout) {
+                          return (
+                            <View key={rowKey} style={styles.purchaseMobileCard}>
+                              <View style={styles.purchaseMobileCardTop}>
+                                <Text style={styles.purchaseMobileMeta} numberOfLines={1}>
+                                  {formatTransactionDate(transaction)}
+                                  {!compactTx && qtyLabel ? ` · Qty ${qtyLabel}` : ""}
+                                  {showPurchasesTypeColumn && typeLabel ? ` · ${typeLabel}` : ""}
+                                </Text>
+                                <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7} disabled={orderUid === "—"}>
+                                  <Text style={[styles.purchaseMobileAmount, isReturnRow && { color: "#B71C1C" }, orderUid !== "—" && styles.receiptLink]}>{displayAmount}</Text>
+                                </TouchableOpacity>
+                              </View>
+                              {showPurchasesItemColumn ? <View style={styles.purchaseMobileItemWrap}>{itemNode}</View> : null}
+                              <TouchableOpacity onPress={() => navigateToPurchaseSeller(navigation, transaction)} activeOpacity={0.7} disabled={!sellerId} style={styles.purchaseMobileSellerWrap}>
+                                <Text style={styles.purchaseMobileSellerLabel}>Seller</Text>
+                                <Text style={[styles.purchaseMobileSeller, sellerId ? styles.receiptLink : null]} numberOfLines={2}>
+                                  {sellerName}
+                                </Text>
+                              </TouchableOpacity>
+                              {showPurchasesTxnIdColumn ? (
+                                <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7} disabled={orderUid === "—"} style={styles.purchaseMobileIdWrap}>
+                                  <Text style={styles.purchaseMobileSellerLabel}>Order</Text>
+                                  <Text style={[styles.purchaseMobileSeller, orderUid !== "—" && styles.receiptLink]} numberOfLines={1}>
+                                    {orderUid !== "—" ? orderUid : transaction.transaction_uid || "N/A"}
+                                  </Text>
+                                </TouchableOpacity>
+                              ) : null}
+                              <View style={styles.purchaseMobileStatusRow}>
+                                <View style={styles.purchaseMobileStatusGroup}>
+                                  <Text style={styles.purchaseMobileStatusLabel}>Delivered</Text>
+                                  {deliveredNode}
+                                </View>
+                                <View style={styles.purchaseMobileStatusGroup}>
+                                  <Text style={styles.purchaseMobileStatusLabel}>Received</Text>
+                                  {receivedNode}
+                                </View>
+                              </View>
+                            </View>
+                          );
+                        }
+
                         return (
                           <View key={rowKey} style={styles.transactionRow}>
                             <Text style={styles.transactionDate}>{formatTransactionDate(transaction)}</Text>
@@ -11846,81 +11949,18 @@ export default function AccountScreen({ navigation, route }) {
                                 <Text style={[styles.transactionId, orderUid !== "—" && styles.receiptLink]}>{orderUid !== "—" ? orderUid : transaction.transaction_uid || "N/A"}</Text>
                               </TouchableOpacity>
                             ) : null}
-                            {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{resolveAccountScreenDisplayField(transaction, "type_label")}</Text> : null}
+                            {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{typeLabel}</Text> : null}
                             <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
                               <TouchableOpacity onPress={() => navigateToPurchaseSeller(navigation, transaction)} activeOpacity={0.7} disabled={!sellerId}>
                                 <Text style={[styles.transactionBusiness, sellerId ? styles.receiptLink : null]} numberOfLines={4}>
-                                  {transaction.business_name || transaction.transaction_business_name || "N/A"}
+                                  {sellerName}
                                 </Text>
                               </TouchableOpacity>
                             </View>
-                            {showPurchasesItemColumn ? (
-                              <View style={styles.transactionPurchasedItemCell}>
-                                {isReturnRow ? (
-                                  <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7}>
-                                    <Text style={[styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={4}>
-                                      {formatPurchasedItemDisplay(transaction.purchased_item) || "View return"}
-                                    </Text>
-                                  </TouchableOpacity>
-                                ) : (
-                                  <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
-                                    <Text style={[styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={4}>
-                                      {formatPurchasedItemDisplay(transaction.purchased_item) || "View receipt"}
-                                    </Text>
-                                  </TouchableOpacity>
-                                )}
-                              </View>
-                            ) : null}
-                            {!compactTx && <Text style={[styles.transactionQty, isReturnRow && { color: "#B71C1C" }]}>{resolveAccountScreenDisplayField(transaction, "qty_label")}</Text>}
-                            {(() => {
-                              const deliveredLabel = resolveAccountScreenDisplayField(transaction, "delivered_label");
-                              const receivedLabel = resolveAccountScreenDisplayField(transaction, "received_label");
-                              const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
-                              const canVerifyReceipt = buyerPurchaseNeedsReceiptVerification(transaction, receivedLabel, deliveredLabel);
-                              const receivedDisplayLabel = canVerifyReceipt ? "Verify" : receivedLabel;
-                              const receivedBadge = getProductSaleStatusBadgeStyle("received", canVerifyReceipt ? "verify" : receivedLabel);
-
-                              const renderBadge = (label, badgeStyle) => (
-                                <View style={[styles.purchaseStatusBadge, badgeStyle.badge]}>
-                                  <Text style={[styles.purchaseStatusBadgeText, badgeStyle.text]} numberOfLines={1}>
-                                    {label}
-                                  </Text>
-                                </View>
-                              );
-
-                              const openVerifyReceipt = () => openDeliveryVerification(transaction);
-
-                              return (
-                                <>
-                                  <View style={styles.transactionDeliveredCell}>
-                                    {isReturnRow ? (
-                                      <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7}>
-                                        {renderBadge(deliveredLabel, deliveredBadge)}
-                                      </TouchableOpacity>
-                                    ) : canVerifyReceipt ? (
-                                      <TouchableOpacity onPress={openVerifyReceipt} activeOpacity={0.7}>
-                                        {renderBadge(deliveredLabel, deliveredBadge)}
-                                      </TouchableOpacity>
-                                    ) : (
-                                      renderBadge(deliveredLabel, deliveredBadge)
-                                    )}
-                                  </View>
-                                  <View style={styles.transactionReceivedCell}>
-                                    {canVerifyReceipt ? (
-                                      <TouchableOpacity onPress={openVerifyReceipt} activeOpacity={0.7}>
-                                        {renderBadge(receivedDisplayLabel, receivedBadge)}
-                                      </TouchableOpacity>
-                                    ) : isReturnRow ? (
-                                      <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7}>
-                                        {renderBadge(receivedLabel, receivedBadge)}
-                                      </TouchableOpacity>
-                                    ) : (
-                                      renderBadge(receivedLabel, receivedBadge)
-                                    )}
-                                  </View>
-                                </>
-                              );
-                            })()}
+                            {showPurchasesItemColumn ? <View style={styles.transactionPurchasedItemCell}>{itemNode}</View> : null}
+                            {!compactTx && <Text style={[styles.transactionQty, isReturnRow && { color: "#B71C1C" }]}>{qtyLabel}</Text>}
+                            <View style={styles.transactionDeliveredCell}>{deliveredNode}</View>
+                            <View style={styles.transactionReceivedCell}>{receivedNode}</View>
                             <TouchableOpacity onPress={openPurchaseRowDetail} activeOpacity={0.7} disabled={orderUid === "—"}>
                               <Text style={[styles.transactionAmount, isReturnRow && { color: "#B71C1C" }, orderUid !== "—" && styles.receiptLink]}>{displayAmount}</Text>
                             </TouchableOpacity>
@@ -14288,6 +14328,69 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#333",
     textAlign: "center",
+  },
+  purchaseMobileCard: {
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    gap: 8,
+  },
+  purchaseMobileCardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  purchaseMobileMeta: {
+    flex: 1,
+    fontSize: 12,
+    color: "#666",
+  },
+  purchaseMobileAmount: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333",
+    textAlign: "right",
+  },
+  purchaseMobileItemWrap: {
+    minWidth: 0,
+  },
+  purchaseMobileItem: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333",
+  },
+  purchaseMobileSellerWrap: {
+    minWidth: 0,
+  },
+  purchaseMobileIdWrap: {
+    minWidth: 0,
+  },
+  purchaseMobileSellerLabel: {
+    fontSize: 11,
+    color: "#888",
+    marginBottom: 2,
+  },
+  purchaseMobileSeller: {
+    fontSize: 13,
+    color: "#333",
+  },
+  purchaseMobileStatusRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 16,
+    marginTop: 2,
+  },
+  purchaseMobileStatusGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 1,
+  },
+  purchaseMobileStatusLabel: {
+    fontSize: 11,
+    color: "#888",
   },
   businessBountyTableHeader: {
     flexDirection: "row",
