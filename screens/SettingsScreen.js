@@ -289,8 +289,6 @@ export default function SettingsScreen() {
   const [authPhoneNumber, setAuthPhoneNumber] = useState(null);
   const [authPhoneVerified, setAuthPhoneVerified] = useState(false);
 
-  console.log("In SettingsScreen");
-
   useEffect(() => {
     let cancelled = false;
     (async () => {

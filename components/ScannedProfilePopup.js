@@ -321,15 +321,17 @@ function ConnectionFormFields({
   );
 }
 
-function ConnectionFormButtons({ darkMode, actionLabel, isSaveDisabled, onAdd, onClose }) {
+function ConnectionFormButtons({ darkMode, actionLabel, isSaveDisabled, onAdd, onClose, hideCloseButton = false }) {
   return (
     <View style={[styles.buttonContainer, darkMode && styles.darkButtonContainer]}>
       <TouchableOpacity style={[styles.addButton, isSaveDisabled && styles.addButtonDisabled]} onPress={onAdd} disabled={isSaveDisabled}>
         <Text style={styles.addButtonText}>{actionLabel}</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.viewButton} onPress={onClose}>
-        <Text style={[styles.viewButtonText, darkMode && styles.darkViewButtonText]}>Close</Text>
-      </TouchableOpacity>
+      {!hideCloseButton && (
+        <TouchableOpacity style={styles.viewButton} onPress={onClose}>
+          <Text style={[styles.viewButtonText, darkMode && styles.darkViewButtonText]}>Close</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -346,6 +348,7 @@ const ScannedProfilePopup = ({
   loadingProfile = false,
   variant = "modal",
   hideHeader = false,
+  hideCloseButton = false,
 }) => {
   const { darkMode } = useDarkMode();
   const isScreen = variant === "screen";
@@ -452,14 +455,23 @@ const ScannedProfilePopup = ({
   const headerRow = !hideHeader ? (
     <View style={styles.header}>
       <Text style={[styles.title, darkMode && styles.darkTitle]}>{title}</Text>
-      <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-        <Ionicons name='close' size={24} color={darkMode ? "#fff" : "#333"} />
-      </TouchableOpacity>
+      {!hideCloseButton && (
+        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <Ionicons name='close' size={24} color={darkMode ? "#fff" : "#333"} />
+        </TouchableOpacity>
+      )}
     </View>
   ) : null;
 
   const buttonRow = (
-    <ConnectionFormButtons darkMode={darkMode} actionLabel={actionLabel} isSaveDisabled={isSaveDisabled} onAdd={handleAdd} onClose={onClose} />
+    <ConnectionFormButtons
+      darkMode={darkMode}
+      actionLabel={actionLabel}
+      isSaveDisabled={isSaveDisabled}
+      onAdd={handleAdd}
+      onClose={onClose}
+      hideCloseButton={hideCloseButton}
+    />
   );
 
   if (isScreen) {

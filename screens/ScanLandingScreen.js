@@ -146,6 +146,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [notesCommitted, setNotesCommitted] = useState(false);
   const [checkingDraft, setCheckingDraft] = useState(!!profileUid);
   const redirectStartedRef = useRef(false);
+  const guestNotesNavStartedRef = useRef(false);
   const emailInputRef = useRef(null);
   const oauthWatchdogRef = useRef(null);
   const appleAuthInFlightRef = useRef(false);
@@ -217,9 +218,23 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   useEffect(() => {
     if (route.params?.notesCommitted) {
       setNotesCommitted(true);
+      guestNotesNavStartedRef.current = false;
       navigation.setParams({ notesCommitted: undefined });
     }
   }, [route.params?.notesCommitted, navigation]);
+
+  // Guest scan: skip the intermediate "Add connection details" button — open the form immediately.
+  useEffect(() => {
+    if (loading || checkingSession || checkingDraft || isLoggedIn || notesCommitted || redirecting) return;
+    if (!profileUid || !profileData || error) return;
+    if (guestNotesNavStartedRef.current) return;
+    guestNotesNavStartedRef.current = true;
+    navigation.navigate("ConnectWithMe", {
+      profileUid,
+      profileData,
+      mode: "guest",
+    });
+  }, [loading, checkingSession, checkingDraft, isLoggedIn, notesCommitted, redirecting, profileUid, profileData, error, navigation]);
 
   const clearAndRestoreEphemeralKeys = useCallback(async (referralUidOverride) => {
     const ephemeral = await captureEphemeralSignupKeys();
@@ -638,7 +653,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const showGuestActions = !checkingSession && !checkingDraft && !isLoggedIn && !redirecting;
   const showGuestNotesStep = showGuestActions && !notesCommitted;
   const showGuestAuthStep = showGuestActions && notesCommitted;
-  const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
+  const showRedirecting = redirecting || (isLoggedIn && !showGuestActions) || showGuestNotesStep;
   const versionLabel = buildVersionLabel();
 
   // Web only (QR camera → Safari/Chrome): pin #root to the visible viewport so the
@@ -763,47 +778,25 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       >
         <View style={[styles.panel, panelMinHeight ? { minHeight: panelMinHeight } : null]}>
           <View style={styles.body}>
-            <Text style={styles.headline}>{showGuestNotesStep ? "Connect With Me" : "Connect on everyCircle"}</Text>
+            <Text style={styles.headline}>{showGuestAuthStep ? "Connect on everyCircle" : "Connect With Me"}</Text>
             <Text style={styles.sub}>
-              {showRedirecting
-                ? "Taking you to your network…"
-                : showGuestNotesStep
-                  ? "Add a few notes about how you know this person, then join everyCircle to save the connection."
-                  : "You're one click from joining the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+              {showRedirecting && !showGuestAuthStep
+                ? notesCommitted
+                  ? "Taking you to your network…"
+                  : "Opening connection details…"
+                : "You're one click from joining the most trusted network on the planet. Join with Google or Apple, or enter your email."}
             </Text>
 
-            {(loading || checkingDraft || showRedirecting) && (
+            {(loading || checkingDraft || (showRedirecting && !showGuestAuthStep)) && (
               <View style={styles.centerRow}>
                 <ActivityIndicator size='large' color='#2434C2' />
-                <Text style={styles.muted}>{loading || checkingDraft ? "Loading profile…" : "Opening connect…"}</Text>
+                <Text style={styles.muted}>
+                  {loading || checkingDraft ? "Loading profile…" : notesCommitted ? "Opening connect…" : "Opening connection details…"}
+                </Text>
               </View>
             )}
 
             {!loading && error && <Text style={styles.error}>{error}</Text>}
-
-            {!loading && !error && profileData && showGuestNotesStep && (
-              <>
-                <View style={styles.cardWrap}>
-                  <MiniCard user={profileData} />
-                </View>
-                <TouchableOpacity
-                  style={styles.primaryBtn}
-                  onPress={() =>
-                    navigation.navigate("ConnectWithMe", {
-                      profileUid,
-                      profileData,
-                      mode: "guest",
-                    })
-                  }
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.primaryBtnText}>Add connection details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.secondaryBtn, styles.lastSecondaryBtn]} onPress={downloadVCard} activeOpacity={0.85}>
-                  <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
-                </TouchableOpacity>
-              </>
-            )}
 
             {!loading && !error && profileData && showGuestAuthStep && (
               <>

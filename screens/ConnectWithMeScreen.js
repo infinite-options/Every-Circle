@@ -248,18 +248,23 @@ export default function ConnectWithMeScreen({ navigation, route }) {
 
   const headerTitle = title || "Connect With Me";
   const resolvedActionLabel = saving && mode === "guest" ? "Saving…" : actionLabel || "Add to Network";
+  // Guest QR flow: no dismiss — user must Add to Network, then auth / No thanks on ScanLanding.
+  const lockToComplete = mode === "guest";
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
-      <AppHeader title={headerTitle} onBackPress={() => navigation.goBack()} />
+      <AppHeader title={headerTitle} onBackPress={lockToComplete ? undefined : () => navigation.goBack()} />
       <View style={styles.formContainer}>
         <ScannedProfilePopup
           variant='screen'
           hideHeader
+          hideCloseButton={lockToComplete}
           visible
           profileData={profileData}
           loadingProfile={loadingProfile}
-          onClose={() => navigation.goBack()}
+          onClose={() => {
+            if (!lockToComplete) navigation.goBack();
+          }}
           onAddConnection={handleAddConnection}
           initialData={initialData}
           actionLabel={resolvedActionLabel}
