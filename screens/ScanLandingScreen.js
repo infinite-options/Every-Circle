@@ -19,12 +19,7 @@ import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
 import { isValidEmail } from "../utils/emailValidation";
-import {
-  loadPendingScanConnection,
-  captureEphemeralSignupKeys,
-  restoreEphemeralSignupKeys,
-  flushPendingScanConnectionAfterAuth,
-} from "../utils/pendingScanConnection";
+import { loadPendingScanConnection, captureEphemeralSignupKeys, restoreEphemeralSignupKeys, flushPendingScanConnectionAfterAuth } from "../utils/pendingScanConnection";
 import versionData from "../version.json";
 
 const OAUTH_TIMEOUT_MS = 30000;
@@ -130,8 +125,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [redirecting, setRedirecting] = useState(false);
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
-  const [signingIn, setSigningIn] = useState(false);
-  const [submittingEmail, setSubmittingEmail] = useState(false);
+  const [authBusy, setAuthBusy] = useState(null); // 'google' | 'apple' | 'email' | null
   const [showPasswordFallbackModal, setShowPasswordFallbackModal] = useState(false);
   const [pendingTempSignupUserUid, setPendingTempSignupUserUid] = useState(null);
   const [password, setPassword] = useState("");
@@ -334,7 +328,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const promptEmailFallback = useCallback(
     (message) => {
       clearOauthWatchdog();
-      setSigningIn(false);
+      setAuthBusy(null);
       appleAuthInFlightRef.current = false;
       oauthAbandonedRef.current = true;
       if (fallbackPromptedRef.current) return;
@@ -467,11 +461,11 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       setEmailError("Enter a valid email address.");
       return;
     }
-    if (submittingEmail || signingIn) return;
+    if (authBusy) return;
 
     setEmailError("");
     setEmailFallbackHint("");
-    setSubmittingEmail(true);
+    setAuthBusy("email");
     persistReferral();
 
     const preservedReferralUid = String(profileUid || authParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
@@ -554,16 +548,16 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       console.error("ScanLanding - email signup failed:", err);
       openPasswordFallbackModal(null);
     } finally {
-      setSubmittingEmail(false);
+      setAuthBusy(null);
     }
-  }, [email, submittingEmail, signingIn, persistReferral, profileUid, authParams, navigation, openPasswordFallbackModal, clearAndRestoreEphemeralKeys]);
+  }, [email, authBusy, persistReferral, profileUid, authParams, navigation, openPasswordFallbackModal, clearAndRestoreEphemeralKeys]);
 
   const handleGoogleSignUp = useCallback(async () => {
-    if (signingIn || submittingEmail || !onGoogleSignUp) return;
+    if (authBusy || !onGoogleSignUp) return;
     persistReferral();
     fallbackPromptedRef.current = false;
     setEmailFallbackHint("");
-    setSigningIn(true);
+    setAuthBusy("google");
     clearOauthWatchdog();
     oauthAbandonedRef.current = false;
     try {
@@ -575,24 +569,24 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       return;
     } finally {
       clearOauthWatchdog();
-      setSigningIn(false);
+      setAuthBusy(null);
     }
-  }, [signingIn, submittingEmail, onGoogleSignUp, authParams, persistReferral, clearOauthWatchdog, promptEmailFallback]);
+  }, [authBusy, onGoogleSignUp, authParams, persistReferral, clearOauthWatchdog, promptEmailFallback]);
 
   const handleAppleAuthStart = useCallback(() => {
-    if (signingIn || submittingEmail) return;
+    if (authBusy) return;
     persistReferral();
     fallbackPromptedRef.current = false;
     setEmailFallbackHint("");
     appleAuthInFlightRef.current = true;
     oauthAbandonedRef.current = false;
-    setSigningIn(true);
+    setAuthBusy("apple");
     clearOauthWatchdog();
     oauthWatchdogRef.current = setTimeout(() => {
       if (!appleAuthInFlightRef.current) return;
       promptEmailFallback("Apple Sign-Up timed out. Enter your email below to continue.");
     }, OAUTH_TIMEOUT_MS);
-  }, [signingIn, submittingEmail, persistReferral, clearOauthWatchdog, promptEmailFallback]);
+  }, [authBusy, persistReferral, clearOauthWatchdog, promptEmailFallback]);
 
   const handleAppleSignUp = useCallback(
     async (...args) => {
@@ -613,7 +607,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     (result) => {
       appleAuthInFlightRef.current = false;
       clearOauthWatchdog();
-      setSigningIn(false);
+      setAuthBusy(null);
       if (result?.status === "cancelled") {
         promptEmailFallback("Apple Sign-Up was cancelled. Enter your email below to continue, or try again.");
       } else if (result?.status === "error") {
@@ -790,7 +784,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                 ? notesCommitted
                   ? "Taking you to your network…"
                   : "Opening connection details…"
-                : "You're one click from joining the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+                : "You are only one click from joining the most trusted network on the planet. Join with Google or Apple, or enter your email."}
             </Text>
 
             {(loading || (showRedirecting && !showGuestAuthStep)) && (
@@ -809,14 +803,20 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                 </View>
 
                 <View style={styles.socialContainer}>
-                  <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
+                  <GoogleBrandedSignInButton
+                    mode='signUp'
+                    onPress={handleGoogleSignUp}
+                    disabled={!!authBusy}
+                    signingIn={authBusy === "google"}
+                  />
                   <AppleSignIn
                     mode='signUp'
                     onSignIn={handleAppleSignUp}
                     onError={handleAppleError}
                     onAuthSessionStart={handleAppleAuthStart}
                     onAuthSessionEnd={handleAppleAuthEnd}
-                    disabled={signingIn}
+                    disabled={!!authBusy}
+                    loading={authBusy === "apple"}
                   />
                 </View>
 
@@ -842,7 +842,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                   keyboardType='email-address'
                   autoCapitalize='none'
                   autoCorrect={false}
-                  editable={!submittingEmail && !signingIn}
+                  editable={!authBusy}
                   accessibilityLabel='Email'
                   accessibilityHint='Enter your email address to sign up'
                   returnKeyType='go'
@@ -851,12 +851,12 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                 {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
 
                 <TouchableOpacity
-                  style={[styles.primaryBtn, (!isValidEmail(email.trim()) || submittingEmail) && styles.primaryBtnDisabled]}
+                  style={[styles.primaryBtn, (!isValidEmail(email.trim()) || !!authBusy) && styles.primaryBtnDisabled]}
                   onPress={handleEmailContinue}
                   activeOpacity={0.85}
-                  disabled={!isValidEmail(email.trim()) || submittingEmail || signingIn}
+                  disabled={!isValidEmail(email.trim()) || !!authBusy}
                 >
-                  {submittingEmail ? <ActivityIndicator color='#fff' /> : <Text style={styles.primaryBtnText}>Continue with email</Text>}
+                  {authBusy === "email" ? <ActivityIndicator color='#fff' /> : <Text style={styles.primaryBtnText}>Continue with email</Text>}
                 </TouchableOpacity>
 
                 <View style={styles.sectionRule} />

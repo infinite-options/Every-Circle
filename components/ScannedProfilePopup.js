@@ -748,7 +748,8 @@ const styles = StyleSheet.create({
     borderColor: "#ddd",
     borderRadius: 8,
     padding: 12,
-    fontSize: 14,
+    // ≥16px prevents iOS Safari from zooming the page when the field is focused.
+    fontSize: 16,
     color: "#333",
     backgroundColor: "#fff",
     textAlign: "left",
@@ -778,7 +779,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
   },
   dateButtonText: {
-    fontSize: 14,
+    fontSize: 16,
     color: "#333",
   },
   darkDateButtonText: {

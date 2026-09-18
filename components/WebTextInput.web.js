@@ -154,7 +154,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     backgroundImage: "none",
     backgroundColor: solidBackground,
     color: flatStyle.color || "#000",
-    fontSize: flatStyle.fontSize || 14,
+    fontSize: flatStyle.fontSize || 16,
     width: flatStyle.width || "auto",
     height: flatStyle.height || "auto",
     minHeight: flatStyle.minHeight || "auto",

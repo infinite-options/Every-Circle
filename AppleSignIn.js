@@ -35,11 +35,12 @@ function iosMajorVersion() {
   return parseFloat(v);
 }
 
-const AppleSignIn = ({ onSignIn, onError, onAuthSessionStart, onAuthSessionEnd, disabled, mode = "signIn", buttonText: buttonTextOverride }) => {
+const AppleSignIn = ({ onSignIn, onError, onAuthSessionStart, onAuthSessionEnd, disabled, loading = false, mode = "signIn", buttonText: buttonTextOverride }) => {
   const { width: windowW } = useWindowDimensions();
   const btnW = buttonWidthForWindow(windowW);
   const label = buttonTextOverride || (mode === "signUp" ? "Sign up with Apple" : "Sign in with Apple");
   const useSignUpType = mode === "signUp" && iosMajorVersion() >= 13.2;
+  const blocked = !!(disabled || loading);
   // Only used on iOS: native Sign in with Apple is not available on all devices/configurations.
   const [iosAppleAvailable, setIosAppleAvailable] = useState(Platform.OS === "ios" ? null : true);
 
@@ -60,7 +61,7 @@ const AppleSignIn = ({ onSignIn, onError, onAuthSessionStart, onAuthSessionEnd, 
     };
   }, []);
   const handleAppleSignIn = async () => {
-    if (disabled) return;
+    if (blocked) return;
     onAuthSessionStart?.();
     let ended = false;
     const endSession = (result) => {
@@ -317,17 +318,23 @@ const AppleSignIn = ({ onSignIn, onError, onAuthSessionStart, onAuthSessionEnd, 
           style={[
             styles.iosButtonWrap,
             { width: btnW, height: AUTH_BTN_H },
-            disabled && styles.iosButtonWrapDisabled,
+            blocked && styles.iosButtonWrapDisabled,
           ]}
-          pointerEvents={disabled ? "none" : "auto"}
+          pointerEvents={blocked ? "none" : "auto"}
         >
-          <AppleAuthentication.AppleAuthenticationButton
-            buttonType={useSignUpType ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-            cornerRadius={6}
-            style={[styles.appleButtonBase, { width: btnW, height: AUTH_BTN_H }]}
-            onPress={handleAppleSignIn}
-          />
+          {loading ? (
+            <View style={[styles.fallbackButton, { width: btnW, height: AUTH_BTN_H }]}>
+              <ActivityIndicator color='#FFFFFF' />
+            </View>
+          ) : (
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={useSignUpType ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={6}
+              style={[styles.appleButtonBase, { width: btnW, height: AUTH_BTN_H }]}
+              onPress={handleAppleSignIn}
+            />
+          )}
         </View>
       </View>
     );
@@ -342,16 +349,16 @@ const AppleSignIn = ({ onSignIn, onError, onAuthSessionStart, onAuthSessionEnd, 
         style={({ pressed }) => [
           styles.fallbackButton,
           { width: btnW, minWidth: 200, maxWidth: 312, height: AUTH_BTN_H },
-          disabled && styles.fallbackButtonDisabled,
-          pressed && !disabled && styles.fallbackButtonPressed,
+          blocked && styles.fallbackButtonDisabled,
+          pressed && !blocked && styles.fallbackButtonPressed,
         ]}
         onPress={handleAppleSignIn}
-        disabled={!!disabled}
+        disabled={blocked}
         accessibilityRole='button'
         accessibilityLabel={label}
         android_ripple={{ color: "rgba(255,255,255,0.2)" }}
       >
-        {disabled ? (
+        {loading ? (
           <ActivityIndicator color='#FFFFFF' />
         ) : (
           <View style={styles.fallbackButtonInner}>
