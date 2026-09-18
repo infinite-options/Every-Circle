@@ -2130,41 +2130,42 @@ const handleReferralSelect = useCallback(
             ].map(({ key, label }) => {
               const selectedKey = messagesWhoCanSendKey(messagesOff, messagesSettings.receiveFrom);
               return (
-                <TouchableOpacity
-                  key={key}
-                  style={[styles.nearbyPrivacyOptionRow, styles.messagesPrivacyOptionRow]}
-                  onPress={() => selectWhoCanSendMessages(key)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name={selectedKey === key ? "radio-button-on" : "radio-button-off"} size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
-                  <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-            {messagesWhoCanSendKey(messagesOff, messagesSettings.receiveFrom) === "specific" && (
-              <View style={[styles.nearbyPrivacyCheckboxGroup, styles.messagesPrivacyCheckboxGroup]}>
-                {[
-                  { key: "friends", label: "Friends" },
-                  { key: "colleagues", label: "Colleagues" },
-                  { key: "family", label: "Family" },
-                ].map(({ key, label }) => (
+                <React.Fragment key={key}>
                   <TouchableOpacity
-                    key={key}
-                    style={styles.nearbyPrivacyCheckboxRow}
-                    onPress={() =>
-                      updateMessagesSettings({
-                        ...messagesSettings,
-                        receiveFromTypes: { ...messagesSettings.receiveFromTypes, [key]: !messagesSettings.receiveFromTypes[key] },
-                      })
-                    }
+                    style={[styles.nearbyPrivacyOptionRow, styles.messagesPrivacyOptionRow]}
+                    onPress={() => selectWhoCanSendMessages(key)}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name={messagesSettings.receiveFromTypes[key] ? "checkbox" : "square-outline"} size={17} color={COLORS.primary} style={{ marginRight: 10 }} />
+                    <Ionicons name={selectedKey === key ? "radio-button-on" : "radio-button-off"} size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
                     <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-            )}
+                  {key === "specific" && selectedKey === "specific" && (
+                    <View style={[styles.nearbyPrivacyCheckboxGroup, styles.messagesPrivacyCheckboxGroup]}>
+                      {[
+                        { key: "friends", label: "Friends" },
+                        { key: "colleagues", label: "Colleagues" },
+                        { key: "family", label: "Family" },
+                      ].map(({ key: circleKey, label: circleLabel }) => (
+                        <TouchableOpacity
+                          key={circleKey}
+                          style={styles.nearbyPrivacyCheckboxRow}
+                          onPress={() =>
+                            updateMessagesSettings({
+                              ...messagesSettings,
+                              receiveFromTypes: { ...messagesSettings.receiveFromTypes, [circleKey]: !messagesSettings.receiveFromTypes[circleKey] },
+                            })
+                          }
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name={messagesSettings.receiveFromTypes[circleKey] ? "checkbox" : "square-outline"} size={17} color={COLORS.primary} style={{ marginRight: 10 }} />
+                          <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{circleLabel}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </React.Fragment>
+              );
+            })}
 
             <Text style={[styles.messagesPrivacyAlwaysNote, darkMode && styles.darkNearbySubText]}>
               Note: Messages regarding Purchases, Offerings and Seeking are always allowed.
