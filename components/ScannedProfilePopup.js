@@ -1,6 +1,19 @@
 // ScannedProfilePopup.js - Popup to display scanned profile information
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView, useWindowDimensions, Alert, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Modal,
+  Platform,
+  ScrollView,
+  useWindowDimensions,
+  Alert,
+  ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
@@ -16,6 +29,55 @@ if (Platform.OS !== "web") {
   } catch (e) {
     console.warn("DateTimePicker not available:", e.message);
   }
+}
+
+/** Visible viewport height / keyboard inset — critical on iOS Safari where Keyboard events are unreliable. */
+function useKeyboardAwareViewport(windowHeight) {
+  const [visibleHeight, setVisibleHeight] = useState(windowHeight);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const update = () => {
+        const vv = window.visualViewport;
+        const nextH = vv?.height ?? window.innerHeight ?? windowHeight;
+        setVisibleHeight(nextH);
+        // Treat a meaningful shrink vs layout viewport as keyboard open.
+        const layoutH = window.innerHeight || windowHeight;
+        setKeyboardOpen(layoutH - nextH > 80);
+      };
+      update();
+      window.visualViewport?.addEventListener?.("resize", update);
+      window.visualViewport?.addEventListener?.("scroll", update);
+      window.addEventListener?.("resize", update);
+      return () => {
+        window.visualViewport?.removeEventListener?.("resize", update);
+        window.visualViewport?.removeEventListener?.("scroll", update);
+        window.removeEventListener?.("resize", update);
+      };
+    }
+
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const onShow = (e) => {
+      const kb = e?.endCoordinates?.height || 0;
+      setKeyboardOpen(kb > 0);
+      setVisibleHeight(Math.max(200, windowHeight - kb));
+    };
+    const onHide = () => {
+      setKeyboardOpen(false);
+      setVisibleHeight(windowHeight);
+    };
+    const subShow = Keyboard.addListener(showEvt, onShow);
+    const subHide = Keyboard.addListener(hideEvt, onHide);
+    setVisibleHeight(windowHeight);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [windowHeight]);
+
+  return { visibleHeight, keyboardOpen };
 }
 
 const getTodayCircleDate = () => {
@@ -91,6 +153,7 @@ const ScannedProfilePopup = ({
 }) => {
   const { darkMode } = useDarkMode();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const { visibleHeight, keyboardOpen } = useKeyboardAwareViewport(windowHeight);
   const [selectedRelationship, setSelectedRelationship] = useState("friend");
   const [event, setEvent] = useState("");
   const [note, setNote] = useState("");
@@ -101,11 +164,12 @@ const ScannedProfilePopup = ({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const wasVisibleRef = useRef(false);
 
-  // Keep the sheet inside the visible viewport (mobile web address bars shrink usable height).
+  // Keep the sheet inside the visible viewport (mobile web keyboard + address bars).
   const overlayPadding = windowWidth < 400 ? 12 : 20;
-  const modalMaxHeight = Math.max(280, windowHeight - overlayPadding * 2);
+  const topPadding = keyboardOpen ? Math.min(overlayPadding, 8) : overlayPadding;
+  const modalMaxHeight = Math.max(240, visibleHeight - topPadding * 2);
   // Reserve space for title + pinned action buttons so the middle always scrolls.
-  const scrollMaxHeight = Math.max(140, modalMaxHeight - 190);
+  const scrollMaxHeight = Math.max(120, modalMaxHeight - 170);
 
   // Hydrate only when the modal opens/closes — not when parent relationship data arrives later.
   // Re-syncing mid-edit reset TextInput values and can crash Android while the user is typing.
@@ -175,29 +239,44 @@ const ScannedProfilePopup = ({
 
   return (
     <Modal visible={visible} transparent={true} animationType='fade' onRequestClose={onClose}>
-      <View style={[styles.modalOverlay, darkMode && styles.darkModalOverlay, { padding: overlayPadding }]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
         <View
           style={[
-            styles.modalContent,
-            darkMode && styles.darkModalContent,
-            { maxHeight: modalMaxHeight },
+            styles.modalOverlay,
+            darkMode && styles.darkModalOverlay,
+            {
+              padding: overlayPadding,
+              paddingTop: topPadding,
+              // Pin to top when keyboard is open so fields stay above it.
+              justifyContent: keyboardOpen ? "flex-start" : "center",
+            },
           ]}
         >
-          <View style={styles.header}>
-            <Text style={[styles.title, darkMode && styles.darkTitle]}>{title}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name='close' size={24} color={darkMode ? "#fff" : "#333"} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            style={[styles.scrollView, { maxHeight: scrollMaxHeight }]}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator
-            keyboardShouldPersistTaps='handled'
-            nestedScrollEnabled
-            bounces={false}
+          <View
+            style={[
+              styles.modalContent,
+              darkMode && styles.darkModalContent,
+              { maxHeight: modalMaxHeight },
+            ]}
           >
+            <View style={styles.header}>
+              <Text style={[styles.title, darkMode && styles.darkTitle]}>{title}</Text>
+              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <Ionicons name='close' size={24} color={darkMode ? "#fff" : "#333"} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={[styles.scrollView, { maxHeight: scrollMaxHeight }]}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps='handled'
+              nestedScrollEnabled
+              bounces={false}
+            >
             <View style={styles.content}>
               {loadingProfile ? (
                 <View style={styles.loadingProfileRow}>
@@ -352,8 +431,9 @@ const ScannedProfilePopup = ({
               <Text style={[styles.viewButtonText, darkMode && styles.darkViewButtonText]}>Close</Text>
             </TouchableOpacity>
           </View>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
