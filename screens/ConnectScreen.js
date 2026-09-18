@@ -65,6 +65,7 @@ import { subscribeStoredNearbyCoords, formatStoredNearbyCoordsSummary } from "..
 import { parseCoordinateValue } from "../utils/validateCoordinates";
 import { nearbyPeopleToMapMarkers } from "../utils/nearbyPeopleToMapMarkers";
 import { searchReferralProfiles } from "../utils/searchReferralProfiles";
+import { isNewConnection } from "../utils/isNewConnection";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -288,6 +289,7 @@ const RELATIONSHIP_FILTER_OPTIONS = ["All", "Colleagues", "Friends", "Family"];
 const EVERY_CIRCLE_ZERO_NODE_UID = "110-000001";
 const NETWORK_GRAPH_PURPLE = "#9C45F7";
 const NETWORK_GRAPH_PURPLE_FILL_50 = "rgba(156, 69, 247, 0.5)";
+const NETWORK_GRAPH_NEW_GREEN = "#22c55e";
 const LEGACY_DATE_FILTER_PRESETS = new Set(["All", "This Week", "This Month", "This Year"]);
 
 function escapeVisHtmlLabel(text) {
@@ -1768,10 +1770,12 @@ const ConnectScreen = ({ navigation }) => {
                 .filter((key) => Object.prototype.hasOwnProperty.call(node, key))
                 .map((key) => [key, node[key]]),
             );
+        const isNew = !deleted && isNewConnection(node);
         return {
           ...node,
           __mc: {
             isDeleted: deleted,
+            isNew,
             firstName: deleted ? "" : sanitizeText(node.profile_personal_first_name || ""),
             lastName: deleted ? "" : sanitizeText(node.profile_personal_last_name || ""),
             tagLine: deleted ? "" : sanitizeText(node.profile_personal_tag_line || ""),
@@ -1828,11 +1832,13 @@ const ConnectScreen = ({ navigation }) => {
                   .filter((key) => Object.prototype.hasOwnProperty.call(p, key))
                   .map((key) => [key, p[key]]),
               );
+          const isNew = !deleted && isNewConnection(circle);
           return {
             ...circle,
             degree: 1,
             __mc: {
               isDeleted: deleted,
+              isNew,
               firstName: deleted ? "" : sanitizeText(p.profile_personal_first_name || ""),
               lastName: deleted ? "" : sanitizeText(p.profile_personal_last_name || ""),
               tagLine: sanitizeText(tagLineRaw || ""),
@@ -2105,6 +2111,21 @@ const ConnectScreen = ({ navigation }) => {
       const hasImg = img && String(img).trim() !== "";
       const isZeroNode = nodeUid === EVERY_CIRCLE_ZERO_NODE_UID;
       const useImage = hasImg && !isDeleted;
+      const isNew = !isDeleted && !isZeroNode && isNewConnection(n);
+      const newBorderWidth = Math.max(3, Math.round((isZeroNode ? userNodeSize : hasImg ? 18 : 10) * 0.2));
+
+      let nodeColor;
+      if (isZeroNode) {
+        nodeColor = { border: NETWORK_GRAPH_PURPLE, background: useImage ? "#ffffff" : NETWORK_GRAPH_PURPLE_FILL_50 };
+      } else if (isDeleted) {
+        nodeColor = { border: "#bbb", background: "#ccc" };
+      } else if (isNew) {
+        nodeColor = { border: NETWORK_GRAPH_NEW_GREEN, background: useImage ? "#ffffff" : "#dcfce7" };
+      } else if (hasImg) {
+        nodeColor = undefined;
+      } else {
+        nodeColor = { border: "#FFFFFF", background: "#e9d4ff" };
+      }
 
       nodes.push({
         id: nodeUid,
@@ -2112,14 +2133,8 @@ const ConnectScreen = ({ navigation }) => {
         shape: useImage ? "circularImage" : "dot",
         image: useImage ? img : undefined,
         size: isZeroNode ? userNodeSize : isDeleted ? 10 : hasImg ? 18 : 10,
-        borderWidth: isZeroNode ? userNodeBorderWidth : undefined,
-        color: isZeroNode
-          ? { border: NETWORK_GRAPH_PURPLE, background: useImage ? "#ffffff" : NETWORK_GRAPH_PURPLE_FILL_50 }
-          : isDeleted
-            ? { border: "#bbb", background: "#ccc" }
-            : hasImg
-              ? undefined
-              : { border: "#FFFFFF", background: "#e9d4ff" },
+        borderWidth: isZeroNode ? userNodeBorderWidth : isNew ? newBorderWidth : undefined,
+        color: nodeColor,
         font: { size: 11, color: isDeleted ? "#888" : "#444" },
         level: Number(n.degree) || 1,
       });
@@ -3249,7 +3264,7 @@ const ConnectScreen = ({ navigation }) => {
                                                 }
                                                 style={{ marginVertical: 6 }}
                                               >
-                                                <MicroCard user={node.__mc} />
+                                                <MicroCard isNew={isNewConnection(node)} user={node.__mc} />
                                               </TouchableOpacity>
                                             );
                                           })}

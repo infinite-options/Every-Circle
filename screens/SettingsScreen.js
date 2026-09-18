@@ -10,6 +10,7 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyLocationPrivacyModal from "../components/NearbyLocationPrivacyModal";
+import ReferralSearch from "../components/ReferralSearch";
 import { DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS, loadNearbySettings, subscribeNearbySettings, syncNearbySettingsToServer, formatNearbyPrivacySummary } from "../utils/nearbySettings";
 import { resetSharedAblyClient } from "../utils/ablyClient";
 import {
@@ -20,7 +21,10 @@ import {
 } from "../utils/liveLocationSharing";
 import { clearUserProfileCacheStorage, getSessionProfile, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
-import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT, CHANGE_REFERRAL_ENDPOINT } from "../apiConfig";
+
+/** Zero / root node — users under this can set a referral once from Settings. */
+const ZERO_NODE_UID = "110-000001";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { logoutCircleSession } from "../utils/authSession";
 import { enforceTempPasswordGraceFromUserRow } from "../utils/tempPasswordGrace";
@@ -211,6 +215,11 @@ export default function SettingsScreen() {
   const [messagesOff, setMessagesOff] = useState(false);
   // Backend: profile_personal_messages_allow_transaction — always forced ON from Settings UI
   const [messagesAllowTransaction, setMessagesAllowTransaction] = useState(true);
+
+  // One-time referral change (only when currently under the zero node)
+  const [referredBy, setReferredBy] = useState(null);
+  const [showChangeReferralModal, setShowChangeReferralModal] = useState(false);
+  const [changingReferral, setChangingReferral] = useState(false);
 
   // Live location sharing — watcher/timer/Ably alerts live in utils/liveLocationSharing
   // (shared with Connect). Banner delivery is owned by NearbyAlertProvider.
@@ -576,6 +585,7 @@ export default function SettingsScreen() {
     });
     setMessagesOff(parseProfileBoolFlag(result.personal_info.profile_personal_messages_off, false));
     setMessagesAllowTransaction(parseProfileBoolFlag(result.personal_info.profile_personal_messages_allow_transaction, true));
+    setReferredBy((result.personal_info.profile_personal_referred_by || "").trim() || null);
   }, []);
 
   const loadProfileForSettings = useCallback(async () => {
@@ -602,6 +612,74 @@ export default function SettingsScreen() {
   useEffect(() => {
     loadProfileForSettings();
   }, [loadProfileForSettings]);
+
+const submitChangeReferral = useCallback(
+  async (selectedUid, displayName) => {
+    if (!selectedUid || changingReferral) return;
+    setChangingReferral(true);
+    try {
+      const profileUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      const response = await fetch(CHANGE_REFERRAL_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile_uid: profileUid || undefined,
+          profile_personal_referred_by: selectedUid,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.code >= 400) {
+        const message = data.message || "Could not update referral. Please try again.";
+        if (isWeb) window.alert(message);
+        else Alert.alert("Error", message);
+        return;
+      }
+      setReferredBy(selectedUid);
+      setShowChangeReferralModal(false);
+      try {
+        await refreshSessionProfileFromNetwork();
+      } catch (refreshErr) {
+        console.warn("SettingsScreen - profile refresh after referral change failed:", refreshErr);
+      }
+      const successMsg = displayName
+        ? `Your referral is now ${displayName}. This can only be set once.`
+        : "Your referral was updated. This can only be set once.";
+      if (isWeb) window.alert(successMsg);
+      else Alert.alert("Referral updated", successMsg);
+    } catch (e) {
+      console.error("SettingsScreen - change referral error:", e);
+      const message = "Could not update referral. Please try again.";
+      if (isWeb) window.alert(message);
+      else Alert.alert("Error", message);
+    } finally {
+      setChangingReferral(false);
+    }
+  },
+  [changingReferral]
+);
+
+const handleReferralSelect = useCallback(
+  (user) => {
+    const selectedUid = user?.profile_personal_uid;
+    if (!selectedUid || changingReferral) return;
+    const fullName = `${user.profile_personal_first_name || ""} ${user.profile_personal_last_name || ""}`.trim();
+    const confirmMessage = fullName
+      ? `Set ${fullName} as your referral? You can only do this once.`
+      : "Set this person as your referral? You can only do this once.";
+
+    const confirmAndSubmit = () => submitChangeReferral(selectedUid, fullName || null);
+
+    if (isWeb) {
+      if (window.confirm(confirmMessage)) confirmAndSubmit();
+    } else {
+      Alert.alert("Confirm referral", confirmMessage, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Confirm", onPress: confirmAndSubmit },
+      ]);
+    }
+  },
+  [changingReferral, submitChangeReferral]
+);
 
   const reloadSettingsScreen = useCallback(() => {
     void getLiveLocationSharingStatus().then(({ active, until }) => {
@@ -1167,6 +1245,29 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 );
               })()}
+
+              {/* One-time Add Referral — only when under the zero node */}
+              {referredBy === ZERO_NODE_UID ? (
+                <TouchableOpacity
+                  style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}
+                  onPress={() => setShowChangeReferralModal(true)}
+                  activeOpacity={0.8}
+                  disabled={changingReferral}
+                >
+                  <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                    <MaterialIcons name='person-add' size={20} style={styles.icon} color={COLORS.primary} />
+                    <View>
+                      <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                        <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Add Referral</Text>
+                      </Text>
+                      <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
+                        You can choose who referred you once
+                      </Text>
+                    </View>
+                  </View>
+                  <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
+                </TouchableOpacity>
+              ) : null}
             </View>
           )}
 
@@ -1996,6 +2097,21 @@ export default function SettingsScreen() {
         onConfirmEnable={confirmShareLocation}
         onCancelEnable={cancelShareLocation}
         onClose={cancelShareLocation}
+        />
+      {/* One-time Add Referral (zero-node users only) */}
+      <ReferralSearch
+        visible={showChangeReferralModal}
+        onClose={() => {
+          if (!changingReferral) setShowChangeReferralModal(false);
+        }}
+        onSelectUser={handleReferralSelect}
+        showNewUserButton={false}
+        modalTitle='Who referred you?'
+        helperText='You can only set this once.'
+        instructionText='Search by email, city, state, or name'
+        searchPlaceholder='Email, location, or name'
+        noResultsSubtext='Try another spelling, city, or email.'
+        searchButtonColor={COLORS.primary}
       />
 
       {/* Messages Privacy Modal */}
