@@ -177,15 +177,14 @@ export async function flushPendingScanConnectionAfterAuth(options = {}) {
     return { flushed: false, error: result.error || "add_failed", relatedProfileUid: draft.relatedProfileUid };
   }
 
-  try {
-    await publishNewConnectionOpened(draft.relatedProfileUid, {
-      message: "New Connection",
-      scannerProfileUid,
-      scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
-    });
-  } catch (e) {
+  // Notify QR owner in the background — do not block post-auth navigation on Ably connect/attach.
+  void publishNewConnectionOpened(draft.relatedProfileUid, {
+    message: "New Connection",
+    scannerProfileUid,
+    scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
+  }).catch((e) => {
     console.warn("flushPendingScanConnectionAfterAuth: Ably notify failed", e?.message || e);
-  }
+  });
 
   await clearPendingScanConnection();
   return { flushed: true, relatedProfileUid: draft.relatedProfileUid };

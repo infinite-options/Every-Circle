@@ -109,7 +109,8 @@ const NewConnectionScreen = () => {
 
       const uidToMessage = parsedData?.profile_uid ?? profileUid;
       if (uidToMessage) {
-        await sendAblyMessage(uidToMessage);
+        // Fire-and-forget — do not block the New Connection form on Ably connect/attach.
+        void sendAblyMessage(uidToMessage);
       }
     };
 

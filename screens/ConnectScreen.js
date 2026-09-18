@@ -1,6 +1,22 @@
 // ConnectScreen.js - Connect tab (QR, network graph, messages, nearby)
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal, PanResponder, Alert, Dimensions } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  SafeAreaView,
+  ActivityIndicator,
+  Platform,
+  Switch,
+  InteractionManager,
+  Image,
+  Modal,
+  PanResponder,
+  Alert,
+  Dimensions,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import BottomNavBar from "../components/BottomNavBar";
@@ -47,12 +63,7 @@ import {
   formatShareLocationDurationLabel,
   getLastLiveLocationError,
 } from "../utils/liveLocationSharing";
-import {
-  DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS,
-  loadNearbySettings,
-  subscribeNearbySettings,
-  formatNearbyPrivacySummary,
-} from "../utils/nearbySettings";
+import { DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS, loadNearbySettings, subscribeNearbySettings, formatNearbyPrivacySummary } from "../utils/nearbySettings";
 import { subscribeStoredNearbyCoords, formatStoredNearbyCoordsSummary } from "../utils/nearbyLocationUpdate";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
 import { nearbyPeopleToMapMarkers } from "../utils/nearbyPeopleToMapMarkers";
@@ -283,10 +294,7 @@ const NETWORK_GRAPH_PURPLE_FILL_50 = "rgba(156, 69, 247, 0.5)";
 const LEGACY_DATE_FILTER_PRESETS = new Set(["All", "This Week", "This Month", "This Year"]);
 
 function escapeVisHtmlLabel(text) {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /** Persist connections graph and circles separately so one fetch does not wipe the other. */
@@ -333,16 +341,7 @@ function groupNetworkByDegree(data) {
 }
 
 function applyConnectionFilters(nodes, filters) {
-  const {
-    relationshipFilter,
-    dateFrom = "",
-    dateTo = "",
-    locationFilter,
-    eventFilter,
-    notesFilter,
-    introducedByFilter,
-    searchMatchUids = null,
-  } = filters;
+  const { relationshipFilter, dateFrom = "", dateTo = "", locationFilter, eventFilter, notesFilter, introducedByFilter, searchMatchUids = null } = filters;
 
   let filtered = nodes || [];
 
@@ -368,7 +367,9 @@ function applyConnectionFilters(nodes, filters) {
     });
   }
 
-  const locationQuery = String(locationFilter || "").trim().toLowerCase();
+  const locationQuery = String(locationFilter || "")
+    .trim()
+    .toLowerCase();
   if (locationQuery) {
     filtered = filtered.filter((node) => {
       const city = (node.circle_city || "").trim();
@@ -383,7 +384,9 @@ function applyConnectionFilters(nodes, filters) {
     filtered = filtered.filter((node) => (node.circle_event || "").trim() === eventFilter);
   }
 
-  const notesQuery = String(notesFilter || "").trim().toLowerCase();
+  const notesQuery = String(notesFilter || "")
+    .trim()
+    .toLowerCase();
   if (notesQuery) {
     filtered = filtered.filter((node) => (node.circle_note || "").toLowerCase().includes(notesQuery));
   }
@@ -491,9 +494,15 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onReleaseRef = useRef(onRelease);
-  useEffect(() => { valueRef.current = value; });
-  useEffect(() => { onChangeRef.current = onChange; });
-  useEffect(() => { onReleaseRef.current = onRelease; });
+  useEffect(() => {
+    valueRef.current = value;
+  });
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
+  useEffect(() => {
+    onReleaseRef.current = onRelease;
+  });
 
   const mileToX = (miles) => {
     if (miles == null) return 0;
@@ -532,7 +541,7 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
       onPanResponderTerminate: () => {
         grantedRef.current = false;
       },
-    })
+    }),
   ).current;
 
   const thumbX = mileToX(value);
@@ -540,7 +549,9 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
   return (
     <View
       style={nearbySliderStyles.track}
-      onLayout={(e) => { trackRef.current = e.nativeEvent.layout.width; }}
+      onLayout={(e) => {
+        trackRef.current = e.nativeEvent.layout.width;
+      }}
       {...panResponder.panHandlers}
     >
       <View style={[nearbySliderStyles.rail, darkMode && nearbySliderStyles.railDark]} />
@@ -556,10 +567,18 @@ const nearbySliderStyles = StyleSheet.create({
   railDark: { backgroundColor: "#444" },
   fill: { height: 4, backgroundColor: "#AF52DE", borderRadius: 2, position: "absolute", left: 0 },
   thumb: {
-    width: NEARBY_THUMB, height: NEARBY_THUMB, borderRadius: NEARBY_THUMB / 2,
-    backgroundColor: "#AF52DE", borderWidth: 2, borderColor: "#fff",
+    width: NEARBY_THUMB,
+    height: NEARBY_THUMB,
+    borderRadius: NEARBY_THUMB / 2,
+    backgroundColor: "#AF52DE",
+    borderWidth: 2,
+    borderColor: "#fff",
     position: "absolute",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
   },
   thumbDark: { borderColor: "#2a2a2a" },
 });
@@ -1050,10 +1069,7 @@ const ConnectScreen = ({ navigation }) => {
   const notesFilterActive = notesFilter.trim() !== "";
   const dateFilterActive = Boolean(dateFrom || dateTo);
 
-  const sortedStorageData = useMemo(
-    () => [...storageData].sort(([keyA], [keyB]) => String(keyA).localeCompare(String(keyB))),
-    [storageData],
-  );
+  const sortedStorageData = useMemo(() => [...storageData].sort(([keyA], [keyB]) => String(keyA).localeCompare(String(keyB))), [storageData]);
 
   const toggleStorageKeyExpanded = useCallback((key) => {
     setExpandedStorageKeys((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -1170,9 +1186,7 @@ const ConnectScreen = ({ navigation }) => {
       let merged = await mergePendingOauthIdentityIntoPayload(raw);
       const pi = merged?.personal_info || {};
       const hasName = Boolean(String(pi.profile_personal_first_name || "").trim() || String(pi.profile_personal_last_name || "").trim());
-      const hasPublicImage =
-        Boolean(pi.profile_personal_image && String(pi.profile_personal_image).trim()) &&
-        isPersonalAudienceFieldVisible(pi, PERSONAL_AUDIENCE_KEYS.image);
+      const hasPublicImage = Boolean(pi.profile_personal_image && String(pi.profile_personal_image).trim()) && isPersonalAudienceFieldVisible(pi, PERSONAL_AUDIENCE_KEYS.image);
 
       // If session is still incomplete, refresh from API once and merge OAuth identity again.
       if (!hasName || !hasPublicImage) {
@@ -1780,9 +1794,7 @@ const ConnectScreen = ({ navigation }) => {
       const data = await response.json();
       return data.map((node) => {
         const deleted = isProfileDeleted(node);
-        const flags = deleted
-          ? { emailIsPublic: false, phoneIsPublic: false, tagLineIsPublic: false, locationIsPublic: false, imageIsPublic: false }
-          : getPersonalDisplayFlags(node);
+        const flags = deleted ? { emailIsPublic: false, phoneIsPublic: false, tagLineIsPublic: false, locationIsPublic: false, imageIsPublic: false } : getPersonalDisplayFlags(node);
         const audienceFields = deleted
           ? {}
           : Object.fromEntries(
@@ -1841,10 +1853,8 @@ const ConnectScreen = ({ navigation }) => {
           const p = circle;
           const deleted = isProfileDeleted(p) || isProfileDeleted(circle);
           const tagLineRaw = deleted ? "" : p.profile_personal_tag_line || p.profile_personal_tagline || "";
-          const emailRaw = deleted ? "" : p.user_email_id ?? p.user_email ?? "";
-          const flags = deleted
-            ? { emailIsPublic: false, phoneIsPublic: false, tagLineIsPublic: false, locationIsPublic: false, imageIsPublic: false }
-            : getPersonalDisplayFlags(p);
+          const emailRaw = deleted ? "" : (p.user_email_id ?? p.user_email ?? "");
+          const flags = deleted ? { emailIsPublic: false, phoneIsPublic: false, tagLineIsPublic: false, locationIsPublic: false, imageIsPublic: false } : getPersonalDisplayFlags(p);
           const audienceFields = deleted
             ? {}
             : Object.fromEntries(
@@ -2476,10 +2486,7 @@ const ConnectScreen = ({ navigation }) => {
   const nearbySearchLower = nearbySearchQuery.trim().toLowerCase();
   const matchesNearbySearch = (u) => {
     if (!nearbySearchLower) return true;
-    const searchableText = [u.profile_personal_first_name, u.profile_personal_last_name, u.profile_personal_tag_line, u.profile_personal_short_bio]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
+    const searchableText = [u.profile_personal_first_name, u.profile_personal_last_name, u.profile_personal_tag_line, u.profile_personal_short_bio].filter(Boolean).join(" ").toLowerCase();
     return searchableText.includes(nearbySearchLower);
   };
 
@@ -2499,114 +2506,117 @@ const ConnectScreen = ({ navigation }) => {
     setNearbyLoading(false);
   }, []);
 
-  const fetchNearbyUsers = useCallback(async (radiusMiles, { retryOnExpired = true } = {}) => {
-    if (nearbyFetchInFlightRef.current) {
-      nearbyFetchQueuedRef.current = { radiusMiles, retryOnExpired };
-      return;
-    }
-    nearbyFetchInFlightRef.current = true;
-    try {
-    const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
-    if (!uid) return;
+  const fetchNearbyUsers = useCallback(
+    async (radiusMiles, { retryOnExpired = true } = {}) => {
+      if (nearbyFetchInFlightRef.current) {
+        nearbyFetchQueuedRef.current = { radiusMiles, retryOnExpired };
+        return;
+      }
+      nearbyFetchInFlightRef.current = true;
+      try {
+        const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
+        if (!uid) return;
 
-    const sharingActive = await isNearbySharingActive();
-    nearbySharingActiveRef.current = sharingActive;
-    setNearbySharingActive(sharingActive);
+        const sharingActive = await isNearbySharingActive();
+        nearbySharingActiveRef.current = sharingActive;
+        setNearbySharingActive(sharingActive);
 
-    if (!sharingActive) {
-      if (radiusMiles == null) showNearbyExpiredState();
-      return;
-    }
-
-    // Reuse the same privacy settings that SettingsScreen persists
-    let mode = "all_circles";
-    try {
-      const s = await loadNearbySettings();
-      mode = s.receiveFrom || "all_circles";
-    } catch (_) {}
-
-    // Load ignored UIDs from storage
-    try {
-      const raw = await AsyncStorage.getItem(NEARBY_IGNORED_KEY);
-      if (raw) setIgnoredNearbyUids(new Set(JSON.parse(raw)));
-    } catch (_) {}
-
-    const isRadiusRefresh = radiusMiles != null;
-    if (!isRadiusRefresh) {
-      setNearbyLoading(true);
-      setNearbyError(null);
-      setNearbyUsers([]);
-      setMyNearbyLocation(null);
-    }
-
-    // Server nearby TTL can expire while the local 1-hour share session is still on.
-    // Refresh GPS first so GET /nearby is not treated as "location expired".
-    if (retryOnExpired && !isRadiusRefresh) {
-      await refreshLiveLocationIfActive();
-    }
-
-    try {
-      const radiusMeters = radiusMiles != null ? Math.round(radiusMiles * 1609) : null;
-      const radiusParam = radiusMeters != null ? `&radius_meters=${radiusMeters}` : "";
-      const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}${radiusParam}`);
-      const json = await res.json();
-      const expiredOnServer = Number(json.code) === 410 || res.status === 410;
-      if (Number(json.code) === 200) {
-        const raw = json.result || [];
-        const seen = new Set();
-        const deduped = raw.filter((u) => {
-          const id = String(u.profile_personal_uid || "").trim();
-          if (!id || seen.has(id)) return false;
-          seen.add(id);
-          return true;
-        });
-        setNearbyUsers(deduped);
-        const viewer = json.viewer_location;
-        const viewerLat = parseCoordinateValue(viewer?.lat ?? viewer?.latitude);
-        const viewerLng = parseCoordinateValue(viewer?.lng ?? viewer?.longitude);
-        if (viewerLat != null && viewerLng != null) {
-          setMyNearbyLocation({ lat: viewerLat, lng: viewerLng });
+        if (!sharingActive) {
+          if (radiusMiles == null) showNearbyExpiredState();
+          return;
         }
-        setNearbyError(null);
-      } else if (expiredOnServer) {
-        if (sharingActive && retryOnExpired) {
-          nearbyFetchInFlightRef.current = false;
-          const patched = await refreshLiveLocationIfActive();
-          if (patched) {
-            await new Promise((r) => setTimeout(r, 500));
-            await fetchNearbyUsers(radiusMiles, { retryOnExpired: false });
-            return;
-          }
-          if (!isRadiusRefresh) {
-            setNearbyError(getLastLiveLocationError() || "Couldn't get your location. Turn share live location off and on again.");
-          }
-        } else if (!isRadiusRefresh) {
-          if (sharingActive) {
-            setNearbyError(
-              retryOnExpired
-                ? getLastLiveLocationError() || "Couldn't get your location. Turn share live location off and on again."
-                : "Your location was sent, but nearby people aren't available yet. Close and reopen Who's Nearby.",
-            );
+
+        // Reuse the same privacy settings that SettingsScreen persists
+        let mode = "all_circles";
+        try {
+          const s = await loadNearbySettings();
+          mode = s.receiveFrom || "all_circles";
+        } catch (_) {}
+
+        // Load ignored UIDs from storage
+        try {
+          const raw = await AsyncStorage.getItem(NEARBY_IGNORED_KEY);
+          if (raw) setIgnoredNearbyUids(new Set(JSON.parse(raw)));
+        } catch (_) {}
+
+        const isRadiusRefresh = radiusMiles != null;
+        if (!isRadiusRefresh) {
+          setNearbyLoading(true);
+          setNearbyError(null);
+          setNearbyUsers([]);
+          setMyNearbyLocation(null);
+        }
+
+        // Server nearby TTL can expire while the local 1-hour share session is still on.
+        // Refresh GPS first so GET /nearby is not treated as "location expired".
+        if (retryOnExpired && !isRadiusRefresh) {
+          await refreshLiveLocationIfActive();
+        }
+
+        try {
+          const radiusMeters = radiusMiles != null ? Math.round(radiusMiles * 1609) : null;
+          const radiusParam = radiusMeters != null ? `&radius_meters=${radiusMeters}` : "";
+          const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}${radiusParam}`);
+          const json = await res.json();
+          const expiredOnServer = Number(json.code) === 410 || res.status === 410;
+          if (Number(json.code) === 200) {
+            const raw = json.result || [];
+            const seen = new Set();
+            const deduped = raw.filter((u) => {
+              const id = String(u.profile_personal_uid || "").trim();
+              if (!id || seen.has(id)) return false;
+              seen.add(id);
+              return true;
+            });
+            setNearbyUsers(deduped);
+            const viewer = json.viewer_location;
+            const viewerLat = parseCoordinateValue(viewer?.lat ?? viewer?.latitude);
+            const viewerLng = parseCoordinateValue(viewer?.lng ?? viewer?.longitude);
+            if (viewerLat != null && viewerLng != null) {
+              setMyNearbyLocation({ lat: viewerLat, lng: viewerLng });
+            }
+            setNearbyError(null);
+          } else if (expiredOnServer) {
+            if (sharingActive && retryOnExpired) {
+              nearbyFetchInFlightRef.current = false;
+              const patched = await refreshLiveLocationIfActive();
+              if (patched) {
+                await new Promise((r) => setTimeout(r, 500));
+                await fetchNearbyUsers(radiusMiles, { retryOnExpired: false });
+                return;
+              }
+              if (!isRadiusRefresh) {
+                setNearbyError(getLastLiveLocationError() || "Couldn't get your location. Turn share live location off and on again.");
+              }
+            } else if (!isRadiusRefresh) {
+              if (sharingActive) {
+                setNearbyError(
+                  retryOnExpired
+                    ? getLastLiveLocationError() || "Couldn't get your location. Turn share live location off and on again."
+                    : "Your location was sent, but nearby people aren't available yet. Close and reopen Who's Nearby.",
+                );
+              } else {
+                setNearbyError(NEARBY_LOCATION_EXPIRED_MSG);
+              }
+            }
           } else {
-            setNearbyError(NEARBY_LOCATION_EXPIRED_MSG);
+            if (!isRadiusRefresh) setNearbyError(json.message || "Could not fetch nearby users.");
           }
+        } catch (_) {
+          if (!isRadiusRefresh) setNearbyError("Network error. Please try again.");
         }
-      } else {
-        if (!isRadiusRefresh) setNearbyError(json.message || "Could not fetch nearby users.");
+        if (!isRadiusRefresh) setNearbyLoading(false);
+      } finally {
+        nearbyFetchInFlightRef.current = false;
+        const queued = nearbyFetchQueuedRef.current;
+        nearbyFetchQueuedRef.current = null;
+        if (queued) {
+          void fetchNearbyUsers(queued.radiusMiles, { retryOnExpired: queued.retryOnExpired });
+        }
       }
-    } catch (_) {
-      if (!isRadiusRefresh) setNearbyError("Network error. Please try again.");
-    }
-    if (!isRadiusRefresh) setNearbyLoading(false);
-    } finally {
-      nearbyFetchInFlightRef.current = false;
-      const queued = nearbyFetchQueuedRef.current;
-      nearbyFetchQueuedRef.current = null;
-      if (queued) {
-        void fetchNearbyUsers(queued.radiusMiles, { retryOnExpired: queued.retryOnExpired });
-      }
-    }
-  }, [profileUid, showNearbyExpiredState]);
+    },
+    [profileUid, showNearbyExpiredState],
+  );
 
   useEffect(() => {
     fetchNearbyUsersRef.current = fetchNearbyUsers;
@@ -2707,30 +2717,33 @@ const ConnectScreen = ({ navigation }) => {
     }
   };
 
-  const fetchBlockedUsers = useCallback(async (isRetry = false) => {
-    const uid = await resolveMyUid();
-    if (!uid) return;
-    try {
-      const res = await fetch(`${BLOCKED_USERS_ENDPOINT}/${encodeURIComponent(uid)}`);
-      if (!res.ok) throw new Error(`Blocked-users fetch failed: ${res.status}`);
-      const json = await res.json();
-      const list = Array.isArray(json.result) ? json.result : [];
-      const seen = new Set();
-      const deduped = list.filter((entry) => {
-        const id = String(entry.blocked_uid || "").trim();
-        if (!id || seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      });
-      setBlockedList(deduped);
-      setBlockedUids(new Set(deduped.map((b) => b.blocked_uid)));
-    } catch (e) {
-      console.warn("fetchBlockedUsers failed", isRetry ? "(retry)" : "", e);
-      // Local dev server can briefly restart on file changes — retry once after a short delay
-      // instead of silently leaving stale/empty blocked state on screen.
-      if (!isRetry) setTimeout(() => fetchBlockedUsers(true), 1500);
-    }
-  }, [profileUid]);
+  const fetchBlockedUsers = useCallback(
+    async (isRetry = false) => {
+      const uid = await resolveMyUid();
+      if (!uid) return;
+      try {
+        const res = await fetch(`${BLOCKED_USERS_ENDPOINT}/${encodeURIComponent(uid)}`);
+        if (!res.ok) throw new Error(`Blocked-users fetch failed: ${res.status}`);
+        const json = await res.json();
+        const list = Array.isArray(json.result) ? json.result : [];
+        const seen = new Set();
+        const deduped = list.filter((entry) => {
+          const id = String(entry.blocked_uid || "").trim();
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+        setBlockedList(deduped);
+        setBlockedUids(new Set(deduped.map((b) => b.blocked_uid)));
+      } catch (e) {
+        console.warn("fetchBlockedUsers failed", isRetry ? "(retry)" : "", e);
+        // Local dev server can briefly restart on file changes — retry once after a short delay
+        // instead of silently leaving stale/empty blocked state on screen.
+        if (!isRetry) setTimeout(() => fetchBlockedUsers(true), 1500);
+      }
+    },
+    [profileUid],
+  );
 
   const fetchConversationsRef = useRef(fetchConversations);
   const fetchBlockedUsersRef = useRef(fetchBlockedUsers);
@@ -2883,7 +2896,7 @@ const ConnectScreen = ({ navigation }) => {
                     Connect with Me!
                   </Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 15 }}>
-                    <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle, { marginBottom: 0 }]}>SCAN My QR Code</Text>
+                    <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle, { marginBottom: 0 }]}>SCAN My QR Code or Click to Copy Link</Text>
                     {/* <TouchableOpacity
                       style={{ padding: 6 }}
                       onPress={() =>
@@ -3014,11 +3027,7 @@ const ConnectScreen = ({ navigation }) => {
                             aria-label='Search connections'
                           />
                           <TouchableOpacity onPress={onNetworkSearch} accessibilityRole='button' accessibilityLabel='Search' style={{ padding: 4 }}>
-                            {networkSearchLoading ? (
-                              <ActivityIndicator size='small' color={darkMode ? "#fff" : "#333"} />
-                            ) : (
-                              <Ionicons name='search' size={20} color={darkMode ? "#fff" : "#333"} />
-                            )}
+                            {networkSearchLoading ? <ActivityIndicator size='small' color={darkMode ? "#fff" : "#333"} /> : <Ionicons name='search' size={20} color={darkMode ? "#fff" : "#333"} />}
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -3079,13 +3088,7 @@ const ConnectScreen = ({ navigation }) => {
                       >
                         <Text style={[styles.advancedFiltersHeaderText, darkMode && styles.darkAdvancedFiltersHeaderText]}>
                           Advanced Filters
-                          {(relationshipFilter !== "All" ||
-                            dateFilterActive ||
-                            locationFilterActive ||
-                            eventFilter !== "All" ||
-                            notesFilterActive ||
-                            introducedByFilter !== "All") &&
-                            " (active)"}
+                          {(relationshipFilter !== "All" || dateFilterActive || locationFilterActive || eventFilter !== "All" || notesFilterActive || introducedByFilter !== "All") && " (active)"}
                         </Text>
                         <Ionicons name={showAdvancedFilters ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#e0e0e0" : "#333"} />
                       </TouchableOpacity>
@@ -3096,7 +3099,9 @@ const ConnectScreen = ({ navigation }) => {
                           <View style={styles.controlRow}>
                             <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>3. Relationship</Text>
                             <TouchableOpacity style={[styles.pullDownButton, relationshipFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("relationship")}>
-                              <Text style={[styles.pullDownButtonText, relationshipFilter !== "All" && styles.pullDownButtonTextActive]}>{relationshipFilter === "All" ? "All" : relationshipFilter}</Text>
+                              <Text style={[styles.pullDownButtonText, relationshipFilter !== "All" && styles.pullDownButtonTextActive]}>
+                                {relationshipFilter === "All" ? "All" : relationshipFilter}
+                              </Text>
                             </TouchableOpacity>
                           </View>
 
@@ -3116,13 +3121,16 @@ const ConnectScreen = ({ navigation }) => {
                                 />
                               ) : (
                                 <TouchableOpacity style={styles.dateFilterNativeHit} onPress={() => setActiveDatePicker("from")} activeOpacity={0.7}>
-                                  <Text style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }, !dateFrom && { color: darkMode ? "#888" : "#999" }]}>
-                                    {formatFilterDateLabel(dateFrom)}
-                                  </Text>
+                                  <Text style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }, !dateFrom && { color: darkMode ? "#888" : "#999" }]}>{formatFilterDateLabel(dateFrom)}</Text>
                                 </TouchableOpacity>
                               )}
                               {dateFrom ? (
-                                <TouchableOpacity onPress={() => setDateFrom("")} style={styles.dateFilterClear} accessibilityLabel='Clear from date' hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                <TouchableOpacity
+                                  onPress={() => setDateFrom("")}
+                                  style={styles.dateFilterClear}
+                                  accessibilityLabel='Clear from date'
+                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                >
                                   <Ionicons name='close-circle' size={18} color={darkMode ? "#aaa" : "#666"} />
                                 </TouchableOpacity>
                               ) : null}
@@ -3143,9 +3151,7 @@ const ConnectScreen = ({ navigation }) => {
                                 />
                               ) : (
                                 <TouchableOpacity style={styles.dateFilterNativeHit} onPress={() => setActiveDatePicker("to")} activeOpacity={0.7}>
-                                  <Text style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }, !dateTo && { color: darkMode ? "#888" : "#999" }]}>
-                                    {formatFilterDateLabel(dateTo)}
-                                  </Text>
+                                  <Text style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }, !dateTo && { color: darkMode ? "#888" : "#999" }]}>{formatFilterDateLabel(dateTo)}</Text>
                                 </TouchableOpacity>
                               )}
                               {dateTo ? (
@@ -3420,9 +3426,7 @@ const ConnectScreen = ({ navigation }) => {
                 }}
               >
                 <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>Update nearby location</Text>
-                <Text style={[styles.viewersDropdownItemSubtext, darkMode && styles.viewersDropdownItemSubtextDark]}>
-                  {formatStoredNearbyCoordsSummary(storedNearbyCoords)}
-                </Text>
+                <Text style={[styles.viewersDropdownItemSubtext, darkMode && styles.viewersDropdownItemSubtextDark]}>{formatStoredNearbyCoordsSummary(storedNearbyCoords)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.viewersDropdownItem}
@@ -3432,9 +3436,7 @@ const ConnectScreen = ({ navigation }) => {
                 }}
               >
                 <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>Location privacy</Text>
-                <Text style={[styles.viewersDropdownItemSubtext, darkMode && styles.viewersDropdownItemSubtextDark]}>
-                  {formatNearbyPrivacySummary(nearbySettings)}
-                </Text>
+                <Text style={[styles.viewersDropdownItemSubtext, darkMode && styles.viewersDropdownItemSubtextDark]}>{formatNearbyPrivacySummary(nearbySettings)}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -3467,7 +3469,7 @@ const ConnectScreen = ({ navigation }) => {
                       nearbyUsers
                         .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
                         .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
-                        .filter(matchesNearbySearch)
+                        .filter(matchesNearbySearch),
                     )}
                     radiusMiles={nearbyRadiusMiles}
                     onPersonPress={(person) => navigation.navigate("Profile", { profile_uid: person.uid })}
@@ -3480,13 +3482,24 @@ const ConnectScreen = ({ navigation }) => {
                   <Text style={[styles.nearbyRadiusLabel, darkMode && styles.nearbyRadiusLabelDark]}>Within:</Text>
                   <NearbyRadiusSlider
                     value={nearbyRadiusMiles}
-                    onChange={(v) => { nearbyRadiusMilesRef.current = v; setNearbyRadiusMiles(v); }}
+                    onChange={(v) => {
+                      nearbyRadiusMilesRef.current = v;
+                      setNearbyRadiusMiles(v);
+                    }}
                     onRelease={() => fetchNearbyUsers(nearbyRadiusMilesRef.current)}
                     darkMode={darkMode}
                   />
                   <View style={styles.nearbyRadiusValueWrap}>
                     {nearbyRadiusMiles != null ? (
-                      <TouchableOpacity onPress={() => { nearbyRadiusMilesRef.current = null; setNearbyRadiusMiles(null); fetchNearbyUsers(null); }} style={styles.nearbyRadiusClearBtn} accessibilityLabel="Clear radius filter">
+                      <TouchableOpacity
+                        onPress={() => {
+                          nearbyRadiusMilesRef.current = null;
+                          setNearbyRadiusMiles(null);
+                          fetchNearbyUsers(null);
+                        }}
+                        style={styles.nearbyRadiusClearBtn}
+                        accessibilityLabel='Clear radius filter'
+                      >
                         <Text style={styles.nearbyRadiusValueActive}>{formatMiles(nearbyRadiusMiles)}</Text>
                         <Text style={styles.nearbyRadiusClearIcon}> ✕</Text>
                       </TouchableOpacity>
@@ -3828,9 +3841,7 @@ const ConnectScreen = ({ navigation }) => {
               <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4 }}>
                 <TouchableOpacity style={styles.viewersDropdownBtn} onPress={() => setShowViewersAccountDropdown((p) => !p)} activeOpacity={0.7}>
                   <Text style={[styles.viewersDropdownBtnText, darkMode && { color: "#e0e0e0" }]}>
-                    {viewersSelectedAccount === "personal"
-                      ? "Personal"
-                      : businesses.find((b) => (b.business_uid || b.profile_business_uid) === viewersSelectedAccount)?.business_name || "Business"}
+                    {viewersSelectedAccount === "personal" ? "Personal" : businesses.find((b) => (b.business_uid || b.profile_business_uid) === viewersSelectedAccount)?.business_name || "Business"}
                   </Text>
                   <Ionicons name={showViewersAccountDropdown ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#e0e0e0" : "#333"} />
                 </TouchableOpacity>
@@ -3873,16 +3884,12 @@ const ConnectScreen = ({ navigation }) => {
                   const cardUser = viewerToCardUser(viewer);
                   const viewerUid = String(viewer.view_viewer_id || "").trim();
                   if (viewerUid && !cardUser.relationship) {
-                    const networkNode = connectDirectlyMergedNetworkData.find(
-                      (n) => String(n.network_profile_personal_uid || n.profile_personal_uid || "").trim() === viewerUid,
-                    );
+                    const networkNode = connectDirectlyMergedNetworkData.find((n) => String(n.network_profile_personal_uid || n.profile_personal_uid || "").trim() === viewerUid);
                     if (networkNode?.circle_relationship) {
                       cardUser.relationship = networkNode.circle_relationship;
                     }
                   }
-                  const viewedLabel = getLatestProfileViewTimestamp(viewer.view_timestamp)
-                    ? `Viewed: ${formatProfileViewedDate(viewer.view_timestamp) || "—"}`
-                    : null;
+                  const viewedLabel = getLatestProfileViewTimestamp(viewer.view_timestamp) ? `Viewed: ${formatProfileViewedDate(viewer.view_timestamp) || "—"}` : null;
                   return (
                     <TouchableOpacity
                       key={`viewer-${viewer.view_viewer_id || "anon"}-${index}`}
@@ -4019,11 +4026,7 @@ const ConnectScreen = ({ navigation }) => {
                                   const isExpanded = !!expandedStorageKeys[key];
                                   return (
                                     <View key={key} style={styles.storageKeyBlock}>
-                                      <TouchableOpacity
-                                        style={[styles.storageKeyHeader, darkMode && styles.darkStorageKeyHeader]}
-                                        onPress={() => toggleStorageKeyExpanded(key)}
-                                        activeOpacity={0.7}
-                                      >
+                                      <TouchableOpacity style={[styles.storageKeyHeader, darkMode && styles.darkStorageKeyHeader]} onPress={() => toggleStorageKeyExpanded(key)} activeOpacity={0.7}>
                                         <Text style={[styles.storageKeyHeaderText, darkMode && styles.darkStorageKeyHeaderText]} numberOfLines={1}>
                                           {sanitizedKey}
                                         </Text>
@@ -4108,9 +4111,7 @@ const ConnectScreen = ({ navigation }) => {
               onPress={(e) => e.stopPropagation()}
               style={[styles.datePickerModalSheet, { backgroundColor: darkMode ? "#1e1e2e" : "#fff", borderColor: darkMode ? "#3a3a5c" : "#e0e4f7" }]}
             >
-              <Text style={[styles.datePickerModalTitle, { color: darkMode ? "#e8eaf6" : "#1a1a2e" }]}>
-                {activeDatePicker === "from" ? "From date" : "To date"}
-              </Text>
+              <Text style={[styles.datePickerModalTitle, { color: darkMode ? "#e8eaf6" : "#1a1a2e" }]}>{activeDatePicker === "from" ? "From date" : "To date"}</Text>
               {Platform.OS === "web" ? (
                 <WebTextInput
                   style={[styles.dateFilterFullInput, { height: 36, minHeight: 36, lineHeight: 36 }, darkMode && { color: "#fff" }]}
@@ -4178,9 +4179,7 @@ const ConnectScreen = ({ navigation }) => {
           darkMode={darkMode}
         />
       )}
-      {showBlockedManager && (
-        <BlockedPeopleModal visible blockedList={blockedList} onUnblock={toggleBlock} onClose={() => setShowBlockedManager(false)} darkMode={darkMode} />
-      )}
+      {showBlockedManager && <BlockedPeopleModal visible blockedList={blockedList} onUnblock={toggleBlock} onClose={() => setShowBlockedManager(false)} darkMode={darkMode} />}
       <Modal visible={shareLocationWarningVisible} transparent animationType='fade' onRequestClose={() => setShareLocationWarningVisible(false)}>
         <View style={styles.shareLocationModalOverlay}>
           <View style={[styles.shareLocationModalBox, darkMode && { backgroundColor: "#2a2a2a" }]}>
