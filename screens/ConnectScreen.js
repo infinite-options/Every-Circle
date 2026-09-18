@@ -1,6 +1,22 @@
 // ConnectScreen.js - Connect tab (QR, network graph, messages, nearby)
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal, PanResponder, Alert, Dimensions } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  SafeAreaView,
+  ActivityIndicator,
+  Platform,
+  Switch,
+  InteractionManager,
+  Image,
+  Modal,
+  PanResponder,
+  Alert,
+  Dimensions,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import BottomNavBar from "../components/BottomNavBar";
@@ -21,16 +37,14 @@ import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
 
 import FeedbackPopup from "../components/FeedbackPopup";
 import ReferralSearch from "../components/ReferralSearch";
-import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors, getHeaderColor } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
 import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened";
-import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
-import { addScannedCircleConnection } from "../utils/addScannedCircleConnection";
 import { getSessionProfile, patchSessionPersonalInfoField, saveSessionProfilePayload, subscribeSessionProfile } from "../utils/sessionProfile";
 import { mergePendingOauthIdentityIntoPayload } from "../utils/oauthPendingProfileImage";
 import { miniCardUserFromSession, messagesOffFromSession } from "../utils/connectProfileHydration";
+import { getPersonalDisplayFlags, isPersonalAudienceFieldVisible, PERSONAL_AUDIENCE_KEYS } from "../utils/profileAudience";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import NearbyPeopleMapView from "../components/NearbyPeopleMapView";
@@ -46,16 +60,12 @@ import {
   formatShareLocationDurationLabel,
   getLastLiveLocationError,
 } from "../utils/liveLocationSharing";
-import {
-  DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS,
-  loadNearbySettings,
-  subscribeNearbySettings,
-  formatNearbyPrivacySummary,
-} from "../utils/nearbySettings";
+import { DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS, loadNearbySettings, subscribeNearbySettings, formatNearbyPrivacySummary } from "../utils/nearbySettings";
 import { subscribeStoredNearbyCoords, formatStoredNearbyCoordsSummary } from "../utils/nearbyLocationUpdate";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
 import { nearbyPeopleToMapMarkers } from "../utils/nearbyPeopleToMapMarkers";
 import { searchReferralProfiles } from "../utils/searchReferralProfiles";
+import { isNewConnection } from "../utils/isNewConnection";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -279,13 +289,11 @@ const RELATIONSHIP_FILTER_OPTIONS = ["All", "Colleagues", "Friends", "Family"];
 const EVERY_CIRCLE_ZERO_NODE_UID = "110-000001";
 const NETWORK_GRAPH_PURPLE = "#9C45F7";
 const NETWORK_GRAPH_PURPLE_FILL_50 = "rgba(156, 69, 247, 0.5)";
+const NETWORK_GRAPH_NEW_GREEN = "#22c55e";
 const LEGACY_DATE_FILTER_PRESETS = new Set(["All", "This Week", "This Month", "This Year"]);
 
 function escapeVisHtmlLabel(text) {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /** Persist connections graph and circles separately so one fetch does not wipe the other. */
@@ -322,8 +330,8 @@ function groupNetworkByDegree(data) {
   (data || []).forEach((item) => {
     const deg = Number(item.degree) || 0;
     if (!grouped[deg]) grouped[deg] = [];
-    const uid = String(item.network_profile_personal_uid || item.profile_personal_uid || "").trim();
-    if (uid && grouped[deg].some((existing) => String(existing.network_profile_personal_uid || existing.profile_personal_uid || "").trim() === uid)) {
+    const uid = String(item.network_profile_personal_uid || item.profile_personal_uid || item.profile_uid || "").trim();
+    if (uid && grouped[deg].some((existing) => String(existing.network_profile_personal_uid || existing.profile_personal_uid || existing.profile_uid || "").trim() === uid)) {
       return;
     }
     grouped[deg].push(item);
@@ -331,19 +339,59 @@ function groupNetworkByDegree(data) {
   return grouped;
 }
 
-function applyConnectionFilters(nodes, filters) {
-  const {
-    relationshipFilter,
-    dateFrom = "",
-    dateTo = "",
-    locationFilter,
-    eventFilter,
-    notesFilter,
-    introducedByFilter,
-    searchMatchUids = null,
-  } = filters;
+/**
+ * Normalize GET /api/network/{uid}/{degree} response.
+ * Contract: `{ nodes: [...], edges: [...] }` (structured) or a legacy flat array of nodes.
+ */
+function extractNetworkNodesAndEdges(payload) {
+  if (Array.isArray(payload)) {
+    return { nodes: payload, edges: null };
+  }
+  if (!payload || typeof payload !== "object") {
+    return { nodes: [], edges: null };
+  }
+  if (Array.isArray(payload.nodes)) {
+    return {
+      nodes: payload.nodes,
+      edges: Array.isArray(payload.edges) ? payload.edges : null,
+    };
+  }
+  return { nodes: [], edges: null };
+}
 
-  let filtered = nodes || [];
+/** Map BE edges onto nodes as parent_uid; ensure network_profile_personal_uid is set. */
+function normalizeNetworkApiNodes(nodes, edges) {
+  const list = Array.isArray(nodes) ? nodes : [];
+  const edgesByTo = new Map();
+  if (Array.isArray(edges)) {
+    for (const e of edges) {
+      const to = String(e?.to || "").trim();
+      const from = String(e?.from || "").trim();
+      if (to && from) edgesByTo.set(to, from);
+    }
+  }
+
+  return list
+    .map((node) => {
+      if (!node || typeof node !== "object") return null;
+      const profileUid = String(node.profile_uid || node.network_profile_personal_uid || "").trim();
+      if (!profileUid) return null;
+      const parentFromEdge = edgesByTo.get(profileUid);
+      const parent_uid = String(node.parent_uid || parentFromEdge || "").trim() || null;
+      return {
+        ...node,
+        profile_uid: profileUid,
+        network_profile_personal_uid: profileUid,
+        parent_uid,
+      };
+    })
+    .filter(Boolean);
+}
+
+function applyConnectionFilters(nodes, filters) {
+  const { relationshipFilter, dateFrom = "", dateTo = "", locationFilter, eventFilter, notesFilter, introducedByFilter, searchMatchUids = null } = filters;
+
+  let filtered = Array.isArray(nodes) ? nodes : [];
 
   if (relationshipFilter !== "All") {
     filtered = filtered.filter((node) => {
@@ -367,7 +415,9 @@ function applyConnectionFilters(nodes, filters) {
     });
   }
 
-  const locationQuery = String(locationFilter || "").trim().toLowerCase();
+  const locationQuery = String(locationFilter || "")
+    .trim()
+    .toLowerCase();
   if (locationQuery) {
     filtered = filtered.filter((node) => {
       const city = (node.circle_city || "").trim();
@@ -382,7 +432,9 @@ function applyConnectionFilters(nodes, filters) {
     filtered = filtered.filter((node) => (node.circle_event || "").trim() === eventFilter);
   }
 
-  const notesQuery = String(notesFilter || "").trim().toLowerCase();
+  const notesQuery = String(notesFilter || "")
+    .trim()
+    .toLowerCase();
   if (notesQuery) {
     filtered = filtered.filter((node) => (node.circle_note || "").toLowerCase().includes(notesQuery));
   }
@@ -490,9 +542,15 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onReleaseRef = useRef(onRelease);
-  useEffect(() => { valueRef.current = value; });
-  useEffect(() => { onChangeRef.current = onChange; });
-  useEffect(() => { onReleaseRef.current = onRelease; });
+  useEffect(() => {
+    valueRef.current = value;
+  });
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
+  useEffect(() => {
+    onReleaseRef.current = onRelease;
+  });
 
   const mileToX = (miles) => {
     if (miles == null) return 0;
@@ -531,7 +589,7 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
       onPanResponderTerminate: () => {
         grantedRef.current = false;
       },
-    })
+    }),
   ).current;
 
   const thumbX = mileToX(value);
@@ -539,7 +597,9 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
   return (
     <View
       style={nearbySliderStyles.track}
-      onLayout={(e) => { trackRef.current = e.nativeEvent.layout.width; }}
+      onLayout={(e) => {
+        trackRef.current = e.nativeEvent.layout.width;
+      }}
       {...panResponder.panHandlers}
     >
       <View style={[nearbySliderStyles.rail, darkMode && nearbySliderStyles.railDark]} />
@@ -555,10 +615,18 @@ const nearbySliderStyles = StyleSheet.create({
   railDark: { backgroundColor: "#444" },
   fill: { height: 4, backgroundColor: "#AF52DE", borderRadius: 2, position: "absolute", left: 0 },
   thumb: {
-    width: NEARBY_THUMB, height: NEARBY_THUMB, borderRadius: NEARBY_THUMB / 2,
-    backgroundColor: "#AF52DE", borderWidth: 2, borderColor: "#fff",
+    width: NEARBY_THUMB,
+    height: NEARBY_THUMB,
+    borderRadius: NEARBY_THUMB / 2,
+    backgroundColor: "#AF52DE",
+    borderWidth: 2,
+    borderColor: "#fff",
     position: "absolute",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
   },
   thumbDark: { borderColor: "#2a2a2a" },
 });
@@ -646,12 +714,7 @@ const ConnectScreen = ({ navigation }) => {
   activeViewRef.current = activeView;
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
-  const [scannedProfileData, setScannedProfileData] = useState(null);
-  const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
-  const [scannedProfileLoading, setScannedProfileLoading] = useState(false);
-  const showScannedProfileModalRef = useRef(null);
-  // 'scan' = current user scanned someone; 'ably' = QR owner received scanner notification
-  const connectPopupContextRef = useRef({ source: "scan", scannerIsNewSignup: false });
+  const openConnectWithMeRef = useRef(null);
   const [showViewMyNetwork, setShowViewMyNetwork] = useState(true);
   /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
   const [focusTick, setFocusTick] = useState(0);
@@ -1005,7 +1068,7 @@ const ConnectScreen = ({ navigation }) => {
     console.log("🔵 ConnectScreen - data/state changed", {
       profileUid: profileUid || null,
       activeView,
-      networkCount: networkData.length,
+      networkCount: Array.isArray(networkData) ? networkData.length : 0,
       degree,
       loading,
       error: error || null,
@@ -1049,10 +1112,7 @@ const ConnectScreen = ({ navigation }) => {
   const notesFilterActive = notesFilter.trim() !== "";
   const dateFilterActive = Boolean(dateFrom || dateTo);
 
-  const sortedStorageData = useMemo(
-    () => [...storageData].sort(([keyA], [keyB]) => String(keyA).localeCompare(String(keyB))),
-    [storageData],
-  );
+  const sortedStorageData = useMemo(() => [...storageData].sort(([keyA], [keyB]) => String(keyA).localeCompare(String(keyB))), [storageData]);
 
   const toggleStorageKeyExpanded = useCallback((key) => {
     setExpandedStorageKeys((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -1169,9 +1229,7 @@ const ConnectScreen = ({ navigation }) => {
       let merged = await mergePendingOauthIdentityIntoPayload(raw);
       const pi = merged?.personal_info || {};
       const hasName = Boolean(String(pi.profile_personal_first_name || "").trim() || String(pi.profile_personal_last_name || "").trim());
-      const hasPublicImage =
-        Boolean(pi.profile_personal_image && String(pi.profile_personal_image).trim()) &&
-        (pi.profile_personal_image_is_public === 1 || pi.profile_personal_image_is_public === "1" || pi.profile_personal_image_is_public === true);
+      const hasPublicImage = Boolean(pi.profile_personal_image && String(pi.profile_personal_image).trim()) && isPersonalAudienceFieldVisible(pi, PERSONAL_AUDIENCE_KEYS.image);
 
       // If session is still incomplete, refresh from API once and merge OAuth identity again.
       if (!hasName || !hasPublicImage) {
@@ -1392,6 +1450,12 @@ const ConnectScreen = ({ navigation }) => {
 
       channel.attach((err) => {
         if (err) {
+          const msg = String(err?.message || err || "");
+          // Intentional teardown / navigation — not actionable.
+          if (/connection closed/i.test(msg)) {
+            setAblyChannelStatus(String(channel.state));
+            return;
+          }
           console.error("❌ ConnectScreen - Error attaching to Ably channel:", err);
         } else {
           console.log("✅ ConnectScreen - Ready to receive messages on channel:", channelName);
@@ -1421,10 +1485,7 @@ const ConnectScreen = ({ navigation }) => {
             const scannerProfileUid = message.data.scanner_profile_uid;
             const scannerIsNewSignup = Boolean(message.data.scanner_is_new_signup);
             InteractionManager.runAfterInteractions(() => {
-              showScannedProfileModalRef.current?.(scannerProfileUid, {
-                source: "ably",
-                scannerIsNewSignup,
-              });
+              openConnectWithMeRef.current?.(scannerProfileUid, { scannerIsNewSignup });
             });
           } else {
             console.log("🔵 ConnectScreen - Form Switch is OFF or no scanner_profile_uid, not opening connect modal");
@@ -1488,70 +1549,50 @@ const ConnectScreen = ({ navigation }) => {
     return () => clearInterval(id);
   }, [ablyListeningChannel]);
 
-  const showScannedProfileModal = useCallback(async (profileUid, options = {}) => {
-    if (!profileUid) return;
-    connectPopupContextRef.current = {
-      source: options.source === "ably" ? "ably" : "scan",
-      scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
-    };
-    // Show Connect with Me immediately; fill MiniCard once the public card loads.
-    setScannedProfileData({
-      profile_uid: profileUid,
-      firstName: "",
-      lastName: "",
-      tagLine: "",
-      email: "",
-      phoneNumber: "",
-      profileImage: "",
-      city: "",
-      state: "",
-      imageIsPublic: false,
-    });
-    setScannedProfileLoading(true);
-    setShowScannedProfilePopup(true);
-    try {
-      const profileInfo = await fetchPublicProfileCard(profileUid);
-      setScannedProfileData(profileInfo);
-    } catch (error) {
-      console.error("Error loading profile for connect modal:", error);
-    } finally {
-      setScannedProfileLoading(false);
-    }
-  }, []);
+  const openConnectWithMe = useCallback(
+    (profileUid, options = {}) => {
+      if (!profileUid) return;
+      navigation.navigate("ConnectWithMe", {
+        profileUid,
+        mode: "scan",
+        scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
+      });
+    },
+    [navigation],
+  );
 
   useEffect(() => {
-    showScannedProfileModalRef.current = showScannedProfileModal;
-  }, [showScannedProfileModal]);
+    openConnectWithMeRef.current = openConnectWithMe;
+  }, [openConnectWithMe]);
 
   const lastHandledScanConnectKeyRef = useRef(null);
 
-  const openConnectModalFromScanParam = useCallback(
+  const openConnectFromScanParam = useCallback(
     (uid, scanConnectToken) => {
       if (!uid) return;
       const key = `${uid}:${scanConnectToken ?? ""}`;
       if (lastHandledScanConnectKeyRef.current === key) return;
       lastHandledScanConnectKeyRef.current = key;
-      showScannedProfileModal(uid, { source: "scan" });
+      openConnectWithMe(uid);
       navigation.setParams({ scannedProfileUid: undefined, scanConnectToken: undefined });
     },
-    [showScannedProfileModal, navigation],
+    [openConnectWithMe, navigation],
   );
 
   const scanUid = route.params?.scannedProfileUid;
   const scanToken = route.params?.scanConnectToken;
 
-  // Scan landing / QR scanner → show connect modal (Ably publish is done in goToNetworkForScanConnect or handleQRScanComplete)
+  // Legacy Connect params from older callers — Ably publish is done in goToNetworkForScanConnect or handleQRScanComplete
   useEffect(() => {
-    openConnectModalFromScanParam(scanUid, scanToken);
-  }, [scanUid, scanToken, openConnectModalFromScanParam]);
+    openConnectFromScanParam(scanUid, scanToken);
+  }, [scanUid, scanToken, openConnectFromScanParam]);
 
   useFocusEffect(
     useCallback(() => {
-      openConnectModalFromScanParam(scanUid, scanToken);
-    }, [scanUid, scanToken, openConnectModalFromScanParam]),
+      openConnectFromScanParam(scanUid, scanToken);
+    }, [scanUid, scanToken, openConnectFromScanParam]),
   );
 
-  // Handle QR scan complete - fetch profile data and show popup
   const handleQRScanComplete = async (scanData) => {
     try {
       if (!scanData || !scanData.profile_uid) {
@@ -1559,70 +1600,15 @@ const ConnectScreen = ({ navigation }) => {
         return;
       }
 
-      await showScannedProfileModal(scanData.profile_uid, { source: "scan" });
+      openConnectWithMe(scanData.profile_uid);
 
-      // Notify QR owner (Exchange Contact Info)
       publishNewConnectionOpened(scanData.profile_uid, { message: "QR Code Scanned" }).then((result) => {
         if (result.ok) {
           console.log("✅ ConnectScreen - Ably new-connection-opened published for reciprocal exchange");
         }
       });
     } catch (error) {
-      console.error("Error fetching scanned profile:", error);
-    }
-  };
-
-  // Handle adding connection from scanned profile
-  const handleAddScannedConnection = async (connectionData) => {
-    try {
-      if (!scannedProfileData?.profile_uid) return;
-
-      const connectedProfileUid = scannedProfileData.profile_uid;
-
-      const result = await addScannedCircleConnection(connectedProfileUid, connectionData);
-      if (result.ok) {
-        const currentProfileUID = await AsyncStorage.getItem("profile_uid");
-        const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
-        if (currentProfileUID) {
-          fetchNetwork(currentProfileUID, currentDegree);
-        }
-        setShowScannedProfilePopup(false);
-        setScannedProfileData(null);
-        lastHandledScanConnectKeyRef.current = null;
-        connectPopupContextRef.current = { source: "scan", scannerIsNewSignup: false };
-
-        // After Connect with Me: full name → stay on Connect (own QR); missing name → own Profile to complete it.
-        let first = String(userProfileData?.firstName || "").trim();
-        let last = String(userProfileData?.lastName || "").trim();
-        if (!first || !last) {
-          try {
-            const pairs = await AsyncStorage.multiGet(["user_first_name", "user_last_name"]);
-            first = first || String(pairs?.[0]?.[1] || "").trim();
-            last = last || String(pairs?.[1]?.[1] || "").trim();
-          } catch (_) {}
-        }
-        if (!first || !last) {
-          try {
-            const session = await getSessionProfile();
-            const p = session?.personalInfo || session?.rawProfile?.personal_info || {};
-            first = first || String(p.profile_personal_first_name || "").trim();
-            last = last || String(p.profile_personal_last_name || "").trim();
-          } catch (_) {}
-        }
-        const hasFullName = Boolean(first && last);
-
-        InteractionManager.runAfterInteractions(() => {
-          if (hasFullName) {
-            navigation.navigate({ name: "Connect", params: {}, merge: false });
-          } else {
-            navigation.navigate({ name: "Profile", params: {}, merge: false });
-          }
-        });
-      } else if (result.error && result.error !== "not_logged_in" && result.error !== "self") {
-        console.error("Error adding scanned connection:", result.error);
-      }
-    } catch (error) {
-      console.error("Error adding scanned connection:", error);
+      console.error("Error opening Connect With Me after scan:", error);
     }
   };
 
@@ -1683,14 +1669,6 @@ const ConnectScreen = ({ navigation }) => {
     if (!value) return "";
     return String(value).replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;").replace(/\n/g, "\\n");
   };
-
-  // Update graph HTML when network data or view mode changes (for web)
-  useEffect(() => {
-    if (Platform.OS === "web" && viewMode === "graph" && profileUid) {
-      const html = generateVisHTML(networkData, profileUid || "YOU");
-      setGraphHtml(html);
-    }
-  }, [viewMode, networkData, profileUid, userProfileData]);
 
   // Create/update iframe element for web
   useEffect(() => {
@@ -1777,12 +1755,27 @@ const ConnectScreen = ({ navigation }) => {
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
       const data = await response.json();
-      return data.map((node) => {
+      const { nodes: rawNodes, edges } = extractNetworkNodesAndEdges(data);
+      if (!Array.isArray(rawNodes)) {
+        throw new Error(`Network response missing nodes array (keys: ${data && typeof data === "object" ? Object.keys(data).join(",") : typeof data})`);
+      }
+      const normalizedNodes = normalizeNetworkApiNodes(rawNodes, edges);
+      return normalizedNodes.map((node) => {
         const deleted = isProfileDeleted(node);
+        const flags = deleted ? { emailIsPublic: false, phoneIsPublic: false, tagLineIsPublic: false, locationIsPublic: false, imageIsPublic: false } : getPersonalDisplayFlags(node);
+        const audienceFields = deleted
+          ? {}
+          : Object.fromEntries(
+              Object.values(PERSONAL_AUDIENCE_KEYS)
+                .filter((key) => Object.prototype.hasOwnProperty.call(node, key))
+                .map((key) => [key, node[key]]),
+            );
+        const isNew = !deleted && isNewConnection(node);
         return {
           ...node,
           __mc: {
             isDeleted: deleted,
+            isNew,
             firstName: deleted ? "" : sanitizeText(node.profile_personal_first_name || ""),
             lastName: deleted ? "" : sanitizeText(node.profile_personal_last_name || ""),
             tagLine: deleted ? "" : sanitizeText(node.profile_personal_tag_line || ""),
@@ -1792,21 +1785,18 @@ const ConnectScreen = ({ navigation }) => {
             phoneVerified: !deleted && (node.phone_verified === true || node.phone_verified === 1 || node.phoneVerified === true),
             profileImage: deleted ? "" : sanitizeText(node.profile_personal_image || ""),
             relationship: node.circle_relationship || null,
-            emailIsPublic: !deleted && node.profile_personal_email_is_public === 1,
-            phoneIsPublic: !deleted && node.profile_personal_phone_number_is_public === 1,
-            tagLineIsPublic: !deleted && node.profile_personal_tag_line_is_public === 1,
-            locationIsPublic: !deleted && node.profile_personal_location_is_public === 1,
-            imageIsPublic: !deleted && node.profile_personal_image_is_public === 1,
+            emailIsPublic: flags.emailIsPublic,
+            phoneIsPublic: flags.phoneIsPublic,
+            tagLineIsPublic: flags.tagLineIsPublic,
+            locationIsPublic: flags.locationIsPublic,
+            imageIsPublic: flags.imageIsPublic,
             personal_info: {
               profile_personal_first_name: deleted ? "" : sanitizeText(node.profile_personal_first_name || ""),
               profile_personal_last_name: deleted ? "" : sanitizeText(node.profile_personal_last_name || ""),
               profile_personal_tag_line: deleted ? "" : sanitizeText(node.profile_personal_tag_line || ""),
               profile_personal_phone_number: deleted ? "" : sanitizeText(node.profile_personal_phone_number || ""),
               profile_personal_image: deleted ? "" : sanitizeText(node.profile_personal_image || ""),
-              profile_personal_email_is_public: deleted ? 0 : node.profile_personal_email_is_public || 0,
-              profile_personal_phone_number_is_public: deleted ? 0 : node.profile_personal_phone_number_is_public || 0,
-              profile_personal_tag_line_is_public: deleted ? 0 : node.profile_personal_tag_line_is_public || 0,
-              profile_personal_image_is_public: deleted ? 0 : node.profile_personal_image_is_public || 0,
+              ...audienceFields,
             },
             is_deleted: deleted,
           },
@@ -1833,12 +1823,22 @@ const ConnectScreen = ({ navigation }) => {
           const p = circle;
           const deleted = isProfileDeleted(p) || isProfileDeleted(circle);
           const tagLineRaw = deleted ? "" : p.profile_personal_tag_line || p.profile_personal_tagline || "";
-          const emailRaw = deleted ? "" : p.user_email_id ?? p.user_email ?? "";
+          const emailRaw = deleted ? "" : (p.user_email_id ?? p.user_email ?? "");
+          const flags = deleted ? { emailIsPublic: false, phoneIsPublic: false, tagLineIsPublic: false, locationIsPublic: false, imageIsPublic: false } : getPersonalDisplayFlags(p);
+          const audienceFields = deleted
+            ? {}
+            : Object.fromEntries(
+                Object.values(PERSONAL_AUDIENCE_KEYS)
+                  .filter((key) => Object.prototype.hasOwnProperty.call(p, key))
+                  .map((key) => [key, p[key]]),
+              );
+          const isNew = !deleted && isNewConnection(circle);
           return {
             ...circle,
             degree: 1,
             __mc: {
               isDeleted: deleted,
+              isNew,
               firstName: deleted ? "" : sanitizeText(p.profile_personal_first_name || ""),
               lastName: deleted ? "" : sanitizeText(p.profile_personal_last_name || ""),
               tagLine: sanitizeText(tagLineRaw || ""),
@@ -1849,11 +1849,11 @@ const ConnectScreen = ({ navigation }) => {
               phoneVerified: !deleted && (p.phone_verified === true || p.phone_verified === 1 || circle.phoneVerified === true),
               profileImage: deleted ? "" : sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
               relationship: circle.circle_relationship || null,
-              emailIsPublic: !deleted && p.profile_personal_email_is_public === 1,
-              phoneIsPublic: !deleted && p.profile_personal_phone_number_is_public === 1,
-              tagLineIsPublic: !deleted && (p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1),
-              locationIsPublic: !deleted && p.profile_personal_location_is_public === 1,
-              imageIsPublic: !deleted && p.profile_personal_image_is_public === 1,
+              emailIsPublic: flags.emailIsPublic,
+              phoneIsPublic: flags.phoneIsPublic,
+              tagLineIsPublic: flags.tagLineIsPublic,
+              locationIsPublic: flags.locationIsPublic,
+              imageIsPublic: flags.imageIsPublic,
               personal_info: {
                 profile_personal_first_name: deleted ? "" : sanitizeText(p.profile_personal_first_name || ""),
                 profile_personal_last_name: deleted ? "" : sanitizeText(p.profile_personal_last_name || ""),
@@ -1863,11 +1863,7 @@ const ConnectScreen = ({ navigation }) => {
                 profile_personal_image: deleted ? "" : sanitizeText(p.profile_personal_image || ""),
                 profile_personal_city: deleted ? "" : sanitizeText(p.profile_personal_city || ""),
                 profile_personal_state: deleted ? "" : sanitizeText(p.profile_personal_state || ""),
-                profile_personal_email_is_public: deleted ? 0 : p.profile_personal_email_is_public || 0,
-                profile_personal_phone_number_is_public: deleted ? 0 : p.profile_personal_phone_number_is_public || 0,
-                profile_personal_tag_line_is_public: deleted ? 0 : p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
-                profile_personal_image_is_public: deleted ? 0 : p.profile_personal_image_is_public || 0,
-                profile_personal_location_is_public: deleted ? 0 : p.profile_personal_location_is_public || 0,
+                ...audienceFields,
               },
               is_deleted: deleted,
             },
@@ -2055,33 +2051,15 @@ const ConnectScreen = ({ navigation }) => {
 
   /** ✅ Build vis-network HTML (hierarchical layout by degree) */
   const generateVisHTML = (data, youId) => {
-    // console.log("🔷 generateVisHTML called with:");
-    // console.log("  - youId:", youId);
-    // console.log("  - data length:", data.length);
-    console.log(
-      "  - data sample (first 3):",
-      JSON.stringify(
-        data.slice(0, 3).map((n) => ({
-          network_profile_personal_uid: n.network_profile_personal_uid,
-          profile_personal_uid: n.profile_personal_uid,
-          target_uid: n.target_uid,
-          degree: n.degree,
-          parent_uid: n.parent_uid,
-          via_uid: n.via_uid,
-          source_uid: n.source_uid,
-          connection_uid: n.connection_uid,
-        })),
-        null,
-        2,
-      ),
-    );
+    const rows = Array.isArray(data) ? data : [];
+    const youKey = youId ? String(youId) : "YOU";
 
     // Get user's profile image if available
     const userImage = userProfileData?.profileImage || "";
     const hasUserImage = userImage && String(userImage).trim() !== "";
 
     // Calculate base size for other nodes (max of image nodes or dot nodes)
-    const otherNodeSizes = data.map((n) => {
+    const otherNodeSizes = rows.map((n) => {
       const img = n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
       const hasImg = img && String(img).trim() !== "";
       return hasImg ? 18 : 10;
@@ -2100,7 +2078,7 @@ const ConnectScreen = ({ navigation }) => {
 
     const nodes = [
       {
-        id: youId || "YOU",
+        id: youKey,
         label: userNodeLabel,
         shape: hasUserImage ? "circularImage" : "dot",
         image: hasUserImage ? userImage : undefined,
@@ -2112,24 +2090,42 @@ const ConnectScreen = ({ navigation }) => {
       },
     ];
 
-    const allUids = new Set([youId]);
-    data.forEach((n) => allUids.add(n.network_profile_personal_uid));
+    const allUids = new Set([youKey]);
+    rows.forEach((n) => {
+      const uid = String(n.network_profile_personal_uid || n.profile_uid || "").trim();
+      if (uid) allUids.add(uid);
+    });
 
-    data.forEach((n) => {
-      const nodeUid = n.network_profile_personal_uid;
-      if (nodeUid && youId && String(nodeUid) === String(youId)) {
+    rows.forEach((n) => {
+      const nodeUid = String(n.network_profile_personal_uid || n.profile_uid || "").trim();
+      if (!nodeUid || nodeUid === youKey) {
         return;
       }
       const isDeleted = isProfileDeleted(n) || n.__mc?.isDeleted;
       const name = isDeleted ? DELETED_USER_LABEL : n.__mc?.personal_info?.profile_personal_first_name || n.__mc?.firstName || "";
       const last = isDeleted ? "" : n.__mc?.personal_info?.profile_personal_last_name || n.__mc?.lastName || "";
-      const label = isDeleted ? DELETED_USER_LABEL : [name, last].filter(Boolean).join(" ") || (nodeUid ? String(nodeUid).slice(-3) : "???");
+      const label = isDeleted ? DELETED_USER_LABEL : [name, last].filter(Boolean).join(" ") || nodeUid.slice(-3) || "???";
 
       const img = isDeleted ? "" : n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
 
       const hasImg = img && String(img).trim() !== "";
       const isZeroNode = nodeUid === EVERY_CIRCLE_ZERO_NODE_UID;
       const useImage = hasImg && !isDeleted;
+      const isNew = !isDeleted && !isZeroNode && isNewConnection(n);
+      const newBorderWidth = Math.max(3, Math.round((isZeroNode ? userNodeSize : hasImg ? 18 : 10) * 0.2));
+
+      let nodeColor;
+      if (isZeroNode) {
+        nodeColor = { border: NETWORK_GRAPH_PURPLE, background: useImage ? "#ffffff" : NETWORK_GRAPH_PURPLE_FILL_50 };
+      } else if (isDeleted) {
+        nodeColor = { border: "#bbb", background: "#ccc" };
+      } else if (isNew) {
+        nodeColor = { border: NETWORK_GRAPH_NEW_GREEN, background: useImage ? "#ffffff" : "#dcfce7" };
+      } else if (hasImg) {
+        nodeColor = undefined;
+      } else {
+        nodeColor = { border: "#FFFFFF", background: "#e9d4ff" };
+      }
 
       nodes.push({
         id: nodeUid,
@@ -2137,134 +2133,68 @@ const ConnectScreen = ({ navigation }) => {
         shape: useImage ? "circularImage" : "dot",
         image: useImage ? img : undefined,
         size: isZeroNode ? userNodeSize : isDeleted ? 10 : hasImg ? 18 : 10,
-        borderWidth: isZeroNode ? userNodeBorderWidth : undefined,
-        color: isZeroNode
-          ? { border: NETWORK_GRAPH_PURPLE, background: useImage ? "#ffffff" : NETWORK_GRAPH_PURPLE_FILL_50 }
-          : isDeleted
-            ? { border: "#bbb", background: "#ccc" }
-            : hasImg
-              ? undefined
-              : { border: "#FFFFFF", background: "#e9d4ff" },
+        borderWidth: isZeroNode ? userNodeBorderWidth : isNew ? newBorderWidth : undefined,
+        color: nodeColor,
         font: { size: 11, color: isDeleted ? "#888" : "#444" },
         level: Number(n.degree) || 1,
       });
     });
 
     const edges = [];
-    // console.log("🔷 Building edges...");
-    data.forEach((n) => {
+    rows.forEach((n) => {
       const deg = Number(n.degree) || 1;
-      const nodeUid = n.network_profile_personal_uid;
-      if (nodeUid && youId && String(nodeUid) === String(youId)) {
+      const nodeUid = String(n.network_profile_personal_uid || n.profile_uid || "").trim();
+      if (!nodeUid || nodeUid === youKey) {
         return;
       }
-      console.log(`\n  Processing node ${nodeUid} (degree ${deg}):`, {
-        profile_personal_referred_by: n.profile_personal_referred_by,
-        profile_personal_uid: n.profile_personal_uid,
-        target_uid: n.target_uid,
-        parent_uid: n.parent_uid,
-        via_uid: n.via_uid,
-      });
 
       let parent = null;
+      const parentCandidate = String(n.parent_uid || "").trim();
 
-      // HIGHEST PRIORITY: Use profile_personal_referred_by - this is who referred/connected this person
-      if (n.profile_personal_referred_by && n.profile_personal_referred_by !== nodeUid && allUids.has(n.profile_personal_referred_by)) {
-        const referredByNode = data.find((x) => x.network_profile_personal_uid === n.profile_personal_referred_by);
+      // Prefer BE-provided parent_uid / edges (normalized onto each node).
+      if (parentCandidate && parentCandidate !== nodeUid && (allUids.has(parentCandidate) || parentCandidate === youKey)) {
+        parent = parentCandidate;
+      }
+
+      // Legacy fallbacks only if BE did not supply parent_uid.
+      const referredBy = String(n.profile_personal_referred_by || "").trim();
+      if (!parent && referredBy && referredBy !== nodeUid && allUids.has(referredBy)) {
+        const referredByNode = rows.find((x) => String(x.network_profile_personal_uid || x.profile_uid || "").trim() === referredBy);
         if (referredByNode) {
           const referredByDeg = Number(referredByNode.degree) || 1;
-          // For degree 1, the referrer should be YOU or in degree 1
-          // For degree > 1, the referrer should be in degree-1
           if (deg === 1) {
-            if (n.profile_personal_referred_by === youId || referredByDeg === 1) {
-              parent = n.profile_personal_referred_by;
-              console.log(`    ✅ Found parent via profile_personal_referred_by (degree 1): ${parent}`);
+            if (referredBy === youKey || referredByDeg === 1) {
+              parent = referredBy;
             }
           } else if (referredByDeg === deg - 1) {
-            parent = n.profile_personal_referred_by;
-            console.log(`    ✅ Found parent via profile_personal_referred_by (${parent} is in degree ${referredByDeg}): ${parent}`);
-          } else {
-            console.log(`    ⚠️ profile_personal_referred_by ${n.profile_personal_referred_by} exists but is degree ${referredByDeg}, not ${deg - 1}`);
+            parent = referredBy;
           }
-        } else if (n.profile_personal_referred_by === youId) {
-          // If referrer is YOU, use it directly
-          parent = youId;
-          console.log(`    ✅ Found parent via profile_personal_referred_by (YOU): ${parent}`);
+        } else if (referredBy === youKey) {
+          parent = youKey;
         }
       }
 
-      // Fallback: try getParentUid (checks parent_uid, via_uid, etc.)
       if (!parent) {
         try {
           const p = getParentUid(n);
-          if (p && allUids.has(p)) {
-            parent = p;
-            console.log(`    ✅ Found parent via getParentUid: ${parent}`);
-          }
-        } catch (e) {
-          console.log(`    ❌ Error in getParentUid:`, e);
+          const pKey = p ? String(p).trim() : "";
+          if (pKey && allUids.has(pKey)) parent = pKey;
+        } catch (_) {
+          /* ignore */
         }
       }
 
-      // Fallback: Check if this node's profile_personal_uid or target_uid points to a valid parent
-      // Circle API rows set profile_personal_uid to the *contact* (same as network_profile_personal_uid).
-      // Treating that as "parent" sets parent === nodeUid (self-loop) and breaks vis-network layout
-      // (image vs ring misalignment, missing-looking edges). Connections rows use these as real parent refs.
-      if (!parent && (n.profile_personal_uid || n.target_uid)) {
-        const directParentUid = n.profile_personal_uid || n.target_uid;
-        if (directParentUid !== nodeUid && allUids.has(directParentUid)) {
-          const parentNode = data.find((x) => x.network_profile_personal_uid === directParentUid);
-          if (parentNode) {
-            const parentDeg = Number(parentNode.degree) || 1;
-            if (deg === 1) {
-              if (directParentUid === youId || parentDeg === 1) {
-                parent = directParentUid;
-                console.log(`    ✅ Found parent via profile_personal_uid/target_uid (degree 1): ${parent}`);
-              }
-            } else if (parentDeg === deg - 1) {
-              parent = directParentUid;
-              console.log(`    ✅ Found parent via profile_personal_uid/target_uid (${directParentUid} is in degree ${parentDeg}): ${parent}`);
-            }
-          }
-        }
-      }
-
-      // For degree > 1, if still no parent, try reverse lookup
-      // Find a node in degree-1 that has this node's UID as its profile_personal_uid or target_uid
-      if (!parent && deg > 1) {
-        const connectingNode = data.find((x) => {
-          const xDeg = Number(x.degree) || 1;
-          const connectsToThisNode = x.profile_personal_uid === nodeUid || x.target_uid === nodeUid;
-          const isPreviousDegree = xDeg === deg - 1;
-          return connectsToThisNode && isPreviousDegree;
-        });
-
-        if (connectingNode && allUids.has(connectingNode.network_profile_personal_uid)) {
-          parent = connectingNode.network_profile_personal_uid;
-          console.log(`    ✅ Found parent via reverse lookup (node ${parent} connects to ${nodeUid}): ${parent}`);
-        }
-      }
-
-      // For degree 1, connect to YOU if no parent found
       if (!parent && deg === 1) {
-        parent = youId || "YOU";
-        console.log(`    ✅ Connecting to YOU (degree 1, no parent found)`);
+        parent = youKey;
       }
 
-      // Last resort for degree > 1: find any node with degree-1
       if (!parent && deg > 1) {
-        const fallbackParent = data.find((x) => Number(x.degree) === deg - 1);
-        if (fallbackParent && allUids.has(fallbackParent.network_profile_personal_uid)) {
-          parent = fallbackParent.network_profile_personal_uid;
-          console.log(`    ⚠️ Using fallback parent (first degree-1 node): ${parent}`);
-        } else {
-          parent = youId || "YOU";
-          console.log(`    ⚠️ No parent found, connecting to YOU`);
-        }
+        const fallbackParent = rows.find((x) => Number(x.degree) === deg - 1);
+        const fallbackUid = String(fallbackParent?.network_profile_personal_uid || fallbackParent?.profile_uid || "").trim();
+        parent = fallbackUid && allUids.has(fallbackUid) ? fallbackUid : youKey;
       }
 
       if (parent && parent !== nodeUid) {
-        console.log(`  ✅ Edge: ${parent} -> ${nodeUid} (degree ${deg})`);
         edges.push({
           from: parent,
           to: nodeUid,
@@ -2274,16 +2204,6 @@ const ConnectScreen = ({ navigation }) => {
         });
       }
     });
-
-    console.log("🔷 Total edges created:", edges.length);
-    console.log(
-      "🔷 Edges:",
-      JSON.stringify(
-        edges.map((e) => `${e.from} -> ${e.to}`),
-        null,
-        2,
-      ),
-    );
 
     const payload = { nodes, edges };
 
@@ -2405,24 +2325,38 @@ const ConnectScreen = ({ navigation }) => {
     }
   }, [navigation, profileUid]);
 
-  // Update graph HTML when network data or view mode or filters change (for web)
+  // Update graph HTML when network data / filters change (web iframe + native WebView)
   useEffect(() => {
-    if (Platform.OS === "web" && viewMode === "graph" && profileUid) {
-      const filtered = applyConnectionFilters(networkData, {
-        relationshipFilter,
-        dateFrom,
-        dateTo,
-        locationFilter,
-        eventFilter,
-        notesFilter,
-        introducedByFilter,
-        searchMatchUids,
-      });
+    if (viewMode !== "graph" || !profileUid) return;
 
-      const html = generateVisHTML(filtered, profileUid || "YOU");
-      setGraphHtml(html);
-    }
-  }, [viewMode, networkData, profileUid, relationshipFilter, dateFrom, dateTo, locationFilter, eventFilter, notesFilter, introducedByFilter, searchMatchUids, userProfileData]);
+    const filtered = applyConnectionFilters(networkData, {
+      relationshipFilter,
+      dateFrom,
+      dateTo,
+      locationFilter,
+      eventFilter,
+      notesFilter,
+      introducedByFilter,
+      searchMatchUids,
+    });
+
+    setGraphHtml(generateVisHTML(filtered, profileUid || "YOU"));
+  }, [
+    viewMode,
+    networkData,
+    profileUid,
+    relationshipFilter,
+    dateFrom,
+    dateTo,
+    locationFilter,
+    eventFilter,
+    notesFilter,
+    introducedByFilter,
+    searchMatchUids,
+    userProfileData?.profileImage,
+    userProfileData?.firstName,
+    userProfileData?.lastName,
+  ]);
 
   const filteredNetworkData = applyConnectionFilters(networkData, {
     relationshipFilter,
@@ -2462,10 +2396,7 @@ const ConnectScreen = ({ navigation }) => {
   const nearbySearchLower = nearbySearchQuery.trim().toLowerCase();
   const matchesNearbySearch = (u) => {
     if (!nearbySearchLower) return true;
-    const searchableText = [u.profile_personal_first_name, u.profile_personal_last_name, u.profile_personal_tag_line, u.profile_personal_short_bio]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
+    const searchableText = [u.profile_personal_first_name, u.profile_personal_last_name, u.profile_personal_tag_line, u.profile_personal_short_bio].filter(Boolean).join(" ").toLowerCase();
     return searchableText.includes(nearbySearchLower);
   };
 
@@ -2485,114 +2416,117 @@ const ConnectScreen = ({ navigation }) => {
     setNearbyLoading(false);
   }, []);
 
-  const fetchNearbyUsers = useCallback(async (radiusMiles, { retryOnExpired = true } = {}) => {
-    if (nearbyFetchInFlightRef.current) {
-      nearbyFetchQueuedRef.current = { radiusMiles, retryOnExpired };
-      return;
-    }
-    nearbyFetchInFlightRef.current = true;
-    try {
-    const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
-    if (!uid) return;
+  const fetchNearbyUsers = useCallback(
+    async (radiusMiles, { retryOnExpired = true } = {}) => {
+      if (nearbyFetchInFlightRef.current) {
+        nearbyFetchQueuedRef.current = { radiusMiles, retryOnExpired };
+        return;
+      }
+      nearbyFetchInFlightRef.current = true;
+      try {
+        const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
+        if (!uid) return;
 
-    const sharingActive = await isNearbySharingActive();
-    nearbySharingActiveRef.current = sharingActive;
-    setNearbySharingActive(sharingActive);
+        const sharingActive = await isNearbySharingActive();
+        nearbySharingActiveRef.current = sharingActive;
+        setNearbySharingActive(sharingActive);
 
-    if (!sharingActive) {
-      if (radiusMiles == null) showNearbyExpiredState();
-      return;
-    }
-
-    // Reuse the same privacy settings that SettingsScreen persists
-    let mode = "all_circles";
-    try {
-      const s = await loadNearbySettings();
-      mode = s.receiveFrom || "all_circles";
-    } catch (_) {}
-
-    // Load ignored UIDs from storage
-    try {
-      const raw = await AsyncStorage.getItem(NEARBY_IGNORED_KEY);
-      if (raw) setIgnoredNearbyUids(new Set(JSON.parse(raw)));
-    } catch (_) {}
-
-    const isRadiusRefresh = radiusMiles != null;
-    if (!isRadiusRefresh) {
-      setNearbyLoading(true);
-      setNearbyError(null);
-      setNearbyUsers([]);
-      setMyNearbyLocation(null);
-    }
-
-    // Server nearby TTL can expire while the local 1-hour share session is still on.
-    // Refresh GPS first so GET /nearby is not treated as "location expired".
-    if (retryOnExpired && !isRadiusRefresh) {
-      await refreshLiveLocationIfActive();
-    }
-
-    try {
-      const radiusMeters = radiusMiles != null ? Math.round(radiusMiles * 1609) : null;
-      const radiusParam = radiusMeters != null ? `&radius_meters=${radiusMeters}` : "";
-      const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}${radiusParam}`);
-      const json = await res.json();
-      const expiredOnServer = Number(json.code) === 410 || res.status === 410;
-      if (Number(json.code) === 200) {
-        const raw = json.result || [];
-        const seen = new Set();
-        const deduped = raw.filter((u) => {
-          const id = String(u.profile_personal_uid || "").trim();
-          if (!id || seen.has(id)) return false;
-          seen.add(id);
-          return true;
-        });
-        setNearbyUsers(deduped);
-        const viewer = json.viewer_location;
-        const viewerLat = parseCoordinateValue(viewer?.lat ?? viewer?.latitude);
-        const viewerLng = parseCoordinateValue(viewer?.lng ?? viewer?.longitude);
-        if (viewerLat != null && viewerLng != null) {
-          setMyNearbyLocation({ lat: viewerLat, lng: viewerLng });
+        if (!sharingActive) {
+          if (radiusMiles == null) showNearbyExpiredState();
+          return;
         }
-        setNearbyError(null);
-      } else if (expiredOnServer) {
-        if (sharingActive && retryOnExpired) {
-          nearbyFetchInFlightRef.current = false;
-          const patched = await refreshLiveLocationIfActive();
-          if (patched) {
-            await new Promise((r) => setTimeout(r, 500));
-            await fetchNearbyUsers(radiusMiles, { retryOnExpired: false });
-            return;
-          }
-          if (!isRadiusRefresh) {
-            setNearbyError(getLastLiveLocationError() || "Couldn't get your location. Turn share live location off and on again.");
-          }
-        } else if (!isRadiusRefresh) {
-          if (sharingActive) {
-            setNearbyError(
-              retryOnExpired
-                ? getLastLiveLocationError() || "Couldn't get your location. Turn share live location off and on again."
-                : "Your location was sent, but nearby people aren't available yet. Close and reopen Who's Nearby.",
-            );
+
+        // Reuse the same privacy settings that SettingsScreen persists
+        let mode = "all_circles";
+        try {
+          const s = await loadNearbySettings();
+          mode = s.receiveFrom || "all_circles";
+        } catch (_) {}
+
+        // Load ignored UIDs from storage
+        try {
+          const raw = await AsyncStorage.getItem(NEARBY_IGNORED_KEY);
+          if (raw) setIgnoredNearbyUids(new Set(JSON.parse(raw)));
+        } catch (_) {}
+
+        const isRadiusRefresh = radiusMiles != null;
+        if (!isRadiusRefresh) {
+          setNearbyLoading(true);
+          setNearbyError(null);
+          setNearbyUsers([]);
+          setMyNearbyLocation(null);
+        }
+
+        // Server nearby TTL can expire while the local 1-hour share session is still on.
+        // Refresh GPS first so GET /nearby is not treated as "location expired".
+        if (retryOnExpired && !isRadiusRefresh) {
+          await refreshLiveLocationIfActive();
+        }
+
+        try {
+          const radiusMeters = radiusMiles != null ? Math.round(radiusMiles * 1609) : null;
+          const radiusParam = radiusMeters != null ? `&radius_meters=${radiusMeters}` : "";
+          const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}${radiusParam}`);
+          const json = await res.json();
+          const expiredOnServer = Number(json.code) === 410 || res.status === 410;
+          if (Number(json.code) === 200) {
+            const raw = json.result || [];
+            const seen = new Set();
+            const deduped = raw.filter((u) => {
+              const id = String(u.profile_personal_uid || "").trim();
+              if (!id || seen.has(id)) return false;
+              seen.add(id);
+              return true;
+            });
+            setNearbyUsers(deduped);
+            const viewer = json.viewer_location;
+            const viewerLat = parseCoordinateValue(viewer?.lat ?? viewer?.latitude);
+            const viewerLng = parseCoordinateValue(viewer?.lng ?? viewer?.longitude);
+            if (viewerLat != null && viewerLng != null) {
+              setMyNearbyLocation({ lat: viewerLat, lng: viewerLng });
+            }
+            setNearbyError(null);
+          } else if (expiredOnServer) {
+            if (sharingActive && retryOnExpired) {
+              nearbyFetchInFlightRef.current = false;
+              const patched = await refreshLiveLocationIfActive();
+              if (patched) {
+                await new Promise((r) => setTimeout(r, 500));
+                await fetchNearbyUsers(radiusMiles, { retryOnExpired: false });
+                return;
+              }
+              if (!isRadiusRefresh) {
+                setNearbyError(getLastLiveLocationError() || "Couldn't get your location. Turn share live location off and on again.");
+              }
+            } else if (!isRadiusRefresh) {
+              if (sharingActive) {
+                setNearbyError(
+                  retryOnExpired
+                    ? getLastLiveLocationError() || "Couldn't get your location. Turn share live location off and on again."
+                    : "Your location was sent, but nearby people aren't available yet. Close and reopen Who's Nearby.",
+                );
+              } else {
+                setNearbyError(NEARBY_LOCATION_EXPIRED_MSG);
+              }
+            }
           } else {
-            setNearbyError(NEARBY_LOCATION_EXPIRED_MSG);
+            if (!isRadiusRefresh) setNearbyError(json.message || "Could not fetch nearby users.");
           }
+        } catch (_) {
+          if (!isRadiusRefresh) setNearbyError("Network error. Please try again.");
         }
-      } else {
-        if (!isRadiusRefresh) setNearbyError(json.message || "Could not fetch nearby users.");
+        if (!isRadiusRefresh) setNearbyLoading(false);
+      } finally {
+        nearbyFetchInFlightRef.current = false;
+        const queued = nearbyFetchQueuedRef.current;
+        nearbyFetchQueuedRef.current = null;
+        if (queued) {
+          void fetchNearbyUsers(queued.radiusMiles, { retryOnExpired: queued.retryOnExpired });
+        }
       }
-    } catch (_) {
-      if (!isRadiusRefresh) setNearbyError("Network error. Please try again.");
-    }
-    if (!isRadiusRefresh) setNearbyLoading(false);
-    } finally {
-      nearbyFetchInFlightRef.current = false;
-      const queued = nearbyFetchQueuedRef.current;
-      nearbyFetchQueuedRef.current = null;
-      if (queued) {
-        void fetchNearbyUsers(queued.radiusMiles, { retryOnExpired: queued.retryOnExpired });
-      }
-    }
-  }, [profileUid, showNearbyExpiredState]);
+    },
+    [profileUid, showNearbyExpiredState],
+  );
 
   useEffect(() => {
     fetchNearbyUsersRef.current = fetchNearbyUsers;
@@ -2693,30 +2627,33 @@ const ConnectScreen = ({ navigation }) => {
     }
   };
 
-  const fetchBlockedUsers = useCallback(async (isRetry = false) => {
-    const uid = await resolveMyUid();
-    if (!uid) return;
-    try {
-      const res = await fetch(`${BLOCKED_USERS_ENDPOINT}/${encodeURIComponent(uid)}`);
-      if (!res.ok) throw new Error(`Blocked-users fetch failed: ${res.status}`);
-      const json = await res.json();
-      const list = Array.isArray(json.result) ? json.result : [];
-      const seen = new Set();
-      const deduped = list.filter((entry) => {
-        const id = String(entry.blocked_uid || "").trim();
-        if (!id || seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      });
-      setBlockedList(deduped);
-      setBlockedUids(new Set(deduped.map((b) => b.blocked_uid)));
-    } catch (e) {
-      console.warn("fetchBlockedUsers failed", isRetry ? "(retry)" : "", e);
-      // Local dev server can briefly restart on file changes — retry once after a short delay
-      // instead of silently leaving stale/empty blocked state on screen.
-      if (!isRetry) setTimeout(() => fetchBlockedUsers(true), 1500);
-    }
-  }, [profileUid]);
+  const fetchBlockedUsers = useCallback(
+    async (isRetry = false) => {
+      const uid = await resolveMyUid();
+      if (!uid) return;
+      try {
+        const res = await fetch(`${BLOCKED_USERS_ENDPOINT}/${encodeURIComponent(uid)}`);
+        if (!res.ok) throw new Error(`Blocked-users fetch failed: ${res.status}`);
+        const json = await res.json();
+        const list = Array.isArray(json.result) ? json.result : [];
+        const seen = new Set();
+        const deduped = list.filter((entry) => {
+          const id = String(entry.blocked_uid || "").trim();
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+        setBlockedList(deduped);
+        setBlockedUids(new Set(deduped.map((b) => b.blocked_uid)));
+      } catch (e) {
+        console.warn("fetchBlockedUsers failed", isRetry ? "(retry)" : "", e);
+        // Local dev server can briefly restart on file changes — retry once after a short delay
+        // instead of silently leaving stale/empty blocked state on screen.
+        if (!isRetry) setTimeout(() => fetchBlockedUsers(true), 1500);
+      }
+    },
+    [profileUid],
+  );
 
   const fetchConversationsRef = useRef(fetchConversations);
   const fetchBlockedUsersRef = useRef(fetchBlockedUsers);
@@ -2869,7 +2806,7 @@ const ConnectScreen = ({ navigation }) => {
                     Connect with Me!
                   </Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 15 }}>
-                    <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle, { marginBottom: 0 }]}>SCAN My QR Code</Text>
+                    <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle, { marginBottom: 0 }]}>SCAN My QR Code or Click to Copy Link</Text>
                     {/* <TouchableOpacity
                       style={{ padding: 6 }}
                       onPress={() =>
@@ -3000,11 +2937,7 @@ const ConnectScreen = ({ navigation }) => {
                             aria-label='Search connections'
                           />
                           <TouchableOpacity onPress={onNetworkSearch} accessibilityRole='button' accessibilityLabel='Search' style={{ padding: 4 }}>
-                            {networkSearchLoading ? (
-                              <ActivityIndicator size='small' color={darkMode ? "#fff" : "#333"} />
-                            ) : (
-                              <Ionicons name='search' size={20} color={darkMode ? "#fff" : "#333"} />
-                            )}
+                            {networkSearchLoading ? <ActivityIndicator size='small' color={darkMode ? "#fff" : "#333"} /> : <Ionicons name='search' size={20} color={darkMode ? "#fff" : "#333"} />}
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -3065,13 +2998,7 @@ const ConnectScreen = ({ navigation }) => {
                       >
                         <Text style={[styles.advancedFiltersHeaderText, darkMode && styles.darkAdvancedFiltersHeaderText]}>
                           Advanced Filters
-                          {(relationshipFilter !== "All" ||
-                            dateFilterActive ||
-                            locationFilterActive ||
-                            eventFilter !== "All" ||
-                            notesFilterActive ||
-                            introducedByFilter !== "All") &&
-                            " (active)"}
+                          {(relationshipFilter !== "All" || dateFilterActive || locationFilterActive || eventFilter !== "All" || notesFilterActive || introducedByFilter !== "All") && " (active)"}
                         </Text>
                         <Ionicons name={showAdvancedFilters ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#e0e0e0" : "#333"} />
                       </TouchableOpacity>
@@ -3082,7 +3009,9 @@ const ConnectScreen = ({ navigation }) => {
                           <View style={styles.controlRow}>
                             <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>3. Relationship</Text>
                             <TouchableOpacity style={[styles.pullDownButton, relationshipFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("relationship")}>
-                              <Text style={[styles.pullDownButtonText, relationshipFilter !== "All" && styles.pullDownButtonTextActive]}>{relationshipFilter === "All" ? "All" : relationshipFilter}</Text>
+                              <Text style={[styles.pullDownButtonText, relationshipFilter !== "All" && styles.pullDownButtonTextActive]}>
+                                {relationshipFilter === "All" ? "All" : relationshipFilter}
+                              </Text>
                             </TouchableOpacity>
                           </View>
 
@@ -3102,13 +3031,16 @@ const ConnectScreen = ({ navigation }) => {
                                 />
                               ) : (
                                 <TouchableOpacity style={styles.dateFilterNativeHit} onPress={() => setActiveDatePicker("from")} activeOpacity={0.7}>
-                                  <Text style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }, !dateFrom && { color: darkMode ? "#888" : "#999" }]}>
-                                    {formatFilterDateLabel(dateFrom)}
-                                  </Text>
+                                  <Text style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }, !dateFrom && { color: darkMode ? "#888" : "#999" }]}>{formatFilterDateLabel(dateFrom)}</Text>
                                 </TouchableOpacity>
                               )}
                               {dateFrom ? (
-                                <TouchableOpacity onPress={() => setDateFrom("")} style={styles.dateFilterClear} accessibilityLabel='Clear from date' hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                <TouchableOpacity
+                                  onPress={() => setDateFrom("")}
+                                  style={styles.dateFilterClear}
+                                  accessibilityLabel='Clear from date'
+                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                >
                                   <Ionicons name='close-circle' size={18} color={darkMode ? "#aaa" : "#666"} />
                                 </TouchableOpacity>
                               ) : null}
@@ -3129,9 +3061,7 @@ const ConnectScreen = ({ navigation }) => {
                                 />
                               ) : (
                                 <TouchableOpacity style={styles.dateFilterNativeHit} onPress={() => setActiveDatePicker("to")} activeOpacity={0.7}>
-                                  <Text style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }, !dateTo && { color: darkMode ? "#888" : "#999" }]}>
-                                    {formatFilterDateLabel(dateTo)}
-                                  </Text>
+                                  <Text style={[styles.dateFilterFullInput, darkMode && { color: "#fff" }, !dateTo && { color: darkMode ? "#888" : "#999" }]}>{formatFilterDateLabel(dateTo)}</Text>
                                 </TouchableOpacity>
                               )}
                               {dateTo ? (
@@ -3245,26 +3175,33 @@ const ConnectScreen = ({ navigation }) => {
                           )
                         ) : WebViewComponent ? (
                           // Native: Use WebView
-                          <WebViewComponent
-                            originWhitelist={["*"]}
-                            source={{ html: generateVisHTML(filteredNetworkData, profileUid || "YOU") }}
-                            onMessage={(event) => {
-                              const uid = event?.nativeEvent?.data;
-                              if (uid && uid !== (profileUid || "YOU")) {
-                                navigation.navigate("Profile", {
-                                  profile_uid: uid,
-                                  returnTo: "Connect",
-                                });
-                              }
-                            }}
-                            javaScriptEnabled
-                            incognito
-                            sharedCookiesEnabled={false}
-                            thirdPartyCookiesEnabled={false}
-                            automaticallyAdjustContentInsets
-                            allowsInlineMediaPlayback
-                            androidLayerType={Platform.OS === "android" ? "hardware" : "none"}
-                          />
+                          graphHtml ? (
+                            <WebViewComponent
+                              originWhitelist={["*"]}
+                              source={{ html: graphHtml }}
+                              onMessage={(event) => {
+                                const uid = event?.nativeEvent?.data;
+                                if (uid && uid !== (profileUid || "YOU")) {
+                                  navigation.navigate("Profile", {
+                                    profile_uid: uid,
+                                    returnTo: "Connect",
+                                  });
+                                }
+                              }}
+                              javaScriptEnabled
+                              incognito
+                              sharedCookiesEnabled={false}
+                              thirdPartyCookiesEnabled={false}
+                              automaticallyAdjustContentInsets
+                              allowsInlineMediaPlayback
+                              androidLayerType={Platform.OS === "android" ? "hardware" : "none"}
+                            />
+                          ) : (
+                            <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+                              <ActivityIndicator size='large' color='#AF52DE' />
+                              <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading graph view...</Text>
+                            </View>
+                          )
                         ) : (
                           <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 20 }}>
                             <Text style={[styles.errorText, darkMode && styles.darkErrorText, { textAlign: "center", marginBottom: 10 }]}>
@@ -3327,7 +3264,7 @@ const ConnectScreen = ({ navigation }) => {
                                                 }
                                                 style={{ marginVertical: 6 }}
                                               >
-                                                <MicroCard user={node.__mc} />
+                                                <MicroCard isNew={isNewConnection(node)} user={node.__mc} />
                                               </TouchableOpacity>
                                             );
                                           })}
@@ -3406,9 +3343,7 @@ const ConnectScreen = ({ navigation }) => {
                 }}
               >
                 <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>Update nearby location</Text>
-                <Text style={[styles.viewersDropdownItemSubtext, darkMode && styles.viewersDropdownItemSubtextDark]}>
-                  {formatStoredNearbyCoordsSummary(storedNearbyCoords)}
-                </Text>
+                <Text style={[styles.viewersDropdownItemSubtext, darkMode && styles.viewersDropdownItemSubtextDark]}>{formatStoredNearbyCoordsSummary(storedNearbyCoords)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.viewersDropdownItem}
@@ -3418,9 +3353,7 @@ const ConnectScreen = ({ navigation }) => {
                 }}
               >
                 <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>Location privacy</Text>
-                <Text style={[styles.viewersDropdownItemSubtext, darkMode && styles.viewersDropdownItemSubtextDark]}>
-                  {formatNearbyPrivacySummary(nearbySettings)}
-                </Text>
+                <Text style={[styles.viewersDropdownItemSubtext, darkMode && styles.viewersDropdownItemSubtextDark]}>{formatNearbyPrivacySummary(nearbySettings)}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -3453,7 +3386,7 @@ const ConnectScreen = ({ navigation }) => {
                       nearbyUsers
                         .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
                         .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
-                        .filter(matchesNearbySearch)
+                        .filter(matchesNearbySearch),
                     )}
                     radiusMiles={nearbyRadiusMiles}
                     onPersonPress={(person) => navigation.navigate("Profile", { profile_uid: person.uid })}
@@ -3466,13 +3399,24 @@ const ConnectScreen = ({ navigation }) => {
                   <Text style={[styles.nearbyRadiusLabel, darkMode && styles.nearbyRadiusLabelDark]}>Within:</Text>
                   <NearbyRadiusSlider
                     value={nearbyRadiusMiles}
-                    onChange={(v) => { nearbyRadiusMilesRef.current = v; setNearbyRadiusMiles(v); }}
+                    onChange={(v) => {
+                      nearbyRadiusMilesRef.current = v;
+                      setNearbyRadiusMiles(v);
+                    }}
                     onRelease={() => fetchNearbyUsers(nearbyRadiusMilesRef.current)}
                     darkMode={darkMode}
                   />
                   <View style={styles.nearbyRadiusValueWrap}>
                     {nearbyRadiusMiles != null ? (
-                      <TouchableOpacity onPress={() => { nearbyRadiusMilesRef.current = null; setNearbyRadiusMiles(null); fetchNearbyUsers(null); }} style={styles.nearbyRadiusClearBtn} accessibilityLabel="Clear radius filter">
+                      <TouchableOpacity
+                        onPress={() => {
+                          nearbyRadiusMilesRef.current = null;
+                          setNearbyRadiusMiles(null);
+                          fetchNearbyUsers(null);
+                        }}
+                        style={styles.nearbyRadiusClearBtn}
+                        accessibilityLabel='Clear radius filter'
+                      >
                         <Text style={styles.nearbyRadiusValueActive}>{formatMiles(nearbyRadiusMiles)}</Text>
                         <Text style={styles.nearbyRadiusClearIcon}> ✕</Text>
                       </TouchableOpacity>
@@ -3814,9 +3758,7 @@ const ConnectScreen = ({ navigation }) => {
               <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4 }}>
                 <TouchableOpacity style={styles.viewersDropdownBtn} onPress={() => setShowViewersAccountDropdown((p) => !p)} activeOpacity={0.7}>
                   <Text style={[styles.viewersDropdownBtnText, darkMode && { color: "#e0e0e0" }]}>
-                    {viewersSelectedAccount === "personal"
-                      ? "Personal"
-                      : businesses.find((b) => (b.business_uid || b.profile_business_uid) === viewersSelectedAccount)?.business_name || "Business"}
+                    {viewersSelectedAccount === "personal" ? "Personal" : businesses.find((b) => (b.business_uid || b.profile_business_uid) === viewersSelectedAccount)?.business_name || "Business"}
                   </Text>
                   <Ionicons name={showViewersAccountDropdown ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#e0e0e0" : "#333"} />
                 </TouchableOpacity>
@@ -3859,16 +3801,12 @@ const ConnectScreen = ({ navigation }) => {
                   const cardUser = viewerToCardUser(viewer);
                   const viewerUid = String(viewer.view_viewer_id || "").trim();
                   if (viewerUid && !cardUser.relationship) {
-                    const networkNode = connectDirectlyMergedNetworkData.find(
-                      (n) => String(n.network_profile_personal_uid || n.profile_personal_uid || "").trim() === viewerUid,
-                    );
+                    const networkNode = connectDirectlyMergedNetworkData.find((n) => String(n.network_profile_personal_uid || n.profile_personal_uid || "").trim() === viewerUid);
                     if (networkNode?.circle_relationship) {
                       cardUser.relationship = networkNode.circle_relationship;
                     }
                   }
-                  const viewedLabel = getLatestProfileViewTimestamp(viewer.view_timestamp)
-                    ? `Viewed: ${formatProfileViewedDate(viewer.view_timestamp) || "—"}`
-                    : null;
+                  const viewedLabel = getLatestProfileViewTimestamp(viewer.view_timestamp) ? `Viewed: ${formatProfileViewedDate(viewer.view_timestamp) || "—"}` : null;
                   return (
                     <TouchableOpacity
                       key={`viewer-${viewer.view_viewer_id || "anon"}-${index}`}
@@ -4005,11 +3943,7 @@ const ConnectScreen = ({ navigation }) => {
                                   const isExpanded = !!expandedStorageKeys[key];
                                   return (
                                     <View key={key} style={styles.storageKeyBlock}>
-                                      <TouchableOpacity
-                                        style={[styles.storageKeyHeader, darkMode && styles.darkStorageKeyHeader]}
-                                        onPress={() => toggleStorageKeyExpanded(key)}
-                                        activeOpacity={0.7}
-                                      >
+                                      <TouchableOpacity style={[styles.storageKeyHeader, darkMode && styles.darkStorageKeyHeader]} onPress={() => toggleStorageKeyExpanded(key)} activeOpacity={0.7}>
                                         <Text style={[styles.storageKeyHeaderText, darkMode && styles.darkStorageKeyHeaderText]} numberOfLines={1}>
                                           {sanitizedKey}
                                         </Text>
@@ -4061,20 +3995,6 @@ const ConnectScreen = ({ navigation }) => {
         networkData={connectDirectlyMergedNetworkData}
         preparingNetwork={connectDirectlyPrepareLoading}
       />
-      <ScannedProfilePopup
-        visible={showScannedProfilePopup}
-        profileData={scannedProfileData}
-        loadingProfile={scannedProfileLoading}
-        onClose={() => {
-          setShowScannedProfilePopup(false);
-          setScannedProfileData(null);
-          setScannedProfileLoading(false);
-          lastHandledScanConnectKeyRef.current = null;
-          connectPopupContextRef.current = { source: "scan", scannerIsNewSignup: false };
-        }}
-        onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
-      />
-
       {filterModalKind === "relationship" && (
         <ConnectionFilterModal
           visible
@@ -4094,9 +4014,7 @@ const ConnectScreen = ({ navigation }) => {
               onPress={(e) => e.stopPropagation()}
               style={[styles.datePickerModalSheet, { backgroundColor: darkMode ? "#1e1e2e" : "#fff", borderColor: darkMode ? "#3a3a5c" : "#e0e4f7" }]}
             >
-              <Text style={[styles.datePickerModalTitle, { color: darkMode ? "#e8eaf6" : "#1a1a2e" }]}>
-                {activeDatePicker === "from" ? "From date" : "To date"}
-              </Text>
+              <Text style={[styles.datePickerModalTitle, { color: darkMode ? "#e8eaf6" : "#1a1a2e" }]}>{activeDatePicker === "from" ? "From date" : "To date"}</Text>
               {Platform.OS === "web" ? (
                 <WebTextInput
                   style={[styles.dateFilterFullInput, { height: 36, minHeight: 36, lineHeight: 36 }, darkMode && { color: "#fff" }]}
@@ -4164,9 +4082,7 @@ const ConnectScreen = ({ navigation }) => {
           darkMode={darkMode}
         />
       )}
-      {showBlockedManager && (
-        <BlockedPeopleModal visible blockedList={blockedList} onUnblock={toggleBlock} onClose={() => setShowBlockedManager(false)} darkMode={darkMode} />
-      )}
+      {showBlockedManager && <BlockedPeopleModal visible blockedList={blockedList} onUnblock={toggleBlock} onClose={() => setShowBlockedManager(false)} darkMode={darkMode} />}
       <Modal visible={shareLocationWarningVisible} transparent animationType='fade' onRequestClose={() => setShareLocationWarningVisible(false)}>
         <View style={styles.shareLocationModalOverlay}>
           <View style={[styles.shareLocationModalBox, darkMode && { backgroundColor: "#2a2a2a" }]}>

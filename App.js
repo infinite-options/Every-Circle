@@ -84,6 +84,7 @@ import ConnectLinkScreen from "./screens/ConnectLinkScreen";
 import ConnectWebScreen from "./screens/ConnectWebScreen";
 import NewConnectionScreen from "./screens/NewConnectionScreen";
 import ScanLandingScreen from "./screens/ScanLandingScreen";
+import ConnectWithMeScreen from "./screens/ConnectWithMeScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
 import InboxScreen from "./screens/InboxScreen";
 import ChatScreen from "./screens/ChatScreen";
@@ -1237,7 +1238,7 @@ export default function App() {
     }
 
     // Allowed screens when cookies are not allowed (web only; native apps skip this gate)
-    const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen"];
+    const cookiesAllowedScreens = ["Settings", "ScanLanding", "ConnectWithMe", "EveryCircleMap", "PrivacyPolicy", "ChildSafety", "DeleteAccountInfo", "HowItWorksScreen"];
 
     // Allowed screens when terms are not accepted
     const termsAllowedScreens = [
@@ -1252,6 +1253,7 @@ export default function App() {
       "DeleteAccountInfo",
       "HowItWorksScreen",
       "ScanLanding",
+      "ConnectWithMe",
       "EveryCircleMap",
       "BusinessProfile",
     ];
@@ -1341,6 +1343,7 @@ export default function App() {
                     <Stack.Screen name='Settings' component={SettingsScreen} />
                     <Stack.Screen name='Account' component={AccountScreen} />
                     <Stack.Screen name='Connect' component={ConnectScreen} />
+                    <Stack.Screen name='ConnectWithMe' component={ConnectWithMeScreen} options={{ headerShown: false }} />
                     <Stack.Screen name='Search' component={SearchScreen} />
                     <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
                     <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />

@@ -17,6 +17,7 @@ import { businessCartPersistedFields } from "../utils/businessCartUtils";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 import { parsePrice } from "../utils/priceUtils";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
@@ -303,6 +304,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
       if (result && result.personal_info) {
         const personalInfo = result.personal_info;
+        const flags = getPersonalDisplayFlags(personalInfo);
         const reviewerForMiniCard = {
           firstName: sanitizeText(personalInfo.profile_personal_first_name),
           lastName: sanitizeText(personalInfo.profile_personal_last_name),
@@ -311,10 +313,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
           phoneVerified: personalInfo.phone_verified === true || personalInfo.phone_verified === 1 || result.phoneVerified === true,
           profileImage: personalInfo.profile_personal_image ? sanitizeText(String(personalInfo.profile_personal_image)) : "",
           tagLine: sanitizeText(personalInfo.profile_personal_tagline),
-          emailIsPublic: personalInfo.profile_personal_email_is_public === "1" || personalInfo.profile_personal_email_is_public === 1,
-          phoneIsPublic: personalInfo.profile_personal_phone_number_is_public === "1" || personalInfo.profile_personal_phone_number_is_public === 1,
-          tagLineIsPublic: personalInfo.profile_personal_tagline_is_public === "1" || personalInfo.profile_personal_tagline_is_public === 1,
-          imageIsPublic: personalInfo.profile_personal_image_is_public === "1" || personalInfo.profile_personal_image_is_public === 1,
+          ...flags,
         };
         setReviewerData(reviewerForMiniCard);
         console.log("ReviewDetailScreen - Reviewer data loaded:", reviewerForMiniCard);

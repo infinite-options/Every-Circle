@@ -196,6 +196,33 @@ export function markAblyTokenNoLongerActive() {
  * @param {string} [clientId]
  * @param {{ onTokenObtained?: (obscured: string | null) => void }} [options] invoked when a token is received or cleared; `obscured` is masked JWT/mac or `null`
  */
+/**
+ * Close an Ably Realtime client without leaving unhandled "Connection closed" rejections.
+ * Ably auto-connects on construct; closing mid-connect rejects an internal promise.
+ */
+function quietlyCloseAblyClient(client) {
+  if (!client) return;
+  try {
+    const conn = client.connection;
+    if (conn) {
+      try {
+        const whenConnected = typeof conn.whenState === "function" ? conn.whenState("connected") : null;
+        if (whenConnected && typeof whenConnected.catch === "function") {
+          whenConnected.catch(() => {});
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    const result = client.close();
+    if (result && typeof result.then === "function") {
+      result.catch(() => {});
+    }
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 export function createAblyRealtimeClient(clientId, options = {}) {
   const { onTokenObtained } = options;
   if (typeof onTokenObtained === "function") {
@@ -225,9 +252,7 @@ export function createAblyRealtimeClient(clientId, options = {}) {
     //   nextClientId: normalizedClientId,
     //   ts: new Date().toISOString(),
     // });
-    try {
-      sharedClient.close();
-    } catch (_) {}
+    quietlyCloseAblyClient(sharedClient);
     sharedClient = null;
     sharedClientId = null;
     clearStoredToken();
@@ -264,6 +289,17 @@ export function createAblyRealtimeClient(clientId, options = {}) {
     },
   });
   sharedClientId = normalizedClientId;
+
+  // Auto-connect starts immediately; if we close before it finishes, catch the rejection.
+  try {
+    const whenConnected = typeof sharedClient.connection?.whenState === "function" ? sharedClient.connection.whenState("connected") : null;
+    if (whenConnected && typeof whenConnected.catch === "function") {
+      whenConnected.catch(() => {});
+    }
+  } catch (_) {
+    /* ignore */
+  }
+
   // console.log("[AblyDebug] Created new shared Ably client", {
   //   clientId: sharedClientId,
   //   ts: new Date().toISOString(),
@@ -277,9 +313,7 @@ export function resetSharedAblyClient() {
     //   clientId: sharedClientId,
     //   ts: new Date().toISOString(),
     // });
-    try {
-      sharedClient.close();
-    } catch (_) {}
+    quietlyCloseAblyClient(sharedClient);
   }
   sharedClient = null;
   sharedClientId = null;

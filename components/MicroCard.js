@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
+import { resolvePersonalDisplayFlag, PERSONAL_AUDIENCE_KEYS } from "../utils/profileAudience";
 
 let PROFILE_IMAGE_SOURCE;
 try {
@@ -32,18 +33,19 @@ function formatRelationship(user) {
   return "Relationship not Assigned";
 }
 
-const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix = null, headerAccessory = null, relationshipFooter = null, relationshipMeta = null }) => {
+const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix = null, headerAccessory = null, relationshipFooter = null, relationshipMeta = null, isNew = false }) => {
   const { darkMode } = useDarkMode();
 
   const deleted = isProfileDeleted(user);
+  const showAsNew = !deleted && (isNew || user?.isNew === true);
   const firstName = deleted ? "" : sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
   const lastName = deleted ? "" : sanitizeText(user?.lastName || user?.personal_info?.profile_personal_last_name);
   const tagLine = sanitizeText(user?.tagLine || user?.personal_info?.profile_personal_tagline || user?.personal_info?.profile_personal_tag_line);
   const profileImageRaw = user?.profileImage ?? user?.personal_info?.profile_personal_image ?? "";
   const profileImage = sanitizeText(typeof profileImageRaw === "string" ? profileImageRaw : String(profileImageRaw || ""));
 
-  const tagLineIsPublic = user?.personal_info?.profile_personal_tagline_is_public == 1 || user?.personal_info?.profile_personal_tag_line_is_public == 1 || user?.tagLineIsPublic;
-  const imageIsPublic = user?.personal_info?.profile_personal_image_is_public == 1 || user?.imageIsPublic === true || user?.imageIsPublic === 1 || user?.imageIsPublic === "1";
+  const tagLineIsPublic = resolvePersonalDisplayFlag(user?.tagLineIsPublic, user, PERSONAL_AUDIENCE_KEYS.tagLine);
+  const imageIsPublic = resolvePersonalDisplayFlag(user?.imageIsPublic, user, PERSONAL_AUDIENCE_KEYS.image);
 
   const nameParts = deleted ? [] : [firstName, lastName].filter((part) => part && part !== "." && part.trim() !== "" && !part.match(/^[\s.,;:!?\-_=+]*$/));
   const displayName = deleted ? DELETED_USER_LABEL : nameParts.length ? nameParts.join(" ") : "Unknown";
@@ -60,7 +62,7 @@ const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix
   const showRelationshipColumn = showRelationship || !!relationshipFooter || !!metaText;
 
   return (
-    <View style={[styles.cardContainer, deleted && styles.deletedCardContainer, embedded && styles.embeddedCardContainer, darkMode && styles.darkCardContainer, deleted && darkMode && styles.darkDeletedCardContainer, embedded && darkMode && styles.darkEmbeddedCardContainer]}>
+    <View style={[styles.cardContainer, deleted && styles.deletedCardContainer, embedded && styles.embeddedCardContainer, darkMode && styles.darkCardContainer, deleted && darkMode && styles.darkDeletedCardContainer, embedded && darkMode && styles.darkEmbeddedCardContainer, showAsNew && styles.newCardContainer, showAsNew && darkMode && styles.darkNewCardContainer]}>
       <Image
         source={userImageSource}
         style={[styles.profileImage, darkMode && styles.darkProfileImage]}
@@ -73,6 +75,11 @@ const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix
             {displayName}
             {nameSuffix ? <Text style={[styles.nameSuffix, darkMode && styles.darkNameSuffix]}>{` ${nameSuffix}`}</Text> : null}
           </Text>
+          {/* {showAsNew ? (
+            <View style={styles.newBadge}>
+              <Text style={styles.newBadgeText}>New</Text>
+            </View>
+          ) : null} */}
           {headerAccessory}
         </View>
         {showTagline ? (
@@ -134,6 +141,39 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   darkProfileImage: {},
+  // List avatar ring — unused for now; graph still uses a green ring.
+  // avatarWrap: {
+  //   marginRight: 12,
+  // },
+  // newAvatarRing: {
+  //   borderWidth: 2.5,
+  //   borderColor: "#22c55e",
+  //   borderRadius: 24,
+  //   padding: 1.5,
+  // },
+  newCardContainer: {
+    borderColor: "#86efac",
+    backgroundColor: "#f0fdf4",
+  },
+  darkNewCardContainer: {
+    borderColor: "#166534",
+    backgroundColor: "#14532d33",
+  },
+  // New badge — keep styles handy if we re-enable the badge.
+  // newBadge: {
+  //   marginLeft: 8,
+  //   paddingHorizontal: 6,
+  //   paddingVertical: 2,
+  //   borderRadius: 4,
+  //   backgroundColor: "#22c55e",
+  //   alignSelf: "center",
+  // },
+  // newBadgeText: {
+  //   fontSize: 11,
+  //   fontWeight: "700",
+  //   color: "#ffffff",
+  //   letterSpacing: 0.2,
+  // },
   textColumn: {
     flex: 1,
     minWidth: 0,

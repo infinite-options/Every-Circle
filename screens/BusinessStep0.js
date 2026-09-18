@@ -738,25 +738,28 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   togglePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-    backgroundColor: "transparent",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: "#eee",
+    marginLeft: 6,
   },
   togglePillActiveGreen: {
-    backgroundColor: "#4CAF50",
+    backgroundColor: "#2e7d32",
   },
   togglePillActiveRed: {
-    backgroundColor: "#ef9a9a",
+    backgroundColor: "#c62828",
   },
   togglePillText: {
-    fontSize: 13,
-    color: "#4e4e4e",
-    fontWeight: "500",
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#333",
   },
   togglePillTextActive: {
     color: "#fff",
-    fontWeight: "bold",
+    fontWeight: "600",
   },
   input: {
     backgroundColor: "#fff",

@@ -62,6 +62,7 @@ import OfferingCardDetails from "../components/OfferingCardDetails";
 import { buildOfferingCardModel } from "../utils/offeringResubmission";
 import { pickSeekingListingCommerceFields } from "../utils/wishResubmission";
 import { expertiseDataForCartModal } from "../utils/offeringCartUtils";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { mapBusinessToMiniCard, mapBusinessToMicroCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
@@ -482,11 +483,7 @@ function mapSearchExpertiseRow(item, i) {
       tagLine: item.profile_personal_tag_line || "",
       city: item.profile_personal_city || "",
       state: item.profile_personal_state || "",
-      emailIsPublic: item.profile_personal_email_is_public == 1,
-      phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-      imageIsPublic: item.profile_personal_image_is_public == 1,
-      tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
-      locationIsPublic: item.profile_personal_location_is_public == 1,
+      ...getPersonalDisplayFlags(item),
     },
   };
 }
@@ -545,10 +542,7 @@ function mapSearchWishRow(item, i) {
       phone: item.profile_personal_phone_number || "",
       image: item.profile_personal_image || "",
       tagLine: item.profile_personal_tag_line || "",
-      emailIsPublic: item.profile_personal_email_is_public == 1,
-      phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-      imageIsPublic: item.profile_personal_image_is_public == 1,
-      tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+      ...getPersonalDisplayFlags(item),
     },
   };
 }
@@ -2480,10 +2474,7 @@ export default function SearchScreen({ route }) {
                 phone: item.profile_personal_phone_number || "",
                 image: item.profile_personal_image || "",
                 tagLine: item.profile_personal_tag_line || "",
-                emailIsPublic: item.profile_personal_email_is_public == 1,
-                phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-                imageIsPublic: item.profile_personal_image_is_public == 1,
-                tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+                ...getPersonalDisplayFlags(item),
               },
             }))
             .filter((item) => !isWishEnded(item));
@@ -2503,10 +2494,7 @@ export default function SearchScreen({ route }) {
           //           phone: p.profile_personal_phone_number || "",
           //           image: p.profile_personal_image || "",
           //           tagLine: p.profile_personal_tag_line || "",
-          //           emailIsPublic: p.profile_personal_email_is_public == 1,
-          //           phoneIsPublic: p.profile_personal_phone_number_is_public == 1,
-          //           imageIsPublic: p.profile_personal_image_is_public == 1,
-          //           tagLineIsPublic: p.profile_personal_tag_line_is_public == 1,
+          //           ...getPersonalDisplayFlags(p),
           //         },
           //       };
           //     } catch (e) {
@@ -2548,11 +2536,7 @@ export default function SearchScreen({ route }) {
                 tagLine: item.profile_personal_tag_line || "",
                 city: item.profile_personal_city || "",
                 state: item.profile_personal_state || "",
-                emailIsPublic: item.profile_personal_email_is_public == 1,
-                phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-                imageIsPublic: item.profile_personal_image_is_public == 1,
-                tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
-                locationIsPublic: item.profile_personal_location_is_public == 1,
+                ...getPersonalDisplayFlags(item),
               },
             }));
         } else {

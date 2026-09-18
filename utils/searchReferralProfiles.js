@@ -3,6 +3,7 @@ import { SEARCH_REFERRAL_ENDPOINT, REFERRAL_API_ENDPOINT, CIRCLES_ENDPOINT } fro
 import { fetchMiddleware as fetch } from "./httpMiddleware";
 import { sanitizeText } from "./textSanitizer";
 import { isProfileVisibilityBlocked } from "./profileModeration";
+import { getPersonalDisplayFlags, PERSONAL_AUDIENCE_KEYS } from "./profileAudience";
 
 const ASYNC_NETWORK_DATA_CONNECTIONS = "network_data_connections";
 const ASYNC_NETWORK_DATA_CIRCLES = "network_data_circles";
@@ -158,10 +159,11 @@ function networkNodeToReferralProfile(node) {
     profile_personal_image: mc.profileImage || node.profile_personal_image || "",
     profile_personal_phone_number: mc.phoneNumber || node.profile_personal_phone_number || "",
     profile_email_id: mc.email || node.user_email_id || node.profile_email_id || "",
-    profile_personal_tag_line_is_public: node.profile_personal_tag_line_is_public ?? mc.tagLineIsPublic,
-    profile_personal_image_is_public: node.profile_personal_image_is_public ?? mc.imageIsPublic,
-    profile_personal_phone_number_is_public: node.profile_personal_phone_number_is_public ?? mc.phoneIsPublic,
-    profile_personal_location_is_public: node.profile_personal_location_is_public ?? mc.locationIsPublic,
+    ...Object.fromEntries(
+      Object.values(PERSONAL_AUDIENCE_KEYS)
+        .filter((key) => Object.prototype.hasOwnProperty.call(node, key))
+        .map((key) => [key, node[key]]),
+    ),
     profile_personal_moderated: node.profile_personal_moderated ?? node.profile_moderated,
     profile_moderated: node.profile_moderated ?? node.profile_personal_moderated,
     moderation: node.moderation,
@@ -491,6 +493,7 @@ export function mapReferralProfileToMicroCardUser(profile, networkNode = null) {
   const hasImage = profileImage && profileImage !== "." && profileImage.trim() !== "";
   const node = networkNode || profile.__referral_network_node || null;
 
+  const flags = getPersonalDisplayFlags(profile);
   const base = {
     firstName,
     lastName,
@@ -499,12 +502,8 @@ export function mapReferralProfileToMicroCardUser(profile, networkNode = null) {
     state: sanitizeText(profile.profile_personal_state || node?.circle_state || ""),
     profileImage,
     relationship: networkNode?.circle_relationship || node?.circle_relationship || null,
-    imageIsPublic: hasImage || profile.profile_personal_image_is_public === 1 || profile.profile_personal_image_is_public === "1",
-    tagLineIsPublic:
-      profile.profile_personal_tag_line_is_public === 1 ||
-      profile.profile_personal_tag_line_is_public === "1" ||
-      profile.profile_personal_tagline_is_public === 1 ||
-      profile.profile_personal_tagline_is_public === "1",
+    imageIsPublic: flags.imageIsPublic || hasImage,
+    tagLineIsPublic: flags.tagLineIsPublic,
     personal_info: profile,
   };
 

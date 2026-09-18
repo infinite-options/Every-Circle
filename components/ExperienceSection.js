@@ -5,7 +5,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
-import ConnectionVisibilityPicker from "./ConnectionVisibilityPicker";
+import ConnectionVisibilityPicker, { visibilityFromIsPublic } from "./ConnectionVisibilityPicker";
 import {
   parseMonthYear,
   formatMonthYear,
@@ -312,20 +312,18 @@ const ExperienceSection = ({
                 <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
               </TouchableOpacity>
             </View>
-            {/* Individual public/private toggle */}
+            {/* Individual public/private toggle — same pills as section-level */}
             <View style={styles.toggleContainer}>
-              <TouchableOpacity
-                onPress={() => { const u = [...experience]; u[index].isPublic = !u[index].isPublic; setExperience(u); }}
-                style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}
-              >
-                <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => { const u = [...experience]; u[index].isPublic = !u[index].isPublic; setExperience(u); }}
-                style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}
-              >
-                <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
-              </TouchableOpacity>
+              <ConnectionVisibilityPicker
+                value={visibilityFromIsPublic(!!item.isPublic)}
+                onChange={(level) => {
+                  const u = [...experience];
+                  u[index] = { ...u[index], isPublic: level !== "only_me" };
+                  setExperience(u);
+                }}
+                darkMode={darkMode}
+                simple
+              />
             </View>
           </View>
 
@@ -547,11 +545,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   toggleContainer: { flexDirection: "row", gap: 4 },
-  togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },
-  togglePillActiveGreen: { backgroundColor: "#4CAF50" },
-  togglePillActiveRed: { backgroundColor: "#ef9a9a" },
-  togglePillText: { fontSize: 13, color: "#4e4e4e", fontWeight: "500" },
-  togglePillTextActive: { color: "#fff", fontWeight: "bold" },
 });
 
 export default ExperienceSection;

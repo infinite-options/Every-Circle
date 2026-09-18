@@ -941,6 +941,7 @@ const SeekingSection = ({ wishes: wishesProp = [], setWishes, visibilityLevel, o
                   onChange={(level) => handleEntryVisibilityChange(index, level)}
                   darkMode={darkMode}
                   allowCircleLevel
+                  allowMultiDegree
                 />
               </View>
             </View>
@@ -1679,11 +1680,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   toggleContainer: { flexDirection: "row", gap: 4 },
-  togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },
-  togglePillActiveGreen: { backgroundColor: "#4CAF50" },
-  togglePillActiveRed: { backgroundColor: "#ef9a9a" },
-  togglePillText: { fontSize: 13, color: "#4e4e4e", fontWeight: "500" },
-  togglePillTextActive: { color: "#fff", fontWeight: "bold" },
 });
 
 export const validateSeeking = (wishes) => {

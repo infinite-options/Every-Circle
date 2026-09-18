@@ -10,14 +10,10 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyLocationPrivacyModal from "../components/NearbyLocationPrivacyModal";
+import ReferralSearch from "../components/ReferralSearch";
 import { DEFAULT_NEARBY_SETTINGS as INITIAL_NEARBY_SETTINGS, loadNearbySettings, subscribeNearbySettings, syncNearbySettingsToServer, formatNearbyPrivacySummary } from "../utils/nearbySettings";
-import {
-  NEARBY_LOCATION_PICKER_OPTIONS,
-  resolveNearbyLocationOptionCoords,
-} from "../utils/nearbyLocationUpdate";
 import { resetSharedAblyClient } from "../utils/ablyClient";
 import {
-  formatShareLocationDurationLabel,
   startLiveLocationSharing as startLiveLocationSharingSession,
   stopLiveLocationSharing as stopLiveLocationSharingSession,
   subscribeLiveLocationSharingStatus,
@@ -25,27 +21,24 @@ import {
 } from "../utils/liveLocationSharing";
 import { clearUserProfileCacheStorage, getSessionProfile, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { clearSessionAsyncStorage } from "../utils/clearAppAsyncStorage";
-import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT, CHANGE_REFERRAL_ENDPOINT } from "../apiConfig";
+
+/** Zero / root node — users under this can set a referral once from Settings. */
+const ZERO_NODE_UID = "110-000001";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { logoutCircleSession } from "../utils/authSession";
-import {
-  fetchAuthMe,
-  formatUsPhoneDisplay,
-  getCachedPhoneIdentity,
-} from "../utils/phoneVerification";
-import PhoneVerifiedBadge from "../components/PhoneVerifiedBadge";
 import { enforceTempPasswordGraceFromUserRow } from "../utils/tempPasswordGrace";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { setAllowCookies as persistAllowCookies, subscribeAllowCookies, persistServerCookieConsentForCurrentUser, SHOW_COOKIE_CONSENT_UI } from "../utils/cookieConsent";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
 import { fetchProfileModerationReviewQueue, fetchProfileModerationDetail, reviewProfileModeration } from "../utils/profileModeration";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 import { fetchBusinessModerationReviewQueue, fetchBusinessModerationDetail, reviewBusinessModeration } from "../utils/businessModeration";
 import OfferingReviewDetailPanel from "../components/OfferingReviewDetailPanel";
 import SeekingReviewDetailPanel from "../components/SeekingReviewDetailPanel";
 import ProfileReviewDetailPanel from "../components/ProfileReviewDetailPanel";
 import BusinessReviewDetailPanel from "../components/BusinessReviewDetailPanel";
-import { parseCoordinateValue } from "../utils/validateCoordinates";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -129,12 +122,18 @@ const COLORS = {
 // Default settings for Messages Privacy — persisted server-side on profile_personal
 // (profile_personal_messages_receive_from + profile_personal_messages_receive_types +
 //  profile_personal_messages_off + profile_personal_messages_allow_transaction).
-// Audience rules gate cold messages; allow_transaction is an independent exception for
-// people linked via purchases / offering / seeking replies.
+// UI is a single "Who can send me messages" radio. Transaction-related messages
+// (purchases / offerings / seeking) are always allowed (allow_transaction forced on).
 const DEFAULT_MESSAGES_SETTINGS = {
   receiveFrom: "everyone", // who can message me: 'everyone' | 'all_circles' | 'specific'
   receiveFromTypes: { friends: true, colleagues: true, family: true },
 };
+
+/** UI radio key derived from server flags. */
+function messagesWhoCanSendKey(messagesOff, receiveFrom) {
+  if (messagesOff) return "no_one";
+  return receiveFrom || DEFAULT_MESSAGES_SETTINGS.receiveFrom;
+}
 
 /** Treat 1 / "1" / true as on; missing/empty defaults to `defaultValue`. */
 function parseProfileBoolFlag(value, defaultValue = false) {
@@ -199,7 +198,7 @@ export default function SettingsScreen() {
   const [personalProfileData, setPersonalProfileData] = useState(null);
   const [termsWarningVisible, setTermsWarningVisible] = useState(false);
   const [cookiesWarningVisible, setCookiesWarningVisible] = useState(false);
-  const [shareLocationWarningVisible, setShareLocationWarningVisible] = useState(false);
+  const [shareLocationEnableModalVisible, setShareLocationEnableModalVisible] = useState(false);
   const [showInformation, setShowInformation] = useState(true);
   const [showSettings, setShowSettings] = useState(true);
   const [networkDebugMode, setNetworkDebugMode] = useState(false);
@@ -207,20 +206,20 @@ export default function SettingsScreen() {
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
-  // Home address coordinates (profile_personal_latitude / profile_personal_longitude)
-  const [homeAddressPickerVisible, setHomeAddressPickerVisible] = useState(false);
-  const [homeAddressUpdating, setHomeAddressUpdating] = useState(null);
-  const [homeAddressCoords, setHomeAddressCoords] = useState({ lat: null, lng: null });
   const [nearbyPrivacyModalVisible, setNearbyPrivacyModalVisible] = useState(false);
 
   // Messages Privacy (who can message me) — persisted server-side
   const [messagesSettings, setMessagesSettings] = useState(DEFAULT_MESSAGES_SETTINGS);
   const [messagesPrivacyModalVisible, setMessagesPrivacyModalVisible] = useState(false);
-  // Master "block all incoming" switch — persisted server-side (profile_personal_messages_off)
+  // Backend: profile_personal_messages_off — UI maps this to "No one"
   const [messagesOff, setMessagesOff] = useState(false);
-  // Independent exception: allow contact from purchase / offering / seeking counterparts
-  // (profile_personal_messages_allow_transaction). Default ON when unset.
+  // Backend: profile_personal_messages_allow_transaction — always forced ON from Settings UI
   const [messagesAllowTransaction, setMessagesAllowTransaction] = useState(true);
+
+  // One-time referral change (only when currently under the zero node)
+  const [referredBy, setReferredBy] = useState(null);
+  const [showChangeReferralModal, setShowChangeReferralModal] = useState(false);
+  const [changingReferral, setChangingReferral] = useState(false);
 
   // Live location sharing — watcher/timer/Ably alerts live in utils/liveLocationSharing
   // (shared with Connect). Banner delivery is owned by NearbyAlertProvider.
@@ -285,10 +284,6 @@ export default function SettingsScreen() {
   const [businessReviewLoading, setBusinessReviewLoading] = useState(false);
   const [businessReviewSubmitting, setBusinessReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
-  const [authPhoneNumber, setAuthPhoneNumber] = useState(null);
-  const [authPhoneVerified, setAuthPhoneVerified] = useState(false);
-
-  console.log("In SettingsScreen");
 
   useEffect(() => {
     let cancelled = false;
@@ -571,6 +566,7 @@ export default function SettingsScreen() {
 
   const applyProfileToSettings = useCallback((result) => {
     if (!result?.personal_info) return;
+    const flags = getPersonalDisplayFlags(result.personal_info);
     setPersonalProfileData({
       firstName: result.personal_info.profile_personal_first_name || "",
       lastName: result.personal_info.profile_personal_last_name || "",
@@ -581,23 +577,15 @@ export default function SettingsScreen() {
       city: result.personal_info.profile_personal_city || "",
       state: result.personal_info.profile_personal_state || "",
       profileImage: result.personal_info.profile_personal_image || "",
-      emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
-      phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
-      tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
-      locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
-      imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+      ...flags,
     });
-    const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
-    const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
-    if (homeLat != null && homeLng != null) {
-      setHomeAddressCoords({ lat: homeLat, lng: homeLng });
-    }
     setMessagesSettings({
       receiveFrom: result.personal_info.profile_personal_messages_receive_from || DEFAULT_MESSAGES_SETTINGS.receiveFrom,
       receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
     });
     setMessagesOff(parseProfileBoolFlag(result.personal_info.profile_personal_messages_off, false));
     setMessagesAllowTransaction(parseProfileBoolFlag(result.personal_info.profile_personal_messages_allow_transaction, true));
+    setReferredBy((result.personal_info.profile_personal_referred_by || "").trim() || null);
   }, []);
 
   const loadProfileForSettings = useCallback(async () => {
@@ -621,30 +609,77 @@ export default function SettingsScreen() {
     }
   }, [applyProfileToSettings]);
 
-  const loadPhoneVerificationStatus = useCallback(async () => {
-    try {
-      const cached = await getCachedPhoneIdentity();
-      if (cached.phone_number != null || cached.phone_verified) {
-        setAuthPhoneNumber(cached.phone_number);
-        setAuthPhoneVerified(Boolean(cached.phone_verified));
-      }
-      const me = await fetchAuthMe();
-      setAuthPhoneNumber(me.phone_number);
-      setAuthPhoneVerified(Boolean(me.phone_verified));
-    } catch (e) {
-      console.warn("SettingsScreen - auth/me phone status failed:", e?.message || e);
-    }
-  }, []);
-
   useEffect(() => {
     loadProfileForSettings();
   }, [loadProfileForSettings]);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadPhoneVerificationStatus();
-    }, [loadPhoneVerificationStatus]),
-  );
+const submitChangeReferral = useCallback(
+  async (selectedUid, displayName) => {
+    if (!selectedUid || changingReferral) return;
+    setChangingReferral(true);
+    try {
+      const profileUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      const response = await fetch(CHANGE_REFERRAL_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile_uid: profileUid || undefined,
+          profile_personal_referred_by: selectedUid,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.code >= 400) {
+        const message = data.message || "Could not update referral. Please try again.";
+        if (isWeb) window.alert(message);
+        else Alert.alert("Error", message);
+        return;
+      }
+      setReferredBy(selectedUid);
+      setShowChangeReferralModal(false);
+      try {
+        await refreshSessionProfileFromNetwork();
+      } catch (refreshErr) {
+        console.warn("SettingsScreen - profile refresh after referral change failed:", refreshErr);
+      }
+      const successMsg = displayName
+        ? `Your referral is now ${displayName}. This can only be set once.`
+        : "Your referral was updated. This can only be set once.";
+      if (isWeb) window.alert(successMsg);
+      else Alert.alert("Referral updated", successMsg);
+    } catch (e) {
+      console.error("SettingsScreen - change referral error:", e);
+      const message = "Could not update referral. Please try again.";
+      if (isWeb) window.alert(message);
+      else Alert.alert("Error", message);
+    } finally {
+      setChangingReferral(false);
+    }
+  },
+  [changingReferral]
+);
+
+const handleReferralSelect = useCallback(
+  (user) => {
+    const selectedUid = user?.profile_personal_uid;
+    if (!selectedUid || changingReferral) return;
+    const fullName = `${user.profile_personal_first_name || ""} ${user.profile_personal_last_name || ""}`.trim();
+    const confirmMessage = fullName
+      ? `Set ${fullName} as your referral? You can only do this once.`
+      : "Set this person as your referral? You can only do this once.";
+
+    const confirmAndSubmit = () => submitChangeReferral(selectedUid, fullName || null);
+
+    if (isWeb) {
+      if (window.confirm(confirmMessage)) confirmAndSubmit();
+    } else {
+      Alert.alert("Confirm referral", confirmMessage, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Confirm", onPress: confirmAndSubmit },
+      ]);
+    }
+  },
+  [changingReferral, submitChangeReferral]
+);
 
   const reloadSettingsScreen = useCallback(() => {
     void getLiveLocationSharingStatus().then(({ active, until }) => {
@@ -652,8 +687,7 @@ export default function SettingsScreen() {
       setShareLocationUntil(until);
     });
     void loadProfileForSettings();
-    void loadPhoneVerificationStatus();
-  }, [loadProfileForSettings, loadPhoneVerificationStatus]);
+  }, [loadProfileForSettings]);
 
   useTabRefresh("Settings", reloadSettingsScreen);
 
@@ -697,10 +731,10 @@ export default function SettingsScreen() {
     await startLiveLocationSharingSession();
   };
 
-  // Turning ON shows a warning first (mirrors the Allow Cookies decline warning); turning off is immediate.
+  // Turning ON shows warning + share/receive privacy options; turning off is immediate.
   const handleShareLocationToggle = (value) => {
     if (value) {
-      setShareLocationWarningVisible(true);
+      setShareLocationEnableModalVisible(true);
     } else {
       stopLiveLocationSharing();
     }
@@ -708,28 +742,35 @@ export default function SettingsScreen() {
 
   const confirmShareLocation = async () => {
     await startLiveLocationSharing();
-    setShareLocationWarningVisible(false);
+    setShareLocationEnableModalVisible(false);
   };
 
   const cancelShareLocation = () => {
-    setShareLocationWarningVisible(false);
+    setShareLocationEnableModalVisible(false);
     // Keep the switch in the "Off" position
   };
 
-  // Connect → Who's Nearby menu can deep-link into location modals (share live toggles on Connect).
+  // Connect → Who's Nearby menu can deep-link into location privacy (now under Allow Location-Based Notifications).
   useFocusEffect(
     useCallback(() => {
       const action = route.params?.locationAction;
       if (!action) return;
       setShowSettings(true);
-      if (action === "locationPrivacy") setNearbyPrivacyModalVisible(true);
+      if (action === "locationPrivacy") {
+        if (shareLocationActive) setNearbyPrivacyModalVisible(true);
+        else setShareLocationEnableModalVisible(true);
+      }
       navigation.setParams({ locationAction: undefined });
-    }, [route.params?.locationAction, navigation]),
+    }, [route.params?.locationAction, navigation, shareLocationActive]),
   );
 
-  const updateMessagesSettings = async (newSettings) => {
-    const previous = messagesSettings;
+  const updateMessagesSettings = async (newSettings, { off = false } = {}) => {
+    const previousSettings = messagesSettings;
+    const previousOff = messagesOff;
+    const previousAllow = messagesAllowTransaction;
     setMessagesSettings(newSettings);
+    setMessagesOff(off);
+    setMessagesAllowTransaction(true);
     try {
       const uid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
       if (!uid) throw new Error("Not logged in");
@@ -742,6 +783,9 @@ export default function SettingsScreen() {
           .filter((k) => newSettings.receiveFromTypes[k])
           .join(","),
       );
+      formData.append("profile_personal_messages_off", off ? "1" : "0");
+      // Purchases / offerings / seeking contact is always allowed.
+      formData.append("profile_personal_messages_allow_transaction", "1");
       const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
         method: "PUT",
         body: formData,
@@ -754,113 +798,20 @@ export default function SettingsScreen() {
       await refreshSessionProfileFromNetwork(uid);
     } catch (e) {
       console.error("updateMessagesSettings failed:", e);
-      setMessagesSettings(previous);
+      setMessagesSettings(previousSettings);
+      setMessagesOff(previousOff);
+      setMessagesAllowTransaction(previousAllow);
       Alert.alert("Error", e?.message || "Could not update your messages privacy setting.");
     }
   };
 
-  const toggleMessagesOff = async (value) => {
-    setMessagesOff(value);
-    try {
-      const uid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
-      if (!uid) throw new Error("Not logged in");
-      const formData = new FormData();
-      formData.append("profile_uid", uid);
-      formData.append("profile_personal_messages_off", value ? "1" : "0");
-      const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
-        method: "PUT",
-        body: formData,
-      });
-      const result = await res.json().catch(() => ({}));
-      if (!res.ok || (result.code != null && result.code !== 200)) {
-        throw new Error(result.message || `Failed to update: ${res.status}`);
-      }
-      await refreshSessionProfileFromNetwork(uid);
-    } catch (e) {
-      console.error("toggleMessagesOff failed:", e);
-      setMessagesOff(!value);
-      Alert.alert("Error", e?.message || "Could not update your messages setting.");
-    }
-  };
-
-  const toggleMessagesAllowTransaction = async (value) => {
-    setMessagesAllowTransaction(value);
-    try {
-      const uid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
-      if (!uid) throw new Error("Not logged in");
-      const formData = new FormData();
-      formData.append("profile_uid", uid);
-      formData.append("profile_personal_messages_allow_transaction", value ? "1" : "0");
-      const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
-        method: "PUT",
-        body: formData,
-      });
-      const result = await res.json().catch(() => ({}));
-      if (!res.ok || (result.code != null && result.code !== 200)) {
-        throw new Error(result.message || `Failed to update: ${res.status}`);
-      }
-      await refreshSessionProfileFromNetwork(uid);
-    } catch (e) {
-      console.error("toggleMessagesAllowTransaction failed:", e);
-      setMessagesAllowTransaction(!value);
-      Alert.alert("Error", e?.message || "Could not update your messages setting.");
-    }
-  };
-
-  // --- Nearby POC handlers ---
-
-  const patchHomeAddressCoordinates = async (profileId, lat, lng) => {
-    try {
-      const formData = new FormData();
-      formData.append("profile_uid", profileId);
-      formData.append("profile_personal_latitude", String(lat));
-      formData.append("profile_personal_longitude", String(lng));
-
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(profileId)}`, {
-        method: "PUT",
-        body: formData,
-      });
-      const result = await response.json();
-      if (response.ok && (result.code === 200 || result.code === undefined)) {
-        setHomeAddressCoords({ lat, lng });
-        try {
-          const { refreshSessionProfileFromNetwork } = require("../utils/sessionProfile");
-          await refreshSessionProfileFromNetwork(profileId);
-        } catch (e) {
-          console.warn("patchHomeAddressCoordinates: cache refresh failed", e);
-        }
-        return true;
-      }
-    } catch (err) {
-      console.error("patchHomeAddressCoordinates error:", err);
-    }
-    return false;
-  };
-
-  const updateHomeAddressLocation = async (option) => {
-    const profileId = await AsyncStorage.getItem("profile_uid");
-    if (!profileId) {
-      Alert.alert("Error", "No profile found. Please log in again.");
+  /** Single radio control for Messages Privacy popup. */
+  const selectWhoCanSendMessages = (key) => {
+    if (key === "no_one") {
+      void updateMessagesSettings(messagesSettings, { off: true });
       return;
     }
-
-    setHomeAddressUpdating(option.name);
-    try {
-      const { lat, lng } = await resolveNearbyLocationOptionCoords(option);
-      const success = await patchHomeAddressCoordinates(profileId, lat, lng);
-      if (success) {
-        setHomeAddressPickerVisible(false);
-        Alert.alert("Success", "Home address coordinates updated.");
-      } else {
-        Alert.alert("Error", "Failed to update home address coordinates.");
-      }
-    } catch (err) {
-      console.error("updateHomeAddressLocation error:", err);
-      const msg = err?.message === "Location permission denied" ? "Location permission is required to use Live GPS." : "Could not update home address. Please try again.";
-      Alert.alert("Error", msg);
-    } finally {
-      setHomeAddressUpdating(null);
-    }
+    void updateMessagesSettings({ ...messagesSettings, receiveFrom: key }, { off: false });
   };
 
   const fetchAdminReturns = async () => {
@@ -1174,7 +1125,7 @@ export default function SettingsScreen() {
           {personalProfileData && (
             <TouchableOpacity activeOpacity={0.7} onPress={handleNavigateProfile}>
               <View style={{ marginBottom: 16 }}>
-                <MiniCard user={{ ...personalProfileData, phoneVerified: authPhoneVerified || personalProfileData.phoneVerified }} />
+                <MiniCard user={personalProfileData} />
               </View>
             </TouchableOpacity>
           )}
@@ -1245,64 +1196,36 @@ export default function SettingsScreen() {
                 </View>
               )}
 
-              {/* Allow Location-Based Notifications — starts 1-hour live location sharing */}
+              {/* Allow Location-Based Notifications — warning + share/receive privacy on enable */}
               <View style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}>
-                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                <TouchableOpacity
+                  style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}
+                  onPress={() => {
+                    if (shareLocationActive) setNearbyPrivacyModalVisible(true);
+                  }}
+                  activeOpacity={shareLocationActive ? 0.7 : 1}
+                  disabled={!shareLocationActive}
+                >
                   <MaterialIcons name='notifications' size={20} style={styles.icon} color={shareLocationActive ? COLORS.primary : settingsMenuIconColor} />
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
                       <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Location-Based Notifications</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
                       {shareLocationActive && shareLocationUntil
-                        ? `Active · expires at ${shareLocationUntil.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                        ? `Active · expires at ${shareLocationUntil.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${formatNearbyPrivacySummary(nearbySettings)}`
                         : `Location currently not shared`}
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
                 <SettingsBoolPills value={shareLocationActive} onValueChange={handleShareLocationToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
               </View>
 
-              {/* Location Privacy — opens modal */}
-              <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setNearbyPrivacyModalVisible(true)} activeOpacity={0.8}>
-                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                  <Ionicons name='shield-checkmark' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                  <View>
-                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Location Privacy</Text>
-                    </Text>
-                    <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>{formatNearbyPrivacySummary(nearbySettings)}</Text>
-                  </View>
-                </View>
-                <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setHomeAddressPickerVisible(true)} activeOpacity={0.8}>
-                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                  <MaterialIcons name='home' size={20} style={styles.icon} color={COLORS.primary} />
-                  <View>
-                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Home Address Coordinates</Text>
-                    </Text>
-                    <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                      {(() => {
-                        const lat = parseCoordinateValue(homeAddressCoords.lat);
-                        const lng = parseCoordinateValue(homeAddressCoords.lng);
-                        return lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "No home coordinates set";
-                      })()}
-                    </Text>
-                  </View>
-                </View>
-                <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
-              </TouchableOpacity>
-
               {/* Messages Privacy — opens modal */}
               {(() => {
-                const PRIVACY_LABEL = { everyone: "Everyone", all_circles: "All Circles", specific: "Specific" };
-                let receiveLabel = PRIVACY_LABEL[messagesSettings.receiveFrom] || messagesSettings.receiveFrom;
-                if (messagesOff) {
-                  receiveLabel = messagesAllowTransaction ? "Blocked except purchases / offerings / seeking" : "No one (all messages off)";
-                }
+                const PRIVACY_LABEL = { everyone: "Everyone", all_circles: "All Circles", specific: "Specific", no_one: "No one" };
+                const whoKey = messagesWhoCanSendKey(messagesOff, messagesSettings.receiveFrom);
+                const receiveLabel = PRIVACY_LABEL[whoKey] || whoKey;
                 return (
                   <TouchableOpacity
                     style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}
@@ -1322,6 +1245,29 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 );
               })()}
+
+              {/* One-time Add Referral — only when under the zero node */}
+              {referredBy === ZERO_NODE_UID ? (
+                <TouchableOpacity
+                  style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}
+                  onPress={() => setShowChangeReferralModal(true)}
+                  activeOpacity={0.8}
+                  disabled={changingReferral}
+                >
+                  <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                    <MaterialIcons name='person-add' size={20} style={styles.icon} color={COLORS.primary} />
+                    <View>
+                      <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                        <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Add Referral</Text>
+                      </Text>
+                      <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
+                        You can choose who referred you once
+                      </Text>
+                    </View>
+                  </View>
+                  <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
+                </TouchableOpacity>
+              ) : null}
             </View>
           )}
 
@@ -1379,15 +1325,6 @@ export default function SettingsScreen() {
                 <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
-              {/* How to Delete Your Account */}
-              <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("DeleteAccountInfo")}>
-                <View style={styles.itemLabel}>
-                  <MaterialIcons name='info-outline' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How to Delete Your Account</Text>
-                </View>
-                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
-              </TouchableOpacity>
-
               {/* Change Password */}
               {!hideChangePassword && (
                 <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
@@ -1399,22 +1336,13 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* Phone verification / change */}
-              <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("VerifyPhone")} activeOpacity={0.8}>
-                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                  <MaterialIcons name='phone' size={20} style={styles.icon} color={authPhoneVerified ? COLORS.primary : settingsMenuIconColor} />
-                  <View>
-                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Phone number</Text>
-                    </Text>
-                    <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                      {authPhoneNumber ? formatUsPhoneDisplay(authPhoneNumber) : "Add or verify phone"}
-                      {!authPhoneVerified ? " · Not verified" : ""}
-                    </Text>
-                    {authPhoneVerified ? <PhoneVerifiedBadge showLabel size={14} style={{ marginTop: 4 }} /> : null}
-                  </View>
+              {/* How to Delete Your Account */}
+              <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("DeleteAccountInfo")}>
+                <View style={styles.itemLabel}>
+                  <MaterialIcons name='info-outline' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How to Delete Your Account</Text>
                 </View>
-                <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
               {/* Delete Account */}
@@ -2158,37 +2086,33 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Home address coordinates picker modal */}
-      <Modal visible={homeAddressPickerVisible} transparent={true} animationType='slide' onRequestClose={() => setHomeAddressPickerVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox]}>
-            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Choose Home Address</Text>
-            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>
-              Saves permanent profile coordinates used for search and distance.{"\n"}Separate from nearby live location sharing.
-            </Text>
-
-            {NEARBY_LOCATION_PICKER_OPTIONS.map((option) => (
-              <TouchableOpacity
-                key={`home-${option.name}`}
-                style={[styles.locationOptionRow, darkMode && styles.darkLocationOptionRow]}
-                onPress={() => updateHomeAddressLocation(option)}
-                disabled={homeAddressUpdating !== null}
-              >
-                <MaterialIcons name={option.name === "Live GPS" ? "gps-fixed" : "home"} size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
-                <Text style={[styles.locationOptionText, darkMode && styles.darkItemText]}>{option.name}</Text>
-                {homeAddressUpdating === option.name && <ActivityIndicator size='small' color={COLORS.primary} style={{ marginLeft: "auto" }} />}
-              </TouchableOpacity>
-            ))}
-
-            <TouchableOpacity onPress={() => setHomeAddressPickerVisible(false)} style={[styles.closeModalButton, { marginTop: 16, alignSelf: "stretch" }]} disabled={homeAddressUpdating !== null}>
-              <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Location Privacy Modal */}
+      {/* Location privacy (edit while sharing is already on) */}
       <NearbyLocationPrivacyModal visible={nearbyPrivacyModalVisible} onClose={() => setNearbyPrivacyModalVisible(false)} darkMode={darkMode} />
+
+      {/* Enable location-based notifications: Share Live Location warning + share/receive options */}
+      <NearbyLocationPrivacyModal
+        visible={shareLocationEnableModalVisible}
+        darkMode={darkMode}
+        enableMode
+        onConfirmEnable={confirmShareLocation}
+        onCancelEnable={cancelShareLocation}
+        onClose={cancelShareLocation}
+        />
+      {/* One-time Add Referral (zero-node users only) */}
+      <ReferralSearch
+        visible={showChangeReferralModal}
+        onClose={() => {
+          if (!changingReferral) setShowChangeReferralModal(false);
+        }}
+        onSelectUser={handleReferralSelect}
+        showNewUserButton={false}
+        modalTitle='Who referred you?'
+        helperText='You can only set this once.'
+        instructionText='Search by email, city, state, or name'
+        searchPlaceholder='Email, location, or name'
+        noResultsSubtext='Try another spelling, city, or email.'
+        searchButtonColor={COLORS.primary}
+      />
 
       {/* Messages Privacy Modal */}
       <Modal visible={messagesPrivacyModalVisible} transparent={true} animationType='slide' onRequestClose={() => setMessagesPrivacyModalVisible(false)}>
@@ -2197,60 +2121,55 @@ export default function SettingsScreen() {
             <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Messages Privacy</Text>
             <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>Control who can message you.</Text>
 
-            <View style={styles.messagesPrivacyToggleRow}>
-              <Text style={[styles.nearbyPrivacyGroupLabel, styles.messagesPrivacyToggleLabel, darkMode && styles.darkItemText]}>Block all Incoming Messages</Text>
-              <SettingsBoolPills value={messagesOff} onValueChange={toggleMessagesOff} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
-            </View>
-
-            <View style={styles.messagesPrivacyToggleRow}>
-              <View style={styles.messagesPrivacyToggleLabelWrap}>
-                <Text style={[styles.nearbyPrivacyGroupLabel, styles.messagesPrivacyToggleLabel, darkMode && styles.darkItemText]}>Allow Messages About Purchases, Offerings & Seeking</Text>
-                <Text style={[styles.messagesPrivacyToggleHint, darkMode && styles.darkNearbySubText]}>People you have an order or reply relationship with can still contact you about it.</Text>
-              </View>
-              <SettingsBoolPills value={messagesAllowTransaction} onValueChange={toggleMessagesAllowTransaction} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
-            </View>
-
-            <Text style={[styles.nearbyPrivacyGroupLabel, styles.messagesPrivacySectionLabel, darkMode && styles.darkItemText, { opacity: messagesOff ? 0.4 : 1 }]}>Who can send me messages</Text>
+            <Text style={[styles.nearbyPrivacyGroupLabel, styles.messagesPrivacySectionLabel, darkMode && styles.darkItemText]}>Who can send me messages</Text>
             {[
               { key: "everyone", label: "Everyone (all app users)" },
               { key: "all_circles", label: "All Circle Members" },
               { key: "specific", label: "Specific Circles" },
-            ].map(({ key, label }) => (
-              <TouchableOpacity
-                key={key}
-                style={[styles.nearbyPrivacyOptionRow, styles.messagesPrivacyOptionRow, messagesOff && { opacity: 0.4 }]}
-                onPress={() => !messagesOff && updateMessagesSettings({ ...messagesSettings, receiveFrom: key })}
-                activeOpacity={messagesOff ? 1 : 0.7}
-                disabled={messagesOff}
-              >
-                <Ionicons name={messagesSettings.receiveFrom === key ? "radio-button-on" : "radio-button-off"} size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
-                <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
-              </TouchableOpacity>
-            ))}
-            {messagesSettings.receiveFrom === "specific" && !messagesOff && (
-              <View style={[styles.nearbyPrivacyCheckboxGroup, styles.messagesPrivacyCheckboxGroup]}>
-                {[
-                  { key: "friends", label: "Friends" },
-                  { key: "colleagues", label: "Colleagues" },
-                  { key: "family", label: "Family" },
-                ].map(({ key, label }) => (
+              { key: "no_one", label: "No one" },
+            ].map(({ key, label }) => {
+              const selectedKey = messagesWhoCanSendKey(messagesOff, messagesSettings.receiveFrom);
+              return (
+                <React.Fragment key={key}>
                   <TouchableOpacity
-                    key={key}
-                    style={styles.nearbyPrivacyCheckboxRow}
-                    onPress={() =>
-                      updateMessagesSettings({
-                        ...messagesSettings,
-                        receiveFromTypes: { ...messagesSettings.receiveFromTypes, [key]: !messagesSettings.receiveFromTypes[key] },
-                      })
-                    }
+                    style={[styles.nearbyPrivacyOptionRow, styles.messagesPrivacyOptionRow]}
+                    onPress={() => selectWhoCanSendMessages(key)}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name={messagesSettings.receiveFromTypes[key] ? "checkbox" : "square-outline"} size={17} color={COLORS.primary} style={{ marginRight: 10 }} />
+                    <Ionicons name={selectedKey === key ? "radio-button-on" : "radio-button-off"} size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
                     <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-            )}
+                  {key === "specific" && selectedKey === "specific" && (
+                    <View style={[styles.nearbyPrivacyCheckboxGroup, styles.messagesPrivacyCheckboxGroup]}>
+                      {[
+                        { key: "friends", label: "Friends" },
+                        { key: "colleagues", label: "Colleagues" },
+                        { key: "family", label: "Family" },
+                      ].map(({ key: circleKey, label: circleLabel }) => (
+                        <TouchableOpacity
+                          key={circleKey}
+                          style={styles.nearbyPrivacyCheckboxRow}
+                          onPress={() =>
+                            updateMessagesSettings({
+                              ...messagesSettings,
+                              receiveFromTypes: { ...messagesSettings.receiveFromTypes, [circleKey]: !messagesSettings.receiveFromTypes[circleKey] },
+                            })
+                          }
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name={messagesSettings.receiveFromTypes[circleKey] ? "checkbox" : "square-outline"} size={17} color={COLORS.primary} style={{ marginRight: 10 }} />
+                          <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{circleLabel}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </React.Fragment>
+              );
+            })}
+
+            <Text style={[styles.messagesPrivacyAlwaysNote, darkMode && styles.darkNearbySubText]}>
+              Note: Messages regarding Purchases, Offerings and Seeking are always allowed.
+            </Text>
 
             <TouchableOpacity onPress={() => setMessagesPrivacyModalVisible(false)} style={[styles.closeModalButton, { marginTop: 20, alignSelf: "stretch" }]}>
               <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Done</Text>
@@ -2317,27 +2236,6 @@ export default function SettingsScreen() {
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={confirmCookiesRejection} style={[styles.warningButton, styles.confirmButton]}>
-                <Text style={styles.confirmButtonText}>I Understand</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Share Live Location Warning Modal */}
-      <Modal visible={shareLocationWarningVisible} transparent={true} animationType='fade'>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
-            <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
-            <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Share Live Location</Text>
-            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>
-              Turning this on will share your live location with your circles for the next {formatShareLocationDurationLabel()}. You can turn it off anytime here in Settings.
-            </Text>
-            <View style={styles.warningButtonContainer}>
-              <TouchableOpacity onPress={cancelShareLocation} style={[styles.warningButton, styles.cancelButton]}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={confirmShareLocation} style={[styles.warningButton, styles.confirmButton]}>
                 <Text style={styles.confirmButtonText}>I Understand</Text>
               </TouchableOpacity>
             </View>
@@ -2998,8 +2896,18 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     width: "100%",
     textAlign: "left",
-    marginTop: 12,
+    marginTop: 4,
     paddingLeft: 4,
+  },
+  messagesPrivacyAlwaysNote: {
+    alignSelf: "stretch",
+    width: "100%",
+    fontSize: 12,
+    color: "#777",
+    textAlign: "left",
+    marginTop: 16,
+    paddingHorizontal: 4,
+    lineHeight: 17,
   },
   // Indent radios to sit under the "C" in "Who can send me messages" (uppercase "WHO ").
   messagesPrivacyOptionRow: {

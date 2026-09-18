@@ -50,7 +50,7 @@ function ensureBorderlessStyles() {
 }
 
 // Web-compatible TextInput that uses native HTML input on web
-const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, inputMode, multiline, numberOfLines, textAlignVertical, placeholderTextColor, borderless, ...props }) => {
+const WebTextInput = React.forwardRef(({ style, value, onChangeText, placeholder, keyboardType, inputMode, multiline, numberOfLines, textAlignVertical, placeholderTextColor, borderless, ...props }, ref) => {
   // Ensure borderless CSS is injected before first borderless input renders
   if (borderless && typeof document !== "undefined") {
     ensureBorderlessStyles();
@@ -63,6 +63,9 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     autoCorrect,
     autoFocus,
     returnKeyType,
+    onSubmitEditing,
+    onEndEditing,
+    onKeyPress,
     accessibilityActions,
     accessibilityElementsHidden,
     accessibilityHint,
@@ -97,13 +100,45 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     lineBreakStrategyIOS,
     lineBreakModeIOS,
     ...domProps
-  } = props;  // On web, use a native HTML input element
+  } = props;
 
   // Map RN a11y to standard HTML.
   const a11yForDom = {
     ...(accessibilityLabel != null && typeof accessibilityLabel === "string" && accessibilityLabel ? { "aria-label": accessibilityLabel } : {}),
     ...(accessibilityHint != null && typeof accessibilityHint === "string" && accessibilityHint ? { title: accessibilityHint } : {}),
   };
+
+  const { onKeyDown: callerOnKeyDown, onBlur: callerOnBlur, type: explicitType, ...safeDomProps } = domProps;
+
+  const handleDomKeyDown = (e) => {
+    if (typeof onKeyPress === "function") {
+      onKeyPress({ nativeEvent: { key: e.key, keyCode: e.keyCode } });
+    }
+    if (e.key === "Enter" && !e.shiftKey && typeof onSubmitEditing === "function") {
+      if (!multiline) e.preventDefault();
+      onSubmitEditing({ nativeEvent: { text: e.target?.value ?? "" } });
+    }
+    if (typeof callerOnKeyDown === "function") callerOnKeyDown(e);
+  };
+
+  const handleDomBlur = (e) => {
+    if (typeof onEndEditing === "function") {
+      onEndEditing({ nativeEvent: { text: e.target?.value ?? "" } });
+    }
+    if (typeof callerOnBlur === "function") callerOnBlur(e);
+  };
+
+  const commonDomProps = {
+    ...safeDomProps,
+    ...a11yForDom,
+    onKeyDown: handleDomKeyDown,
+    onBlur: handleDomBlur,
+    disabled: editable === false ? true : safeDomProps.disabled,
+    autoFocus: autoFocus || undefined,
+    autoComplete: autoCorrect === false ? "off" : safeDomProps.autoComplete,
+    spellCheck: autoCorrect === false ? false : safeDomProps.spellCheck,
+  };
+
   // On web, use a native HTML input element
   const flatStyle = flattenStyle(style);
   const solidBackground = flatStyle.backgroundColor || "#fff";
@@ -119,7 +154,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     backgroundImage: "none",
     backgroundColor: solidBackground,
     color: flatStyle.color || "#000",
-    fontSize: flatStyle.fontSize || 14,
+    fontSize: flatStyle.fontSize || 16,
     width: flatStyle.width || "auto",
     height: flatStyle.height || "auto",
     minHeight: flatStyle.minHeight || "auto",
@@ -133,6 +168,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
   // Map keyboardType to input type
   // When borderless, use "text" + inputMode="numeric" to avoid number input's stubborn browser styling (inset shadow, etc.)
   const getInputType = () => {
+    if (secureTextEntry) return "password";
     if (borderless && (keyboardType === "numeric" || keyboardType === "number-pad" || keyboardType === "decimal-pad")) {
       return "text";
     }
@@ -154,6 +190,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
   // Use textarea for multiline inputs, input for single-line
   if (multiline) {
     const textareaElement = React.createElement("textarea", {
+      ref,
       value: value || "",
       onChange: (e) => onChangeText && onChangeText(e.target.value),
       placeholder: placeholder,
@@ -168,8 +205,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
           "--placeholder-color": placeholderTextColor,
         }),
       },
-      ...domProps,
-      ...a11yForDom,
+      ...commonDomProps,
     });
 
     // Apply placeholder color via a style tag if needed
@@ -222,7 +258,8 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
       };
 
   const inputElement = React.createElement("input", {
-    type: getInputType(),
+    ref,
+    type: explicitType || getInputType(),
     value: value || "",
     onChange: (e) => onChangeText && onChangeText(e.target.value),
     placeholder: placeholder,
@@ -230,8 +267,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     className: borderless ? "webtextinput-borderless" : undefined,
     "data-borderless": borderless ? "true" : undefined,
     style: inputStyle,
-    ...domProps,
-    ...a11yForDom,
+    ...commonDomProps,
   });
 
   // Apply placeholder color via a style tag if needed
@@ -250,6 +286,8 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
   }
 
   return inputElement;
-};
+});
+
+WebTextInput.displayName = "WebTextInput";
 
 export default WebTextInput;

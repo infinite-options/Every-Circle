@@ -15,6 +15,7 @@ import {
   withOauthIdentityOnPayload,
   mergePendingOauthPhotoIntoPayload,
 } from "./oauthPendingProfileImage";
+import { EVERYONE_AUDIENCE, audienceJsonForForm, isPersonalAudienceFieldVisible, PERSONAL_AUDIENCE_KEYS } from "./profileAudience";
 
 /**
  * Hydrate session profile cache so Connect MiniCard shows OAuth names/photo immediately
@@ -32,7 +33,7 @@ async function hydrateSessionAfterSignup(profileUid, apiPayload, { profilePictur
           firstName: saved?.personalInfo?.profile_personal_first_name || withIdentity?.personal_info?.profile_personal_first_name,
           lastName: saved?.personalInfo?.profile_personal_last_name || withIdentity?.personal_info?.profile_personal_last_name,
           image: saved?.personalInfo?.profile_personal_image || withIdentity?.personal_info?.profile_personal_image,
-          imageIsPublic: saved?.personalInfo?.profile_personal_image_is_public || withIdentity?.personal_info?.profile_personal_image_is_public,
+          imageIsPublic: isPersonalAudienceFieldVisible(saved?.personalInfo || withIdentity, PERSONAL_AUDIENCE_KEYS.image),
         });
         return;
       }
@@ -151,7 +152,7 @@ async function attachOAuthPhotoFields(formData, profilePicture) {
   const attached = await appendOAuthProfileImage(formData, profilePicture);
   if (attached) {
     // Send both forms — some BE paths expect string, others number.
-    formData.append("profile_personal_image_is_public", "1");
+    formData.append("profile_personal_image_audience", audienceJsonForForm(EVERYONE_AUDIENCE));
   }
   return attached;
 }
@@ -200,10 +201,32 @@ async function uploadOAuthPhotoIfPresent(profileUid, userUid, profilePicture, { 
   }
 }
 
+/** Best-effort: set email audience to Everyone when unset (email signup). Never throws. */
+async function ensureEmailAudienceEveryone(profileUid, userUid) {
+  const uid = String(profileUid || "").trim();
+  if (!uid) return false;
+  try {
+    const putData = new FormData();
+    putData.append("profile_uid", uid);
+    if (userUid) putData.append("user_uid", String(userUid));
+    putData.append("profile_personal_email_audience", audienceJsonForForm(EVERYONE_AUDIENCE));
+    const putRes = await fetch(USER_PROFILE_INFO_ENDPOINT, { method: "PUT", body: putData });
+    if (!putRes.ok) {
+      console.warn("ensureEmailAudienceEveryone: PUT failed", putRes.status);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn("ensureEmailAudienceEveryone failed:", e?.message || e);
+    return false;
+  }
+}
+
 /**
  * Create a stub personal profile (skips UserInfo name/phone screen) and persist profile_uid.
  * When profilePicture (e.g. Google photo URL) is present, store it for MiniCard immediately
  * and best-effort persist to profile_personal_image.
+ * Always sets profile_personal_email_audience to Everyone (user can change later in Profile).
  */
 export async function createMinimalSignupProfile({
   userUid,
@@ -257,6 +280,10 @@ export async function createMinimalSignupProfile({
           await setOauthProfileSetupStatus("done");
         }
 
+        if (existingPi.profile_personal_email_audience == null) {
+          await ensureEmailAudienceEveryone(existingUid, uid);
+        }
+
         return existingUid;
       }
     }
@@ -270,10 +297,11 @@ export async function createMinimalSignupProfile({
   formData.append("profile_personal_phone_number", phoneNumber || "");
   formData.append("profile_personal_referred_by", referredBy);
   formData.append("user_uid", uid);
+  formData.append("profile_personal_email_audience", audienceJsonForForm(EVERYONE_AUDIENCE));
   // Persist Google URL on create so profile_personal_image is set without a client blob fetch.
   if (photo) {
     formData.append("profile_personal_image", photo);
-    formData.append("profile_personal_image_is_public", "1");
+    formData.append("profile_personal_image_audience", audienceJsonForForm(EVERYONE_AUDIENCE));
     console.log("[GooglePhoto] POST create includes profile_personal_image URL");
   }
 

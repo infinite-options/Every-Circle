@@ -7,23 +7,35 @@ function waitForAblyConnected(client, timeoutMs = 10000) {
       resolve();
       return;
     }
+    if (client.connection.state === "closed" || client.connection.state === "failed") {
+      reject(new Error(`Ably connection unavailable. State: ${client.connection.state}`));
+      return;
+    }
     const timeout = setTimeout(() => {
+      cleanup();
       reject(new Error(`Timeout waiting for Ably connection. State: ${client.connection.state}`));
     }, timeoutMs);
-    const onConnected = () => {
+    const cleanup = () => {
       clearTimeout(timeout);
       client.connection.off("connected", onConnected);
       client.connection.off("failed", onFailed);
+      client.connection.off("closed", onClosed);
+    };
+    const onConnected = () => {
+      cleanup();
       resolve();
     };
     const onFailed = (stateChange) => {
-      clearTimeout(timeout);
-      client.connection.off("connected", onConnected);
-      client.connection.off("failed", onFailed);
+      cleanup();
       reject(new Error(`Ably connection failed. State: ${stateChange?.reason || stateChange}`));
+    };
+    const onClosed = () => {
+      cleanup();
+      reject(new Error("Ably connection closed"));
     };
     client.connection.on("connected", onConnected);
     client.connection.on("failed", onFailed);
+    client.connection.on("closed", onClosed);
   });
 }
 
@@ -34,18 +46,33 @@ function waitForChannelAttached(channel, timeoutMs = 5000) {
       return;
     }
     const timeout = setTimeout(() => {
+      cleanup();
       reject(new Error(`Timeout waiting for channel attachment. State: ${channel.state}`));
     }, timeoutMs);
-    const onAttached = () => {
+    const cleanup = () => {
       clearTimeout(timeout);
       channel.off("attached", onAttached);
+      channel.off("failed", onFailed);
+      channel.off("detached", onDetached);
+    };
+    const onAttached = () => {
+      cleanup();
       resolve();
     };
+    const onFailed = (stateChange) => {
+      cleanup();
+      reject(stateChange?.reason || new Error(`Channel attach failed. State: ${channel.state}`));
+    };
+    const onDetached = () => {
+      cleanup();
+      reject(new Error("Channel detached before attach completed"));
+    };
     channel.on("attached", onAttached);
+    channel.on("failed", onFailed);
+    channel.on("detached", onDetached);
     channel.attach((err) => {
       if (err) {
-        clearTimeout(timeout);
-        channel.off("attached", onAttached);
+        cleanup();
         reject(err);
       }
     });

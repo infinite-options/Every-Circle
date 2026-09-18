@@ -1,9 +1,8 @@
 import { Alert } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { publishNewConnectionOpened } from "./publishNewConnectionOpened";
 import { resolveScannerProfileUid } from "./ensureSessionProfileUid";
 
-/** Navigation params to open the connect modal on Connect for a scanned profile. */
+/** @deprecated Use navigation.navigate("ConnectWithMe", { profileUid, mode: "scan" }) instead. */
 export function networkScanConnectParams(scannedProfileUid) {
   return {
     scannedProfileUid,
@@ -12,7 +11,7 @@ export function networkScanConnectParams(scannedProfileUid) {
 }
 
 /**
- * Navigate to Connect for a scan connect flow and notify the QR owner (Exchange Contact Info).
+ * Navigate to Connect With Me for a scan connect flow and notify the QR owner (Exchange Contact Info).
  * @param {import("@react-navigation/native").NavigationProp<any>} navigation
  * @param {string} scannedProfileUid - profile_uid of the QR owner to connect with
  * @param {{ scannerIsNewSignup?: boolean }} [options] - when true, QR owner stays on Connect with Me after Add to Network
@@ -27,7 +26,11 @@ export async function goToNetworkForScanConnect(navigation, scannedProfileUid, o
     return;
   }
 
-  navigation.navigate("Connect", networkScanConnectParams(scannedProfileUid));
+  navigation.navigate("ConnectWithMe", {
+    profileUid: scannedProfileUid,
+    mode: "scan",
+    scannerIsNewSignup: Boolean(options.scannerIsNewSignup),
+  });
 
   // Notify QR owner in the background — do not block showing Connect with Me.
   if (scannerProfileUid) {

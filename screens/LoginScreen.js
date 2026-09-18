@@ -17,7 +17,7 @@ import { fetchCircleAuthLogin } from "../utils/authSession";
 import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { finishSignupAfterReferral } from "../utils/finishSignupAfterReferral";
-import { flushPendingScanConnectionAfterAuth } from "../utils/pendingScanConnection";
+import { flushPendingScanConnectionAfterAuth, captureEphemeralSignupKeys, restoreEphemeralSignupKeys } from "../utils/pendingScanConnection";
 import { isAccountDeletedAuthMessage, isPendingDeletionAuthResponse, reactivateNavParamsFromAuthPayload } from "../utils/deletedProfile";
 import { clearTempPasswordGracePeriod, clearUserPasswordTempFlag } from "../utils/tempPasswordGrace";
 import AppHeader from "../components/AppHeader";
@@ -31,7 +31,7 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
   const [password, setPassword] = useState("");
   const [isValid, setIsValid] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
-  const [signingIn, setSigningIn] = useState(false);
+  const [authBusy, setAuthBusy] = useState(null); // 'google' | 'apple' | 'email' | null
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
@@ -66,6 +66,7 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
   };
 
   const handleContinue = async () => {
+    if (authBusy) return;
     console.log("LoginScreen - Continue Button Pressed");
     if (!isValidEmail(email)) {
       setEmailError("Email is not valid. Please sign up first.");
@@ -186,6 +187,8 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
 
       // Profile and Ably business channels load in ProfileScreen (single GET /userprofileinfo by user_uid).
       // Clear stale profile keys from any previous session so we never fetch the wrong profile_uid.
+      // Preserve QR pending connection draft + referral across the purge (same as OAuth paths).
+      const ephemeral = await captureEphemeralSignupKeys();
       await clearSessionAsyncStorageOnLogin({
         userUid: user_uid,
         previousUserUid,
@@ -193,7 +196,8 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
       });
 
       // Login purge drops referral_uid — restore QR/scan referrer for incomplete-profile signup.
-      const knownReferralUid = String(route.params?.referralProfileUid || "").trim();
+      const knownReferralUid = String(route.params?.referralProfileUid || ephemeral.referralUid || "").trim();
+      await restoreEphemeralSignupKeys(ephemeral, knownReferralUid || null);
       if (knownReferralUid) {
         await AsyncStorage.setItem("referral_uid", knownReferralUid);
       }
@@ -288,32 +292,32 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
           <View style={styles.socialContainer}>
             <GoogleBrandedSignInButton
               label='Sign in with Google'
-              signingIn={signingIn}
+              disabled={!!authBusy || showSpinner}
+              signingIn={authBusy === "google"}
               onPress={async () => {
-                if (!signingIn) {
-                  setSigningIn(true);
-                  try {
-                    await onGoogleSignIn();
-                  } finally {
-                    setSigningIn(false);
-                  }
+                if (authBusy || showSpinner) return;
+                setAuthBusy("google");
+                try {
+                  await onGoogleSignIn();
+                } finally {
+                  setAuthBusy(null);
                 }
               }}
             />
             <AppleSignIn
               mode='signIn'
               onSignIn={async (...args) => {
-                if (!signingIn) {
-                  setSigningIn(true);
-                  try {
-                    await onAppleSignIn(...args);
-                  } finally {
-                    setSigningIn(false);
-                  }
+                if (authBusy || showSpinner) return;
+                setAuthBusy("apple");
+                try {
+                  await onAppleSignIn(...args);
+                } finally {
+                  setAuthBusy(null);
                 }
               }}
               onError={onError}
-              disabled={signingIn}
+              disabled={!!authBusy || showSpinner}
+              loading={authBusy === "apple"}
             />
           </View>
 
@@ -358,7 +362,7 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={showSpinner}>
+          <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={showSpinner || !!authBusy}>
             {showSpinner ? (
               <ActivityIndicator color='#fff' />
             ) : (

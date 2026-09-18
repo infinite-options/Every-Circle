@@ -145,6 +145,7 @@ export const TAG_CATEGORY_DISTINCT_ENDPOINT = `${API_BASE_URL}/api/tagcategorydi
 
 //Search Referral Endpoint
 export const SEARCH_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/search_referral`;
+export const CHANGE_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/v1/change_referral`;
 
 // Transaction and Rating Endpoints
 export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;

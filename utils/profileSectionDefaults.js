@@ -1,3 +1,5 @@
+import { isPersonalAudienceFieldVisible, PERSONAL_AUDIENCE_KEYS } from "./profileAudience";
+
 /** Material icon names matching the section SVG assets in /assets (school, design, sell, interests). */
 export const PROFILE_SECTION_ICON_NAMES = {
   education: "school",
@@ -35,11 +37,10 @@ export function hasPublicSocialLinkUrl(linksInfo) {
 }
 
 /**
- * Social section defaults to Hidden. Treat as visible only when the section flag is
- * explicitly public and at least one link is explicitly public (avoids backend/UI
- * legacy defaults that saved public without user intent).
+ * Social section defaults to Hidden. Treat as visible only when social_audience is
+ * not Only Me and at least one link is explicitly public.
  */
 export function isSocialLinksSectionPublic(personalInfo, linksInfo) {
   if (!hasPublicSocialLinkUrl(linksInfo)) return false;
-  return isProfileSectionPublicFlag(personalInfo?.profile_personal_social_is_public);
+  return isPersonalAudienceFieldVisible(personalInfo, PERSONAL_AUDIENCE_KEYS.social);
 }

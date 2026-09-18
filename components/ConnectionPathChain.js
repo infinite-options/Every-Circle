@@ -7,6 +7,7 @@ import { getSessionProfile } from "../utils/sessionProfile";
 import { parseCombinedPath, truncateConnectionPath, buildCombinedPathFromPersonalPaths } from "../utils/connectionPathChain";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 
 const DEFAULT_AVATAR = require("../assets/profile.png");
 const MAX_CHAIN_USERS = 5;
@@ -59,12 +60,13 @@ export default function ConnectionPathChain({
       const uid = String(viewerUid || session?.profileUid || "").trim();
       if (uid) {
         const p = session?.personalInfo || session?.rawProfile?.personal_info || {};
+        const flags = getPersonalDisplayFlags(p);
         map[uid] = {
           uid,
           firstName: p.profile_personal_first_name || "",
           lastName: p.profile_personal_last_name || "",
-          profileImage: p.profile_personal_image_is_public === 1 ? String(p.profile_personal_image || "") : "",
-          imageIsPublic: p.profile_personal_image_is_public === 1,
+          profileImage: flags.imageIsPublic ? String(p.profile_personal_image || "") : "",
+          imageIsPublic: flags.imageIsPublic,
           isSelf: true,
         };
       }

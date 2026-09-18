@@ -12,26 +12,30 @@ export const AUTH_PHONE_VERIFIED_KEY = "auth_phone_verified";
 
 /**
  * Digits for the phone OTP APIs (US 10-digit). Backend also accepts +1….
+ * Always strip a leading country-code 1 so a displayed "+1 (408…" doesn't
+ * poison the national number while the user is typing.
  */
 export function digitsForPhoneApi(raw) {
-  const digits = String(raw || "").replace(/\D/g, "");
-  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  let digits = String(raw || "").replace(/\D/g, "");
+  if (digits.startsWith("1")) digits = digits.slice(1);
   return digits.slice(0, 10);
 }
 
-/** Format as (555) 123-4567 while typing (max 10 digits). */
+/** Format as +1 (555) 123-4567 while typing (US 10-digit national number). */
 export function formatPhoneNumberInput(text) {
-  const cleaned = String(text || "")
-    .replace(/\D/g, "")
-    .slice(0, 10);
+  // Strip non-digits, then drop leading country-code 1 (from our "+1" prefix
+  // or from pasted E.164). NANP area codes never start with 1.
+  let cleaned = String(text || "").replace(/\D/g, "");
+  if (cleaned.startsWith("1")) cleaned = cleaned.slice(1);
+  cleaned = cleaned.slice(0, 10);
   const len = cleaned.length;
   if (len === 0) return "";
-  if (len < 4) return `(${cleaned}`;
-  if (len < 7) return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
-  return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+  if (len < 4) return `+1 (${cleaned}`;
+  if (len < 7) return `+1 (${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
+  return `+1 (${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
 }
 
-/** Display E.164 or raw phone for settings labels. */
+/** Display E.164 or raw phone as +1 (555) 123-4567. */
 export function formatUsPhoneDisplay(raw) {
   const ten = digitsForPhoneApi(raw);
   if (ten.length !== 10) {

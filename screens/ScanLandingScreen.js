@@ -5,7 +5,6 @@ import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/nativ
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
-import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import AppleSignIn from "../AppleSignIn";
 import { CREATE_ACCOUNT_ENDPOINT, CREATE_ACCOUNT_TEMP_PASSWORD_ENDPOINT, UPDATE_EMAIL_PASSWORD_ENDPOINT } from "../apiConfig";
@@ -20,13 +19,7 @@ import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { markTempPasswordGracePeriod } from "../utils/tempPasswordGrace";
 import { isValidEmail } from "../utils/emailValidation";
-import {
-  savePendingScanConnection,
-  hasPendingScanConnectionFor,
-  captureEphemeralSignupKeys,
-  restoreEphemeralSignupKeys,
-  flushPendingScanConnectionAfterAuth,
-} from "../utils/pendingScanConnection";
+import { loadPendingScanConnection, captureEphemeralSignupKeys, restoreEphemeralSignupKeys, flushPendingScanConnectionAfterAuth } from "../utils/pendingScanConnection";
 import versionData from "../version.json";
 
 const OAUTH_TIMEOUT_MS = 30000;
@@ -132,8 +125,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [redirecting, setRedirecting] = useState(false);
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
-  const [signingIn, setSigningIn] = useState(false);
-  const [submittingEmail, setSubmittingEmail] = useState(false);
+  const [authBusy, setAuthBusy] = useState(null); // 'google' | 'apple' | 'email' | null
   const [showPasswordFallbackModal, setShowPasswordFallbackModal] = useState(false);
   const [pendingTempSignupUserUid, setPendingTempSignupUserUid] = useState(null);
   const [password, setPassword] = useState("");
@@ -144,11 +136,8 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const [submittingPassword, setSubmittingPassword] = useState(false);
   const [emailFallbackHint, setEmailFallbackHint] = useState("");
   const [scrollViewportH, setScrollViewportH] = useState(0);
-  /** Guest QR: notes saved (or valid draft) before showing Google/Apple/email auth. */
+  /** Guest QR: notes saved in this session (Add to Network → back here). Not inferred from stale drafts. */
   const [notesCommitted, setNotesCommitted] = useState(false);
-  const [showGuestConnectPopup, setShowGuestConnectPopup] = useState(false);
-  const [savingGuestNotes, setSavingGuestNotes] = useState(false);
-  const [checkingDraft, setCheckingDraft] = useState(!!profileUid);
   const redirectStartedRef = useRef(false);
   const emailInputRef = useRef(null);
   const oauthWatchdogRef = useRef(null);
@@ -196,30 +185,56 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }, [checkSession]),
   );
 
-  // Resume auth step if a valid draft already exists for this QR owner (within TTL).
+  // New QR target: start at connection details again.
   useEffect(() => {
+    setNotesCommitted(false);
+  }, [profileUid]);
+
+  // Returning from Connect With Me (Add to Network) → show Google / Apple / email.
+  useEffect(() => {
+    if (route.params?.notesCommitted) {
+      setNotesCommitted(true);
+      navigation.setParams({ notesCommitted: undefined });
+    }
+  }, [route.params?.notesCommitted, navigation]);
+
+  // Guest scan: always open Connect With Me for connection details (do not skip when a leftover draft exists).
+  useEffect(() => {
+    if (loading || checkingSession || isLoggedIn || notesCommitted || redirecting) return;
+    if (!profileUid || !profileData || error) return;
+
     let cancelled = false;
     (async () => {
-      if (!profileUid) {
-        setCheckingDraft(false);
-        return;
-      }
-      setCheckingDraft(true);
+      let initialData = null;
       try {
-        const hasDraft = await hasPendingScanConnectionFor(profileUid);
-        if (cancelled) return;
-        setNotesCommitted(hasDraft);
-        if (!hasDraft) {
-          setShowGuestConnectPopup(true);
+        const draft = await loadPendingScanConnection();
+        if (draft && draft.relatedProfileUid === profileUid) {
+          initialData = {
+            relationship: draft.relationship,
+            date: draft.date,
+            event: draft.event,
+            note: draft.note,
+            city: draft.city,
+            state: draft.state,
+            introducedBy: draft.introducedBy,
+          };
         }
-      } finally {
-        if (!cancelled) setCheckingDraft(false);
+      } catch (_) {
+        /* ignore */
       }
+      if (cancelled) return;
+      navigation.navigate("ConnectWithMe", {
+        profileUid,
+        profileData,
+        mode: "guest",
+        ...(initialData ? { initialData } : {}),
+      });
     })();
+
     return () => {
       cancelled = true;
     };
-  }, [profileUid]);
+  }, [loading, checkingSession, isLoggedIn, notesCommitted, redirecting, profileUid, profileData, error, navigation]);
 
   const clearAndRestoreEphemeralKeys = useCallback(async (referralUidOverride) => {
     const ephemeral = await captureEphemeralSignupKeys();
@@ -227,25 +242,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     refreshAllowCookies();
     await restoreEphemeralSignupKeys(ephemeral, referralUidOverride || ephemeral.referralUid);
   }, []);
-
-  const handleGuestAddConnection = useCallback(
-    async (connectionData) => {
-      if (!profileUid || savingGuestNotes) return;
-      setSavingGuestNotes(true);
-      try {
-        await savePendingScanConnection(profileUid, connectionData);
-        await AsyncStorage.setItem("referral_uid", profileUid);
-        setNotesCommitted(true);
-        setShowGuestConnectPopup(false);
-      } catch (e) {
-        console.warn("ScanLanding - save pending connection failed:", e?.message || e);
-        Alert.alert("Error", "Could not save your notes. Please try again.");
-      } finally {
-        setSavingGuestNotes(false);
-      }
-    },
-    [profileUid, savingGuestNotes],
-  );
 
   const redirectToNetwork = useCallback(async () => {
     if (!profileUid || redirectStartedRef.current) return;
@@ -332,7 +328,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
   const promptEmailFallback = useCallback(
     (message) => {
       clearOauthWatchdog();
-      setSigningIn(false);
+      setAuthBusy(null);
       appleAuthInFlightRef.current = false;
       oauthAbandonedRef.current = true;
       if (fallbackPromptedRef.current) return;
@@ -465,11 +461,11 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       setEmailError("Enter a valid email address.");
       return;
     }
-    if (submittingEmail || signingIn) return;
+    if (authBusy) return;
 
     setEmailError("");
     setEmailFallbackHint("");
-    setSubmittingEmail(true);
+    setAuthBusy("email");
     persistReferral();
 
     const preservedReferralUid = String(profileUid || authParams.referralProfileUid || (await AsyncStorage.getItem("referral_uid")) || "").trim() || null;
@@ -552,16 +548,16 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       console.error("ScanLanding - email signup failed:", err);
       openPasswordFallbackModal(null);
     } finally {
-      setSubmittingEmail(false);
+      setAuthBusy(null);
     }
-  }, [email, submittingEmail, signingIn, persistReferral, profileUid, authParams, navigation, openPasswordFallbackModal, clearAndRestoreEphemeralKeys]);
+  }, [email, authBusy, persistReferral, profileUid, authParams, navigation, openPasswordFallbackModal, clearAndRestoreEphemeralKeys]);
 
   const handleGoogleSignUp = useCallback(async () => {
-    if (signingIn || submittingEmail || !onGoogleSignUp) return;
+    if (authBusy || !onGoogleSignUp) return;
     persistReferral();
     fallbackPromptedRef.current = false;
     setEmailFallbackHint("");
-    setSigningIn(true);
+    setAuthBusy("google");
     clearOauthWatchdog();
     oauthAbandonedRef.current = false;
     try {
@@ -573,24 +569,24 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       return;
     } finally {
       clearOauthWatchdog();
-      setSigningIn(false);
+      setAuthBusy(null);
     }
-  }, [signingIn, submittingEmail, onGoogleSignUp, authParams, persistReferral, clearOauthWatchdog, promptEmailFallback]);
+  }, [authBusy, onGoogleSignUp, authParams, persistReferral, clearOauthWatchdog, promptEmailFallback]);
 
   const handleAppleAuthStart = useCallback(() => {
-    if (signingIn || submittingEmail) return;
+    if (authBusy) return;
     persistReferral();
     fallbackPromptedRef.current = false;
     setEmailFallbackHint("");
     appleAuthInFlightRef.current = true;
     oauthAbandonedRef.current = false;
-    setSigningIn(true);
+    setAuthBusy("apple");
     clearOauthWatchdog();
     oauthWatchdogRef.current = setTimeout(() => {
       if (!appleAuthInFlightRef.current) return;
       promptEmailFallback("Apple Sign-Up timed out. Enter your email below to continue.");
     }, OAUTH_TIMEOUT_MS);
-  }, [signingIn, submittingEmail, persistReferral, clearOauthWatchdog, promptEmailFallback]);
+  }, [authBusy, persistReferral, clearOauthWatchdog, promptEmailFallback]);
 
   const handleAppleSignUp = useCallback(
     async (...args) => {
@@ -611,7 +607,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     (result) => {
       appleAuthInFlightRef.current = false;
       clearOauthWatchdog();
-      setSigningIn(false);
+      setAuthBusy(null);
       if (result?.status === "cancelled") {
         promptEmailFallback("Apple Sign-Up was cancelled. Enter your email below to continue, or try again.");
       } else if (result?.status === "error") {
@@ -654,10 +650,10 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
     }).catch(() => {});
   }, [profileData]);
 
-  const showGuestActions = !checkingSession && !checkingDraft && !isLoggedIn && !redirecting;
+  const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
   const showGuestNotesStep = showGuestActions && !notesCommitted;
   const showGuestAuthStep = showGuestActions && notesCommitted;
-  const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
+  const showRedirecting = redirecting || (isLoggedIn && !showGuestActions) || showGuestNotesStep;
   const versionLabel = buildVersionLabel();
 
   // Web only (QR camera → Safari/Chrome): pin #root to the visible viewport so the
@@ -782,42 +778,23 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
       >
         <View style={[styles.panel, panelMinHeight ? { minHeight: panelMinHeight } : null]}>
           <View style={styles.body}>
-            <Text style={styles.headline}>{showGuestNotesStep ? "Connect With Me" : "Connect on everyCircle"}</Text>
+            <Text style={styles.headline}>{showGuestAuthStep ? "Connect on everyCircle" : "Connect With Me"}</Text>
             <Text style={styles.sub}>
-              {showRedirecting
-                ? "Taking you to your network…"
-                : showGuestNotesStep
-                  ? "Add a few notes about how you know this person, then join everyCircle to save the connection."
-                  : "You're one click from joining the most trusted network on the planet. Join with Google or Apple, or enter your email."}
+              {showRedirecting && !showGuestAuthStep
+                ? notesCommitted
+                  ? "Taking you to your network…"
+                  : "Opening connection details…"
+                : "You are only one click from joining the most trusted network on the planet. Join with Google or Apple, or enter your email."}
             </Text>
 
-            {(loading || checkingDraft || showRedirecting) && (
+            {(loading || (showRedirecting && !showGuestAuthStep)) && (
               <View style={styles.centerRow}>
                 <ActivityIndicator size='large' color='#2434C2' />
-                <Text style={styles.muted}>{loading || checkingDraft ? "Loading profile…" : "Opening connect…"}</Text>
+                <Text style={styles.muted}>{loading ? "Loading profile…" : notesCommitted ? "Opening connect…" : "Opening connection details…"}</Text>
               </View>
             )}
 
             {!loading && error && <Text style={styles.error}>{error}</Text>}
-
-            {!loading && !error && profileData && showGuestNotesStep && (
-              <>
-                <View style={styles.cardWrap}>
-                  <MiniCard user={profileData} />
-                </View>
-                <TouchableOpacity
-                  style={styles.primaryBtn}
-                  onPress={() => setShowGuestConnectPopup(true)}
-                  activeOpacity={0.85}
-                  disabled={savingGuestNotes}
-                >
-                  <Text style={styles.primaryBtnText}>Add connection details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.secondaryBtn, styles.lastSecondaryBtn]} onPress={downloadVCard} activeOpacity={0.85}>
-                  <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
-                </TouchableOpacity>
-              </>
-            )}
 
             {!loading && !error && profileData && showGuestAuthStep && (
               <>
@@ -826,14 +803,20 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                 </View>
 
                 <View style={styles.socialContainer}>
-                  <GoogleBrandedSignInButton mode='signUp' onPress={handleGoogleSignUp} disabled={signingIn} signingIn={signingIn} />
+                  <GoogleBrandedSignInButton
+                    mode='signUp'
+                    onPress={handleGoogleSignUp}
+                    disabled={!!authBusy}
+                    signingIn={authBusy === "google"}
+                  />
                   <AppleSignIn
                     mode='signUp'
                     onSignIn={handleAppleSignUp}
                     onError={handleAppleError}
                     onAuthSessionStart={handleAppleAuthStart}
                     onAuthSessionEnd={handleAppleAuthEnd}
-                    disabled={signingIn}
+                    disabled={!!authBusy}
+                    loading={authBusy === "apple"}
                   />
                 </View>
 
@@ -859,7 +842,7 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                   keyboardType='email-address'
                   autoCapitalize='none'
                   autoCorrect={false}
-                  editable={!submittingEmail && !signingIn}
+                  editable={!authBusy}
                   accessibilityLabel='Email'
                   accessibilityHint='Enter your email address to sign up'
                   returnKeyType='go'
@@ -868,12 +851,12 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
                 {!!emailError && <Text style={styles.emailError}>{emailError}</Text>}
 
                 <TouchableOpacity
-                  style={[styles.primaryBtn, (!isValidEmail(email.trim()) || submittingEmail) && styles.primaryBtnDisabled]}
+                  style={[styles.primaryBtn, (!isValidEmail(email.trim()) || !!authBusy) && styles.primaryBtnDisabled]}
                   onPress={handleEmailContinue}
                   activeOpacity={0.85}
-                  disabled={!isValidEmail(email.trim()) || submittingEmail || signingIn}
+                  disabled={!isValidEmail(email.trim()) || !!authBusy}
                 >
-                  {submittingEmail ? <ActivityIndicator color='#fff' /> : <Text style={styles.primaryBtnText}>Continue with email</Text>}
+                  {authBusy === "email" ? <ActivityIndicator color='#fff' /> : <Text style={styles.primaryBtnText}>Continue with email</Text>}
                 </TouchableOpacity>
 
                 <View style={styles.sectionRule} />
@@ -892,15 +875,6 @@ export default function ScanLandingScreen({ onGoogleSignUp, onAppleSignUp, onErr
           <Text style={styles.version}>{versionLabel}</Text>
         </View>
       </ScrollView>
-
-      <ScannedProfilePopup
-        visible={showGuestNotesStep && showGuestConnectPopup && !!profileData}
-        profileData={profileData}
-        onClose={() => setShowGuestConnectPopup(false)}
-        onAddConnection={handleGuestAddConnection}
-        title='Connect With Me'
-        actionLabel={savingGuestNotes ? "Saving…" : "Add to Network"}
-      />
 
       <Modal visible={showPasswordFallbackModal} transparent animationType='fade'>
         <View style={styles.modalOverlay}>

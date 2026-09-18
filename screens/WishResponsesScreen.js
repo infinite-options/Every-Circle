@@ -43,6 +43,7 @@ if (isWeb) {
 import StripePayment from "../components/StripePaymentWeb";
 import PaymentFailure from "../components/PaymentFailure";
 import AcceptDetailsModal from "../components/AcceptDetailsModal";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 import { computeCreditCardChargeTotal, computeCreditCardProcessingFee } from "../utils/cartCreditCardFee";
 import { buildSeekingCheckoutLineApiFields, buildSeekingCheckoutOrderMoney, getSeekingBountyApiFields } from "../utils/seekingCheckoutApi";
 
@@ -716,17 +717,14 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
                 const responderProfileUid = String(response.wr_responder_id || response.responder_id || "").trim();
                 const recommendedProfileUid = String(response.profile_personal_uid || response.wr_recommended_id || "").trim();
                 const useRecommendedProfileForDisplay = !response.responder_first_name && !response.responder_last_name && recommendedProfileUid === responderProfileUid;
+                const recommendedFlags = useRecommendedProfileForDisplay ? getPersonalDisplayFlags(response) : null;
                 const responderMicroCardUser = {
                   firstName: response.responder_first_name || (useRecommendedProfileForDisplay ? response.profile_personal_first_name : "") || "",
                   lastName: response.responder_last_name || (useRecommendedProfileForDisplay ? response.profile_personal_last_name : "") || "",
                   profileImage: response.responder_image || (useRecommendedProfileForDisplay ? response.profile_personal_image : "") || "",
                   tagLine: response.responder_tag_line || (useRecommendedProfileForDisplay ? response.profile_personal_tag_line : "") || "",
-                  tagLineIsPublic:
-                    response.responder_tag_line_is_public === 1 ||
-                    (useRecommendedProfileForDisplay && response.profile_personal_tag_line_is_public === 1),
-                  imageIsPublic:
-                    response.responder_image_is_public === 1 ||
-                    (useRecommendedProfileForDisplay && response.profile_personal_image_is_public === 1),
+                  tagLineIsPublic: response.responder_tag_line_is_public === 1 || recommendedFlags?.tagLineIsPublic,
+                  imageIsPublic: response.responder_image_is_public === 1 || recommendedFlags?.imageIsPublic,
                 };
                 const responseNote = String(response.wr_responder_note || "").trim();
                 const responderName = [responderMicroCardUser.firstName, responderMicroCardUser.lastName].filter(Boolean).join(" ").trim();

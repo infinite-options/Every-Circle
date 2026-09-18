@@ -17,7 +17,7 @@ export const NEARBY_PRIVACY_LABELS = {
   specific: "Specific",
 };
 
-/** Human-readable summary matching Settings → Location Privacy subtext. */
+/** Human-readable summary matching Settings → Allow Location-Based Notifications subtext. */
 export function formatNearbyPrivacySummary(settings) {
   const shareLabel = NEARBY_PRIVACY_LABELS[settings?.shareWith] || settings?.shareWith || "All Circles";
   const receiveLabel = NEARBY_PRIVACY_LABELS[settings?.receiveFrom] || settings?.receiveFrom || "All Circles";

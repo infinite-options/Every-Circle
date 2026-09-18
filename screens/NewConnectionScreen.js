@@ -9,7 +9,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import { USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { sanitizeText } from "../utils/textSanitizer";
-import { isApiPublicFlag, isSharedProfileImagePublic } from "../utils/apiPublicFlag";
+import { getPersonalDisplayFlags } from "../utils/profileAudience";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import WebTextInput from "../components/WebTextInput";
 import * as Location from "expo-location";
@@ -109,7 +109,8 @@ const NewConnectionScreen = () => {
 
       const uidToMessage = parsedData?.profile_uid ?? profileUid;
       if (uidToMessage) {
-        await sendAblyMessage(uidToMessage);
+        // Fire-and-forget — do not block the New Connection form on Ably connect/attach.
+        void sendAblyMessage(uidToMessage);
       }
     };
 
@@ -474,6 +475,7 @@ const NewConnectionScreen = () => {
       const apiUser = await response.json();
 
       const p = apiUser?.personal_info || {};
+      const flags = getPersonalDisplayFlags(p);
       const profileInfo = {
         profile_uid: profileUid,
         firstName: sanitizeText(p.profile_personal_first_name || ""),
@@ -485,11 +487,8 @@ const NewConnectionScreen = () => {
         phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
         phoneVerified: p.phone_verified === true || p.phone_verified === 1 || apiUser.phoneVerified === true,
         profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-        emailIsPublic: isApiPublicFlag(p.profile_personal_email_is_public),
-        phoneIsPublic: isApiPublicFlag(p.profile_personal_phone_number_is_public),
-        tagLineIsPublic: isApiPublicFlag(p.profile_personal_tag_line_is_public) || isApiPublicFlag(p.profile_personal_tagline_is_public),
-        locationIsPublic: isApiPublicFlag(p.profile_personal_location_is_public),
-        imageIsPublic: Boolean(p.profile_personal_image && String(p.profile_personal_image).trim()) && isSharedProfileImagePublic(p.profile_personal_image_is_public),
+        ...flags,
+        imageIsPublic: Boolean(p.profile_personal_image && String(p.profile_personal_image).trim()) && flags.imageIsPublic,
       };
 
       setProfileData(profileInfo);

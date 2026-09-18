@@ -5,6 +5,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { DELETED_USER_LABEL, isProfileDeleted } from "../utils/deletedProfile";
 import PhoneVerifiedBadge, { resolvePhoneVerified } from "./PhoneVerifiedBadge";
+import { resolvePersonalDisplayFlag, resolveLocationDisplayFlag, PERSONAL_AUDIENCE_KEYS } from "../utils/profileAudience";
 
 // Web-compatible asset helper: default profile image for MiniCard (user and business)
 // On native, require() works; on web we try require() so the default shows on both platforms
@@ -205,26 +206,13 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
   const profileImageRaw = user?.profileImage ?? user?.personal_info?.profile_personal_image ?? "";
   const profileImage = sanitizeText(typeof profileImageRaw === "string" ? profileImageRaw : String(profileImageRaw || ""));
 
-  const emailIsPublic = user?.personal_info?.profile_personal_email_is_public == 1 || user?.emailIsPublic;
-  const phoneIsPublic = user?.personal_info?.profile_personal_phone_number_is_public == 1 || user?.phoneIsPublic;
-  const tagLineIsPublic =
-    user?.personal_info?.profile_personal_tag_line_is_public == 1 ||
-    user?.personal_info?.profile_personal_tagline_is_public == 1 ||
-    user?.tagLineIsPublic;
-  // Display = TRUE: show uploaded image when user has chosen to display it (works with 1, "1", true from API or flattened shape)
-  const imageIsPublic =
-    user?.personal_info?.profile_personal_image_is_public == 1 ||
-    user?.imageIsPublic === true ||
-    user?.imageIsPublic === 1 ||
-    user?.imageIsPublic === "1" ||
-    user?.imageIsPublic === "true";
+  const emailIsPublic = resolvePersonalDisplayFlag(user?.emailIsPublic, user, PERSONAL_AUDIENCE_KEYS.email);
+  const phoneIsPublic = resolvePersonalDisplayFlag(user?.phoneIsPublic, user, PERSONAL_AUDIENCE_KEYS.phone);
+  const tagLineIsPublic = resolvePersonalDisplayFlag(user?.tagLineIsPublic, user, PERSONAL_AUDIENCE_KEYS.tagLine);
+  const imageIsPublic = resolvePersonalDisplayFlag(user?.imageIsPublic, user, PERSONAL_AUDIENCE_KEYS.image);
   const city = sanitizeText(user?.personal_info?.profile_personal_city || user?.city || "");
   const state = sanitizeText(user?.personal_info?.profile_personal_state || user?.state || "");
-  const locationIsPublic =
-    user?.personal_info?.profile_personal_location_is_public == 1 ||
-    user?.locationIsPublic === true ||
-    user?.locationIsPublic === 1 ||
-    user?.locationIsPublic === "1";
+  const locationIsPublic = resolveLocationDisplayFlag(user?.locationIsPublic, user);
 
   // Profile image rule: show uploaded image only when (image uploaded AND Display is TRUE); otherwise show default (web + mobile)
   const hasUploadedImage = !deleted && profileImage && String(profileImage).trim() !== "" && isSafeForConditional(profileImage);
