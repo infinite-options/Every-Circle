@@ -5,7 +5,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
-import ConnectionVisibilityPicker from "./ConnectionVisibilityPicker";
+import ConnectionVisibilityPicker, { visibilityFromIsPublic } from "./ConnectionVisibilityPicker";
 import {
   parseMonthYear,
   formatMonthYear,
@@ -157,12 +157,6 @@ const EducationSection = ({
     setActivePicker(null);
   };
 
-  const toggleEntryVisibility = (index) => {
-    const updated = [...education];
-    updated[index].isPublic = !updated[index].isPublic;
-    setEducation(updated);
-  };
-
   const toggleCurrentEducation = (index) => {
     const updated = [...education];
     const nowCurrent = !updated[index].isCurrent;
@@ -297,21 +291,19 @@ const EducationSection = ({
               </TouchableOpacity>
             </View>
 
-            {/* Individual public/private toggle */}
+            {/* Individual public/private toggle — same pills as section-level */}
             <View style={styles.toggleContainer}>
-                          <TouchableOpacity
-                           onPress={() => toggleEntryVisibility(index)}
-                            style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}
-                          >
-                            <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => toggleEntryVisibility(index)}
-                            style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}
-                          >
-                            <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
-                          </TouchableOpacity>
-                        </View>
+              <ConnectionVisibilityPicker
+                value={visibilityFromIsPublic(!!item.isPublic)}
+                onChange={(level) => {
+                  const updated = [...education];
+                  updated[index] = { ...updated[index], isPublic: level !== "only_me" };
+                  setEducation(updated);
+                }}
+                darkMode={darkMode}
+                simple
+              />
+            </View>
           </View>
           <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
             <ProfileItemImageColumn
@@ -505,11 +497,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   toggleContainer: { flexDirection: "row", gap: 4 },
-  togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },
-  togglePillActiveGreen: { backgroundColor: "#4CAF50" },
-  togglePillActiveRed: { backgroundColor: "#ef9a9a" },
-  togglePillText: { fontSize: 13, color: "#4e4e4e", fontWeight: "500" },
-  togglePillTextActive: { color: "#fff", fontWeight: "bold" },
 });
 
 export default EducationSection;

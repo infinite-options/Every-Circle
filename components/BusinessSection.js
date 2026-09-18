@@ -6,7 +6,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { getBusinessMembershipRole } from "../utils/businessOwnership";
-import ConnectionVisibilityPicker from "./ConnectionVisibilityPicker";
+import ConnectionVisibilityPicker, { visibilityFromIsPublic } from "./ConnectionVisibilityPicker";
 
 /** Ensure businesses list is always a real array (API / route params may send a JSON string or object). */
 function asBusinessArray(value) {
@@ -134,14 +134,12 @@ const BusinessSection = ({ businesses, setBusinesses, visibilityLevel, onVisibil
     setBusinesses(updated);
   };
 
-  const toggleEntryVisibility = (index) => {
+  const setEntryVisibility = (index, visible) => {
     const updated = [...businessesList];
-    const currentVisible = !!(updated[index]?.individualIsPublic ?? updated[index]?.isPublic);
-    const nextVisible = !currentVisible;
     updated[index] = {
       ...updated[index],
-      isPublic: nextVisible,
-      individualIsPublic: nextVisible,
+      isPublic: visible,
+      individualIsPublic: visible,
     };
     setBusinesses(updated);
   };
@@ -344,12 +342,12 @@ const BusinessSection = ({ businesses, setBusinesses, visibilityLevel, onVisibil
                   })()}
                 </View>
                 <View style={styles.toggleContainer}>
-                  <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, entryVisible && styles.togglePillActiveGreen]}>
-                    <Text style={[styles.togglePillText, entryVisible && styles.togglePillTextActive]}>{entryVisible ? "Visible" : "Show"}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, !entryVisible && styles.togglePillActiveRed]}>
-                    <Text style={[styles.togglePillText, !entryVisible && styles.togglePillTextActive]}>{!entryVisible ? "Hidden" : "Hide"}</Text>
-                  </TouchableOpacity>
+                  <ConnectionVisibilityPicker
+                    value={visibilityFromIsPublic(entryVisible)}
+                    onChange={(level) => setEntryVisibility(originalIndex, level !== "only_me")}
+                    darkMode={darkMode}
+                    simple
+                  />
                 </View>
               </View>
 
@@ -393,12 +391,12 @@ const BusinessSection = ({ businesses, setBusinesses, visibilityLevel, onVisibil
                 <View style={styles.rowHeader}>
                   <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{actualIndex + 1}</Text>
                   <View style={styles.toggleContainer}>
-                    <TouchableOpacity onPress={() => toggleEntryVisibility(actualIndex)} style={[styles.togglePill, entryVisible && styles.togglePillActiveGreen]}>
-                      <Text style={[styles.togglePillText, entryVisible && styles.togglePillTextActive]}>{entryVisible ? "Visible" : "Show"}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => toggleEntryVisibility(actualIndex)} style={[styles.togglePill, !entryVisible && styles.togglePillActiveRed]}>
-                      <Text style={[styles.togglePillText, !entryVisible && styles.togglePillTextActive]}>{!entryVisible ? "Hidden" : "Hide"}</Text>
-                    </TouchableOpacity>
+                    <ConnectionVisibilityPicker
+                      value={visibilityFromIsPublic(entryVisible)}
+                      onChange={(level) => setEntryVisibility(actualIndex, level !== "only_me")}
+                      darkMode={darkMode}
+                      simple
+                    />
                   </View>
                 </View>
 
@@ -598,11 +596,6 @@ const styles = StyleSheet.create({
     color: "#999",
   },
   toggleContainer: { flexDirection: "row", gap: 4 },
-  togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },
-  togglePillActiveGreen: { backgroundColor: "#4CAF50" },
-  togglePillActiveRed: { backgroundColor: "#ef9a9a" },
-  togglePillText: { fontSize: 13, color: "#4e4e4e", fontWeight: "500" },
-  togglePillTextActive: { color: "#fff", fontWeight: "bold" },
 });
 
 export default BusinessSection;

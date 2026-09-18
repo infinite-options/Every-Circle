@@ -135,6 +135,17 @@ const BUSINESS_PROFILE_ACCENT = getHeaderColor("businessProfile");
 const BUSINESS_PROFILE_ACCENT_DARK = getDarkModeHeaderColor("businessProfile");
 const BUSINESS_PROFILE_SECTION_HEADER_BG = "rgba(175, 82, 222, 0.5)";
 
+/** Resolve a View/input ref to a DOM node on web (for scrollIntoView / focus). */
+function resolveScrollTargetNode(targetRef) {
+  if (!targetRef) return null;
+  if (Platform.OS !== "web") return findNodeHandle(targetRef);
+  if (targetRef.nodeType === 1) return targetRef;
+  const handle = findNodeHandle(targetRef);
+  if (handle?.nodeType === 1) return handle;
+  if (targetRef._nativeNode?.nodeType === 1) return targetRef._nativeNode;
+  return null;
+}
+
 const parseInitialGalleryUploads = (business, businessUID) => buildBusinessGalleryUploads(business, businessUID);
 
 const pickNextProfileImage = (googlePhotos, galleryUploads, excludeUri = "", uid = "") => {
@@ -676,6 +687,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const serviceTaxRateInputRef = useRef(null);
   const serviceQuantitySectionRef = useRef(null);
   const serviceQuantityInputRef = useRef(null);
+  const serviceFormSectionRef = useRef(null);
+  const serviceNameInputRef = useRef(null);
+  const pendingFocusNewProductRef = useRef(false);
   const pendingRemoveActionRef = useRef(null);
   /** Skip unsaved `beforeRemove` while navigating away after a successful submit (isChanged clears async). */
   const suppressLeavePromptRef = useRef(false);
@@ -2847,6 +2861,56 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     </View>
   );
 
+  const focusNewProductForm = useCallback(() => {
+    const run = () => {
+      const scroll = scrollViewRef.current;
+      const target = serviceFormSectionRef.current;
+      const input = serviceNameInputRef.current;
+
+      if (Platform.OS === "web") {
+        const scrollEl = resolveScrollTargetNode(target) || resolveScrollTargetNode(input);
+        scrollEl?.scrollIntoView?.({ behavior: "smooth", block: "start", inline: "nearest" });
+        const inputEl = resolveScrollTargetNode(input);
+        if (inputEl && typeof inputEl.focus === "function") {
+          inputEl.focus({ preventScroll: true });
+        } else {
+          input?.focus?.();
+        }
+        return;
+      }
+
+      if (scroll && target) {
+        const scrollNative = findNodeHandle(scroll);
+        if (scrollNative) {
+          try {
+            target.measureLayout(
+              scrollNative,
+              (_x, y) => {
+                scroll.scrollTo({ y: Math.max(0, y - 16), animated: true });
+              },
+              () => {
+                scroll.scrollToEnd({ animated: true });
+              },
+            );
+          } catch {
+            scroll.scrollToEnd({ animated: true });
+          }
+        } else {
+          scroll.scrollToEnd({ animated: true });
+        }
+      } else if (scroll) {
+        scroll.scrollToEnd({ animated: true });
+      }
+      input?.focus?.();
+    };
+
+    InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => {
+        setTimeout(run, 100);
+      });
+    });
+  }, []);
+
   const openNewProductForm = () => {
     setServiceForm({ ...defaultService });
     setEditingServiceIndex(null);
@@ -2855,9 +2919,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setServiceFormCostUnitError(false);
     setServiceFormModeError(false);
     setProductTagInput("");
-    setShowServiceForm(true);
     resetServiceProductImageState();
     setShowProductsServices(true);
+    pendingFocusNewProductRef.current = true;
+    setShowServiceForm(true);
   };
 
   // Business Image Visibility Toggle Handler (identical to EditProfileScreen)
@@ -3165,6 +3230,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [editingServiceIndex, setEditingServiceIndex] = useState(null);
   /** Persisted rows removed this session (bs_uid); sent on save like delete_experiences on Edit Profile */
   const [deletedBusinessServiceUids, setDeletedBusinessServiceUids] = useState([]);
+
+  useEffect(() => {
+    if (!showServiceForm || editingServiceIndex !== null || !pendingFocusNewProductRef.current) return;
+    pendingFocusNewProductRef.current = false;
+    focusNewProductForm();
+  }, [showServiceForm, editingServiceIndex, focusNewProductForm]);
 
   useEffect(() => {
     const p = formData.businessPaysCcFee ? "seller" : "buyer";
@@ -4067,7 +4138,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     return (
       <View style={styles.serviceFormLivePreviewBlock}>
         {renderServiceFormLivePreview()}
-        <View style={[styles.serviceFormContainer, darkMode && styles.darkServiceFormContainer]}>
+        <View ref={serviceFormSectionRef} collapsable={false} style={[styles.serviceFormContainer, darkMode && styles.darkServiceFormContainer]}>
           <View style={[styles.serviceFormTitleBar, darkMode && styles.darkServiceFormTitleBar]}>
             <Text style={[styles.serviceFormTitleText, darkMode && styles.darkServiceFormTitleText]}>{editingServiceIndex !== null ? "Edit Product/Service" : "Add New Product/Service"}</Text>
           </View>
@@ -4125,12 +4196,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             </View>
             <View style={styles.serviceFormDetailsColumn}>
               <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel]}>Name</Text>
-              <TextInput
+              <WebTextInput
+                ref={serviceNameInputRef}
                 style={[styles.serviceFormFieldInput, darkMode && styles.darkServiceFormFieldInput]}
                 value={serviceForm.bs_service_name}
                 onChangeText={(t) => handleServiceChange("bs_service_name", t)}
                 placeholder='Product or Service Name'
                 placeholderTextColor={darkMode ? "#888" : "#999"}
+                autoFocus={editingServiceIndex === null}
               />
               <Text style={[styles.serviceFormFieldLabel, darkMode && styles.darkServiceFormFieldLabel, { marginTop: 10 }]}>Description</Text>
               <ResizableMultilineField
@@ -6490,11 +6563,29 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
   toggleContainer: { flexDirection: "row", gap: 4 },
-  togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },
-  togglePillActiveGreen: { backgroundColor: "#4CAF50" },
-  togglePillActiveRed: { backgroundColor: "#ef9a9a" },
-  togglePillText: { fontSize: 13, color: "#4e4e4e", fontWeight: "500" },
-  togglePillTextActive: { color: "#fff", fontWeight: "bold" },
+  togglePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: "#eee",
+    marginLeft: 6,
+  },
+  togglePillActiveGreen: {
+    backgroundColor: "#2e7d32",
+  },
+  togglePillActiveRed: {
+    backgroundColor: "#c62828",
+  },
+  togglePillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#333",
+  },
+  togglePillTextActive: {
+    color: "#fff",
+  },
   modalContainer: {
     backgroundColor: "#fff",
     borderRadius: 10,

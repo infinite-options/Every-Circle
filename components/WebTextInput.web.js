@@ -50,7 +50,7 @@ function ensureBorderlessStyles() {
 }
 
 // Web-compatible TextInput that uses native HTML input on web
-const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, inputMode, multiline, numberOfLines, textAlignVertical, placeholderTextColor, borderless, ...props }) => {
+const WebTextInput = React.forwardRef(({ style, value, onChangeText, placeholder, keyboardType, inputMode, multiline, numberOfLines, textAlignVertical, placeholderTextColor, borderless, ...props }, ref) => {
   // Ensure borderless CSS is injected before first borderless input renders
   if (borderless && typeof document !== "undefined") {
     ensureBorderlessStyles();
@@ -190,6 +190,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
   // Use textarea for multiline inputs, input for single-line
   if (multiline) {
     const textareaElement = React.createElement("textarea", {
+      ref,
       value: value || "",
       onChange: (e) => onChangeText && onChangeText(e.target.value),
       placeholder: placeholder,
@@ -257,6 +258,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
       };
 
   const inputElement = React.createElement("input", {
+    ref,
     type: explicitType || getInputType(),
     value: value || "",
     onChange: (e) => onChangeText && onChangeText(e.target.value),
@@ -284,6 +286,8 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
   }
 
   return inputElement;
-};
+});
+
+WebTextInput.displayName = "WebTextInput";
 
 export default WebTextInput;

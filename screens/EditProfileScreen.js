@@ -44,6 +44,7 @@ import ConnectionVisibilityPicker, {
   resolveAudienceLevel,
   parseVisibilityValue,
   visibilityBadgeLabel,
+  visibilityFromIsPublic,
   visibilityValueToAudience,
 } from "../components/ConnectionVisibilityPicker";
 
@@ -2126,28 +2127,17 @@ const EditProfileScreen = ({ route, navigation }) => {
                     </View>
                   )}
                   <View style={styles.toggleContainer}>
-                    <TouchableOpacity
-                      onPress={() => {
+                    <ConnectionVisibilityPicker
+                      value={visibilityFromIsPublic(!!link.isPublic)}
+                      onChange={(level) => {
                         const updated = [...formData.socialLinks];
-                        updated[idx] = { ...updated[idx], isPublic: true };
+                        updated[idx] = { ...updated[idx], isPublic: level !== "only_me" };
                         setFormData((prev) => ({ ...prev, socialLinks: updated }));
                         setIsChanged(true);
                       }}
-                      style={[styles.togglePill, link.isPublic && styles.togglePillActiveGreen]}
-                    >
-                      <Text style={[styles.togglePillText, link.isPublic && styles.togglePillTextActive]}>{link.isPublic ? "Visible" : "Show"}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {
-                        const updated = [...formData.socialLinks];
-                        updated[idx] = { ...updated[idx], isPublic: false };
-                        setFormData((prev) => ({ ...prev, socialLinks: updated }));
-                        setIsChanged(true);
-                      }}
-                      style={[styles.togglePill, !link.isPublic && styles.togglePillActiveRed]}
-                    >
-                      <Text style={[styles.togglePillText, !link.isPublic && styles.togglePillTextActive]}>{!link.isPublic ? "Hidden" : "Hide"}</Text>
-                    </TouchableOpacity>
+                      darkMode={darkMode}
+                      simple
+                    />
                   </View>
                 </View>
                 <TextInput
@@ -2641,29 +2631,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 12,
-  },
-  togglePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    backgroundColor: "#eee",
-    marginLeft: 6,
-  },
-  togglePillActiveGreen: {
-    backgroundColor: "#2e7d32",
-  },
-  togglePillActiveRed: {
-    backgroundColor: "#c62828",
-  },
-  togglePillText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#333",
-  },
-  togglePillTextActive: {
-    color: "#fff",
   },
   homeCoordHint: {
     fontSize: 13,
